@@ -3,846 +3,230 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI 图库管理器 · Demo</title>
+<title>AI 图库管理器 · Demo v2</title>
 <style>
-:root {
-  --bg: #0e0e10;
-  --surface: #18181b;
-  --surface-2: #27272a;
-  --border: #2e2e33;
-  --text: #e4e4e7;
-  --muted: #8a8a8e;
-  --accent: #818cf8;
-  --accent-2: #f472b6;
-  --danger: #fb7185;
-  --success: #34d399;
-}
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 14px;
-  line-height: 1.5;
-  min-height: 100vh;
-  -webkit-font-smoothing: antialiased;
-}
-button { font-family: inherit; }
-input { font-family: inherit; }
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: var(--surface-2); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: var(--border); }
-
-/* === Header === */
-header {
-  position: sticky; top: 0; z-index: 10;
-  background: rgba(14,14,16,0.85);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--border);
-  padding: 12px 24px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-.logo { font-weight: 600; font-size: 15px; display: flex; align-items: center; gap: 10px; }
-.logo-mark {
-  width: 28px; height: 28px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  display: flex; align-items: center; justify-content: center;
-  font-size: 14px;
-}
-.search-box { flex: 1; max-width: 560px; position: relative; }
-.search-box input {
-  width: 100%;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 9px 12px 9px 38px;
-  border-radius: 8px;
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.15s;
-}
-.search-box input:focus { border-color: var(--accent); }
-.search-box::before {
-  content: "🔍"; position: absolute;
-  left: 12px; top: 50%; transform: translateY(-50%);
-  font-size: 13px; opacity: 0.5;
-}
-.header-right { display: flex; align-items: center; gap: 12px; }
-.import-btn {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 7px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 13px;
-  display: flex; align-items: center; gap: 6px;
-}
-.import-btn:hover { border-color: var(--accent); }
-.search-stats { color: var(--muted); font-size: 12px; white-space: nowrap; min-width: 80px; text-align: right; }
-
-/* === Layout === */
-.layout {
-  display: grid;
-  grid-template-columns: 260px 1fr;
-  min-height: calc(100vh - 57px);
-}
-
-/* === Sidebar === */
-aside {
-  border-right: 1px solid var(--border);
-  padding: 20px 16px;
-  background: var(--surface);
-  overflow-y: auto;
-  max-height: calc(100vh - 57px);
-  position: sticky;
-  top: 57px;
-}
-.filter-group { margin-bottom: 24px; }
-.filter-group h4 {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  margin-bottom: 10px;
-}
-.filter-item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 5px 0;
-  cursor: pointer;
-  user-select: none;
-  font-size: 13px;
-}
-.filter-item:hover { color: var(--accent); }
-.filter-item input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
-.filter-item .count { margin-left: auto; font-size: 11px; color: var(--muted); }
-.tag-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.tag-chip {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 3px 10px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.tag-chip:hover { border-color: var(--accent); }
-.tag-chip.active { background: var(--accent); color: white; border-color: var(--accent); }
-
-/* === Main grid === */
-main { padding: 20px 24px; }
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 14px;
-}
-.card {
-  position: relative;
-  aspect-ratio: 1;
-  border-radius: 10px;
-  overflow: hidden;
-  cursor: pointer;
-  background: var(--surface-2);
-  transition: transform 0.15s;
-}
-.card:hover { transform: translateY(-2px); }
-.card img {
-  width: 100%; height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.card .fav {
-  position: absolute;
-  top: 8px; right: 8px;
-  width: 30px; height: 30px;
-  border-radius: 50%;
-  background: rgba(0,0,0,0.55);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 14px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s;
-  border: none;
-  color: white;
-}
-.card:hover .fav { opacity: 1; }
-.card .fav.on { opacity: 1; color: var(--danger); }
-.card .meta {
-  position: absolute;
-  bottom: 0; left: 0; right: 0;
-  padding: 24px 10px 8px;
-  background: linear-gradient(transparent, rgba(0,0,0,0.85));
-  font-size: 11px;
-  color: rgba(255,255,255,0.9);
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.card:hover .meta { opacity: 1; }
-
-/* === Detail view === */
-.detail {
-  position: fixed; inset: 0;
-  background: var(--bg);
-  z-index: 20;
-  display: grid;
-  grid-template-columns: 1fr 400px;
-  overflow: hidden;
-}
-.detail.hidden { display: none; }
-.detail-image {
-  background: var(--surface);
-  display: flex; align-items: center; justify-content: center;
-  overflow: hidden;
-  position: relative;
-}
-.detail-image img { max-width: 100%; max-height: 100%; object-fit: contain; }
-.detail-back {
-  position: absolute;
-  top: 16px; left: 16px;
-  background: rgba(0,0,0,0.6);
-  color: white;
-  border: 1px solid rgba(255,255,255,0.1);
-  padding: 8px 14px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 13px;
-  backdrop-filter: blur(8px);
-}
-.detail-back:hover { background: rgba(0,0,0,0.8); }
-.detail-nav {
-  position: absolute;
-  bottom: 16px; left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0,0,0,0.6);
-  color: white;
-  border: 1px solid rgba(255,255,255,0.1);
-  padding: 6px 14px;
-  border-radius: 999px;
-  font-size: 12px;
-  backdrop-filter: blur(8px);
-}
-.detail-panel {
-  border-left: 1px solid var(--border);
-  background: var(--surface);
-  overflow-y: auto;
-  padding: 28px 24px;
-}
-.detail-panel h3 {
-  font-size: 11px;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 8px;
-  letter-spacing: 0.08em;
-}
-.prompt-box {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 12px 60px 12px 12px;
-  font-size: 12.5px;
-  line-height: 1.6;
-  position: relative;
-  margin-bottom: 20px;
-  white-space: pre-wrap;
-  word-break: break-word;
-  min-height: 44px;
-}
-.copy-btn {
-  position: absolute;
-  top: 8px; right: 8px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 3px 10px;
-  border-radius: 6px;
-  font-size: 11px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.copy-btn:hover { background: var(--accent); border-color: var(--accent); }
-.copy-btn.copied { background: var(--success); border-color: var(--success); color: white; }
-.kv-list {
-  display: grid;
-  grid-template-columns: 90px 1fr;
-  gap: 8px 12px;
-  font-size: 13px;
-  margin-bottom: 24px;
-}
-.kv-list dt { color: var(--muted); }
-.kv-list dd { color: var(--text); word-break: break-word; }
-.detail-actions { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-.btn {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 8px 14px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 13px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  transition: all 0.15s;
-}
-.btn:hover { border-color: var(--accent); }
-.btn.fav-btn.on { background: var(--danger); border-color: var(--danger); color: white; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: white; }
-.btn.primary:hover { filter: brightness(1.1); }
-.tag-chip.removable { padding-right: 6px; }
-.tag-chip .x { color: var(--muted); margin-left: 4px; padding: 0 4px; }
-.tag-chip:hover .x { color: var(--text); }
-.raw-json {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 12px;
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 11px;
-  max-height: 200px;
-  overflow: auto;
-  color: var(--muted);
-  white-space: pre;
-}
-
-/* === Empty === */
-.empty {
-  text-align: center;
-  padding: 100px 20px;
-  color: var(--muted);
-}
-.empty .icon { font-size: 48px; opacity: 0.4; margin-bottom: 12px; }
-
-/* === Modal === */
-.modal-bg {
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,0.6);
-  z-index: 30;
-  display: flex; align-items: center; justify-content: center;
-  backdrop-filter: blur(4px);
-}
-.modal-bg.hidden { display: none; }
-.modal {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 28px;
-  width: 480px;
-  max-width: 92vw;
-  max-height: 90vh;
-  overflow-y: auto;
-}
-.modal h2 { font-size: 17px; margin-bottom: 6px; }
-.modal .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
-.step { display: flex; gap: 14px; padding: 14px; border-radius: 10px; margin-bottom: 8px; border: 1px solid var(--border); }
-.step .num {
-  width: 28px; height: 28px;
-  border-radius: 50%;
-  background: var(--surface-2);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 13px; font-weight: 600;
-  flex-shrink: 0;
-}
-.step.active .num { background: var(--accent); color: white; }
-.step.done .num { background: var(--success); color: white; }
-.step .body { flex: 1; }
-.step .body strong { display: block; margin-bottom: 4px; font-size: 13.5px; }
-.step .body p { color: var(--muted); font-size: 12.5px; margin: 0; }
-.progress-bar {
-  height: 6px;
-  background: var(--surface-2);
-  border-radius: 3px;
-  margin-top: 8px;
-  overflow: hidden;
-}
-.progress-bar .fill {
-  height: 100%;
-  background: var(--accent);
-  width: 0%;
-  transition: width 0.2s;
-}
-.modal-actions {
-  display: flex; justify-content: flex-end; gap: 8px;
-  margin-top: 20px;
-}
-
-.toast {
-  position: fixed;
-  bottom: 24px; left: 50%;
-  transform: translateX(-50%);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-size: 13px;
-  z-index: 40;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s;
-}
-.toast.show { opacity: 1; }
-
-@media (max-width: 900px) {
-  .layout { grid-template-columns: 1fr; }
-  aside { display: none; }
-  .detail { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
-  .detail-panel { max-height: 50vh; border-left: none; border-top: 1px solid var(--border); }
-}
+:root { --bg:#0e0e10; --surface:#18181b; --surface-2:#27272a; --surface-3:#323237; --border:#2e2e33; --text:#e4e4e7; --muted:#8a8a8e; --accent:#818cf8; --accent-2:#f472b6; --danger:#fb7185; --success:#34d399; }
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;min-height:100vh;-webkit-font-smoothing:antialiased;overflow:hidden}
+button{font-family:inherit}input,textarea{font-family:inherit}
+::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:var(--surface-2);border-radius:4px}::-webkit-scrollbar-thumb:hover{background:var(--surface-3)}
+.app{display:grid;grid-template-rows:52px 1fr;height:100vh}
+header.top{background:var(--surface);border-bottom:1px solid var(--border);padding:0 20px;display:flex;align-items:center;gap:16px;z-index:10}
+.logo{font-weight:600;font-size:14px;display:flex;align-items:center;gap:8px}
+.logo-mark{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;font-size:13px}
+.search-box{flex:1;max-width:420px;position:relative}
+.search-box input{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 10px 7px 34px;border-radius:7px;font-size:13px;outline:none}
+.search-box input:focus{border-color:var(--accent)}
+.search-box::before{content:"🔍";position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:12px;opacity:.55}
+.header-right{display:flex;align-items:center;gap:10px;margin-left:auto}
+.live-toggle{display:flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--text);padding:6px 11px;border-radius:7px;cursor:pointer;font-size:12.5px}
+.live-toggle:hover{border-color:var(--accent)}
+.live-dot{width:8px;height:8px;border-radius:50%;background:var(--success)}
+.live-toggle.off .live-dot{background:var(--muted);animation:none}
+.live-dot.on{animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(52,211,153,.5)}50%{opacity:.5;box-shadow:0 0 0 4px rgba(52,211,153,0)}}
+.icon-btn{background:var(--surface-2);border:1px solid var(--border);color:var(--text);width:32px;height:32px;border-radius:7px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px}
+.icon-btn:hover{border-color:var(--accent)}
+.main{display:grid;grid-template-columns:240px 1fr 360px;height:100%;overflow:hidden}
+aside.folders{border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;overflow:hidden}
+.folders-header{padding:14px 14px 8px;display:flex;align-items:center;justify-content:space-between}
+.folders-header h3{font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.08em}
+.folders-header button{background:transparent;border:1px solid var(--border);color:var(--muted);width:24px;height:24px;border-radius:5px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center}
+.folders-header button:hover{border-color:var(--accent);color:var(--text)}
+.folders-list{flex:1;overflow-y:auto;padding:4px 8px 12px}
+.folder-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;cursor:pointer;font-size:13px;position:relative;user-select:none}
+.folder-item:hover{background:var(--surface-2)}
+.folder-item.active{background:var(--surface-2);color:var(--accent)}
+.folder-item.active::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:2px;background:var(--accent);border-radius:1px}
+.folder-item .icon{font-size:13px;opacity:.85}
+.folder-item .label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.folder-item .count{font-size:11px;color:var(--muted)}
+.folder-item.active .count{color:var(--accent)}
+.folder-item .menu-btn{opacity:0;background:transparent;border:none;color:var(--muted);cursor:pointer;padding:2px 6px;border-radius:4px;font-size:14px}
+.folder-item:hover .menu-btn{opacity:1}
+.folder-item .menu-btn:hover{background:var(--surface-3);color:var(--text)}
+.folder-menu{position:fixed;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:4px;min-width:140px;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.folder-menu.hidden{display:none}
+.folder-menu .mi{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:5px;cursor:pointer;font-size:13px;background:transparent;border:none;color:var(--text);width:100%;text-align:left}
+.folder-menu .mi:hover{background:var(--surface-3)}
+.folder-menu .mi.danger{color:var(--danger)}
+.folders-footer{padding:10px 14px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);display:flex;justify-content:space-between}
+main.feed{overflow-y:auto;overflow-x:hidden;padding:16px 18px;background:var(--bg)}
+.feed-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.feed-title{font-size:15px;font-weight:600}
+.feed-stats{font-size:12px;color:var(--muted)}
+.feed-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.card{position:relative;aspect-ratio:1;border-radius:9px;overflow:hidden;cursor:pointer;background:var(--surface-2);transition:transform .12s;border:2px solid transparent}
+.card:hover{transform:translateY(-1px)}
+.card.selected{border-color:var(--accent)}
+.card img{width:100%;height:100%;object-fit:cover;display:block}
+.card .fav{position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;font-size:13px;cursor:pointer;opacity:0;transition:opacity .15s;border:none;color:#fff}
+.card:hover .fav{opacity:1}.card .fav.on{opacity:1;color:var(--danger)}
+.card .folder-tag{position:absolute;bottom:8px;left:8px;background:rgba(0,0,0,.6);color:#fff;font-size:10.5px;padding:2px 7px;border-radius:999px;max-width:calc(100% - 16px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;backdrop-filter:blur(4px)}
+.card.new{animation:slideIn .4s ease-out,glowFade 2.4s ease-out .4s}
+@keyframes slideIn{from{opacity:0;transform:translateY(-12px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes glowFade{0%{box-shadow:0 0 0 2px var(--success),0 0 20px rgba(52,211,153,.3)}100%{box-shadow:0 0 0 0 transparent}}
+.card .new-badge{position:absolute;top:8px;left:8px;background:var(--success);color:#0a3d2e;font-size:10px;font-weight:600;padding:2px 7px;border-radius:999px;letter-spacing:.04em;animation:fadeOut 3s ease-out 1.6s forwards}
+@keyframes fadeOut{to{opacity:0}}
+.empty-state{text-align:center;padding:80px 20px;color:var(--muted)}
+.empty-state .icon{font-size:42px;opacity:.4;margin-bottom:10px}
+.empty-state .hint{font-size:12px;margin-top:8px;opacity:.8}
+aside.detail-panel{border-left:1px solid var(--border);background:var(--surface);overflow-y:auto;display:flex;flex-direction:column}
+.detail-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px;text-align:center;color:var(--muted)}
+.detail-empty .icon{font-size:38px;opacity:.4;margin-bottom:12px}
+.detail-empty .hint{font-size:13px;line-height:1.7}
+.detail-image-wrap{padding:14px;background:var(--bg);border-bottom:1px solid var(--border)}
+.detail-image-wrap img{width:100%;border-radius:8px;display:block}
+.detail-body{padding:16px 18px 24px}
+.detail-title{font-size:12px;text-transform:uppercase;color:var(--muted);letter-spacing:.08em;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.prompt-box{background:var(--surface-2);border:1px solid var(--border);border-radius:7px;padding:10px 50px 10px 10px;font-size:12px;line-height:1.55;position:relative;margin-bottom:14px;white-space:pre-wrap;word-break:break-word;max-height:120px;overflow-y:auto}
+.copy-btn{position:absolute;top:6px;right:6px;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:2px 8px;border-radius:5px;font-size:10.5px;cursor:pointer}
+.copy-btn:hover{background:var(--accent);border-color:var(--accent)}
+.copy-btn.copied{background:var(--success);border-color:var(--success);color:#fff}
+.kv-list{display:grid;grid-template-columns:78px 1fr;gap:5px 10px;font-size:12.5px;margin-bottom:14px}
+.kv-list dt{color:var(--muted)}.kv-list dd{color:var(--text);word-break:break-word}.kv-list dd.loras{line-height:1.7}
+.detail-section{margin-bottom:16px}
+.detail-section-title{font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.08em;margin-bottom:8px}
+.detail-actions{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.btn{background:var(--surface-2);border:1px solid var(--border);color:var(--text);padding:6px 11px;border-radius:6px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:5px}
+.btn:hover{border-color:var(--accent)}.btn.fav-btn.on{background:var(--danger);border-color:var(--danger);color:#fff}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}.btn.primary:hover{filter:brightness(1.1)}
+.tag-list{display:flex;gap:5px;flex-wrap:wrap}
+.tag-chip{background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:2px 9px;font-size:11.5px;display:inline-flex;align-items:center;gap:4px}
+.tag-chip .x{color:var(--muted);cursor:pointer;padding:0 2px}.tag-chip:hover .x{color:var(--text)}
+.folder-picker{display:flex;flex-wrap:wrap;gap:5px}
+.folder-pick{background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:4px 9px;font-size:11.5px;cursor:pointer}
+.folder-pick:hover{border-color:var(--accent)}.folder-pick.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.raw-json{background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:10px;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:10.5px;max-height:160px;overflow:auto;color:var(--muted);white-space:pre}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:60;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.modal-bg.hidden{display:none}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;width:460px;max-width:92vw}
+.modal h2{font-size:16px;margin-bottom:4px}.modal .subtitle{color:var(--muted);font-size:12.5px;margin-bottom:18px}
+.modal-input{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:9px 11px;border-radius:7px;font-size:13px;outline:none}
+.modal-input:focus{border-color:var(--accent)}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surface-2);border:1px solid var(--border);padding:9px 16px;border-radius:8px;font-size:13px;z-index:70;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
+@media (max-width:1100px){.main{grid-template-columns:200px 1fr 320px}}
+@media (max-width:900px){.main{grid-template-columns:1fr}aside.folders,aside.detail-panel{display:none}}
 </style>
 </head>
 <body>
-
-<header>
-  <div class="logo">
-    <div class="logo-mark">🖼</div>
-    <span>AI 图库</span>
-  </div>
-  <div class="search-box">
-    <input id="search" type="text" placeholder="搜索 prompt、文件名、标签…" autocomplete="off">
-  </div>
-  <div class="header-right">
-    <button class="import-btn" id="import-btn">＋ 导入</button>
-    <div class="search-stats" id="stats">— 张</div>
-  </div>
-</header>
-
-<div class="layout">
-  <aside>
-    <div class="filter-group">
-      <h4>视图</h4>
-      <label class="filter-item">
-        <input type="checkbox" id="fav-only"> 仅看收藏
-      </label>
+<div class="app">
+  <header class="top">
+    <div class="logo"><div class="logo-mark">🖼</div><span>AI 图库</span></div>
+    <div class="search-box"><input id="search" type="text" placeholder="搜索 prompt、文件名、标签…" autocomplete="off"></div>
+    <div class="header-right">
+      <button class="live-toggle" id="live-toggle" title="监听 ComfyUI 输出目录"><span class="live-dot on"></span><span>Live</span></button>
+      <button class="icon-btn" id="import-btn" title="导入目录">＋</button>
     </div>
-    <div class="filter-group">
-      <h4>Checkpoint</h4>
-      <div id="checkpoint-filters"></div>
-    </div>
-    <div class="filter-group">
-      <h4>LoRA</h4>
-      <div id="lora-filters"></div>
-    </div>
-    <div class="filter-group">
-      <h4>标签</h4>
-      <div class="tag-chips" id="tag-list"></div>
-    </div>
-  </aside>
-  <main>
-    <div class="grid" id="grid"></div>
-    <div class="empty hidden" id="empty">
-      <div class="icon">🔍</div>
-      <div>没有匹配的图片</div>
-      <div style="font-size:12px;margin-top:8px;">试试调整筛选条件或搜索关键词</div>
-    </div>
-  </main>
-</div>
-
-<div class="detail hidden" id="detail">
-  <div class="detail-image">
-    <button class="detail-back" id="back">← 返回</button>
-    <img id="detail-img" src="" alt="">
-    <div class="detail-nav"><span id="nav-pos">— / —</span> · ← → 切换</div>
-  </div>
-  <div class="detail-panel">
-    <h3>正向 Prompt</h3>
-    <div class="prompt-box" id="detail-prompt"></div>
-    <h3>反向 Prompt</h3>
-    <div class="prompt-box" id="detail-neg"></div>
-    <h3>生成参数</h3>
-    <dl class="kv-list" id="detail-kv"></dl>
-    <div class="detail-actions">
-      <button class="btn fav-btn" id="detail-fav">♡ 收藏</button>
-      <button class="btn" id="add-tag-btn">＋ 添加标签</button>
-    </div>
-    <div id="detail-tags"></div>
-    <h3 style="margin-top:28px">原始 Workflow JSON</h3>
-    <pre class="raw-json" id="detail-json"></pre>
+  </header>
+  <div class="main">
+    <aside class="folders">
+      <div class="folders-header"><h3>文件夹</h3><button id="new-folder-btn" title="新建文件夹">＋</button></div>
+      <div class="folders-list" id="folders-list"></div>
+      <div class="folders-footer"><span id="folder-footer-text">— 张图片</span><span>本地存储</span></div>
+    </aside>
+    <main class="feed">
+      <div class="feed-header"><div class="feed-title" id="feed-title">全部图片</div><div class="feed-stats" id="feed-stats">— 张</div></div>
+      <div class="feed-grid" id="feed-grid"></div>
+      <div class="empty-state hidden" id="empty"><div class="icon">📂</div><div>此文件夹下没有图片</div><div class="hint">从左侧选择其他文件夹，或拖入新图片</div></div>
+    </main>
+    <aside class="detail-panel" id="detail-panel">
+      <div class="detail-empty" id="detail-empty"><div class="icon">👈</div><div class="hint">在中间选一张图片<br>查看详情和操作</div></div>
+      <div id="detail-content" class="hidden">
+        <div class="detail-image-wrap"><img id="d-img" src="" alt=""></div>
+        <div class="detail-body">
+          <div class="detail-section"><div class="detail-title">正向 Prompt <button class="copy-btn" data-copy="prompt">复制</button></div><div class="prompt-box" id="d-prompt"></div></div>
+          <div class="detail-section"><div class="detail-title">反向 Prompt <button class="copy-btn" data-copy="neg">复制</button></div><div class="prompt-box" id="d-neg"></div></div>
+          <div class="detail-section"><div class="detail-title">生成参数</div><dl class="kv-list" id="d-kv"></dl></div>
+          <div class="detail-section"><div class="detail-actions"><button class="btn fav-btn" id="d-fav">♡ 收藏</button><button class="btn" id="d-add-tag">＋ 标签</button></div></div>
+          <div class="detail-section"><div class="detail-section-title">所属文件夹</div><div class="folder-picker" id="d-folders"></div></div>
+          <div class="detail-section"><div class="detail-section-title">标签</div><div class="tag-list" id="d-tags"></div></div>
+          <div class="detail-section"><div class="detail-section-title">原始 Workflow JSON</div><pre class="raw-json" id="d-json"></pre></div>
+        </div>
+      </div>
+    </aside>
   </div>
 </div>
-
-<div class="modal-bg hidden" id="modal">
-  <div class="modal">
-    <h2>导入 ComfyUI 图片</h2>
-    <p class="subtitle">扫描本地目录并提取 PNG 元数据，构建可搜索的图库索引。</p>
-    <div class="step" id="step-1">
-      <div class="num">1</div>
-      <div class="body">
-        <strong>选择输出目录</strong>
-        <p id="step-1-desc">将扫描该目录下所有 PNG / WebP 文件</p>
-      </div>
-    </div>
-    <div class="step" id="step-2">
-      <div class="num">2</div>
-      <div class="body">
-        <strong>扫描并提取元数据</strong>
-        <p>解析 prompt、workflow、checkpoint 等参数</p>
-        <div class="progress-bar" id="progress" style="display:none"><div class="fill"></div></div>
-      </div>
-    </div>
-    <div class="step" id="step-3">
-      <div class="num">3</div>
-      <div class="body">
-        <strong>完成</strong>
-        <p id="step-3-desc">导入完成后即可浏览、搜索</p>
-      </div>
-    </div>
-    <div class="modal-actions">
-      <button class="btn" id="modal-cancel">取消</button>
-      <button class="btn primary" id="modal-next">选择目录</button>
-    </div>
-  </div>
-</div>
-
+<div class="folder-menu hidden" id="folder-menu"><button class="mi" data-act="rename">重命名</button><button class="mi danger" data-act="delete">删除</button></div>
+<div class="modal-bg hidden" id="modal-bg"><div class="modal" id="modal"></div></div>
 <div class="toast" id="toast">已复制</div>
-
 <script>
-// ============ Mock Data ============
-const checkpoints = [
-  "SDXL/sd_xl_base_1.0.safetensors",
-  "SDXL/juggernautXL_v9.safetensors",
-  "Flux/flux1-dev-fp8.safetensors",
-  "SD1.5/dreamshaper_8.safetensors",
+const checkpoints=["SDXL/sd_xl_base_1.0.safetensors","SDXL/juggernautXL_v9.safetensors","Flux/flux1-dev-fp8.safetensors","SD1.5/dreamshaper_8.safetensors"];
+const loras=["DetailTweakerXL","epiCRealism","FilmVelvia3","CharTurnerBeta","AnimeIllustDiffusion","MoreDetail"];
+const samplers=["euler_ancestral","dpmpp_2m","dpmpp_sde","uni_pc"];
+const vaes=["sdxl_vae","vae-ft-mse-840000"];
+const themes=[
+{p:"a serene mountain lake at sunrise, mist rolling over water, photorealistic, 8k, golden hour light",n:"blurry, low quality, distorted",f:"f3"},
+{p:"portrait of a cyberpunk samurai, neon city background, detailed armor, rain reflections, cinematic lighting",n:"lowres, bad anatomy, deformed hands",f:"f2"},
+{p:"cozy fantasy cottage in autumn forest, warm window light, smoke from chimney, illustration style",n:"modern buildings, cars, text",f:"f3"},
+{p:"macro photograph of a dew-covered spider web, morning sunlight, shallow depth of field",n:"blurry, oversaturated",f:"f1"},
+{p:"ancient dragon perched on gothic cathedral, dramatic storm clouds, fantasy art, hyper detailed",n:"low quality, simple background",f:"f1"},
+{p:"minimalist japanese tea ceremony, soft natural light, wood and ceramic textures, wabi-sabi aesthetic",n:"cluttered, colorful, busy",f:"f1"},
+{p:"astronaut floating in nebula, reflective visor showing earth, science fiction concept art",n:"realistic photo, text, watermark",f:null},
+{p:"vintage botanical illustration of exotic flowers, 19th century engraving style, scientific plate",n:"color photo, modern, 3d render",f:"f3"},
+{p:"abandoned art deco theater lobby, overgrown with vines, golden hour, eerie beauty",n:"people, modern, bright colors",f:"f1"},
+{p:"futuristic underwater research station, glass domes, schools of fish, bioluminescent creatures",n:"above water, dark, murky",f:null},
+{p:"stop motion claymation style miniature city, charming handmade textures, tilt-shift",n:"photorealistic, CGI, smooth",f:null},
+{p:"traditional chinese ink painting of misty mountains, sparse brushwork, rice paper texture",n:"color photo, modern, detailed",f:"f3"},
+{p:"anatomical study of a mechanical heart, brass and copper, intricate gears, steampunk medical illustration",n:"cartoon, simple, flat",f:null},
+{p:"northern lights over icelandic fjord, long exposure, vivid greens and purples, reflection in water",n:"city, lights, urban, daytime",f:"f3"},
+{p:"tiny fairy marketplace in toadstool village, glowing mushrooms, magical creatures, storybook illustration",n:"realistic, dark, scary",f:"f2"},
+{p:"die-cut paper craft jungle scene, layered cardstock textures, warm sunset palette",n:"photorealistic, 3d render, smooth",f:"f1"}
 ];
-const loras = ["DetailTweakerXL","epiCRealism","FilmVelvia3","CharTurnerBeta","AnimeIllustDiffusion","MoreDetail"];
-const samplers = ["euler_ancestral","dpmpp_2m","dpmpp_sde","uni_pc"];
-const vaes = ["sdxl_vae","vae-ft-mse-840000"];
-const themes = [
-  { prompt: "a serene mountain lake at sunrise, mist rolling over water, photorealistic, 8k, golden hour light", neg: "blurry, low quality, distorted" },
-  { prompt: "portrait of a cyberpunk samurai, neon city background, detailed armor, rain reflections, cinematic lighting", neg: "lowres, bad anatomy, deformed hands" },
-  { prompt: "cozy fantasy cottage in autumn forest, warm window light, smoke from chimney, illustration style", neg: "modern buildings, cars, text" },
-  { prompt: "macro photograph of a dew-covered spider web, morning sunlight, shallow depth of field", neg: "blurry, oversaturated" },
-  { prompt: "ancient dragon perched on gothic cathedral, dramatic storm clouds, fantasy art, hyper detailed", neg: "low quality, simple background" },
-  { prompt: "minimalist japanese tea ceremony, soft natural light, wood and ceramic textures, wabi-sabi aesthetic", neg: "cluttered, colorful, busy" },
-  { prompt: "astronaut floating in nebula, reflective visor showing earth, science fiction concept art", neg: "realistic photo, text, watermark" },
-  { prompt: "vintage botanical illustration of exotic flowers, 19th century engraving style, scientific plate", neg: "color photo, modern, 3d render" },
-  { prompt: "abandoned art deco theater lobby, overgrown with vines, golden hour, eerie beauty", neg: "people, modern, bright colors" },
-  { prompt: "futuristic underwater research station, glass domes, schools of fish, bioluminescent creatures", neg: "above water, dark, murky" },
-  { prompt: "stop motion claymation style miniature city, charming handmade textures, tilt-shift", neg: "photorealistic, CGI, smooth" },
-  { prompt: "traditional chinese ink painting of misty mountains, sparse brushwork, rice paper texture", neg: "color photo, modern, detailed" },
-  { prompt: "anatomical study of a mechanical heart, brass and copper, intricate gears, steampunk medical illustration", neg: "cartoon, simple, flat" },
-  { prompt: "northern lights over icelandic fjord, long exposure, vivid greens and purples, reflection in water", neg: "city, lights, urban, daytime" },
-  { prompt: "tiny fairy marketplace in toadstool village, glowing mushrooms, magical creatures, storybook illustration", neg: "realistic, dark, scary" },
-  { prompt: "die-cut paper craft jungle scene, layered cardstock textures, warm sunset palette", neg: "photorealistic, 3d render, smooth" },
+const streamQ=[
+{p:"ethereal jellyfish floating through nebula, translucent, bioluminescent trails, deep space, ultra detailed",n:"earth, buildings, daytime"},
+{p:"antique brass compass on weathered map, candle light, oil painting style, chiaroscuro",n:"modern, bright, clean"},
+{p:"crystal cave with glowing mushrooms, fantasy concept art, dramatic lighting",n:"outdoor, daylight, simple"},
+{p:"samurai cat in mech armor, cherry blossoms, ukiyo-e meets cyberpunk, vibrant",n:"realistic photo, low detail"}
 ];
-function hashCode(s) { let h = 0; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; } return Math.abs(h); }
-function makeThumbSvg(seed, w, h) {
-  const c1 = `hsl(${seed % 360}, 65%, 55%)`;
-  const c2 = `hsl(${(seed * 7) % 360}, 70%, 35%)`;
-  const angle = seed % 360;
-  const circles = [];
-  for (let i = 0; i < 5; i++) {
-    const cx = (seed * (i + 1) * 31) % w;
-    const cy = (seed * (i + 1) * 47) % h;
-    const r = 30 + (seed * (i + 1) * 13) % 90;
-    circles.push(`<circle cx="${cx}" cy="${cy}" r="${r}" fill="white" opacity="${0.04 + (i * 0.025)}"/>`);
-  }
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
-    <defs><linearGradient id="g${seed}" x1="0%" y1="0%" x2="100%" y2="100%" gradientTransform="rotate(${angle})"><stop offset="0%" stop-color="${c1}"/><stop offset="100%" stop-color="${c2}"/></linearGradient></defs>
-    <rect width="${w}" height="${h}" fill="url(#g${seed})"/>${circles.join("")}</svg>`;
-  return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+function hc(s){let h=0;for(let i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0}return Math.abs(h)}
+function makeSvg(seed,w,h){
+  const c1="hsl("+(seed%360)+",65%,55%)",c2="hsl("+((seed*7)%360)+",70%,35%)",a=seed%360;
+  let cs="";
+  for(let i=0;i<5;i++){const cx=(seed*(i+1)*31)%w,cy=(seed*(i+1)*47)%h,r=30+(seed*(i+1)*13)%90;cs+='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="white" opacity="'+(0.04+i*0.025)+'"/>'}
+  return "data:image/svg+xml;utf8,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'"><defs><linearGradient id="g'+seed+'" x1="0%" y1="0%" x2="100%" y2="100%" gradientTransform="rotate('+a+')"><stop offset="0%" stop-color="'+c1+'"/><stop offset="100%" stop-color="'+c2+'"/></linearGradient></defs><rect width="'+w+'" height="'+h+'" fill="url(%23g'+seed+')"/>'+cs+'</svg>')
 }
-const mockImages = themes.map((t, i) => {
-  const seed = hashCode(t.prompt);
-  const ckpt = checkpoints[i % checkpoints.length];
-  const loraCount = (i % 3) + 1;
-  const imageLoras = [];
-  for (let j = 0; j < loraCount; j++) imageLoras.push({ name: loras[(i + j * 2) % loras.length], weight: +(0.3 + ((i + j) % 7) * 0.1).toFixed(1) });
-  const day = 28 - (i % 20);
-  return {
-    id: `img_${i + 1}`,
-    file: `ComfyUI_${String(i + 1).padStart(5, "0")}_.png`,
-    thumb: makeThumbSvg(seed, 400, 400),
-    full: makeThumbSvg(seed, 1024, 1024),
-    prompt: t.prompt,
-    negative: t.neg,
-    checkpoint: ckpt, sampler: samplers[i % samplers.length],
-    steps: 20 + (i % 25), cfg: 5 + (i % 7), seed: 1000000 + seed,
-    vae: vaes[i % vaes.length], loras: imageLoras,
-    width: [1024, 896, 768, 1152][i % 4], height: [1024, 1152, 1344, 768][i % 4],
-    mtime: new Date(2026, 7, day, 10 + (i % 12), (i * 7) % 60).toISOString(),
-    favorite: i % 5 === 0,
-    tags: i % 3 === 0 ? ["灵感"] : (i % 4 === 0 ? ["收藏"] : (i % 7 === 0 ? ["人物", "参考"] : [])),
-  };
-});
-
-// ============ State ============
-const state = {
-  query: "", favOnly: false,
-  selectedCkpts: new Set(), selectedLoras: new Set(), selectedTags: new Set(),
-  images: mockImages,
-  currentDetailId: null,
-  detailList: [],
-};
-
-// ============ Filtering ============
-function filtered() {
-  const q = state.query.toLowerCase().trim();
-  return state.images.filter(img => {
-    if (state.favOnly && !img.favorite) return false;
-    if (state.selectedCkpts.size && !state.selectedCkpts.has(img.checkpoint)) return false;
-    if (state.selectedLoras.size && !img.loras.some(l => state.selectedLoras.has(l.name))) return false;
-    if (state.selectedTags.size && !img.tags.some(t => state.selectedTags.has(t))) return false;
-    if (q) {
-      const hay = (img.prompt + " " + img.file + " " + img.tags.join(" ")).toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
-    return true;
-  });
+function makeImg(t,i,o){o=o||{};const seed=hc(t.p),ck=checkpoints[i%checkpoints.length],lc=(i%3)+1,ls=[];for(let j=0;j<lc;j++)ls.push({n:loras[(i+j*2)%loras.length],w:+(0.3+((i+j)%7)*0.1).toFixed(1)});const d=28-(i%20);return{id:"img_"+(i+1)+"_"+Math.random().toString(36).slice(2,7),fn:"ComfyUI_"+String(i+1).padStart(5,"0")+"_.png",thumb:makeSvg(seed,400,400),full:makeSvg(seed,800,800),p:t.p,neg:t.n,ck:ck,s:samplers[i%samplers.length],steps:20+(i%25),cfg:5+(i%7),seed:1000000+seed,vae:vaes[i%vaes.length],ls:ls,w:[1024,896,768,1152][i%4],h:[1024,1152,1344,768][i%4],mt:new Date(2026,7,d,10+(i%12),(i*7)%60).toISOString(),fav:i%5===0,tags:i%3===0?["灵感"]:(i%4===0?["参考"]:(i%7===0?["人物"]:[])),fid:t.f,isNew:!!o.isNew}}
+let nextId=100;
+const state={folders:[{id:'all',n:'全部图片',ic:'🖼',sys:true},{id:'fav',n:'收藏',ic:'⭐',sys:true},{id:'recent',n:'最近生成',ic:'🕐',sys:true},{id:'f1',n:'灵感',ic:'📁'},{id:'f2',n:'人物',ic:'📁'},{id:'f3',n:'风景',ic:'📁'}],active:'all',images:themes.map(function(t,i){return makeImg(t,i)}),selected:null,live:true,sIdx:0,sTimer:null,query:'',menuFid:null};
+function fCount(id){if(id==='all')return state.images.length;if(id==='fav')return state.images.filter(function(i){return i.fav}).length;if(id==='recent')return state.images.filter(function(i){return Date.now()-new Date(i.mt).getTime()<864000000}).length;return state.images.filter(function(i){return i.fid===id}).length}
+function renderFolders(){
+  const list=document.getElementById('folders-list');
+  list.innerHTML=state.folders.map(function(f){
+    const c=fCount(f.id),act=f.id===state.active;
+    return '<div class="folder-item '+(act?'active':'')+'" data-fid="'+f.id+'"><span class="icon">'+f.ic+'</span><span class="label">'+f.n+'</span><span class="count">'+c+'</span>'+(f.sys?'':'<button class="menu-btn" data-menu="'+f.id+'">⋯</button>')+'</div>'
+  }).join('');
+  list.querySelectorAll('.folder-item').forEach(function(el){el.onclick=function(e){if(e.target.classList.contains('menu-btn'))return;state.active=el.dataset.fid;renderFolders();renderFeed()}});
+  list.querySelectorAll('.menu-btn').forEach(function(b){b.onclick=function(e){e.stopPropagation();const r=b.getBoundingClientRect();openFM(b.dataset.menu,r.right,r.bottom)}});
+  document.getElementById('folder-footer-text').textContent=state.images.length+' 张图片 · '+state.folders.filter(function(x){return !x.sys}).length+' 个自建文件夹'
 }
-
-// ============ Render ============
-function renderFilters() {
-  const ckptList = document.getElementById("checkpoint-filters");
-  const ckptCounts = {};
-  state.images.forEach(img => ckptCounts[img.checkpoint] = (ckptCounts[img.checkpoint] || 0) + 1);
-  ckptList.innerHTML = Object.keys(ckptCounts).map(c => `
-    <label class="filter-item">
-      <input type="checkbox" data-ckpt="${c}">
-      <span>${c.split("/").pop()}</span>
-      <span class="count">${ckptCounts[c]}</span>
-    </label>`).join("");
-  ckptList.querySelectorAll("input").forEach(inp => inp.addEventListener("change", e => {
-    const c = e.target.dataset.ckpt;
-    e.target.checked ? state.selectedCkpts.add(c) : state.selectedCkpts.delete(c);
-    renderGrid();
-  }));
-
-  const loraList = document.getElementById("lora-filters");
-  const loraCounts = {};
-  state.images.forEach(img => img.loras.forEach(l => loraCounts[l.name] = (loraCounts[l.name] || 0) + 1));
-  loraList.innerHTML = "";
-  Object.keys(loraCounts).sort().forEach(l => {
-    const el = document.createElement("label");
-    el.className = "filter-item";
-    el.innerHTML = `<input type="checkbox" data-lora="${l}"><span>${l}</span><span class="count">${loraCounts[l]}</span>`;
-    loraList.appendChild(el);
-  });
-  loraList.querySelectorAll("input").forEach(inp => inp.addEventListener("change", e => {
-    const l = e.target.dataset.lora;
-    e.target.checked ? state.selectedLoras.add(l) : state.selectedLoras.delete(l);
-    renderGrid();
-  }));
-
-  const tagList = document.getElementById("tag-list");
-  const allTags = new Set();
-  state.images.forEach(img => img.tags.forEach(t => allTags.add(t)));
-  tagList.innerHTML = "";
-  [...allTags].forEach(t => {
-    const chip = document.createElement("span");
-    chip.className = "tag-chip";
-    chip.textContent = t;
-    chip.onclick = () => {
-      if (state.selectedTags.has(t)) { state.selectedTags.delete(t); chip.classList.remove("active"); }
-      else { state.selectedTags.add(t); chip.classList.add("active"); }
-      renderGrid();
-    };
-    tagList.appendChild(chip);
-  });
-}
-
-function renderGrid() {
-  const grid = document.getElementById("grid");
-  const empty = document.getElementById("empty");
-  const stats = document.getElementById("stats");
-  const list = filtered();
-  stats.textContent = `${list.length} / ${state.images.length} 张`;
-  if (list.length === 0) { grid.innerHTML = ""; empty.classList.remove("hidden"); return; }
-  empty.classList.add("hidden");
-  grid.innerHTML = list.map(img => `
-    <div class="card" data-id="${img.id}">
-      <img src="${img.thumb}" alt="" loading="lazy">
-      <button class="fav ${img.favorite ? "on" : ""}" data-fav="${img.id}">${img.favorite ? "♥" : "♡"}</button>
-      <div class="meta">${img.checkpoint.split("/").pop()} · seed ${img.seed}</div>
-    </div>`).join("");
-  grid.querySelectorAll(".card").forEach(card => {
-    card.onclick = e => {
-      if (e.target.classList.contains("fav") || e.target.closest(".fav")) {
-        e.stopPropagation();
-        const btn = e.target.closest(".fav");
-        const id = btn.dataset.fav;
-        const img = state.images.find(i => i.id === id);
-        img.favorite = !img.favorite;
-        btn.textContent = img.favorite ? "♥" : "♡";
-        btn.classList.toggle("on", img.favorite);
-        return;
-      }
-      openDetail(card.dataset.id);
-    };
-  });
-}
-
-function openDetail(id) {
-  const img = state.images.find(i => i.id === id);
-  if (!img) return;
-  state.currentDetailId = id;
-  state.detailList = filtered();
-  document.getElementById("detail-img").src = img.full;
-  setPromptBox("detail-prompt", img.prompt);
-  setPromptBox("detail-neg", img.negative);
-  document.getElementById("detail-kv").innerHTML = `
-    <dt>Checkpoint</dt><dd>${img.checkpoint}</dd>
-    <dt>Sampler</dt><dd>${img.sampler}</dd>
-    <dt>Steps</dt><dd>${img.steps}</dd>
-    <dt>CFG</dt><dd>${img.cfg}</dd>
-    <dt>Seed</dt><dd>${img.seed}</dd>
-    <dt>VAE</dt><dd>${img.vae}</dd>
-    <dt>LoRAs</dt><dd>${img.loras.map(l => `${l.name} (${l.weight})`).join("<br>")}</dd>
-    <dt>尺寸</dt><dd>${img.width} × ${img.height}</dd>
-    <dt>时间</dt><dd>${img.mtime.replace("T", " ").slice(0, 16)}</dd>
-    <dt>文件</dt><dd>${img.file}</dd>`;
-  document.getElementById("detail-json").textContent = JSON.stringify(buildMockWorkflow(img), null, 2);
-  const favBtn = document.getElementById("detail-fav");
-  favBtn.textContent = img.favorite ? "♥ 已收藏" : "♡ 收藏";
-  favBtn.classList.toggle("on", img.favorite);
-  renderDetailTags();
-  updateNavPos();
-  document.getElementById("detail").classList.remove("hidden");
-}
-
-function setPromptBox(id, text) {
-  const box = document.getElementById(id);
-  box.textContent = text;
-  const btn = document.createElement("button");
-  btn.className = "copy-btn";
-  btn.textContent = "复制";
-  btn.onclick = () => {
-    navigator.clipboard.writeText(text).then(() => {
-      btn.textContent = "已复制";
-      btn.classList.add("copied");
-      setTimeout(() => { btn.textContent = "复制"; btn.classList.remove("copied"); }, 1200);
-    }).catch(() => showToast("复制失败"));
-  };
-  box.appendChild(btn);
-}
-
-function buildMockWorkflow(img) {
-  return {
-    "1": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: img.checkpoint.split("/").pop() } },
-    "2": { class_type: "CLIPTextEncode", inputs: { text: img.prompt } },
-    "3": { class_type: "CLIPTextEncode", inputs: { text: img.negative } },
-    "4": { class_type: "EmptyLatentImage", inputs: { width: img.width, height: img.height, batch_size: 1 } },
-    "5": { class_type: "KSampler", inputs: { seed: img.seed, steps: img.steps, cfg: img.cfg, sampler_name: img.sampler, scheduler: "normal", denoise: 1 } },
-    "6": { class_type: "VAEDecode", inputs: {} },
-    "7": { class_type: "SaveImage", inputs: { filename_prefix: "ComfyUI" } },
-    ...Object.fromEntries(img.loras.map((l, i) => [`lora_${i}`, { class_type: "LoRALoader", inputs: { lora_name: l.name, strength_model: l.weight, strength_clip: l.weight } }]))
-  };
-}
-
-function renderDetailTags() {
-  const img = state.images.find(i => i.id === state.currentDetailId);
-  const container = document.getElementById("detail-tags");
-  if (!img.tags.length) { container.innerHTML = ""; return; }
-  container.innerHTML = `<div style="display:flex; gap:6px; flex-wrap:wrap;">${img.tags.map(t => `<span class="tag-chip removable" data-tag="${t}">${t}<span class="x">×</span></span>`).join("")}</div>`;
-  container.querySelectorAll(".tag-chip").forEach(chip => chip.onclick = () => {
-    img.tags = img.tags.filter(t => t !== chip.dataset.tag);
-    renderDetailTags();
-    renderFilters();
-    renderGrid();
-  });
-}
-
-function updateNavPos() {
-  const idx = state.detailList.findIndex(i => i.id === state.currentDetailId);
-  document.getElementById("nav-pos").textContent = `${idx + 1} / ${state.detailList.length}`;
-}
-
-function navigateDetail(dir) {
-  if (!state.detailList.length) return;
-  let idx = state.detailList.findIndex(i => i.id === state.currentDetailId);
-  idx = (idx + dir + state.detailList.length) % state.detailList.length;
-  openDetail(state.detailList[idx].id);
-}
-
-// ============ Toast ============
-let toastTimer;
-function showToast(msg) {
-  const t = document.getElementById("toast");
-  t.textContent = msg;
-  t.classList.add("show");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove("show"), 1800);
-}
-
-// ============ Modal (Import wizard) ============
-let importStep = 0;
-function openImportModal() {
-  importStep = 0;
-  updateModalStep();
-  document.getElementById("modal").classList.remove("hidden");
-}
-function updateModalStep() {
-  document.querySelectorAll(".step").forEach((el, i) => {
-    el.classList.remove("active", "done");
-    if (i < importStep) el.classList.add("done");
-    else if (i === importStep) el.classList.add("active");
-  });
-  const nextBtn = document.getElementById("modal-next");
-  if (importStep === 0) { nextBtn.textContent = "选择目录"; document.getElementById("step-1-desc").textContent = "将扫描该目录下所有 PNG / WebP 文件"; }
-  else if (importStep === 1) { nextBtn.textContent = "扫描中…"; nextBtn.disabled = true; startScan(); }
-  else if (importStep === 2) { nextBtn.textContent = "完成"; nextBtn.disabled = false; document.getElementById("step-3-desc").textContent = `成功导入 ${state.images.length} 张图片`; }
-}
-function startScan() {
-  const progress = document.getElementById("progress");
-  const fill = progress.querySelector(".fill");
-  progress.style.display = "block";
-  let pct = 0;
-  const tick = setInterval(() => {
-    pct += Math.random() * 15;
-    if (pct >= 100) {
-      pct = 100; fill.style.width = "100%";
-      clearInterval(tick);
-      setTimeout(() => { importStep = 2; updateModalStep(); }, 400);
-    } else {
-      fill.style.width = pct + "%";
-    }
-  }, 180);
-}
-
-// ============ Wire up events ============
-document.getElementById("search").addEventListener("input", e => { state.query = e.target.value; renderGrid(); });
-document.getElementById("fav-only").addEventListener("change", e => { state.favOnly = e.target.checked; renderGrid(); });
-document.getElementById("back").onclick = () => { document.getElementById("detail").classList.add("hidden"); state.currentDetailId = null; };
-document.getElementById("detail-fav").onclick = () => {
-  const img = state.images.find(i => i.id === state.currentDetailId);
-  if (!img) return;
-  img.favorite = !img.favorite;
-  const btn = document.getElementById("detail-fav");
-  btn.textContent = img.favorite ? "♥ 已收藏" : "♡ 收藏";
-  btn.classList.toggle("on", img.favorite);
-  renderGrid();
-};
-document.getElementById("add-tag-btn").onclick = () => {
-  const img = state.images.find(i => i.id === state.currentDetailId);
-  if (!img) return;
-  const t = prompt("输入标签名：");
-  if (t && t.trim()) {
-    img.tags.push(t.trim());
-    renderDetailTags();
-    renderFilters();
-    renderGrid();
-  }
-};
-document.getElementById("import-btn").onclick = openImportModal;
-document.getElementById("modal-cancel").onclick = () => document.getElementById("modal").classList.add("hidden");
-document.getElementById("modal-next").onclick = () => {
-  if (importStep === 0) { document.getElementById("step-1-desc").textContent = "📁 C:\\ComfyUI\\output"; importStep = 1; updateModalStep(); }
-  else if (importStep === 2) { document.getElementById("modal").classList.add("hidden"); showToast("导入完成"); }
-};
-document.addEventListener("keydown", e => {
-  const detailOpen = !document.getElementById("detail").classList.contains("hidden");
-  if (e.key === "Escape") {
-    if (detailOpen) document.getElementById("back").click();
-    else if (!document.getElementById("modal").classList.contains("hidden")) document.getElementById("modal-cancel").click();
-  }
-  if (detailOpen && e.key === "ArrowRight") navigateDetail(1);
-  if (detailOpen && e.key === "ArrowLeft") navigateDetail(-1);
-});
-
-// ============ Init ============
-renderFilters();
-renderGrid();
+function openFM(id,x,y){const m=document.getElementById('folder-menu');m.classList.remove('hidden');m.style.left=x+'px';m.style.top=y+'px';state.menuFid=id}
+function closeFM(){document.getElementById('folder-menu').classList.add('hidden');state.menuFid=null}
+document.getElementById('folder-menu').querySelectorAll('.mi').forEach(function(b){b.onclick=function(){const fid=state.menuFid,act=b.dataset.act;closeFM();const f=state.folders.find(function(x){return x.id===fid});if(!f)return;if(act==='rename'){openModal({title:'重命名文件夹',subtitle:'当前名：'+f.n,input:{value:f.n},confirmText:'保存',onConfirm:function(v){f.n=v.trim()||f.n;renderFolders();renderDetail();showToast('已重命名')}})}else if(act==='delete'){if(confirm('删除文件夹「'+f.n+'」？文件夹中的图片不会被删除。')){state.folders=state.folders.filter(function(x){return x.id!==fid});state.images.forEach(function(im){if(im.fid===fid)im.fid=null});if(state.active===fid)state.active='all';renderFolders();renderFeed();renderDetail();showToast('文件夹已删除')}}}});
+document.getElementById('new-folder-btn').onclick=function(){openModal({title:'新建文件夹',subtitle:'将作为左侧的分类入口',input:{placeholder:'文件夹名称…'},confirmText:'创建',onConfirm:function(v){const nm=v.trim();if(!nm)return;const id='f_'+Math.random().toString(36).slice(2,7);state.folders.push({id:id,n:nm,ic:'📁'});renderFolders();showToast('已创建：'+nm)}})};
+document.addEventListener('click',function(e){if(!e.target.closest('.folder-menu')&&!e.target.classList.contains('menu-btn'))closeFM()});
+function feedImgs(){const q=state.query.toLowerCase().trim();return state.images.filter(function(img){if(state.active==='all'){}else if(state.active==='fav'){if(!img.fav)return false}else if(state.active==='recent'){if(Date.now()-new Date(img.mt).getTime()>864000000)return false}else{if(img.fid!==state.active)return false}if(q){const h=(img.p+' '+img.fn+' '+img.tags.join(' ')).toLowerCase();if(h.indexOf(q)===-1)return false}return true})}
+function renderFeed(){const g=document.getElementById('feed-grid'),em=document.getElementById('empty'),l=feedImgs(),fo=state.folders.find(function(f){return f.id===state.active});document.getElementById('feed-title').textContent=fo?fo.n:'—';document.getElementById('feed-stats').textContent=l.length+' 张';if(l.length===0){g.innerHTML='';em.classList.remove('hidden');return}em.classList.add('hidden');g.innerHTML=l.map(function(img){const fn=state.folders.find(function(f){return f.id===img.fid});return '<div class="card '+(img.id===state.selected?'selected':'')+' '+(img.isNew?'new':'')+'" data-id="'+img.id+'"><img src="'+img.thumb+'" alt="" loading="lazy">'+(img.isNew?'<div class="new-badge">NEW</div>':'')+'<button class="fav '+(img.fav?'on':'')+'" data-fav="'+img.id+'">'+(img.fav?'♥':'♡')+'</button>'+(fn?'<div class="folder-tag">'+fn.ic+' '+fn.n+'</div>':'')+'</div>'}).join('');g.querySelectorAll('.card').forEach(function(c){c.onclick=function(e){if(e.target.classList.contains('fav')){e.stopPropagation();const id=e.target.dataset.fav;const im=state.images.find(function(i){return i.id===id});im.fav=!im.fav;e.target.textContent=im.fav?'♥':'♡';e.target.classList.toggle('on',im.fav);if(state.selected===id)renderDetail();renderFolders();return}selectImg(c.dataset.id)}})}
+function selectImg(id){state.selected=id;document.querySelectorAll('.card').forEach(function(c){c.classList.toggle('selected',c.dataset.id===id)});renderDetail()}
+function renderDetail(){const im=state.images.find(function(i){return i.id===state.selected}),em=document.getElementById('detail-empty'),ct=document.getElementById('detail-content');if(!im){em.classList.remove('hidden');ct.classList.add('hidden');return}em.classList.add('hidden');ct.classList.remove('hidden');document.getElementById('d-img').src=im.full;document.getElementById('d-prompt').textContent=im.p;document.getElementById('d-neg').textContent=im.neg;document.getElementById('d-kv').innerHTML='<dt>Checkpoint</dt><dd>'+im.ck+'</dd><dt>Sampler</dt><dd>'+im.s+'</dd><dt>Steps / CFG</dt><dd>'+im.steps+' / '+im.cfg+'</dd><dt>Seed</dt><dd>'+im.seed+'</dd><dt>VAE</dt><dd>'+im.vae+'</dd><dt>LoRAs</dt><dd class="loras">'+im.ls.map(function(l){return l.n+' ('+l.w+')'}).join('<br>')+'</dd><dt>尺寸</dt><dd>'+im.w+' × '+im.h+'</dd><dt>时间</dt><dd>'+im.mt.replace('T',' ').slice(0,16)+'</dd><dt>文件</dt><dd>'+im.fn+'</dd>';document.getElementById('d-json').textContent=JSON.stringify(buildWF(im),null,2);const fb=document.getElementById('d-fav');fb.textContent=im.fav?'♥ 已收藏':'♡ 收藏';fb.classList.toggle('on',im.fav);renderDTags();renderDFolder()}
+function renderDTags(){const im=state.images.find(function(i){return i.id===state.selected}),w=document.getElementById('d-tags');w.innerHTML=im.tags.length?im.tags.map(function(t){return '<span class="tag-chip">'+t+'<span class="x" data-tag="'+t+'">×</span></span>'}).join(''):'<span style="color:var(--muted);font-size:12px">暂无标签</span>';w.querySelectorAll('.x').forEach(function(x){x.onclick=function(){im.tags=im.tags.filter(function(t){return t!==x.dataset.tag});renderDTags()}})}
+function renderDFolder(){const im=state.images.find(function(i){return i.id===state.selected}),w=document.getElementById('d-folders'),uf=state.folders.filter(function(f){return !f.sys});if(!uf.length){w.innerHTML='<span style="color:var(--muted);font-size:12px">尚未创建自定义文件夹</span>';return}w.innerHTML=uf.map(function(f){return '<span class="folder-pick '+(im.fid===f.id?'active':'')+'" data-fid="'+f.id+'">'+f.ic+' '+f.n+'</span>'}).join('');w.querySelectorAll('.folder-pick').forEach(function(el){el.onclick=function(){im.fid=im.fid===el.dataset.fid?null:el.dataset.fid;renderDFolder();renderFeed();renderFolders();showToast(im.fid?'已移入文件夹':'已移出文件夹')}})}
+function buildWF(im){const lo={};im.ls.forEach(function(l,i){lo['lora_'+i]={class_type:'LoRALoader',inputs:{lora_name:l.n,strength_model:l.w,strength_clip:l.w}}});return{'1':{class_type:'CheckpointLoaderSimple',inputs:{ckpt_name:im.ck.split('/').pop()}},'2':{class_type:'CLIPTextEncode',inputs:{text:im.p}},'3':{class_type:'CLIPTextEncode',inputs:{text:im.neg}},'4':{class_type:'EmptyLatentImage',inputs:{width:im.w,height:im.h,batch_size:1}},'5':{class_type:'KSampler',inputs:{seed:im.seed,steps:im.steps,cfg:im.cfg,sampler_name:im.s,scheduler:'normal',denoise:1}},'6':{class_type:'VAEDecode',inputs:{}},'7':{class_type:'SaveImage',inputs:{filename_prefix:'ComfyUI'}}}}
+document.getElementById('d-fav').onclick=function(){const im=state.images.find(function(i){return i.id===state.selected});if(!im)return;im.fav=!im.fav;renderDetail();renderFeed();renderFolders()};
+document.getElementById('d-add-tag').onclick=function(){const im=state.images.find(function(i){return i.id===state.selected});if(!im)return;openModal({title:'添加标签',subtitle:'可添加多个，逗号分隔',input:{placeholder:'如：人物, 暖色调'},confirmText:'添加',onConfirm:function(v){v.split(/[,，]/).map(function(s){return s.trim()}).filter(Boolean).forEach(function(t){if(im.tags.indexOf(t)===-1)im.tags.push(t)});renderDTags()}})};
+document.querySelectorAll('.copy-btn').forEach(function(b){b.onclick=function(){const im=state.images.find(function(i){return i.id===state.selected});if(!im)return;const t=b.dataset.copy==='prompt'?im.p:im.neg;navigator.clipboard.writeText(t).then(function(){b.textContent='已复制';b.classList.add('copied');setTimeout(function(){b.textContent='复制';b.classList.remove('copied')},1200)}).catch(function(){showToast('复制失败')})}});
+function openModal(c){const bg=document.getElementById('modal-bg'),mo=document.getElementById('modal');let h='<h2>'+c.title+'</h2>'+(c.subtitle?'<p class="subtitle">'+c.subtitle+'</p>':'');if(c.input)h+='<input class="modal-input" id="modal-input" placeholder="'+(c.input.placeholder||'')+'" value="'+(c.input.value||'')+'">';h+='<div class="modal-actions"><button class="btn" id="modal-cancel">取消</button><button class="btn primary" id="modal-confirm">'+(c.confirmText||'确定')+'</button></div>';mo.innerHTML=h;bg.classList.remove('hidden');const i=mo.querySelector('#modal-input');if(i){i.focus();i.select()}const cl=function(){bg.classList.add('hidden')};mo.querySelector('#modal-cancel').onclick=cl;mo.querySelector('#modal-confirm').onclick=function(){const v=i?i.value:'';if(c.onConfirm)c.onConfirm(v);cl()};if(i)i.onkeydown=function(e){if(e.key==='Enter')mo.querySelector('#modal-confirm').click()};bg.onclick=function(e){if(e.target===bg)cl()}}
+let tT;function showToast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(tT);tT=setTimeout(function(){t.classList.remove('show')},1600)}
+function startStream(){if(state.sTimer)return;state.sTimer=setInterval(function(){if(state.sIdx>=streamQ.length){stopStream();return}const t=streamQ[state.sIdx++],im=makeImg(Object.assign({},t,{f:null}),nextId++,{isNew:true});state.images.unshift(im);renderFeed();renderFolders();showToast('🆕 新图片已生成：'+im.p.slice(0,18)+'…');setTimeout(function(){im.isNew=false;renderFeed()},3000)},4500)}
+function stopStream(){if(state.sTimer){clearInterval(state.sTimer);state.sTimer=null}}
+document.getElementById('live-toggle').onclick=function(){state.live=!state.live;const b=document.getElementById('live-toggle'),d=b.querySelector('.live-dot');b.classList.toggle('off',!state.live);d.classList.toggle('on',state.live);if(state.live){startStream();showToast('Live 监听已开启')}else{stopStream();showToast('Live 已暂停')}};
+document.getElementById('import-btn').onclick=function(){openModal({title:'导入 ComfyUI 输出目录',subtitle:'选择本地目录后开始扫描并提取元数据',input:{placeholder:'如：C:\\ComfyUI\\output',value:'C:\\ComfyUI\\output'},confirmText:'开始导入',onConfirm:function(v){showToast('已提交导入任务：'+v)}})};
+document.getElementById('search').addEventListener('input',function(e){state.query=e.target.value;renderFeed()});
+document.addEventListener('keydown',function(e){if(e.target.matches('input,textarea'))return;if(e.key==='Escape'){closeFM();document.getElementById('modal-bg').classList.add('hidden')}if(e.key==='/'&&!e.shiftKey){e.preventDefault();document.getElementById('search').focus()}});
+renderFolders();renderFeed();
+if(state.live)startStream();
 </script>
 </body>
 </html>

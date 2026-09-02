@@ -232,6 +232,121 @@ def test_file_endpoint_max_validation(client):
     assert r2.status_code == 422
 
 
+
+
+# ---------- 重命名 + 打开位置（右键菜单） ----------
+
+def test_rename_filename_success(client):
+    """PATCH /filename → 200 + 更新后的 summary，磁盘文件名真的被改了。"""
+    from pathlib import Path
+    img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
+    before = client.get(f"/api/images/{img_id}").json()
+    old_path = Path(before["path"])
+    assert old_path.exists()
+
+    r = client.patch(f"/api/images/{img_id}/filename", json={"filename": "renamed"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["filename"] == "renamed.png"
+    assert not old_path.exists()
+    assert Path(body["path"]).exists()
+    assert body["path"] != before["path"]
+
+    again = client.get(f"/api/images/{img_id}").json()
+    assert again["filename"] == "renamed.png"
+
+
+def test_rename_filename_keeps_extension(client):
+    """用户给的新名不带扩展名 → 自动保留原扩展名。给错扩展名也强制保留原扩展名。"""
+    img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
+    r1 = client.patch(f"/api/images/{img_id}/filename", json={"filename": "noext"})
+    assert r1.status_code == 200
+    assert r1.json()["filename"] == "noext.png"
+
+    # 给错扩展名也要归位
+    r2 = client.patch(f"/api/images/{img_id}/filename", json={"filename": "wrong.txt"})
+    assert r2.status_code == 200
+    assert r2.json()["filename"] == "wrong.png"
+
+
+def test_rename_filename_rejects_empty(client):
+    """空字符串 / 纯空白 → 400。"""
+    img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
+    for bad in ("", "   "):
+        r = client.patch(f"/api/images/{img_id}/filename", json={"filename": bad})
+        assert r.status_code == 400, (bad, r.text)
+
+
+def test_rename_filename_rejects_path_separator(client):
+    """文件名含路径分隔符或 .. → 400，绝不能跨目录。"""
+    img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
+    for bad in ("../oops.png", "a/b.png", "..", "."):
+        r = client.patch(f"/api/images/{img_id}/filename", json={"filename": bad})
+        assert r.status_code == 400, (bad, r.text)
+
+
+def test_rename_filename_rejects_invalid_chars(client):
+    """Windows 非法字符 → 400。"""
+    img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
+    for bad in ("a:b.png", "a*b.png", "a?b.png", 'a"b.png', "a<b.png", "a|b.png"):
+        r = client.patch(f"/api/images/{img_id}/filename", json={"filename": bad})
+        assert r.status_code == 400, (bad, r.text)
+
+
+def test_rename_filename_not_found(client):
+    """不存在的 id → 404。"""
+    r = client.patch("/api/images/999999/filename", json={"filename": "x"})
+    assert r.status_code == 404
+
+def test_rename_filename_conflict_returns_409(client):
+    """同目录已有同名文件 → 409；目标已存在时必须不改文件。"""
+    import shutil
+    from pathlib import Path
+    img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
+    before = client.get(f"/api/images/{img_id}").json()
+    old_path = Path(before["path"])
+    assert old_path.exists()
+
+    # 在同目录手动放一份冲突文件
+    conflict = old_path.parent / "alpha.png"
+    conflict.write_bytes(b"placeholder-not-a-real-png")
+
+    try:
+        r = client.patch(f"/api/images/{img_id}/filename", json={"filename": "alpha"})
+        assert r.status_code == 409, r.text
+        # 原文件必须没被动过
+        assert old_path.exists(), "原文件不应被改动"
+        # 数据库的 filename 也不能变
+        again = client.get(f"/api/images/{img_id}").json()
+        assert again["filename"] == before["filename"]
+    finally:
+        if conflict.exists():
+            conflict.unlink()
+
+
+def test_reveal_endpoint_returns_200(client):
+    """POST /reveal → 200 + ok，path 在 body 里出现。"""
+    img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
+    r = client.post(f"/api/images/{img_id}/reveal")
+    # CI / 沙盒里 subprocess.Popen 会启动 explorer，可能略延迟但不会报错。
+    # 我们只校验路径存在 + 200/ok。
+    if r.status_code == 200:
+        body = r.json()
+        assert body["ok"] is True
+        assert body["id"] == img_id
+        assert body["path"].endswith(".png")
+    else:
+        # 在完全无 GUI 环境下 subprocess 可能报 ENOENT → 500
+        assert r.status_code == 500
+
+
+def test_reveal_not_found(client):
+    """不存在的 id → 404。"""
+    r = client.post("/api/images/999999/reveal")
+    assert r.status_code == 404
+
+
+
 def test_feed_includes_max_in_original_url(client):
     """feed 返回的 original_url 默认带 max=1024 → 后端出 webp 预览。"""
     items = client.get("/api/images", params={"limit": 5}).json()["items"]

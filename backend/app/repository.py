@@ -6,7 +6,7 @@ import sqlite3
 from collections.abc import Iterable
 from pathlib import Path
 
-from .db import get_pool, transaction
+from .db import fts_sync, get_pool, transaction
 
 
 
@@ -305,6 +305,106 @@ def _row_to_detail(row: sqlite3.Row) -> dict:
         }
     )
     return summary
+
+
+# ---------- 重命名 / 揭示路径 ----------
+
+
+INVALID_FILENAME_CHARS = set('\\/:*?"<>|')
+
+
+class RenameError(ValueError):
+    """重命名失败时抛；HTTP 层转 400/404/409。"""
+
+
+def rename_image(image_id: int, new_filename: str) -> dict:
+    """重命名磁盘文件 + 更新 images 表。
+
+    限制：
+    - new_filename 仅允许改 stem，扩展名强制沿用原文件后缀（保持 MIME / 解析器识别）
+    - 禁止包含路径分隔符 / Windows 非法字符
+    - 不允许重名到同目录的现有文件名
+
+    返回更新后的 summary dict；image 不存在抛 RenameError('not_found')。
+    """
+    if not isinstance(new_filename, str) or not new_filename.strip():
+        raise RenameError("文件名不能为空")
+    new_filename = new_filename.strip()
+    if any(c in INVALID_FILENAME_CHARS for c in new_filename):
+        raise RenameError("文件名包含非法字符")
+    if new_filename in {".", ".."}:
+        raise RenameError("文件名不合法")
+
+    conn = get_pool().main()
+    row = conn.execute(
+        "SELECT id, path, filename FROM images WHERE id = ?", (image_id,)
+    ).fetchone()
+    if not row:
+        raise RenameError("not_found")
+
+    old_path = Path(row["path"])
+    if not old_path.exists():
+        raise RenameError("原文件不存在")
+    old_ext = old_path.suffix  # 含点号，如 ".png"
+    if not old_ext:
+        raise RenameError("原文件缺少扩展名，拒绝重命名")
+
+    stem = new_filename
+    # 若用户给了扩展名，与原扩展名不一致则强制用原扩展名
+    given_ext = Path(stem).suffix
+    if given_ext and given_ext.lower() != old_ext.lower():
+        stem = Path(stem).stem
+    # 强制保留原扩展名
+    final_name = stem + old_ext if not stem.lower().endswith(old_ext.lower()) else stem
+    # 最终再校验
+    if any(c in INVALID_FILENAME_CHARS for c in final_name):
+        raise RenameError("文件名包含非法字符")
+    if not final_name.strip():
+        raise RenameError("文件名不能为空")
+
+    new_path = old_path.with_name(final_name)
+    if new_path == old_path:
+        # 重命名到自身：直接返回现状
+        stat = old_path.stat()
+        with transaction() as c:
+            c.execute(
+                "UPDATE images SET filename = ?, mtime = ? WHERE id = ?",
+                (final_name, float(stat.st_mtime), image_id),
+            )
+            fts_sync(c, image_id, "update")
+        updated = conn.execute(
+            "SELECT * FROM images WHERE id = ?", (image_id,)
+        ).fetchone()
+        return _row_to_summary(updated)
+
+    if new_path.exists():
+        raise RenameError("目标文件已存在")
+
+    old_path.rename(new_path)
+    stat = new_path.stat()
+    new_mtime = float(stat.st_mtime)
+    with transaction() as c:
+        c.execute(
+            "UPDATE images SET path = ?, filename = ?, mtime = ? WHERE id = ?",
+            (str(new_path), final_name, new_mtime, image_id),
+        )
+        fts_sync(c, image_id, "update")
+    updated = conn.execute(
+        "SELECT * FROM images WHERE id = ?", (image_id,)
+    ).fetchone()
+    return _row_to_summary(updated)
+
+
+def image_reveal_path(image_id: int) -> str | None:
+    """返回图片在磁盘上的绝对路径（供 OS 文件管理器定位）。"""
+    conn = get_pool().main()
+    row = conn.execute(
+        "SELECT path FROM images WHERE id = ?", (image_id,)
+    ).fetchone()
+    if not row:
+        return None
+    p = Path(row["path"])
+    return str(p) if p.exists() else None
 
 
 # ---------- Feed ----------

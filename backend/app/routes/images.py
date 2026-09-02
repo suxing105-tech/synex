@@ -164,3 +164,59 @@ def update_folder(image_id: int, payload: dict):
             raise HTTPException(404, "文件夹不存在")
     repository.assign_folder(image_id, folder_id)
     return {"id": image_id, "folder_id": folder_id}
+
+
+@router.patch("/{image_id}/filename")
+def rename_image(image_id: int, payload: dict):
+    """重命名图片文件 + 更新索引。
+
+    body: { "filename": "<新文件名>" }
+    成功 → 200 + 更新后的 ImageSummary
+    404 → 图片不存在或原文件已被移走
+    400 → 文件名非法
+    409 → 同目录已有同名文件
+    """
+    new_filename = payload.get("filename") if isinstance(payload, dict) else None
+    try:
+        updated = repository.rename_image(image_id, new_filename or "")
+    except repository.RenameError as e:
+        msg = str(e)
+        if msg == "not_found":
+            raise HTTPException(404, "图片不存在")
+        if msg == "目标文件已存在":
+            raise HTTPException(409, msg)
+        raise HTTPException(400, msg)
+    return updated
+
+
+@router.post("/{image_id}/reveal")
+def reveal_image(image_id: int):
+    """在操作系统默认文件管理器中高亮显示该图片。
+
+    - Windows: `explorer.exe /select,<path>`
+    - macOS:   `open -R <path>`
+    - Linux:   `xdg-open <dir>`（多数 FM 不支持高亮单个文件，fallback 打开目录）
+
+    成功 → 200 {ok:true}；文件被移走 → 404；启动管理器失败 → 500。
+    """
+    import platform
+    import subprocess
+    from pathlib import Path
+
+    path_str = repository.image_reveal_path(image_id)
+    if not path_str:
+        raise HTTPException(404, "图片或文件不存在")
+    p = Path(path_str)
+    system = platform.system().lower()
+    try:
+        if system == "windows":
+            # explorer 必须传 win 路径
+            subprocess.Popen(["explorer.exe", f"/select,{p}"])
+        elif system == "darwin":
+            subprocess.Popen(["open", "-R", str(p)])
+        else:
+            # Linux/其它：fallback 到打开目录
+            subprocess.Popen(["xdg-open", str(p.parent)])
+    except (OSError, FileNotFoundError) as e:
+        raise HTTPException(500, f"打开文件管理器失败: {e}")
+    return {"ok": True, "id": image_id, "path": str(p)}

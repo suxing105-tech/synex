@@ -15,8 +15,14 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`${res.status}: ${body}`);
+    let body = "";
+    try {
+      body = (await res.text()).slice(0, 240);
+    } catch {
+      /* ignore */
+    }
+    const url = (init && (init as any).method) ? `${(init as any).method} ${path}` : path;
+    throw new Error(`${url} → ${res.status}${body ? `: ${body}` : ""}`);
   }
   return res.json() as Promise<T>;
 }

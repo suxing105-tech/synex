@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Node / Vite / Svelte
+node_modules/
+dist/
+.vite/
+.svelte-kit/
+
+# Tauri (later)
+src-tauri/target/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+
+# Local runtime data
+data/
+thumbs/
+config.json

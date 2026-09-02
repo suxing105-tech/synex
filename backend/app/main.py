@@ -150,6 +150,18 @@ if FRONTEND_DIST.exists():
     _FRONTEND_INDEX = FRONTEND_DIST / "index.html"
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
 
+# /logo.png 直返：dev 模式 vite 服 public/*，但 uvicorn 直跑场景（如指 8000 没用 vite）
+# 这里把 logo 当成顶层静态资源，避免 SPA fallback 把 .png 当路由吃掉变 index.html。
+PUBLIC_DIR = BASE_DIR.parent / "frontend" / "public"
+
+
+@app.get("/logo.png")
+def _serve_logo():
+    p = PUBLIC_DIR / "logo.png"
+    if not p.exists():
+        return JSONResponse({"error": "logo not found"}, status_code=404)
+    return FileResponse(p, headers={"Cache-Control": "public, max-age=86400"})
+
 
 @app.get("/")
 async def root():

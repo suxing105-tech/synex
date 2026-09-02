@@ -24,7 +24,11 @@
 
 <header class="bg-surface border-b border-border px-5 h-[52px] flex items-center gap-4 z-10">
   <div class="flex items-center gap-2 font-semibold text-sm">
-    <div class="w-[26px] h-[26px] rounded-[7px] bg-gradient-to-br from-accent to-accent-2 flex items-center justify-center text-[13px]">🖼</div>
+    <img
+      src="/logo.png"
+      alt="苏醒图库"
+      class="w-[28px] h-[28px] rounded-[7px] object-cover"
+    />
     <span>苏醒图库</span>
   </div>
   <div class="flex-1 max-w-[380px] relative">

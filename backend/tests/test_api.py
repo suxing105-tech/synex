@@ -415,6 +415,17 @@ def test_delete_image_remove_file_false_keeps_orig_clears_preview(client):
     assert not cache.exists(), "预览应被清"
 
 
+def test_logo_endpoint_serves_png(client):
+    """GET /logo.png 直返 PNG 字节，Cache-Control 走 1 天缓存。"""
+    r = client.get("/logo.png")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/png"
+    assert len(r.content) > 100, f"logo bytes too small: {len(r.content)}"
+    assert r.content[:8] == b"\x89PNG\r\n\x1a\n", "should be a real PNG"
+    cc = r.headers.get("cache-control", "")
+    assert "max-age" in cc
+
+
 def test_feed_includes_max_in_original_url(client):
     """feed 返回的 original_url 默认带 max=1024 → 后端出 webp 预览。"""
     items = client.get("/api/images", params={"limit": 5}).json()["items"]

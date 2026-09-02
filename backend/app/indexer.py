@@ -54,6 +54,9 @@ class Indexer:
         self._observer: Observer | None = None
         self._watched_dirs: set[str] = set()
         self._progress_lock = threading.Lock()
+        # WAL 模式下 SQLite 只允许单写者；扫描用 threadpool 跑解析+缩略图，
+        # 但写库（UPSERT / FTS sync / thumb status）必须串行化。
+        self._write_lock = threading.Lock()
         self._progress: dict = {
             "running": False,
             "scanned": 0,
@@ -147,65 +150,71 @@ class Indexer:
             }
         params_json = json.dumps(meta["parameters"], ensure_ascii=False)
         # UPSERT
-        with transaction() as c:
-            row = c.execute("SELECT id FROM images WHERE path = ?", (path_str,)).fetchone()
-            if row:
-                image_id = row["id"]
-                c.execute(
-                    "UPDATE images SET filename=?, size_bytes=?, mtime=?, positive_prompt=?, "
-                    "negative_prompt=?, parameters=?, workflow=?, seed=?, model=?, sampler=?, "
-                    "steps=?, cfg=?, thumb_status='pending' WHERE id=?",
-                    (
-                        path.name,
-                        stat.st_size,
-                        stat.st_mtime,
-                        meta["positive_prompt"],
-                        meta["negative_prompt"],
-                        params_json,
-                        meta["workflow"],
-                        meta["seed"],
-                        meta["model"],
-                        meta["sampler"],
-                        meta["steps"],
-                        meta["cfg"],
-                        image_id,
-                    ),
+        with self._write_lock:
+            with transaction() as c:
+                row = c.execute("SELECT id FROM images WHERE path = ?", (path_str,)).fetchone()
+                if row:
+                    image_id = row["id"]
+                    c.execute(
+                        "UPDATE images SET filename=?, size_bytes=?, mtime=?, positive_prompt=?, "
+                        "negative_prompt=?, parameters=?, workflow=?, seed=?, model=?, sampler=?, "
+                        "steps=?, cfg=?, width=?, height=?, thumb_status='pending' WHERE id=?",
+                        (
+                            path.name,
+                            stat.st_size,
+                            stat.st_mtime,
+                            meta["positive_prompt"],
+                            meta["negative_prompt"],
+                            params_json,
+                            meta["workflow"],
+                            meta["seed"],
+                            meta["model"],
+                            meta["sampler"],
+                            meta["steps"],
+                            meta["cfg"],
+                            meta["width"],
+                            meta["height"],
+                            image_id,
+                        ),
+                    )
+                else:
+                    cur = c.execute(
+                        "INSERT INTO images(path, filename, size_bytes, mtime, positive_prompt, "
+                        "negative_prompt, parameters, workflow, seed, model, sampler, steps, cfg, width, height, "
+                        "thumb_status) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+                        (
+                            path_str,
+                            path.name,
+                            stat.st_size,
+                            stat.st_mtime,
+                            meta["positive_prompt"],
+                            meta["negative_prompt"],
+                            params_json,
+                            meta["workflow"],
+                            meta["seed"],
+                            meta["model"],
+                            meta["sampler"],
+                            meta["steps"],
+                            meta["cfg"],
+                            meta["width"],
+                            meta["height"],
+                        ),
+                    )
+                    image_id = cur.lastrowid
+                fts_sync(c, image_id, "update" if row else "insert")
+            # 缩略图（后台线程中跑，不阻塞事件循环）
+        with self._write_lock:
+            thumb_path = generate_thumb(path, image_id, self._cfg.thumb_size, self._cfg.thumb_quality)
+            if thumb_path:
+                conn.execute(
+                    "UPDATE images SET thumb_path=?, thumb_status='ready' WHERE id=?",
+                    (str(thumb_path), image_id),
                 )
             else:
-                cur = c.execute(
-                    "INSERT INTO images(path, filename, size_bytes, mtime, positive_prompt, "
-                    "negative_prompt, parameters, workflow, seed, model, sampler, steps, cfg, "
-                    "thumb_status) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
-                    (
-                        path_str,
-                        path.name,
-                        stat.st_size,
-                        stat.st_mtime,
-                        meta["positive_prompt"],
-                        meta["negative_prompt"],
-                        params_json,
-                        meta["workflow"],
-                        meta["seed"],
-                        meta["model"],
-                        meta["sampler"],
-                        meta["steps"],
-                        meta["cfg"],
-                    ),
+                conn.execute(
+                    "UPDATE images SET thumb_status='failed' WHERE id=?",
+                    (image_id,),
                 )
-                image_id = cur.lastrowid
-            fts_sync(c, image_id, "update" if row else "insert")
-        # 缩略图（后台线程中跑，不阻塞事件循环）
-        thumb_path = generate_thumb(path, image_id, self._cfg.thumb_size, self._cfg.thumb_quality)
-        if thumb_path:
-            conn.execute(
-                "UPDATE images SET thumb_path=?, thumb_status='ready' WHERE id=?",
-                (str(thumb_path), image_id),
-            )
-        else:
-            conn.execute(
-                "UPDATE images SET thumb_status='failed' WHERE id=?",
-                (image_id,),
-            )
         return {
             "type": "image_indexed",
             "id": image_id,

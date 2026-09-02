@@ -31,26 +31,30 @@ def update_settings(payload: ConfigUpdate) -> ConfigOut:
 
 @router.post("/scan")
 def trigger_scan(payload: dict, background: BackgroundTasks):
-    """触发一次扫描。``path`` 可选，默认扫描所有 watch_dirs。"""
+    """触发一次扫描。``path`` 可选，默认扫描所有 watch_dirs。
+
+    注意：扫描是 UPSERT，已存在的图片会被重新解析，width/height 等新增字段会补齐。
+    """
     path = payload.get("path")
     if path:
-        target = Path(path).resolve()
-        if not target.exists():
+        targets = [Path(path).resolve()]
+        if not targets[0].exists():
             raise HTTPException(400, f"路径不存在: {path}")
     else:
         cfg = load_config()
         if not cfg.watch_dirs:
             raise HTTPException(400, "尚未配置监听目录")
-        target = Path(cfg.watch_dirs[0])
+        targets = [Path(d) for d in cfg.watch_dirs]
 
     def _scan() -> None:
-        try:
-            get_indexer().scan(target)
-        except Exception as e:  # noqa: BLE001
-            log.exception("scan failed: %s", e)
+        for t in targets:
+            try:
+                get_indexer().scan(t)
+            except Exception as e:  # noqa: BLE001
+                log.exception("scan failed: %s", e)
 
     background.add_task(_scan)
-    return {"ok": True, "target": str(target)}
+    return {"ok": True, "targets": [str(t) for t in targets]}
 
 
 @router.get("/scan/progress")

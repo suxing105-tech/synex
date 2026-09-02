@@ -10,6 +10,27 @@
   }
   let { selectedId = $bindable(), lightboxOpen = $bindable(), lightboxIndex = $bindable() }: Props = $props();
 
+  // 缩略图统一基准宽度。高度按各自原图比例自动算出，避免统一正方形裁剪。
+  const THUMB_BASE = 220;
+
+  function aspectFor(it: ImageSummary): string {
+    // 缺尺寸时退到 1 / 1，保持布局稳定
+    if (it.width && it.height && it.height > 0) {
+      return `${it.width} / ${it.height}`;
+    }
+    return "1 / 1";
+  }
+
+  function gridMin(it: ImageSummary): string {
+    // 缩放滑块控制「基准宽度」，单图实际宽度 = 基准 × 原图宽高比
+    if (it.width && it.height && it.height > 0) {
+      const ratio = it.width / it.height;
+      const w = Math.round($zoomSize * ratio);
+      return `${w}px`;
+    }
+    return `${$zoomSize}px`;
+  }
+
   function openLightbox(it: ImageSummary, idx: number) {
     selectedId = it.id;
     lightboxIndex = idx;
@@ -65,16 +86,16 @@
   {:else}
     <div
       class="grid gap-2"
-      style="grid-template-columns: repeat(auto-fill, minmax({$zoomSize}px, 1fr))"
+      style="grid-template-columns: repeat(auto-fill, minmax({THUMB_BASE}px, 1fr)); grid-auto-rows: {THUMB_BASE}px;"
     >
       {#each $feedItems as it, idx (it.id)}
         <button
           type="button"
           class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 hover:border-accent text-left {selectedId === it.id ? 'ring-2 ring-accent' : ''} {$newIds.has(it.id) ? 'new-badge' : ''}"
-          style="aspect-ratio: 1 / 1"
+          style="aspect-ratio: {aspectFor(it)};"
+          title={it.filename}
           onclick={() => (selectedId = it.id)}
           ondblclick={() => openLightbox(it, idx)}
-          title={it.filename}
         >
           {#if it.thumb_url}
             <img src={it.thumb_url} alt={it.filename} loading="lazy" class="w-full h-full object-cover" />
@@ -104,5 +125,3 @@
     transform: translateY(-2px);
   }
 </style>
-
-

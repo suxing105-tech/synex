@@ -219,6 +219,25 @@ def _read_webp_metadata(path: Path) -> dict[str, bytes]:
     return out
 
 
+# ---------- 图片尺寸解析 ----------
+#
+# PNG IHDR / WebP VP8 / VP8L / VP8X 手写 bitwise 也能做，但 Pillow 已经在依赖里
+# （缩略图要用），直接 Image.open 拿 .width/.height 更稳。
+
+
+def _extract_dimensions(path):
+    """返回 (width, height)，失败时 (None, None)。不抛异常。"""
+    try:
+        from PIL import Image
+    except ImportError:
+        return None, None
+    try:
+        with Image.open(path) as img:
+            return img.width, img.height
+    except Exception:
+        return None, None
+
+
 # ---------- 统一入口 ----------
 
 
@@ -233,6 +252,8 @@ def parse_metadata(path: Path) -> dict[str, Any]:
     ext = path.suffix.lower()
     result: dict[str, Any] = {
         "filename": path.name,
+        "width": None,
+        "height": None,
         "positive_prompt": "",
         "negative_prompt": "",
         "parameters": {},
@@ -243,6 +264,12 @@ def parse_metadata(path: Path) -> dict[str, Any]:
         "steps": None,
         "cfg": None,
     }
+
+    # 尺寸独立于元数据 chunk（PNG IHDR / WebP VP8*），尽早解析
+    w, h = _extract_dimensions(path)
+    result["width"] = w
+    result["height"] = h
+
     try:
         if ext == ".png":
             chunks = _read_png_chunks(path)

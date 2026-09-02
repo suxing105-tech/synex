@@ -83,7 +83,7 @@
     <input
       type="range"
       min="140"
-      max="360"
+      max="480"
       step="10"
       value={$zoomSize}
       oninput={(e) => zoomSize.set(Number((e.target as HTMLInputElement).value))}

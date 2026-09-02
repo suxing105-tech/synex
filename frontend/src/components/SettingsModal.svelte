@@ -18,7 +18,7 @@
   let lastSavedThumbSize = $state<number | null>(null);
 
   // 提示：「缩略图尺寸」最小有效值 = 缩放滑块上限（让任何滑块位置都不糊）
-  const ZOOM_MAX = 360;
+  const ZOOM_MAX = 480;
 
   onMount(async () => {
     cfg = await settingsApi.get();

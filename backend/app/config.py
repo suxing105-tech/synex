@@ -23,7 +23,7 @@ class Config:
     """可持久化的用户配置。"""
 
     watch_dirs: list[str] = field(default_factory=list)
-    thumb_size: int = 256
+    thumb_size: int = 360
     thumb_quality: int = 80
     theme: str = "dark"  # 仅 dark；保留字段便于 P1 切亮色
     live_enabled: bool = True
@@ -39,7 +39,18 @@ class Config:
             return cls()
         # 兼容未知字段：仅取已声明的键
         valid_keys = {f for f in cls.__dataclass_fields__}
-        return cls(**{k: v for k, v in raw.items() if k in valid_keys})
+        cfg = cls(**{k: v for k, v in raw.items() if k in valid_keys})
+        # 配置迁移：thumb_size 仍是旧默认值 → 抬到新默认，
+        # 这样历史用户不会被老 256 卡住，slider 拉到 360 也不会糊。
+        cfg._migrate_legacy_defaults()
+        return cfg
+
+    # 旧版本默认值（用于 config.json 迁移：用户没主动改过就抬到新默认）
+    _LEGACY_DEFAULTS: tuple[int, ...] = (256,)
+
+    def _migrate_legacy_defaults(self) -> None:
+        if self.thumb_size in self._LEGACY_DEFAULTS:
+            self.thumb_size = type(self).thumb_size
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

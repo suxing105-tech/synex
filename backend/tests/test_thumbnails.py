@@ -61,19 +61,19 @@ def test_indexer_rebuild_regenerates_thumb_to_new_size(tmp_data_dir):
         td = Path(td)
         p = td / "img.png"
         make_png(p, width=512, height=288)
-        # 第一遍按默认 size（256）入库
+        # 第一遍按默认 size（默认 = 360，与 slider 上限对齐）入库
         idx._process_path_sync(p)
         from app.thumbnails import thumbs_dir
         thumb = thumbs_dir() / "1.webp"
         assert thumb.exists()
         with Image.open(thumb) as im:
-            assert max(im.size) == 256, f"first time: expected 256, got {im.size}"
+            assert max(im.size) == 360, f"first time: expected 360 (default), got {im.size}"
 
-        # 第二遍按 size=384 重生成
-        result = idx.rebuild_thumbnails(size=384, fire_event=False)
+        # 第二遍按 size=480 重生成（验证 rebuild 真的换尺寸）
+        result = idx.rebuild_thumbnails(size=480, fire_event=False)
         assert result["indexed"] >= 1
-        assert result["size"] == 384
+        assert result["size"] == 480
         with Image.open(thumb) as im:
-            assert max(im.size) == 384, f"after rebuild: expected 384, got {im.size}"
+            assert max(im.size) == 480, f"after rebuild: expected 480, got {im.size}"
         # 缩略图 URL 仍是同 ID（thumb 文件名 = image_id.webp）
         assert thumb_url_path(1) == "/thumbs/1.webp"

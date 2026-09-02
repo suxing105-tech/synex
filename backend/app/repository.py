@@ -34,6 +34,17 @@ def thumb_url_for(image_id: int, thumb_path: str | None, status: str | None) -> 
         return None
     return f"/thumbs/{image_id}.webp?v={_thumb_version(thumb_path)}"
 
+def original_url_for(image_id: int, file_mtime: float | None) -> str | None:
+    """返回带 cache-bust 的原图 URL（feed 直接拿原图让浏览器缩放）。
+
+    原图文件被覆盖时 mtime 变 → URL 变 → 浏览器重新下载。
+    mtime 缺失（理论上不会，扫描会写入）就返回 None，
+    feed 渲染时跳过 src，浏览器自动 fallback 到 alt 占位。
+    """
+    if file_mtime is None:
+        return None
+    return f"/api/images/{image_id}/file?v={int(file_mtime)}"
+
 
 
 # ---------- 文件夹 ----------
@@ -280,6 +291,7 @@ def _row_to_summary(row: sqlite3.Row) -> dict:
         "filename": row["filename"],
         "path": row["path"],
         "thumb_url": thumb_url_for(row["id"], row["thumb_path"], row["thumb_status"]),
+        "original_url": original_url_for(row["id"], row["mtime"]),
         "width": row["width"],
         "height": row["height"],
         "mtime": row["mtime"],

@@ -15,6 +15,7 @@ class ImageSummary(BaseModel):
     filename: str
     path: str
     thumb_url: str | None = None
+    original_url: str | None = None  # 原图 URL（feed 直接拿原图缩放，避免缩略图二次采样）
     width: int | None = None
     height: int | None = None
     mtime: float

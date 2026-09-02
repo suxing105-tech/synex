@@ -121,3 +121,60 @@ def test_thumbnails_rebuild_validates_size(client):
     r = client.post("/api/thumbnails/rebuild", json={"quality": 200})
     assert r.status_code == 400
 
+
+def test_file_endpoint_serves_original_bytes(client):
+    """GET /api/images/{id}/file 返回原图字节，附 ETag/Last-Modified/Cache-Control。"""
+    img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
+    r = client.get(f"/api/images/{img_id}/file")
+    assert r.status_code == 200
+    # PNG 头部
+    assert r.content[:8] == b"\x89PNG\r\n\x1a\n"
+    # 缓存头
+    assert "etag" in r.headers
+    assert "last-modified" in r.headers
+    assert r.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+
+def test_file_endpoint_returns_304_on_matching_etag(client):
+    """带 If-None-Match（=当前 ETag）→ 304 不带 body。"""
+    img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
+    r1 = client.get(f"/api/images/{img_id}/file")
+    etag = r1.headers["etag"]
+    r2 = client.get(f"/api/images/{img_id}/file", headers={"If-None-Match": etag})
+    assert r2.status_code == 304
+    assert r2.content == b""
+    # 304 仍然带缓存头
+    assert r2.headers["etag"] == etag
+    assert r2.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+
+def test_file_endpoint_returns_304_on_matching_last_modified(client):
+    """带 If-Modified-Since（=当前 Last-Modified）→ 304 不带 body。"""
+    import email.utils as _eu
+    img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
+    r1 = client.get(f"/api/images/{img_id}/file")
+    lm = r1.headers["last-modified"]
+    # 解析校验
+    parsed = _eu.parsedate_to_datetime(lm)
+    assert parsed is not None
+    # 用原值回送
+    r2 = client.get(f"/api/images/{img_id}/file", headers={"If-Modified-Since": lm})
+    assert r2.status_code == 304
+    assert r2.content == b""
+
+
+def test_file_endpoint_404_when_missing(client):
+    """不存在的 image_id → 404。"""
+    r = client.get("/api/images/999999/file")
+    assert r.status_code == 404
+
+
+def test_feed_includes_original_url(client):
+    """feed 返回的每条 item 必须带 original_url，方便前端直接拿原图缩放。"""
+    img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
+    items = client.get("/api/images", params={"limit": 10}).json()["items"]
+    assert len(items) >= 1
+    for it in items:
+        assert "original_url" in it
+        assert it["original_url"] is not None
+        assert it["original_url"].startswith("/api/images/" + str(it["id"]) + "/file?v=")

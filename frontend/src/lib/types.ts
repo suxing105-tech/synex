@@ -3,6 +3,7 @@ export interface ImageSummary {
   filename: string;
   path: string;
   thumb_url: string | null;
+  original_url: string | null;  // 原图 URL（feed 直接用浏览器缩放，比 thumb 更清晰）
   width: number | null;
   height: number | null;
   mtime: number;

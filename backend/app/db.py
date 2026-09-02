@@ -6,6 +6,13 @@
 - 删除 / 更新图片时同步维护 FTS，避免搜索悬挂。
 - ``images.path`` 加唯一索引，防止同一路径重复入库。
 - 所有 DDL 幂等，可在已有库上安全跑。
+
+并发模型：
+- ``main()`` 返回 **线程局部** 连接。每个调用线程（包括 watchdog / FastAPI worker
+  / 索引后台任务）拿到自己的连接 + cursor，sqlite3 不允许同一连接并发执行语句，
+  直接共享会触发 ``InterfaceError: bad parameter or other API misuse``。
+- 所有连接指向同一个 SQLite 文件，WAL 模式天然支持多连接并发读写。
+- ``transaction()`` 仍按 ``main()`` 走，所以每个线程的 BEGIN/COMMIT 是独立的。
 """
 from __future__ import annotations
 
@@ -90,10 +97,13 @@ class ConnectionPool:
     def __init__(self, path: Path, max_workers: int = 4):
         self.path = path
         self._lock = threading.Lock()
+        self._ready_event = threading.Event()
+        # 主连接仍保留一份（向后兼容 + 测试），但 main() 实际返回线程局部连接。
         self._main: sqlite3.Connection | None = None
         self._worker_pool: list[sqlite3.Connection] = []
         self._max_workers = max_workers
         self._initialized = False
+        self._local = threading.local()
 
     def _new_conn(self) -> sqlite3.Connection:
         path_str = self.path.as_posix()
@@ -124,12 +134,21 @@ class ConnectionPool:
             self._main = self._new_conn()
             self._main.executescript(SCHEMA)
             self._initialized = True
+            self._ready_event.set()
+
+    def wait_ready(self, timeout: float = 5.0) -> None:
+        """供子线程等待 initialize() 完成，再开自己的连接。"""
+        self._ready_event.wait(timeout)
 
     def main(self) -> sqlite3.Connection:
-        if not self._initialized:
-            self.initialize()
-        assert self._main is not None
-        return self._main
+        """返回当前线程的连接。线程内复用、跨线程隔离。"""
+        self.initialize()
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            self.wait_ready()
+            conn = self._new_conn()
+            self._local.conn = conn
+        return conn
 
     def worker(self) -> sqlite3.Connection:
         if not self._initialized:
@@ -163,6 +182,8 @@ class ConnectionPool:
                 c.close()
             self._worker_pool.clear()
             self._initialized = False
+            self._ready_event.clear()
+            self._local.conn = None
 
 
 _POOL: ConnectionPool | None = None

@@ -87,7 +87,7 @@
           {#if it.favorite}
             <div class="absolute top-1 right-1 text-danger text-[14px] drop-shadow">♥</div>
           {/if}
-          {#if newIds.has(it.id)}
+          {#if $newIds.has(it.id)}
             <div class="absolute top-1 left-1 bg-success text-bg text-[10px] font-bold px-1.5 rounded">NEW</div>
           {/if}
         </button>
@@ -104,3 +104,5 @@
     transform: translateY(-2px);
   }
 </style>
+
+

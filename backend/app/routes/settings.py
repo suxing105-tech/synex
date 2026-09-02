@@ -57,6 +57,40 @@ def trigger_scan(payload: dict, background: BackgroundTasks):
     return {"ok": True, "targets": [str(t) for t in targets]}
 
 
+@router.post("/thumbnails/rebuild")
+def rebuild_thumbnails(payload: dict, background: BackgroundTasks):
+    """一键重建所有缩略图。
+
+    payload 可选 size / quality，未传则用当前 config。
+    后台跑，不阻塞响应；通过 WebSocket `thumb_rebuild_*` 事件推进度。
+    """
+    size = payload.get("size")
+    quality = payload.get("quality")
+    if size is not None:
+        try:
+            size = int(size)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "size 必须是整数")
+        if not (64 <= size <= 2048):
+            raise HTTPException(400, "size 必须在 64..2048 之间")
+    if quality is not None:
+        try:
+            quality = int(quality)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "quality 必须是整数")
+        if not (40 <= quality <= 100):
+            raise HTTPException(400, "quality 必须在 40..100 之间")
+
+    def _run() -> None:
+        try:
+            get_indexer().rebuild_thumbnails(size=size, quality=quality, fire_event=True)
+        except Exception as e:  # noqa: BLE001
+            log.exception("rebuild thumbs failed: %s", e)
+
+    background.add_task(_run)
+    return {"ok": True, "started": True, "size": size, "quality": quality}
+
+
 @router.get("/scan/progress")
 def scan_progress() -> ScanProgress:
     return ScanProgress(**get_indexer().get_progress())

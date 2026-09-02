@@ -293,6 +293,107 @@ class Indexer:
             self._observer = None
         self._watched_dirs.clear()
 
+    def rebuild_thumbnails(self, *, size: int | None = None, quality: int | None = None, fire_event: bool = True) -> dict:
+        """重建所有缩略图，按当前 / 指定 size + quality。
+
+        用于：用户把 thumb_size 调大、改了 quality、或升级算法后强制刷新。
+        不动 metadata；只重写 thumb_path / thumb_status。
+
+        并发数 = self._cfg.scan_workers（默认 4），写库走主线程。
+        """
+        target_size = size if size is not None else self._cfg.thumb_size
+        target_quality = quality if quality is not None else self._cfg.thumb_quality
+        conn = get_pool().main()
+        rows = conn.execute(
+            "SELECT id, path, filename FROM images ORDER BY id"
+        ).fetchall()
+        total = len(rows)
+        self._set_progress(running=True, scanned=0, indexed=0, total=total, current_path="")
+        if fire_event and self._loop is not None and self._loop.is_running():
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    self._emit({"type": "thumb_rebuild_start", "total": total, "size": target_size}),
+                    self._loop,
+                )
+            except RuntimeError:
+                pass
+        indexed = 0
+        failed = 0
+        t0 = time.time()
+        futures = []
+        for row in rows:
+            futures.append(
+                self._executor.submit(
+                    self._rebuild_one_thumb, row["id"], Path(row["path"]), target_size, target_quality
+                )
+            )
+        for i, fut in enumerate(futures, 1):
+            ok = fut.result(timeout=60)
+            if ok:
+                indexed += 1
+            else:
+                failed += 1
+            fn = rows[i - 1]["filename"] if i <= total else ""
+            self._set_progress(scanned=i, indexed=indexed, current_path=fn)
+            if fire_event and self._loop is not None and self._loop.is_running() and i % 25 == 0:
+                try:
+                    asyncio.run_coroutine_threadsafe(
+                        self._emit({"type": "thumb_rebuild_progress", "done": i, "total": total}),
+                        self._loop,
+                    )
+                except RuntimeError:
+                    pass
+        elapsed = time.time() - t0
+        self._set_progress(running=False, current_path="")
+        log.info(
+            "thumb rebuild done: %d ok / %d fail in %.1fs (size=%d)",
+            indexed, failed, elapsed, target_size,
+        )
+        if fire_event and self._loop is not None and self._loop.is_running():
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    self._emit({
+                        "type": "thumb_rebuild_done",
+                        "indexed": indexed,
+                        "failed": failed,
+                        "elapsed": elapsed,
+                        "size": target_size,
+                    }),
+                    self._loop,
+                )
+            except RuntimeError:
+                pass
+        return {
+            "indexed": indexed,
+            "failed": failed,
+            "total": total,
+            "elapsed": elapsed,
+            "size": target_size,
+        }
+
+    @staticmethod
+    def _rebuild_one_thumb(image_id: int, path: Path, size: int, quality: int) -> bool:
+        """单图重建缩略图。返回 True=ok，False=failed。"""
+        try:
+            if not path.exists():
+                return False
+            thumb_path = generate_thumb(path, image_id, size, quality)
+            with get_pool().main() as c:
+                if thumb_path:
+                    c.execute(
+                        "UPDATE images SET thumb_path=?, thumb_status='ready' WHERE id=?",
+                        (str(thumb_path), image_id),
+                    )
+                else:
+                    c.execute(
+                        "UPDATE images SET thumb_status='failed' WHERE id=?",
+                        (image_id,),
+                    )
+            return bool(thumb_path)
+        except Exception as e:  # noqa: BLE001
+            log.warning("rebuild thumb failed: %s (%s)", path, e)
+            return False
+
     def shutdown(self) -> None:
         self._stopping = True
         try:

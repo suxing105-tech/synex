@@ -98,3 +98,26 @@ def test_tags(client):
     r = client.get("/api/tags")
     names = [t["name"] for t in r.json()]
     assert "cat" in names
+
+
+def test_thumbnails_rebuild_route(client):
+    """POST /api/thumbnails/rebuild 接受 size/quality，立即返回 ok=true + started。"""
+    r = client.post("/api/thumbnails/rebuild", json={"size": 320})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["started"] is True
+    assert body["size"] == 320
+
+
+def test_thumbnails_rebuild_validates_size(client):
+    """size 越界应返回 400。"""
+    r = client.post("/api/thumbnails/rebuild", json={"size": 10})
+    assert r.status_code == 400
+    r = client.post("/api/thumbnails/rebuild", json={"size": 9999})
+    assert r.status_code == 400
+    r = client.post("/api/thumbnails/rebuild", json={"quality": 10})
+    assert r.status_code == 400
+    r = client.post("/api/thumbnails/rebuild", json={"quality": 200})
+    assert r.status_code == 400
+

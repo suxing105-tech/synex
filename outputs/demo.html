@@ -123,6 +123,19 @@ aside.detail-panel{border-left:1px solid var(--border);background:var(--surface)
 .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
 @media (max-width:1100px){.main{grid-template-columns:220px 1fr 320px}}
 @media (max-width:900px){.main{grid-template-columns:1fr}aside.folders,aside.detail-panel{display:none}}
+.lightbox{position:fixed;inset:0;background:rgba(0,0,0,.94);z-index:80;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px)}
+.lightbox.hidden{display:none}
+.lightbox img{max-width:92vw;max-height:84vh;object-fit:contain;border-radius:6px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+.lightbox-close{position:absolute;top:20px;right:20px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);color:#fff;width:42px;height:42px;border-radius:50%;cursor:pointer;font-size:22px;display:flex;align-items:center;justify-content:center;transition:background .15s}
+.lightbox-close:hover{background:rgba(255,255,255,.22)}
+.lightbox-nav{position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff;width:54px;height:86px;border-radius:10px;cursor:pointer;font-size:34px;display:flex;align-items:center;justify-content:center;transition:background .15s}
+.lightbox-nav:hover{background:rgba(255,255,255,.2)}
+.lightbox-prev{left:20px}
+.lightbox-next{right:20px}
+.lightbox-info{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.65);border:1px solid rgba(255,255,255,.12);color:#fff;padding:9px 18px;border-radius:10px;font-size:12.5px;text-align:center;backdrop-filter:blur(8px);min-width:240px}
+.lb-file{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-weight:600;margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lb-meta{font-size:11.5px;color:rgba(255,255,255,.72)}
+.lb-counter{font-size:11px;color:rgba(255,255,255,.55);margin-top:4px}
 </style>
 </head>
 <body>
@@ -197,6 +210,17 @@ aside.detail-panel{border-left:1px solid var(--border);background:var(--surface)
         </div>
       </div>
     </aside>
+  </div>
+</div>
+<div class="lightbox hidden" id="lightbox">
+  <button class="lightbox-close" id="lb-close" title="关闭 (Esc)">×</button>
+  <button class="lightbox-nav lightbox-prev" id="lb-prev" title="上一张 (←)">‹</button>
+  <button class="lightbox-nav lightbox-next" id="lb-next" title="下一张 (→)">›</button>
+  <img id="lb-img" src="" alt="">
+  <div class="lightbox-info">
+    <div class="lb-file" id="lb-file">—</div>
+    <div class="lb-meta" id="lb-meta">—</div>
+    <div class="lb-counter" id="lb-counter">— / —</div>
   </div>
 </div>
 <div class="folder-menu hidden" id="folder-menu">
@@ -281,8 +305,16 @@ document.getElementById('folder-menu').querySelectorAll('.mi').forEach(function(
 document.getElementById('new-folder-btn').onclick=function(){openModal({title:'新建文件夹',subtitle:'将创建在根目录',input:{placeholder:'文件夹名称…'},confirmText:'创建',onConfirm:function(v){const nm=v.trim();if(!nm)return;const id='f_'+Math.random().toString(36).slice(2,7);state.folders.push({id:id,n:nm,ic:'📁',parentId:null,order:getChildren(null).filter(function(x){return !x.sys}).length});renderFolders();showToast('已创建：'+nm)}})};
 document.addEventListener('click',function(e){if(!e.target.closest('.folder-menu')&&!e.target.classList.contains('menu-btn'))closeFM()});
 function feedImgs(){const q=state.query.toLowerCase().trim();return state.images.filter(function(img){if(state.active==='all'){}else if(state.active==='fav'){if(!img.fav)return false}else if(state.active==='recent'){if(Date.now()-new Date(img.mt).getTime()>864000000)return false}else{const ids=getDescendantIds(state.active);if(ids.indexOf(img.fid)===-1)return false}if(q){const h=(img.p+' '+img.fn+' '+img.tags.join(' ')).toLowerCase();if(h.indexOf(q)===-1)return false}return true})}
-function renderFeed(){const g=document.getElementById('feed-grid'),em=document.getElementById('empty'),l=feedImgs();document.getElementById('feed-stats').textContent=l.length+' 张';if(l.length===0){g.innerHTML='';em.classList.remove('hidden');return}em.classList.add('hidden');g.innerHTML=l.map(function(img){const fn=img.fid?state.folders.find(function(f){return f.id===img.fid}):null;return '<div class="card '+(img.id===state.selected?'selected':'')+' '+(img.isNew?'new':'')+'" data-id="'+img.id+'"><img src="'+img.thumb+'" alt="" loading="lazy">'+(img.isNew?'<div class="new-badge">NEW</div>':'')+'<button class="fav '+(img.fav?'on':'')+'" data-fav="'+img.id+'">'+(img.fav?'♥':'♡')+'</button>'+(fn?'<div class="folder-tag">'+fn.ic+' '+fn.n+'</div>':'')+'</div>'}).join('');g.querySelectorAll('.card').forEach(function(c){c.onclick=function(e){if(e.target.classList.contains('fav')){e.stopPropagation();const id=e.target.dataset.fav;const im=state.images.find(function(i){return i.id===id});im.fav=!im.fav;e.target.textContent=im.fav?'♥':'♡';e.target.classList.toggle('on',im.fav);if(state.selected===id)renderDetail();renderFolders();return}selectImg(c.dataset.id)}})}
+function renderFeed(){const g=document.getElementById('feed-grid'),em=document.getElementById('empty'),l=feedImgs();document.getElementById('feed-stats').textContent=l.length+' 张';if(l.length===0){g.innerHTML='';em.classList.remove('hidden');return}em.classList.add('hidden');g.innerHTML=l.map(function(img){const fn=img.fid?state.folders.find(function(f){return f.id===img.fid}):null;return '<div class="card '+(img.id===state.selected?'selected':'')+' '+(img.isNew?'new':'')+'" data-id="'+img.id+'"><img src="'+img.thumb+'" alt="" loading="lazy">'+(img.isNew?'<div class="new-badge">NEW</div>':'')+'<button class="fav '+(img.fav?'on':'')+'" data-fav="'+img.id+'">'+(img.fav?'♥':'♡')+'</button>'+(fn?'<div class="folder-tag">'+fn.ic+' '+fn.n+'</div>':'')+'</div>'}).join('');g.querySelectorAll('.card').forEach(function(c){c.onclick=function(e){if(e.target.classList.contains('fav')){e.stopPropagation();const id=e.target.dataset.fav;const im=state.images.find(function(i){return i.id===id});im.fav=!im.fav;e.target.textContent=im.fav?'♥':'♡';e.target.classList.toggle('on',im.fav);if(state.selected===id)renderDetail();renderFolders();return}selectImg(c.dataset.id)};c.ondblclick=function(e){if(e.target.classList.contains('fav'))return;openLightbox(c.dataset.id)}})}
 function selectImg(id){state.selected=id;document.querySelectorAll('.card').forEach(function(c){c.classList.toggle('selected',c.dataset.id===id)});renderDetail()}
+function openLightbox(id){const im=state.images.find(function(i){return i.id===id});if(!im)return;state.selected=id;document.querySelectorAll('.card').forEach(function(c){c.classList.toggle('selected',c.dataset.id===id)});renderDetail();lbList=feedImgs();document.getElementById('lb-img').src=im.full;document.getElementById('lb-file').textContent=im.fn;document.getElementById('lb-meta').textContent=im.w+' × '+im.h+' · '+im.ck.split('/').pop()+' · seed '+im.seed;const idx=lbList.findIndex(function(i){return i.id===id});document.getElementById('lb-counter').textContent=(idx+1)+' / '+lbList.length+' · 双击图片外关闭';document.getElementById('lightbox').classList.remove('hidden')}
+function closeLightbox(){document.getElementById('lightbox').classList.add('hidden')}
+function navLightbox(dir){if(!lbList.length)return;let idx=lbList.findIndex(function(i){return i.id===state.selected});idx=((idx+dir)%lbList.length+lbList.length)%lbList.length;openLightbox(lbList[idx].id)}
+let lbList=[];
+document.getElementById('lb-close').onclick=closeLightbox;
+document.getElementById('lb-prev').onclick=function(){navLightbox(-1)};
+document.getElementById('lb-next').onclick=function(){navLightbox(1)};
+document.getElementById('lightbox').onclick=function(e){if(e.target.id==='lightbox')closeLightbox()};
 function renderDetail(){const im=state.images.find(function(i){return i.id===state.selected}),em=document.getElementById('detail-empty'),ct=document.getElementById('detail-content');if(!im){em.classList.remove('hidden');ct.classList.add('hidden');return}em.classList.remove('hidden');ct.classList.add('hidden');em.classList.remove('hidden');ct.classList.remove('hidden');document.getElementById('d-file').textContent=im.fn;document.getElementById('d-file-meta').textContent=im.w+' × '+im.h+' · '+im.mt.replace('T',' ').slice(0,16)+' · '+im.ck.split('/').pop();document.getElementById('d-prompt').textContent=im.p;document.getElementById('d-neg').textContent=im.neg;document.getElementById('d-kv').innerHTML='<dt>Checkpoint</dt><dd>'+im.ck+'</dd><dt>Sampler</dt><dd>'+im.s+'</dd><dt>Steps / CFG</dt><dd>'+im.steps+' / '+im.cfg+'</dd><dt>Seed</dt><dd>'+im.seed+'</dd><dt>VAE</dt><dd>'+im.vae+'</dd><dt>LoRAs</dt><dd class="loras">'+im.ls.map(function(l){return l.n+' ('+l.w+')'}).join('<br>')+'</dd>';document.getElementById('d-json').textContent=JSON.stringify(buildWF(im),null,2);const fb=document.getElementById('d-fav');fb.textContent=im.fav?'♥ 已收藏':'♡ 收藏';fb.classList.toggle('on',im.fav);renderQuickCopy(im);renderDTags();renderDFolder()}
 function renderQuickCopy(im){
   const bar=document.getElementById('quick-copy');
@@ -320,7 +352,7 @@ function startStream(){if(state.sTimer)return;state.sTimer=setInterval(function(
 function stopStream(){if(state.sTimer){clearInterval(state.sTimer);state.sTimer=null}}
 document.getElementById('live-toggle').onclick=function(){state.live=!state.live;const b=document.getElementById('live-toggle'),d=b.querySelector('.live-dot');b.classList.toggle('off',!state.live);d.classList.toggle('on',state.live);if(state.live){startStream();showToast('Live 监听已开启')}else{stopStream();showToast('Live 已暂停')}};
 document.getElementById('import-btn').onclick=function(){openModal({title:'导入 ComfyUI 输出目录',subtitle:'选择本地目录后开始扫描并提取元数据',input:{placeholder:'如:C:\\ComfyUI\\output',value:'C:\\ComfyUI\\output'},confirmText:'开始导入',onConfirm:function(v){showToast('已提交导入任务:'+v)}})};
-document.addEventListener('keydown',function(e){if(e.target.matches('input,textarea'))return;if(e.key==='Escape'){closeFM();document.getElementById('modal-bg').classList.add('hidden')}if(e.key==='/'&&!e.shiftKey){e.preventDefault();document.getElementById('search').focus()}});
+document.addEventListener('keydown',function(e){if(e.target.matches('input,textarea'))return;const lbOpen=!document.getElementById('lightbox').classList.contains('hidden');if(e.key==='Escape'){if(lbOpen){closeLightbox();return}closeFM();document.getElementById('modal-bg').classList.add('hidden')}if(lbOpen&&e.key==='ArrowRight'){navLightbox(1);return}if(lbOpen&&e.key==='ArrowLeft'){navLightbox(-1);return}if(lbOpen&&e.key===' '){e.preventDefault();navLightbox(1);return}if(!lbOpen&&e.key===' '&&state.selected){e.preventDefault();openLightbox(state.selected);return}if(e.key==='/'&&!e.shiftKey){e.preventDefault();document.getElementById('search').focus()}});
 document.getElementById('feed-title').textContent=getBreadcrumb(state.active);
 renderFolders();renderFeed();
 if(state.live)startStream();

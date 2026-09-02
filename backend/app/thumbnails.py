@@ -15,7 +15,7 @@ from pathlib import Path
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from .config import thumbs_dir
+from .config import previews_dir, thumbs_dir
 
 log = logging.getLogger(__name__)
 
@@ -51,3 +51,44 @@ def generate(image_path: Path, image_id: int, size: int = 256, quality: int = 80
 
 def thumb_url_path(image_id: int) -> str:
     return f"/thumbs/{image_id}.webp"
+
+
+def generate_preview(image_path: Path, image_id: int, max_size: int, quality: int = 85) -> Path | None:
+    """为 ``image_path`` 生成最大边 ``max_size`` 的 WebP 预览，缓存到 ``previews/{id}_max{N}.webp``。
+
+    缓存策略：
+    - 缓存路径含 max_size → 不同 size 互不干扰
+    - 缓存 mtime < 源文件 mtime → 重生成（源文件被覆盖时自动失效）
+    - 命中缓存 → 直接返回，O(1) 不解码原图
+    """
+    from .config import previews_dir as _pd
+    out_path = _pd() / f"{image_id}_max{max_size}.webp"
+    try:
+        src_stat = image_path.stat()
+    except OSError:
+        return None
+    if out_path.exists():
+        try:
+            if out_path.stat().st_mtime >= src_stat.st_mtime:
+                return out_path
+        except OSError:
+            pass
+    try:
+        with Image.open(image_path) as im:
+            im = ImageOps.exif_transpose(im)
+            im.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+            if im.mode not in ("RGB", "RGBA"):
+                im = im.convert("RGB")
+            elif im.mode == "RGBA":
+                bg = Image.new("RGB", im.size, (18, 18, 20))
+                bg.paste(im, mask=im.split()[3])
+                im = bg
+            buf = io.BytesIO()
+            im.save(buf, format="WEBP", quality=quality, method=4)
+            data = buf.getvalue()
+        with _LOCK:
+            out_path.write_bytes(data)
+        return out_path
+    except (UnidentifiedImageError, OSError) as e:
+        log.warning("preview failed: %s (max=%d): %s", image_path, max_size, e)
+        return None

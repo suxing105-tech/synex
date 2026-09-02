@@ -42,13 +42,19 @@ def get_image(image_id: int) -> ImageDetail:
 
 
 @router.get("/{image_id}/file")
-def get_original(image_id: int, request: Request):
+def get_original(image_id: int, request: Request, max: int | None = Query(default=None, ge=64, le=4096)):
     """返回原图字节流（Lightbox / Feed 预览用）。
 
+    参数：
+    - max: 可选，缩放后最长边（像素）。None/缺省 = 原图。
+      例如 max=1024 把图缩到最长边 1024 像素再返回（WebP 编码，落盘缓存到 previews/）。
+      feed 用 ?max=1024 拿 ~200KB 预览代替 2-5MB 原图。
+
     缓存策略：
-    - 原图一旦入库基本不变，按 mtime 给 1 年 Cache-Control + ETag/Last-Modified
-    - 浏览器再请求时直接 304 不传 body，省 1-5MB 流量
+    - 原图 / 预览一旦落盘基本不变，按 mtime 给 1 年 Cache-Control + ETag/Last-Modified
+    - 浏览器再请求时直接 304 不传 body，省流量
     - 文件被覆盖后 mtime 变 → URL ?v= 变 + ETag 变 → 浏览器重新拉
+    - 预览缓存命中（同 max_size + 缓存 mtime >= 源 mtime）→ 直接返回，不解码原图
     """
     import email.utils
     from pathlib import Path
@@ -65,8 +71,24 @@ def get_original(image_id: int, request: Request):
         raise HTTPException(404, "原文件不存在")
     mtime = float(row["mtime"] or 0.0)
     stat = p.stat()
-    etag = f'"{int(mtime)}-{stat.st_size}"'
-    last_modified_dt = email.utils.formatdate(mtime, usegmt=True)
+
+    # 决定要服务的物理文件：原图 or 预览缓存
+    if max is not None:
+        from ..thumbnails import generate_preview
+        preview_path = generate_preview(p, image_id, max)
+        if preview_path is None:
+            raise HTTPException(500, "预览生成失败")
+        preview_stat = preview_path.stat()
+        serve_path = preview_path
+        fname_stem = Path(row["filename"]).stem
+        serve_filename = f"{fname_stem}_max{max}.webp"
+        etag = f'"{int(mtime)}-{stat.st_size}-max{max}-{preview_stat.st_size}"'
+        last_modified_dt = email.utils.formatdate(preview_stat.st_mtime, usegmt=True)
+    else:
+        serve_path = p
+        serve_filename = row["filename"]
+        etag = f'"{int(mtime)}-{stat.st_size}"'
+        last_modified_dt = email.utils.formatdate(mtime, usegmt=True)
 
     # 304 Not Modified: client 带 If-None-Match 或 If-Modified-Since 来就回 304
     if_none_match = request.headers.get("if-none-match")
@@ -84,8 +106,8 @@ def get_original(image_id: int, request: Request):
         )
 
     return FileResponse(
-        p,
-        filename=row["filename"],
+        serve_path,
+        filename=serve_filename,
         headers={
             "ETag": etag,
             "Last-Modified": last_modified_dt,

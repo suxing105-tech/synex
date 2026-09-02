@@ -177,4 +177,85 @@ def test_feed_includes_original_url(client):
     for it in items:
         assert "original_url" in it
         assert it["original_url"] is not None
-        assert it["original_url"].startswith("/api/images/" + str(it["id"]) + "/file?v=")
+        assert it["original_url"].startswith("/api/images/" + str(it["id"]) + "/file?")
+        assert "max=1024" in it["original_url"]  # 默认带 max=1024 预览
+        assert "v=" in it["original_url"]      # cache-bust
+
+def test_file_endpoint_with_max_returns_webp_preview(client):
+    """GET /api/images/{id}/file?max=1024 返回缩放后的 WebP 预览。
+
+    验证：
+    - content-type = image/webp
+    - 文件大小 < 原图
+    - previews/ 目录里生成了缓存
+    """
+    from app.config import previews_dir
+    from PIL import Image
+    img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
+
+    # 原图大小
+    orig = client.get(f"/api/images/{img_id}/file")
+    assert orig.status_code == 200
+    orig_size = len(orig.content)
+
+    # 预览
+    r = client.get(f"/api/images/{img_id}/file", params={"max": 1024})
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/webp"
+    # 1024px webp 通常 200-500KB，原图通常 2-5MB → 必然更小
+    assert len(r.content) < orig_size, f"preview should be smaller: {len(r.content)} vs {orig_size}"
+
+    # 缓存落盘了
+    cache = previews_dir() / f"{img_id}_max1024.webp"
+    assert cache.exists(), f"preview cache missing: {cache}"
+    with Image.open(cache) as im:
+        # Pillow.thumbnail 只缩小不放大；test 夹具图是 8x8 不会到 1024，但一定 <= 1024
+        assert max(im.size) <= 1024
+
+
+def test_file_endpoint_with_max_304_on_cache_hit(client):
+    """预览第二次请求（带 If-None-Match）→ 304。"""
+    img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
+    r1 = client.get(f"/api/images/{img_id}/file", params={"max": 512})
+    assert r1.status_code == 200
+    etag = r1.headers["etag"]
+    assert "max=512" in etag or "max512" in etag, f"etag should include max: {etag}"
+    r2 = client.get(
+        f"/api/images/{img_id}/file",
+        params={"max": 512},
+        headers={"If-None-Match": etag},
+    )
+    assert r2.status_code == 304
+    assert r2.content == b""
+
+
+def test_file_endpoint_with_different_max_uses_different_cache(client):
+    """max=256 和 max=1024 是两个独立的缓存条目。"""
+    from app.config import previews_dir
+    img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
+    r256 = client.get(f"/api/images/{img_id}/file", params={"max": 256})
+    r1024 = client.get(f"/api/images/{img_id}/file", params={"max": 1024})
+    assert r256.status_code == 200
+    assert r1024.status_code == 200
+    assert (previews_dir() / f"{img_id}_max256.webp").exists()
+    assert (previews_dir() / f"{img_id}_max1024.webp").exists()
+    # ETag 必须不同
+    assert r256.headers["etag"] != r1024.headers["etag"]
+
+
+def test_file_endpoint_max_validation(client):
+    """max 越界（<64 或 >4096）→ 422。"""
+    img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
+    r1 = client.get(f"/api/images/{img_id}/file", params={"max": 32})
+    assert r1.status_code == 422
+    r2 = client.get(f"/api/images/{img_id}/file", params={"max": 8192})
+    assert r2.status_code == 422
+
+
+def test_feed_includes_max_in_original_url(client):
+    """feed 返回的 original_url 默认带 max=1024 → 后端出 webp 预览。"""
+    items = client.get("/api/images", params={"limit": 5}).json()["items"]
+    for it in items:
+        url = it["original_url"]
+        assert "max=1024" in url, f"original_url should include max=1024: {url}"
+        assert "v=" in url

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { settingsApi, thumbnailsApi } from "../lib/api";
+  import { settingsApi } from "../lib/api";
   import type { ConfigOut } from "../lib/types";
   import { onMount } from "svelte";
 
@@ -11,14 +11,6 @@
   let cfg = $state<ConfigOut | null>(null);
   let saving = $state<boolean>(false);
   let newDir = $state<string>("");
-
-  // 缩略图重建状态
-  let rebuilding = $state<boolean>(false);
-  let rebuildMsg = $state<string>("");
-  let lastSavedThumbSize = $state<number | null>(null);
-
-  // 提示：「缩略图尺寸」最小有效值 = 缩放滑块上限（让任何滑块位置都不糊）
-  const ZOOM_MAX = 480;
 
   onMount(async () => {
     cfg = await settingsApi.get();
@@ -34,6 +26,8 @@
     if (!cfg) return;
     saving = true;
     try {
+      // 注意：feed 现在直接用原图 + ?max=1024 预览，thumb 系统不再需要 UI 配置；
+      // 后端 thumb_size / thumb_quality 字段保留但只在 API 层面维护，不会再有 UI 入口。
       cfg = await settingsApi.update({
         watch_dirs: cfg.watch_dirs,
         thumb_size: cfg.thumb_size,
@@ -56,24 +50,6 @@
   function removeDir(d: string) {
     if (!cfg) return;
     cfg = { ...cfg, watch_dirs: cfg.watch_dirs.filter((x) => x !== d) };
-  }
-
-  async function rebuildAllThumbs() {
-    if (!cfg || rebuilding) return;
-    rebuilding = true;
-    rebuildMsg = "";
-    try {
-      const sizeBefore = cfg.thumb_size;
-      lastSavedThumbSize = sizeBefore;
-      const r = await thumbnailsApi.rebuild({ size: cfg.thumb_size, quality: cfg.thumb_quality });
-      rebuildMsg = r.ok
-        ? `后台重建已启动，size=${r.size ?? cfg.thumb_size}。稍候 F5 刷新即可看到清晰版。`
-        : "启动失败，请看后端日志";
-    } catch (e) {
-      rebuildMsg = "失败：" + (e instanceof Error ? e.message : String(e));
-    } finally {
-      rebuilding = false;
-    }
   }
 </script>
 
@@ -103,35 +79,6 @@
           />
           <button class="text-[12px] px-3 py-1 rounded border border-border hover:border-accent" onclick={addDir}>添加</button>
         </div>
-      </section>
-
-      <section class="space-y-2 mb-5">
-        <h3 class="text-[11px] uppercase text-muted tracking-wider">缩略图</h3>
-        <div class="flex items-center gap-3">
-          <label class="text-[12px] text-muted w-20">尺寸</label>
-          <input type="number" min="128" max="512" bind:value={cfg.thumb_size} class="w-24 bg-bg border border-border rounded px-2 py-1 text-[12px] outline-none focus:border-accent" />
-          <span class="text-[11px] text-muted">px</span>
-        </div>
-        <div class="text-[11px] text-muted pl-[5.75rem]">
-          推荐 ≥ {`${ZOOM_MAX}`}（缩放滑块上限），否则滑到最大时浏览器会拉伸缩略图变糊。
-        </div>
-        <div class="flex items-center gap-3">
-          <label class="text-[12px] text-muted w-20">质量</label>
-          <input type="number" min="50" max="100" bind:value={cfg.thumb_quality} class="w-24 bg-bg border border-border rounded px-2 py-1 text-[12px] outline-none focus:border-accent" />
-        </div>
-        <div class="flex items-center gap-3 pt-1">
-          <button
-            class="text-[12px] px-3 py-1 rounded border border-border hover:border-accent disabled:opacity-50"
-            disabled={rebuilding}
-            onclick={rebuildAllThumbs}
-          >
-            {rebuilding ? "重建中…" : "🔄 一键重建所有缩略图"}
-          </button>
-          <span class="text-[11px] text-muted">后台跑，不阻塞你浏览；完事刷新即可。</span>
-        </div>
-        {#if rebuildMsg}
-          <div class="text-[11.5px] text-success pl-1">{rebuildMsg}</div>
-        {/if}
       </section>
 
       <section class="space-y-2 mb-5">

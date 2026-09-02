@@ -34,16 +34,24 @@ def thumb_url_for(image_id: int, thumb_path: str | None, status: str | None) -> 
         return None
     return f"/thumbs/{image_id}.webp?v={_thumb_version(thumb_path)}"
 
-def original_url_for(image_id: int, file_mtime: float | None) -> str | None:
+def original_url_for(image_id: int, file_mtime: float | None, *, max_size: int | None = 1024) -> str | None:
     """返回带 cache-bust 的原图 URL（feed 直接拿原图让浏览器缩放）。
 
     原图文件被覆盖时 mtime 变 → URL 变 → 浏览器重新下载。
     mtime 缺失（理论上不会，扫描会写入）就返回 None，
     feed 渲染时跳过 src，浏览器自动 fallback 到 alt 占位。
+
+    max_size：可选，预览最长边像素。默认 1024 = 让后端先缩到 1024 再返回，
+    落盘缓存到 previews/，典型 200KB 替代 2-5MB 原图，feed 流量下降 10x。
+    传 None = 不缩，返回原图（Lightbox 用）。
     """
     if file_mtime is None:
         return None
-    return f"/api/images/{image_id}/file?v={int(file_mtime)}"
+    qs = []
+    if max_size is not None:
+        qs.append(f"max={int(max_size)}")
+    qs.append(f"v={int(file_mtime)}")
+    return f"/api/images/{image_id}/file?{"&".join(qs)}"
 
 
 

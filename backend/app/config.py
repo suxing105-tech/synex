@@ -82,6 +82,12 @@ def thumbs_dir() -> Path:
     return p
 
 
+def previews_dir() -> Path:
+    p = data_dir() / "previews"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def logs_dir() -> Path:
     p = data_dir() / "logs"
     p.mkdir(parents=True, exist_ok=True)

@@ -1,6 +1,5 @@
 <script lang="ts">
   import { feedItems, feedTotal, feedLoading, zoomSize, activeFolderName, newIds } from "../lib/stores";
-  import { selectedId as selectedIdStore } from "../lib/stores";
   import { formatDate, formatSize } from "../lib/ws";
   import type { ImageSummary } from "../lib/types";
 
@@ -71,7 +70,7 @@
       {#each $feedItems as it, idx (it.id)}
         <button
           type="button"
-          class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 hover:border-accent text-left {$selectedId === it.id ? 'ring-2 ring-accent' : ''} {$newIds.has(it.id) ? 'new-badge' : ''}"
+          class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 hover:border-accent text-left {selectedId === it.id ? 'ring-2 ring-accent' : ''} {$newIds.has(it.id) ? 'new-badge' : ''}"
           style="aspect-ratio: 1 / 1"
           onclick={() => (selectedId = it.id)}
           ondblclick={() => openLightbox(it, idx)}

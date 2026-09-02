@@ -27,7 +27,7 @@ function listSvelte(dir: string): string[] {
 const STORE_NAMES = [
   "selectedDetail", "selectedId", "folderId", "view", "query", "targetColumns",
   "feedItems", "feedTotal", "feedLoading", "folders", "stats", "scanProgress",
-  "newIds",
+  "newIds", "multiSelectedIds", "selectionAnchorId",
 ];
 
 // 只盯 store 没有的方法（set/update/subscribe 合法）。

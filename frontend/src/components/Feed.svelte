@@ -1,5 +1,10 @@
 <script lang="ts">
-  import { feedItems, feedTotal, feedLoading, refreshFeed, refreshStats, targetColumns, activeFolderName, newIds } from "../lib/stores";
+  import {
+    feedItems, feedTotal, feedLoading, refreshFeed, refreshStats,
+    targetColumns, activeFolderName, newIds,
+    multiSelectedIds,
+    applySelection, clearSelection,
+  } from "../lib/stores";
   import { imagesApi } from "../lib/api";
   import { copyText } from "../lib/ws";
   import type { ImageSummary } from "../lib/types";
@@ -17,7 +22,7 @@
   let menuX = $state(0);
   let menuY = $state(0);
   let menuTarget = $state<ImageSummary | null>(null);
-  let menuTick = $state(0);  // items 派生依赖，避免 store 更新时菜单不同步
+  let menuTick = $state(0);
   let toast = $state<string | null>(null);
   function notify(msg: string) {
     toast = msg;
@@ -29,10 +34,20 @@
     return "1 / 1";
   }
 
+  // 当前多选张数（派生：用于 header 计数器）
+  let selectedCount = $derived($multiSelectedIds.size);
+
   function openLightbox(it: ImageSummary, idx: number) {
+    // 双击只对 primary 生效，不动多选集合
     selectedId = it.id;
     lightboxIndex = idx;
     lightboxOpen = true;
+  }
+
+  // 缩略图点击：根据修饰键走单选 / Ctrl 多选切换 / Shift 区间
+  function onThumbClick(e: MouseEvent, it: ImageSummary) {
+    const modifier = e.shiftKey ? "shift" : e.ctrlKey || e.metaKey ? "ctrl" : "none";
+    applySelection($feedItems, it.id, modifier);
   }
 
   // ---------- 右键菜单：action handlers ----------
@@ -40,6 +55,10 @@
   function openContextMenu(e: MouseEvent, it: ImageSummary) {
     e.preventDefault();
     e.stopPropagation();
+    // 右键默认就是"单选这张"，与文件管理器一致；用户也可以右键多选集合里的项后操作单张
+    if (!$multiSelectedIds.has(it.id)) {
+      applySelection($feedItems, it.id, "none");
+    }
     menuTarget = it;
     menuX = e.clientX;
     menuY = e.clientY;
@@ -49,7 +68,6 @@
 
   // 派生：根据 menuTick + menuTarget 重建菜单项
   let menuItems = $derived.by<ContextMenuItem[]>(() => {
-    // 触发依赖
     void menuTick;
     const t = menuTarget;
     if (!t) return [];
@@ -151,17 +169,40 @@
     }
   }
 
-    function handleKey(e: KeyboardEvent) {
-    if (lightboxOpen) return;
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-    if (selectedId === null) return;
-    if (e.key === ' ' || e.code === 'Space') {
-      e.preventDefault();
-      const idx = $feedItems.findIndex((it) => it.id === selectedId);
-      if (idx >= 0) {
-        lightboxIndex = idx;
-        lightboxOpen = true;
+  // 全局键盘：Esc 清空选区（仅在 feed 聚焦时；input 焦点时让原生处理）
+  function isTypingTarget(t: EventTarget | null): boolean {
+    if (!t || !(t instanceof HTMLElement)) return false;
+    const tag = t.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+    if (t.isContentEditable) return true;
+    return false;
+  }
+
+  function handleKey(e: KeyboardEvent) {
+    if (isTypingTarget(e.target)) return;
+    if (e.key === "Escape") {
+      if (selectedCount > 0) {
+        e.preventDefault();
+        clearSelection();
       }
+      return;
+    }
+    if (e.key === " " || e.code === "Space") {
+      if (selectedId !== null) {
+        e.preventDefault();
+        const idx = $feedItems.findIndex((it) => it.id === selectedId);
+        if (idx >= 0) {
+          lightboxIndex = idx;
+          lightboxOpen = true;
+        }
+      }
+    }
+  }
+
+  // 空白区域点击 → 清空选区（不冒泡到 thumb）
+  function onScrollerClick(e: MouseEvent) {
+    if (e.target === e.currentTarget && selectedCount > 0) {
+      clearSelection();
     }
   }
 
@@ -213,7 +254,20 @@
 <div class="px-5 pt-4 pb-3 flex items-center gap-4 border-b border-border bg-surface">
   <div>
     <div class="text-base font-medium">{$activeFolderName}</div>
-    <div class="text-xs text-muted mt-0">{$feedTotal} 张</div>
+    <div class="text-xs text-muted mt-0">
+      {$feedTotal} 张
+      {#if selectedCount > 0}
+        <span class="ml-2 inline-flex items-center gap-1 text-accent">
+          <span class="font-mono">已选 {selectedCount} 张</span>
+          <button
+            type="button"
+            class="px-1.5 py-0.5 text-[11px] rounded border border-border hover:border-accent"
+            onclick={() => clearSelection()}
+            title="清空选区（Esc）"
+          >清空</button>
+        </span>
+      {/if}
+    </div>
   </div>
   <div class="ml-auto flex items-center gap-2 text-[12.5px] text-muted">
     <span>列数</span>
@@ -249,10 +303,12 @@
         - 列数直接 = $targetColumns（不再推算）
         - 每张图放进当前最矮的列
         - 外层 overflow-x: auto 处理极窄屏兜底
+        - onScrollerClick: 点击空白区域时清空选区
     -->
     <div
       class="masonry-scroller"
       bind:clientWidth={containerWidth}
+      onclick={onScrollerClick}
     >
       <div
         class="masonry-grid"
@@ -263,10 +319,10 @@
             {#each col.items as it (it.id)}
               <button
                 type="button"
-                class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 hover:border-accent text-left {selectedId === it.id ? 'ring-2 ring-accent' : ''} {$newIds.has(it.id) ? 'new-badge' : ''}"
+                class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 hover:border-accent text-left {$multiSelectedIds.has(it.id) ? 'ring-2 ring-accent' : ''} {$newIds.has(it.id) ? 'new-badge' : ''}"
                 style="aspect-ratio: {aspectFor(it)}; width: 100%;"
                 title={it.filename}
-                onclick={() => (selectedId = it.id)}
+                onclick={(e) => onThumbClick(e, it)}
                 ondblclick={() => openLightbox(it, $feedItems.findIndex((x) => x.id === it.id))}
                 oncontextmenu={(e) => openContextMenu(e, it)}
               >
@@ -280,11 +336,14 @@
                 <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] truncate">
                   {it.filename}
                 </div>
+                {#if $multiSelectedIds.has(it.id)}
+                  <div class="absolute top-1 left-1 bg-accent text-bg text-[10px] font-bold px-1.5 rounded shadow">✓</div>
+                {/if}
                 {#if it.favorite}
                   <div class="absolute top-1 right-1 text-danger text-[14px] drop-shadow">♥</div>
                 {/if}
                 {#if $newIds.has(it.id)}
-                  <div class="absolute top-1 left-1 bg-success text-bg text-[10px] font-bold px-1.5 rounded">NEW</div>
+                  <div class="absolute bottom-8 left-1 bg-success text-bg text-[10px] font-bold px-1.5 rounded shadow">NEW</div>
                 {/if}
               </button>
             {/each}

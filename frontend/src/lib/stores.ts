@@ -1,12 +1,24 @@
 import { writable, derived } from "svelte/store";
 import type { FeedResponse, FolderNode, ImageDetail, ImageSummary, ScanProgress, Stats } from "./types";
 import { foldersApi, imagesApi, scanApi, statsApi } from "./api";
+import { nextSelection, type Modifier, type SelectionState } from "./selection";
 
 // ---------- 当前选中图片详情 ----------
 
 
 export const selectedDetail = writable<ImageDetail | null>(null);
 export const selectedId = writable<number | null>(null);
+
+// ---------- 多选状态 ----------
+//
+// - selectedId: 单选 / 主选。DetailPanel 和 Lightbox 都靠它驱动，保持向后兼容。
+// - multiSelectedIds: 当前被选中的 id 集合（>=1 个）。环形高亮用它。
+// - selectionAnchorId: shift 区间选的锚点。每次"非 shift"点击会更新。
+//   设计上 selectionAnchorId === selectedId（最后一次非 shift 的 primary），
+//   但单独存一份便于 shift 在 primary 之外扩展（例如：先单选 A，ctrl 选 B，
+//   再 shift 点 C，区间从 B → C，而不是 A → C）。
+export const multiSelectedIds = writable<Set<number>>(new Set());
+export const selectionAnchorId = writable<number | null>(null);
 
 // ---------- Feed 视图状态 ----------
 
@@ -55,6 +67,70 @@ export function markNew(ids: number[]) {
   }, 3000);
 }
 
+// ---------- 多选动作 ----------
+//
+// 调用方传入当前 feed 快照 + 被点的 id + 修饰键，
+// 由纯函数 nextSelection 计算新状态并写入 stores。
+
+export function applySelection(
+  feedItemsSnap: ImageSummary[],
+  clickId: number,
+  modifier: Modifier,
+): void {
+  const current: SelectionState = {
+    primary: getSelectedId(),
+    selected: getMultiSelectedIds(),
+    anchor: getSelectionAnchorId(),
+  };
+  const r = nextSelection(feedItemsSnap, current, clickId, modifier);
+  selectedId.set(r.primary);
+  multiSelectedIds.set(r.selected);
+  selectionAnchorId.set(r.anchor);
+}
+
+export function clearSelection(): void {
+  selectedId.set(null);
+  multiSelectedIds.set(new Set());
+  selectionAnchorId.set(null);
+}
+
+export function removeIdsFromSelection(ids: Iterable<number>): void {
+  const removeSet = new Set(ids);
+  // 先把要删的 id 全部从多选集合里剔掉，再决定 primary 落到谁头上
+  let after = new Set<number>();
+  multiSelectedIds.update((s) => {
+    const next = new Set(s);
+    for (const id of removeSet) next.delete(id);
+    after = next;
+    return next;
+  });
+  // primary 若被剔除：优先保留原 primary（如果还在新集合里），否则取集合第一个，否则 null
+  selectedId.update((cur) => {
+    if (cur === null || !removeSet.has(cur)) return cur;
+    if (after.has(cur)) return cur;
+    const first = after.values().next();
+    return first.done ? null : first.value;
+  });
+  // anchor 若被剔除：直接清 null（语义上 anchor 没"备选"概念）
+  selectionAnchorId.update((cur) => (cur !== null && removeSet.has(cur) ? null : cur));
+}
+
+function getSelectedId(): number | null {
+  let v: number | null = null;
+  selectedId.subscribe((x) => (v = x))();
+  return v;
+}
+function getSelectionAnchorId(): number | null {
+  let v: number | null = null;
+  selectionAnchorId.subscribe((x) => (v = x))();
+  return v;
+}
+function getMultiSelectedIds(): Set<number> {
+  let v: Set<number> = new Set();
+  multiSelectedIds.subscribe((x) => (v = x))();
+  return v;
+}
+
 // ---------- 加载动作 ----------
 
 
@@ -101,7 +177,7 @@ async function feedAutoRefresh() {
   folderId.subscribe((v) => (folder = v))();
   view.subscribe((vv) => (v = vv as "all" | "favorite" | "recent"))();
   query.subscribe((vv) => (q = vv))();
-  const key = `${folder ?? ""}|${v}|${q}`;
+  const key = String(folder ?? "") + "|" + String(v) + "|" + String(q);
   if (key === lastKey) return;
   lastKey = key;
   await refreshFeed();
@@ -130,6 +206,36 @@ selectedId.subscribe(async (id) => {
   } catch {
     selectedDetail.set(null);
   }
+});
+
+// 视图/筛选变化 → 清空选区（旧选中的 id 可能已经不在当前 feed）
+folderId.subscribe(() => clearSelection());
+view.subscribe(() => clearSelection());
+query.subscribe(() => clearSelection());
+
+// feedItems 变化（删除某张图 / 新入库）→ 把不存在的 id 从选区里剔除
+feedItems.subscribe((items) => {
+  const valid = new Set(items.map((it) => it.id));
+  let after = new Set<number>();
+  multiSelectedIds.update((s) => {
+    let changed = false;
+    const next = new Set(s);
+    for (const id of s) {
+      if (!valid.has(id)) {
+        next.delete(id);
+        changed = true;
+      }
+    }
+    after = next;
+    return changed ? next : s;
+  });
+  selectedId.update((cur) => {
+    if (cur === null || valid.has(cur)) return cur;
+    if (after.has(cur)) return cur;
+    const first = after.values().next();
+    return first.done ? null : first.value;
+  });
+  selectionAnchorId.update((cur) => (cur !== null && !valid.has(cur) ? null : cur));
 });
 
 // ---------- 派生：当前激活文件夹名 ----------

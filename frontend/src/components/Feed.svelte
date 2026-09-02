@@ -10,10 +10,7 @@
   let { selectedId = $bindable(), lightboxOpen = $bindable(), lightboxIndex = $bindable() }: Props = $props();
 
   function aspectFor(it: ImageSummary): string {
-    // 缺尺寸时退到 1 / 1，保证布局不塌
-    if (it.width && it.height && it.height > 0) {
-      return `${it.width} / ${it.height}`;
-    }
+    if (it.width && it.height && it.height > 0) return `${it.width} / ${it.height}`;
     return "1 / 1";
   }
 
@@ -36,6 +33,42 @@
       }
     }
   }
+
+  // ---------- 真 masonry：JS 贪心分列 ----------
+  //
+  // 列宽固定 = $zoomSize，每列独立，贪心把每张图放进当前最矮的列。
+  // 既保留 mtime 顺序（不 shuffle），又让每列内自然横竖混合。
+  // 因为列宽是 px 固定，拖动缩放滑块时缩略图会真的变大变小。
+  const COL_GAP = 8;
+
+  // 容器宽度，由 bind:clientWidth 写入
+  let containerWidth = $state(0);
+
+  // 列数随容器宽度 + 缩放基线变
+  let columnCount = $derived.by(() => {
+    if (containerWidth <= 0) return 1;
+    const n = Math.floor((containerWidth + COL_GAP) / ($zoomSize + COL_GAP));
+    return Math.max(1, n);
+  });
+
+  // 贪心分组
+  let columns = $derived.by(() => {
+    const n = columnCount;
+    const cols: { items: ImageSummary[]; height: number }[] = Array.from(
+      { length: n },
+      () => ({ items: [], height: 0 }),
+    );
+    for (const it of $feedItems) {
+      const ratio = it.width && it.height ? it.height / it.width : 1;
+      const h = $zoomSize * ratio + COL_GAP;
+      // 找当前最矮的列
+      let target = cols[0];
+      for (let i = 1; i < n; i++) if (cols[i].height < target.height) target = cols[i];
+      target.items.push(it);
+      target.height += h;
+    }
+    return cols;
+  });
 </script>
 
 <svelte:window onkeydown={handleKey} />
@@ -60,7 +93,10 @@
   </div>
 </div>
 
-<div class="overflow-y-auto p-3 feed-body" style="height: calc(100vh - 110px)">
+<div
+  class="overflow-y-auto p-3 feed-body"
+  style="height: calc(100vh - 110px)"
+>
   {#if $feedLoading}
     <div class="text-center text-muted py-12">加载中…</div>
   {:else if $feedItems.length === 0}
@@ -71,56 +107,73 @@
     </div>
   {:else}
     <!--
-      流式瀑布：CSS columns 按列优先（自上而下再下一列）。
-      column-width 由缩放滑块控制 —— 浏览器视容器宽度自动算列数与列宽。
-      每张卡用 aspect-ratio 决定高度，break-inside: avoid 防止被列边界切开。
+      贪心 masonry：
+        - 列宽固定 = $zoomSize px（拖滑块时缩略图会真切变大变小）
+        - 列数 = floor((容器宽 + gap) / (zoomSize + gap))
+        - 每张图放进当前最矮的列
+        - 外层 overflow-x: auto 处理极窄屏兜底
     -->
     <div
-      class="masonry"
-      style="column-width: {$zoomSize}px;"
+      class="masonry-scroller"
+      bind:clientWidth={containerWidth}
     >
-      {#each $feedItems as it, idx (it.id)}
-        <button
-          type="button"
-          class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 hover:border-accent text-left {selectedId === it.id ? 'ring-2 ring-accent' : ''} {$newIds.has(it.id) ? 'new-badge' : ''}"
-          style="aspect-ratio: {aspectFor(it)};"
-          title={it.filename}
-          onclick={() => (selectedId = it.id)}
-          ondblclick={() => openLightbox(it, idx)}
-        >
-          {#if it.thumb_url}
-            <img src={it.thumb_url} alt={it.filename} loading="lazy" class="w-full h-full object-cover" />
-          {:else}
-            <div class="w-full h-full flex items-center justify-center text-muted text-xs">无缩略图</div>
-          {/if}
-          <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] truncate">
-            {it.filename}
+      <div
+        class="masonry-grid"
+        style="grid-template-columns: repeat({columnCount}, {$zoomSize}px); gap: {COL_GAP}px;"
+      >
+        {#each columns as col}
+          <div class="masonry-col" style="gap: {COL_GAP}px;">
+            {#each col.items as it (it.id)}
+              <button
+                type="button"
+                class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 hover:border-accent text-left {selectedId === it.id ? 'ring-2 ring-accent' : ''} {$newIds.has(it.id) ? 'new-badge' : ''}"
+                style="aspect-ratio: {aspectFor(it)}; width: 100%;"
+                title={it.filename}
+                onclick={() => (selectedId = it.id)}
+                ondblclick={() => openLightbox(it, $feedItems.findIndex((x) => x.id === it.id))}
+              >
+                {#if it.thumb_url}
+                  <img src={it.thumb_url} alt={it.filename} loading="lazy" class="w-full h-full object-cover" />
+                {:else}
+                  <div class="w-full h-full flex items-center justify-center text-muted text-xs">无缩略图</div>
+                {/if}
+                <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] truncate">
+                  {it.filename}
+                </div>
+                {#if it.favorite}
+                  <div class="absolute top-1 right-1 text-danger text-[14px] drop-shadow">♥</div>
+                {/if}
+                {#if $newIds.has(it.id)}
+                  <div class="absolute top-1 left-1 bg-success text-bg text-[10px] font-bold px-1.5 rounded">NEW</div>
+                {/if}
+              </button>
+            {/each}
           </div>
-          {#if it.favorite}
-            <div class="absolute top-1 right-1 text-danger text-[14px] drop-shadow">♥</div>
-          {/if}
-          {#if $newIds.has(it.id)}
-            <div class="absolute top-1 left-1 bg-success text-bg text-[10px] font-bold px-1.5 rounded">NEW</div>
-          {/if}
-        </button>
-      {/each}
+        {/each}
+      </div>
     </div>
   {/if}
 </div>
 
 <style>
-  .masonry {
-    column-gap: 8px;
+  .masonry-scroller {
+    /* 列宽固定 = zoomSize 时整排可能溢出，横向滚动兜底；
+       纵向交给父级 overflow-y-auto 处理 */
+    overflow-x: auto;
+    overflow-y: visible;
+  }
+  .masonry-grid {
+    display: grid;
+    /* align-items: start 防止 grid 拉伸列高 */
+    align-items: start;
+    /* 让 grid 按内容撑开，否则它会被父级挤压成一坨 */
+    width: max-content;
+  }
+  .masonry-col {
+    display: flex;
+    flex-direction: column;
   }
   .thumb {
-    /* CSS columns：每张卡必须显式 width: 100% 才不会溢出列宽 */
-    width: 100%;
-    margin-bottom: 8px;
-    display: inline-block;
-    /* 三处 break-inside 防被列边界切断 */
-    break-inside: avoid;
-    -webkit-column-break-inside: avoid;
-    page-break-inside: avoid;
     transition: transform 0.15s ease, box-shadow 0.15s ease;
   }
   .thumb:hover {

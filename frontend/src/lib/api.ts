@@ -62,7 +62,17 @@ export const imagesApi = {
   remove(id: number, removeFile = false): Promise<{ ok: boolean }> {
     return http(`/api/images/${id}?remove_file=${removeFile}`, { method: "DELETE" });
   },
+  rename(id: number, filename: string): Promise<ImageSummary> {
+    return http<ImageSummary>(`/api/images/${id}/filename`, {
+      method: "PATCH",
+      body: JSON.stringify({ filename }),
+    });
+  },
+  reveal(id: number): Promise<{ ok: boolean; id: number; path: string }> {
+    return http(`/api/images/${id}/reveal`, { method: "POST" });
+  },
 };
+
 
 // ---------- 文件夹 ----------
 

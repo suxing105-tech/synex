@@ -1,6 +1,9 @@
 <script lang="ts">
-  import { feedItems, feedTotal, feedLoading, targetColumns, activeFolderName, newIds } from "../lib/stores";
+  import { feedItems, feedTotal, feedLoading, refreshFeed, refreshStats, targetColumns, activeFolderName, newIds } from "../lib/stores";
+  import { imagesApi } from "../lib/api";
+  import { copyText } from "../lib/ws";
   import type { ImageSummary } from "../lib/types";
+  import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
 
   interface Props {
     selectedId: number | null;
@@ -8,6 +11,18 @@
     lightboxIndex: number;
   }
   let { selectedId = $bindable(), lightboxOpen = $bindable(), lightboxIndex = $bindable() }: Props = $props();
+
+  // 右键菜单状态
+  let menuOpen = $state(false);
+  let menuX = $state(0);
+  let menuY = $state(0);
+  let menuTarget = $state<ImageSummary | null>(null);
+  let menuTick = $state(0);  // items 派生依赖，避免 store 更新时菜单不同步
+  let toast = $state<string | null>(null);
+  function notify(msg: string) {
+    toast = msg;
+    setTimeout(() => (toast = null), 1800);
+  }
 
   function aspectFor(it: ImageSummary): string {
     if (it.width && it.height && it.height > 0) return `${it.width} / ${it.height}`;
@@ -20,7 +35,131 @@
     lightboxOpen = true;
   }
 
-  function handleKey(e: KeyboardEvent) {
+  // ---------- 右键菜单：action handlers ----------
+
+  function openContextMenu(e: MouseEvent, it: ImageSummary) {
+    e.preventDefault();
+    e.stopPropagation();
+    menuTarget = it;
+    menuX = e.clientX;
+    menuY = e.clientY;
+    menuTick++;
+    menuOpen = true;
+  }
+
+  // 派生：根据 menuTick + menuTarget 重建菜单项
+  let menuItems = $derived.by<ContextMenuItem[]>(() => {
+    // 触发依赖
+    void menuTick;
+    const t = menuTarget;
+    if (!t) return [];
+    return [
+      {
+        label: "复制图片",
+        onClick: () => copyImageToClipboard(t),
+      },
+      {
+        label: "重命名",
+        onClick: () => renameImage(t),
+      },
+      {
+        label: "打开图片所在位置",
+        onClick: () => revealImage(t),
+      },
+      { kind: "sep" },
+      {
+        label: "删除图片",
+        danger: true,
+        onClick: () => deleteImage(t),
+      },
+    ];
+  });
+
+  async function fetchImageBlob(it: ImageSummary): Promise<Blob | null> {
+    const url = it.original_url ?? `/api/images/${it.id}/file`;
+    try {
+      const resp = await fetch(url, { cache: "no-cache" });
+      if (!resp.ok) return null;
+      return await resp.blob();
+    } catch {
+      return null;
+    }
+  }
+
+  async function copyImageToClipboard(it: ImageSummary) {
+    if (!navigator.clipboard || typeof ClipboardItem === "undefined") {
+      // 退化方案：复制原图 URL
+      const ok = await copyText(it.original_url ?? `/api/images/${it.id}/file`);
+      notify(ok ? "已复制图片地址（剪贴板不支持图片）" : "复制失败");
+      return;
+    }
+    const blob = await fetchImageBlob(it);
+    if (!blob) {
+      notify("获取图片失败");
+      return;
+    }
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ [blob.type || "image/png"]: blob })]);
+      notify("已复制图片到剪贴板");
+    } catch (e) {
+      const ok = await copyText(it.original_url ?? `/api/images/${it.id}/file`);
+      notify(ok ? "已复制图片地址" : "复制失败");
+    }
+  }
+
+  async function renameImage(it: ImageSummary) {
+    const stem = it.filename.replace(/\.[^.]+$/, "");
+    const def = stem;
+    const next = window.prompt("新文件名（保留扩展名）:", def);
+    if (next === null) return;
+    const trimmed = next.trim();
+    if (!trimmed) {
+      notify("文件名不能为空");
+      return;
+    }
+    try {
+      await imagesApi.rename(it.id, trimmed);
+      notify("已重命名");
+      await Promise.all([refreshFeed(), refreshStats()]);
+    } catch (e) {
+      notify(`重命名失败: ${(e as Error).message}`);
+    }
+  }
+
+  async function revealImage(it: ImageSummary) {
+    try {
+      await imagesApi.reveal(it.id);
+    } catch (e) {
+      notify(`打开位置失败: ${(e as Error).message}`);
+    }
+  }
+
+  async function deleteImage(it: ImageSummary) {
+    const drop = window.confirm(
+      `确认删除 "${it.filename}"？\n\n点"确定"仅从索引移除（保留文件）；\n点"取消"后选"同时删除文件"走彻底删除流程。`,
+    );
+    if (!drop) {
+      const both = window.confirm("彻底删除文件（连同磁盘文件一并删除）？此操作不可撤销！");
+      if (!both) return;
+      await doDelete(it, true);
+      return;
+    }
+    await doDelete(it, false);
+  }
+
+  async function doDelete(it: ImageSummary, removeFile: boolean) {
+    try {
+      await imagesApi.remove(it.id, removeFile);
+      notify(removeFile ? "已删除图片 + 文件" : "已从索引移除");
+      // 如果删的是当前选中，清空选中
+      if (selectedId === it.id) selectedId = null;
+      await Promise.all([refreshFeed(), refreshStats()]);
+    } catch (e) {
+      notify(`删除失败: ${(e as Error).message}`);
+    }
+  }
+
+    function handleKey(e: KeyboardEvent) {
     if (lightboxOpen) return;
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
     if (selectedId === null) return;
@@ -137,6 +276,7 @@
                 title={it.filename}
                 onclick={() => (selectedId = it.id)}
                 ondblclick={() => openLightbox(it, $feedItems.findIndex((x) => x.id === it.id))}
+                oncontextmenu={(e) => openContextMenu(e, it)}
               >
                 <img
                   src={it.original_url}
@@ -162,6 +302,12 @@
     </div>
   {/if}
 </div>
+
+<ContextMenu bind:open={menuOpen} x={menuX} y={menuY} items={menuItems} />
+
+{#if toast}
+  <div class="toast">{toast}</div>
+{/if}
 
 <style>
   .masonry-scroller {

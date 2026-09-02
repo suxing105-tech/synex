@@ -13,11 +13,30 @@
   async function startImport() {
     if (!path.trim()) return;
     submitting = true;
+
+    // 1. PUT /api/settings
     try {
       await settingsApi.update({ watch_dirs: [path.trim()] });
+    } catch (e) {
+      console.error("[import] PUT /api/settings failed:", e);
+      alert(`保存监听目录失败（${(e as Error).message}）\n请检查 uvicorn 是否在 8000 端口运行。`);
+      submitting = false;
+      return;
+    }
+
+    // 2. POST /api/scan
+    try {
       await scanApi.start(path.trim());
-      // 轮询扫描进度
-      const tick = setInterval(async () => {
+    } catch (e) {
+      console.error("[import] POST /api/scan failed:", e);
+      alert(`触发扫描失败（${(e as Error).message}）\n路径：${path.trim()}`);
+      submitting = false;
+      return;
+    }
+
+    // 3. 轮询扫描进度
+    const tick = setInterval(async () => {
+      try {
         const p = await scanApi.progress();
         scanProgress.set(p);
         if (!p.running) {
@@ -28,11 +47,12 @@
           submitting = false;
           open = false;
         }
-      }, 600);
-    } catch (e) {
-      alert("导入失败：" + (e as Error).message);
-      submitting = false;
-    }
+      } catch (e) {
+        console.error("[import] progress poll failed:", e);
+        clearInterval(tick);
+        submitting = false;
+      }
+    }, 600);
   }
 
   function chooseSample() {

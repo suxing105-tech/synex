@@ -119,7 +119,7 @@
     >
       <div
         class="masonry-grid"
-        style="grid-template-columns: repeat({columnCount}, {$zoomSize}px); gap: {COL_GAP}px;"
+        style="grid-template-columns: repeat({columnCount}, minmax({$zoomSize}px, 1fr)); gap: {COL_GAP}px;"
       >
         {#each columns as col}
           <div class="masonry-col" style="gap: {COL_GAP}px;">
@@ -166,8 +166,8 @@
     display: grid;
     /* align-items: start 防止 grid 拉伸列高 */
     align-items: start;
-    /* 让 grid 按内容撑开，否则它会被父级挤压成一坨 */
-    width: max-content;
+    /* 不再 width: max-content，让 grid 占满父级；
+       repeat(n, minmax(zoomSize, 1fr)) 会自动把多余空间均分到各列 → 0 右缺口 */
   }
   .masonry-col {
     display: flex;

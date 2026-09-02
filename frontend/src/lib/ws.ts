@@ -23,6 +23,9 @@ export function connectEvents() {
       } else if (payload.type === "scan_progress") {
         // 后端会发 scan 进度；用单独轮询补上
         await refreshScanProgress();
+      } else if (payload.type === "thumb_rebuild_done") {
+        // 缩略图重建完成 → ?v={mtime} 已经变了，刷一次 feed 让图片地址更新
+        await refreshFeed();
       }
     } catch (e) {
       console.warn("ws message parse failed", e);

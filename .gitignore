@@ -31,3 +31,12 @@ Thumbs.db
 data/
 thumbs/
 config.json
+
+# Local test artifacts
+images.json
+search.json
+ft.json
+body.json
+tmp.bin
+index.html
+uvicorn.log

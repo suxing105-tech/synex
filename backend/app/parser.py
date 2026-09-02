@@ -1,0 +1,387 @@
+"""PNG / WebP 元数据解析。
+
+设计目标：
+
+1. **零额外依赖**：PNG 的 ``tEXt`` chunk 格式简单（key\\0value，Latin-1），
+   手写解析即可。WebP 用 RIFF 容器 + ``EXIF`` / ``XMP`` 子块。
+2. **ComfyUI 友好**：ComfyUI 写图时会把 prompt / workflow JSON 放进 PNG 的
+   ``tEXt`` chunk（key 分别为 ``prompt`` 和 ``workflow``），并按最近版本附加
+   ``parameters``（与 A1111/webui 兼容的扁平字符串）。
+3. **健壮性**：解析失败一律返回 ``(空字符串, 空字符串, 空 dict)``，由调用方决定
+   是否跳过；不抛异常到上层循环。
+
+后续可被 PIL 的 ``Image.info`` 替换，但手写版无 PIL 依赖，便于打包。
+"""
+from __future__ import annotations
+
+import json
+import re
+import struct
+from collections import defaultdict as _dd
+from pathlib import Path
+from typing import Any
+
+# ComfyUI 在保存 PNG 时把 ``class_type == "CLIPTextEncode"`` 的节点视为 prompt：
+#   - 连到 ``KSampler`` 正向 ``positive`` 的 → 正向 prompt
+#   - 连到 ``KSampler`` 反向 ``negative`` 的 → 反向 prompt
+#
+# 此外 A1111/webui 兼容格式：``parameters`` chunk 的文本协议：
+#   Positive prompt\\nNegative prompt: ...\\nSteps: 20, Sampler: ..., ...
+# 我们在 PNG 解析阶段也尝试它。
+
+# ---------- PNG tEXt / iTXt 解析 ----------
+
+
+def _read_png_chunks(path: Path) -> dict[str, bytes]:
+    """读取 PNG 文件中所有文本类 chunk（tEXt / iTXt / zTXt）的原始值。
+
+    返回 ``{key: bytes_or_text}``。出现重复 key 时后者覆盖前者。
+    """
+    out: dict[str, bytes] = {}
+    with path.open("rb") as f:
+        sig = f.read(8)
+        if sig != b"\x89PNG\r\n\x1a\n":
+            return out
+        while True:
+            header = f.read(8)
+            if len(header) < 8:
+                break
+            length = struct.unpack(">I", header[:4])[0]
+            ctype = header[4:8].decode("ascii", errors="replace")
+            data = f.read(length)
+            f.read(4)  # CRC
+            if ctype == "tEXt":
+                # keyword \\0 text (Latin-1)
+                if b"\x00" in data:
+                    k, _, v = data.partition(b"\x00")
+                    out[k.decode("latin-1", errors="replace")] = v
+            elif ctype == "iTXt":
+                # keyword\\0 compression_flag(1) compression_method(1) lang\\0 trans\\0 text
+                if b"\x00" in data:
+                    k, rest = data.split(b"\x00", 1)
+                    # 跳过 2 字节 flag/method
+                    rest = rest[2:]
+                    # lang\\0 translated\\0
+                    lang, _, body = rest.partition(b"\x00")
+                    _, _, txt = body.partition(b"\x00")
+                    out[k.decode("utf-8", errors="replace")] = txt
+            elif ctype == "zTXt":
+                if b"\x00" in data:
+                    k, _, rest = data.partition(b"\x00")
+                    # compression_method (1 byte) + compressed text
+                    if rest:
+                        method = rest[0]
+                        compressed = rest[1:]
+                        if method == 0:
+                            try:
+                                import zlib
+
+                                out[k.decode("latin-1", errors="replace")] = zlib.decompress(compressed)
+                            except Exception:
+                                pass
+            # 早停：到 ``IEND`` 之后没有文本 chunk
+            if ctype == "IEND":
+                break
+    return out
+
+
+def _parse_parameters_text(text: str) -> tuple[str, str, dict[str, Any]]:
+    """解析 A1111 ``parameters`` 文本格式。
+
+    Returns: ``(positive, negative, params_dict)``
+    """
+    if "Steps:" not in text:
+        return text.strip(), "", {}
+    # 找 "Negative prompt:" 分隔
+    if "Negative prompt:" in text:
+        pos_part, rest = text.split("Negative prompt:", 1)
+        positive = pos_part.strip()
+        if "Steps:" in rest:
+            neg_text, _, params_text = rest.partition("Steps:")
+            negative = neg_text.strip()
+            params_text = "Steps:" + params_text
+        else:
+            negative = rest.strip()
+            params_text = ""
+    else:
+        positive = text.split("Steps:")[0].strip()
+        negative = ""
+        params_text = "Steps:" + text.split("Steps:", 1)[1]
+    params: dict[str, Any] = {}
+    if params_text:
+        for chunk in params_text.split(","):
+            chunk = chunk.strip()
+            if not chunk or ":" not in chunk:
+                continue
+            k, _, v = chunk.partition(":")
+            params[k.strip()] = v.strip()
+    return positive, negative, params
+
+
+def _extract_comfyui_prompts(prompt_obj: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
+    """从 ComfyUI ``prompt`` JSON 抽取正向 / 反向 prompt + 关键参数。
+
+    采用启发式：
+    - 找到第一个 ``KSampler`` 节点 → 沿 ``inputs.positive`` / ``inputs.negative`` 链
+      追溯到 ``CLIPTextEncode`` 节点，取 ``inputs.text`` 字段。
+    - 关键参数直接从 KSampler 节点 ``inputs`` 取。
+    """
+    if not isinstance(prompt_obj, dict):
+        return "", "", {}
+    pos = neg = ""
+    sampler_info: dict[str, Any] = {}
+
+    # 先抓所有 KSampler 节点
+    ksamplers: list[dict[str, Any]] = []
+    for nid, node in prompt_obj.items():
+        if isinstance(node, dict) and node.get("class_type") == "KSampler":
+            ksamplers.append(node)
+    if not ksamplers:
+        # 新版 ComfyUI 可能用 ``KSamplerAdvanced`` / ``SamplerCustom`` 等，做最小适配
+        for nid, node in prompt_obj.items():
+            if isinstance(node, dict) and "Sampler" in (node.get("class_type") or ""):
+                ksamplers.append(node)
+    if ksamplers:
+        ks = ksamplers[0]
+        sampler_info = {k: v for k, v in (ks.get("inputs") or {}).items() if k != "model" and k != "positive" and k != "negative"}
+
+        def resolve_text(link: list[Any] | None) -> str:
+            if not link or not isinstance(link, list) or len(link) < 1:
+                return ""
+            target_id = link[0]
+            target = prompt_obj.get(str(target_id))
+            if not isinstance(target, dict):
+                return ""
+            if target.get("class_type") == "CLIPTextEncode":
+                return str((target.get("inputs") or {}).get("text") or "")
+            # 某些变体：Reroute / ConditioningCombine 等，再向上一层
+            for v in (target.get("inputs") or {}).values():
+                if isinstance(v, list) and v:
+                    t = resolve_text(v)
+                    if t:
+                        return t
+            return ""
+
+        inputs = ks.get("inputs") or {}
+        pos = resolve_text(inputs.get("positive"))
+        neg = resolve_text(inputs.get("negative"))
+
+    # 模型：从 checkpoint loader 节点取
+    model = ""
+    for nid, node in prompt_obj.items():
+        if isinstance(node, dict) and "CheckpointLoader" in (node.get("class_type") or ""):
+            ckpt = (node.get("inputs") or {}).get("ckpt_name")
+            if ckpt:
+                model = str(ckpt)
+                break
+
+    merged: dict[str, Any] = dict(sampler_info)
+    if model:
+        merged["model"] = model
+    return pos.strip(), neg.strip(), merged
+
+
+# ---------- WebP RIFF 解析 ----------
+
+
+def _read_webp_metadata(path: Path) -> dict[str, bytes]:
+    """读取 WebP 文件中 ``EXIF`` / ``XMP`` 块的原始字节。
+
+    WebP = RIFF 容器，块结构 ``FourCC(4) + Size(4) + Payload + Pad``。
+    """
+    out: dict[str, bytes] = {}
+    with path.open("rb") as f:
+        riff = f.read(4)
+        size = f.read(4)
+        form = f.read(4)
+        if riff != b"RIFF" or form != b"WEBP":
+            return out
+        _ = size  # 不用
+        while True:
+            chunk_id = f.read(4)
+            if len(chunk_id) < 4:
+                break
+            sz_bytes = f.read(4)
+            if len(sz_bytes) < 4:
+                break
+            sz = struct.unpack("<I", sz_bytes)[0]
+            payload = f.read(sz)
+            # RIFF 块对齐到偶数
+            if sz % 2 == 1:
+                f.read(1)
+            cid = chunk_id.decode("ascii", errors="replace")
+            if cid in ("EXIF", "XMP "):
+                # payload 头部：4 字节空白（WebP 规范要求）
+                if payload[:4] in (b"Exif", b"http"):
+                    out[cid] = payload[4:]
+                else:
+                    out[cid] = payload
+    return out
+
+
+# ---------- 统一入口 ----------
+
+
+SUPPORTED_EXTS = {".png", ".webp"}
+
+
+def parse_metadata(path: Path) -> dict[str, Any]:
+    """解析图片元数据。返回统一结构，缺失字段为空字符串。
+
+    不会抛出异常。
+    """
+    ext = path.suffix.lower()
+    result: dict[str, Any] = {
+        "filename": path.name,
+        "positive_prompt": "",
+        "negative_prompt": "",
+        "parameters": {},
+        "workflow": "",
+        "seed": None,
+        "model": None,
+        "sampler": None,
+        "steps": None,
+        "cfg": None,
+    }
+    try:
+        if ext == ".png":
+            chunks = _read_png_chunks(path)
+            prompt_raw = chunks.get("prompt", b"")
+            workflow_raw = chunks.get("workflow", b"")
+            params_raw = chunks.get("parameters", b"")
+
+            if prompt_raw:
+                try:
+                    prompt_obj = json.loads(prompt_raw.decode("utf-8", errors="replace"))
+                    pos, neg, params = _extract_comfyui_prompts(prompt_obj)
+                    result["positive_prompt"] = pos
+                    result["negative_prompt"] = neg
+                    result["parameters"] = params
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    pass
+            if workflow_raw:
+                result["workflow"] = workflow_raw.decode("utf-8", errors="replace")
+            if params_raw:
+                try:
+                    text = params_raw.decode("utf-8", errors="replace")
+                    pos, neg, params = _parse_parameters_text(text)
+                    if not result["positive_prompt"]:
+                        result["positive_prompt"] = pos
+                    if not result["negative_prompt"]:
+                        result["negative_prompt"] = neg
+                    # 不覆盖 ComfyUI 已给出的参数
+                    for k, v in params.items():
+                        result["parameters"].setdefault(k, v)
+                except UnicodeDecodeError:
+                    pass
+
+        elif ext == ".webp":
+            # 优先尝试 EXIF 中的 UserComment（很多工具把 prompt 写在这里），其次 XMP
+            chunks = _read_webp_metadata(path)
+            exif = chunks.get("EXIF", b"")
+            if exif:
+                parsed = _parse_exif_usercomment(exif)
+                if parsed:
+                    pos, neg, params = _parse_parameters_text(parsed)
+                    if pos:
+                        result["positive_prompt"] = pos
+                    if neg:
+                        result["negative_prompt"] = neg
+                    for k, v in params.items():
+                        result["parameters"].setdefault(k, v)
+            # WebP 也可能把 ComfyUI 的 prompt 放进 XMP（custom namespace）
+            xmp = chunks.get("XMP ", b"")
+            if xmp and not result["positive_prompt"]:
+                result["positive_prompt"] = _scrape_xmp_prompt(xmp)
+    except Exception:
+        # 解析异常：返回空结构，不影响入库（无元数据也允许）
+        pass
+
+    # 把常用参数提到顶层
+    params = result["parameters"]
+    if isinstance(params, dict):
+        if "seed" in params or "Seed" in params:
+            try:
+                result["seed"] = int(str(params.get("seed") or params.get("Seed")).strip())
+            except ValueError:
+                pass
+        if "model" in params:
+            result["model"] = str(params["model"])
+        if "sampler_name" in params or "Sampler" in params or "sampler" in params:
+            result["sampler"] = str(params.get("sampler_name") or params.get("Sampler") or params.get("sampler"))
+        if "steps" in params or "Steps" in params:
+            try:
+                result["steps"] = int(str(params.get("steps") or params.get("Steps")))
+            except ValueError:
+                pass
+        if "cfg" in params or "CFG scale" in params:
+            try:
+                result["cfg"] = float(str(params.get("cfg") or params.get("CFG scale")))
+            except ValueError:
+                pass
+    return result
+
+
+# ---------- 辅助：EXIF UserComment ----------
+
+
+def _parse_exif_usercomment(exif_bytes: bytes) -> str:
+    """极简 EXIF 解码，只取 ``UserComment`` 字段文本。"""
+    try:
+        # 跳过 ``Exif\\0\\0``
+        if exif_bytes.startswith(b"Exif"):
+            exif_bytes = exif_bytes[6:]
+        # TIFF header
+        if exif_bytes[:2] not in (b"II", b"MM"):
+            return ""
+        little = exif_bytes[:2] == b"II"
+        endian = "<" if little else ">"
+
+        def u16(off: int) -> int:
+            return struct.unpack(endian + "H", exif_bytes[off : off + 2])[0]
+
+        def u32(off: int) -> int:
+            return struct.unpack(endian + "I", exif_bytes[off : off + 4])[0]
+
+        if u16(2) != 0x002A:
+            return ""
+        ifd0_off = u32(4)
+        n = u16(ifd0_off)
+        for i in range(n):
+            entry_off = ifd0_off + 2 + i * 12
+            tag = u16(entry_off)
+            if tag == 0x8769:  # ExifIFD
+                exif_ifd = u32(entry_off + 8)
+                m = u16(exif_ifd)
+                for j in range(m):
+                    eoff = exif_ifd + 2 + j * 12
+                    ttag = u16(eoff)
+                    if ttag == 0x9286:  # UserComment
+                        # 跳过 char encoding 前 8 字节
+                        val_off = u32(eoff + 8)
+                        size = u32(eoff + 4)
+                        raw = exif_bytes[val_off : val_off + size]
+                        # 前 8 字节是 charset 标记
+                        if len(raw) > 8:
+                            charset = raw[:8]
+                            text_bytes = raw[8:]
+                            if charset.startswith(b"UNICODE"):
+                                return text_bytes.decode("utf-16", errors="replace").rstrip("\x00").strip()
+                            return text_bytes.decode("utf-8", errors="replace").strip()
+                        return raw.decode("utf-8", errors="replace").strip()
+        return ""
+    except Exception:
+        return ""
+
+
+def _scrape_xmp_prompt(xmp_bytes: bytes) -> str:
+    """从 XMP 中粗略匹配 ``dc:description`` 字段。"""
+    text = xmp_bytes.decode("utf-8", errors="replace")
+    m = re.search(r"<dc:description>([\s\S]*?)</dc:description>", text)
+    if m:
+        return m.group(1).strip()
+    m = re.search(r"<Description>([\s\S]*?)</Description>", text)
+    if m:
+        return m.group(1).strip()
+    return ""
+

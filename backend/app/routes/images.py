@@ -1,6 +1,7 @@
 """/api/images 路由：feed / detail / 删除 / 标签 / 收藏。"""
 from __future__ import annotations
 
+import os
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from .. import repository
@@ -117,23 +118,44 @@ def get_original(image_id: int, request: Request, max: int | None = Query(defaul
 
 
 @router.delete("/{image_id}")
-def delete_image(image_id: int, remove_file: bool = False):
-    """从索引中删除图片。可选同步删除原文件（默认 False：仅移除索引）。"""
-    conn = get_pool().main()
-    row = conn.execute("SELECT id, path FROM images WHERE id = ?", (image_id,)).fetchone()
-    if not row:
-        raise HTTPException(404, "图片不存在")
-    path = row["path"]
-    from pathlib import Path
+def delete_image(image_id: int, remove_file: bool = True):
+    """从数据库删除图片，同时清理磁盘文件 + 缩略图缓存 + 预览缓存。
 
-    fpath = Path(path)
-    if remove_file:
-        try:
-            fpath.unlink(missing_ok=True)
-        except OSError as e:
-            raise HTTPException(500, f"删除文件失败: {e}") from e
-    conn.execute("DELETE FROM images WHERE id = ?", (image_id,))
-    return {"ok": True, "id": image_id, "removed_file": remove_file}
+    - remove_file=True（默认，对应右键菜单"删除图片"）：
+        删 DB 行、删原 PNG、删 thumb_path、删 previews/{id}_max*.webp 全部
+    - remove_file=False：
+        仅删 DB 行 + 清 previews/{id}_max*.webp（保留原文件）
+
+    404 → 图片不存在
+    500 → 删除原文件时遇到 OSError
+    """
+    if not remove_file:
+        conn = get_pool().main()
+        row = conn.execute("SELECT id FROM images WHERE id = ?", (image_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "图片不存在")
+        cleaned = 0
+        from ..config import previews_dir
+        pd = previews_dir()
+        if pd.exists():
+            for f in pd.glob(f"{image_id}_max*.webp"):
+                try:
+                    f.unlink()
+                    cleaned += 1
+                except OSError:
+                    pass
+        conn.execute("DELETE FROM images WHERE id = ?", (image_id,))
+        return {"ok": True, "id": image_id, "removed_file": False, "cleaned_previews": cleaned}
+
+    try:
+        result = repository.delete_image_files(image_id)
+    except repository.RenameError as e:
+        if str(e) == "not_found":
+            raise HTTPException(404, "图片不存在")
+        raise HTTPException(500, str(e))
+    except OSError as e:
+        raise HTTPException(500, f"删除文件失败: {e}")
+    return {"ok": True, **result}
 
 
 @router.post("/{image_id}/favorite")
@@ -191,14 +213,17 @@ def rename_image(image_id: int, payload: dict):
 
 @router.post("/{image_id}/reveal")
 def reveal_image(image_id: int):
-    """在操作系统默认文件管理器中高亮显示该图片。
+    """在操作系统默认文件管理器里打开图片所在位置。
 
-    - Windows: `explorer.exe /select,<path>`
-    - macOS:   `open -R <path>`
-    - Linux:   `xdg-open <dir>`（多数 FM 不支持高亮单个文件，fallback 打开目录）
+    多策略兜底（按顺序尝试）：
+    - Windows: explorer /select,path → explorer.exe 父目录 → os.startfile 父目录
+    - macOS:   open -R path → open 父目录
+    - 其它:    xdg-open 父目录
 
-    成功 → 200 {ok:true}；文件被移走 → 404；启动管理器失败 → 500。
+    即便所有策略失败（headless 容器无 GUI），只要 path 存在就返回 200，
+    前端通过 method 字段知道是否真启动了 Shell，避免无意义的 500。
     """
+    import logging
     import platform
     import subprocess
     from pathlib import Path
@@ -207,16 +232,47 @@ def reveal_image(image_id: int):
     if not path_str:
         raise HTTPException(404, "图片或文件不存在")
     p = Path(path_str)
+    parent = p.parent
     system = platform.system().lower()
-    try:
-        if system == "windows":
-            # explorer 必须传 win 路径
-            subprocess.Popen(["explorer.exe", f"/select,{p}"])
-        elif system == "darwin":
-            subprocess.Popen(["open", "-R", str(p)])
-        else:
-            # Linux/其它：fallback 到打开目录
-            subprocess.Popen(["xdg-open", str(p.parent)])
-    except (OSError, FileNotFoundError) as e:
-        raise HTTPException(500, f"打开文件管理器失败: {e}")
-    return {"ok": True, "id": image_id, "path": str(p)}
+    log = logging.getLogger(__name__)
+
+    chosen = ""
+
+    def try_exec(name, fn):
+        nonlocal chosen
+        if chosen:
+            return True
+        try:
+            fn()
+            chosen = name
+            return True
+        except (OSError, FileNotFoundError, ValueError) as e:
+            log.debug("reveal fallback %s failed: %s", name, e)
+            return False
+
+    if system == "windows":
+        try_exec("explorer-select", lambda: subprocess.Popen(
+            ["explorer.exe", f"/select,{p}"], close_fds=True,
+        ))
+        if not chosen:
+            try_exec("explorer-dir", lambda: subprocess.Popen(
+                ["explorer.exe", str(parent)], close_fds=True,
+            ))
+        if not chosen and hasattr(os, "startfile"):
+            try_exec("startfile-dir", lambda: os.startfile(str(parent)))
+    elif system == "darwin":
+        try_exec("open-R", lambda: subprocess.Popen(["open", "-R", str(p)]))
+        if not chosen:
+            try_exec("open-dir", lambda: subprocess.Popen(["open", str(parent)]))
+    else:
+        try_exec("xdg-open-dir", lambda: subprocess.Popen(["xdg-open", str(parent)]))
+
+    return {
+        "ok": True,
+        "id": image_id,
+        "path": str(p),
+        "method": chosen or "noop",
+        "platform": system,
+    }
+
+

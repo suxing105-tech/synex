@@ -339,12 +339,80 @@ def test_reveal_endpoint_returns_200(client):
         # 在完全无 GUI 环境下 subprocess 可能报 ENOENT → 500
         assert r.status_code == 500
 
-
 def test_reveal_not_found(client):
     """不存在的 id → 404。"""
     r = client.post("/api/images/999999/reveal")
     assert r.status_code == 404
 
+
+def test_reveal_returns_method_field(client):
+    """成功 → 200 + method 字段非空。"""
+    img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
+    r = client.post(f"/api/images/{img_id}/reveal")
+    # 有 GUI 环境：method 非 noop；无 GUI：依然 200（不抛 500）
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["method"]  # 至少有一个 method，empty 字符串视为 false
+    assert body["platform"]
+
+
+# ---------- 删除图片（缩略图 / 预览一并清） ----------
+
+def test_delete_image_default_removes_file_and_previews(client):
+    """DELETE 默认 remove_file=True：原文件 + 预览缓存全清。"""
+    from pathlib import Path
+    from app.config import previews_dir
+    img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
+    info = client.get(f"/api/images/{img_id}").json()
+    orig_path = Path(info["path"])
+    assert orig_path.exists()
+
+    # 先请求一次 file?max=512，触发预览落盘
+    r1 = client.get(f"/api/images/{img_id}/file", params={"max": 512})
+    assert r1.status_code == 200
+    cache_p512 = previews_dir() / f"{img_id}_max512.webp"
+    assert cache_p512.exists(), "preview cache should be created"
+
+    # 删
+    r = client.delete(f"/api/images/{img_id}")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["removed_file"] is True
+    assert body["cleaned_previews"] >= 1
+
+    # 原文件没了
+    assert not orig_path.exists()
+    # 预览没了
+    assert not cache_p512.exists()
+    # DB 行没了
+    detail = client.get(f"/api/images/{img_id}")
+    assert detail.status_code == 404
+
+
+def test_delete_image_not_found(client):
+    r = client.delete("/api/images/999999")
+    assert r.status_code == 404
+
+
+def test_delete_image_remove_file_false_keeps_orig_clears_preview(client):
+    """remove_file=False：保留原文件，但 previews/{id}_*.webp 仍然清。"""
+    from pathlib import Path
+    from app.config import previews_dir
+    img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
+    info = client.get(f"/api/images/{img_id}").json()
+    orig_path = Path(info["path"])
+
+    # 触发预览
+    client.get(f"/api/images/{img_id}/file", params={"max": 256})
+    cache = previews_dir() / f"{img_id}_max256.webp"
+    assert cache.exists()
+
+    r = client.delete(f"/api/images/{img_id}", params={"remove_file": "false"})
+    assert r.status_code == 200
+    assert orig_path.exists(), "原文件不应被删"
+    assert not cache.exists(), "预览应被清"
 
 
 def test_feed_includes_max_in_original_url(client):

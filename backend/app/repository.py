@@ -395,6 +395,57 @@ def rename_image(image_id: int, new_filename: str) -> dict:
     return _row_to_summary(updated)
 
 
+def delete_image_files(image_id: int) -> dict:
+    """从数据库删除图片条目，并清理磁盘文件 + 预览缓存。
+
+    返回 {"id": int, "removed_file": bool, "cleaned_previews": int}。
+    图片不存在 → 抛 RenameError('not_found')。
+    原文件删除失败（非 OSError）→ 让上层决定。
+    """
+    from .config import previews_dir
+    conn = get_pool().main()
+    row = conn.execute(
+        "SELECT id, path, thumb_path FROM images WHERE id = ?", (image_id,)
+    ).fetchone()
+    if not row:
+        raise RenameError("not_found")
+    fpath = Path(row["path"])
+    thumb = row["thumb_path"]
+
+    removed_file = False
+    try:
+        if fpath.exists():
+            fpath.unlink()
+        removed_file = True
+    except FileNotFoundError:
+        removed_file = False
+    except OSError:
+        raise
+
+    # 缩略图（thumb_path 有就删，没有跳过）
+    if thumb:
+        try:
+            tp = Path(thumb)
+            if tp.exists():
+                tp.unlink()
+        except (OSError, FileNotFoundError):
+            pass
+
+    # previews/{id}_max*.webp（任意长边）—— 不存在也忽略
+    cleaned = 0
+    pd = previews_dir()
+    if pd.exists():
+        for f in pd.glob(f"{image_id}_max*.webp"):
+            try:
+                f.unlink()
+                cleaned += 1
+            except (OSError, FileNotFoundError):
+                pass
+
+    conn.execute("DELETE FROM images WHERE id = ?", (image_id,))
+    return {"id": image_id, "removed_file": removed_file, "cleaned_previews": cleaned}
+
+
 def image_reveal_path(image_id: int) -> str | None:
     """返回图片在磁盘上的绝对路径（供 OS 文件管理器定位）。"""
     conn = get_pool().main()

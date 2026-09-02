@@ -68,7 +68,7 @@
       },
       { kind: "sep" },
       {
-        label: "删除图片",
+        label: "删除图片（含缩略图）",
         danger: true,
         onClick: () => deleteImage(t),
       },
@@ -128,30 +128,22 @@
 
   async function revealImage(it: ImageSummary) {
     try {
-      await imagesApi.reveal(it.id);
+      const r = await imagesApi.reveal(it.id);
+      if (r.method && r.method !== "noop") {
+        notify(`已打开图片所在位置（${r.method}）`);
+      } else {
+        notify(`已请求打开图片所在位置`);
+      }
     } catch (e) {
       notify(`打开位置失败: ${(e as Error).message}`);
     }
   }
 
   async function deleteImage(it: ImageSummary) {
-    const drop = window.confirm(
-      `确认删除 "${it.filename}"？\n\n点"确定"仅从索引移除（保留文件）；\n点"取消"后选"同时删除文件"走彻底删除流程。`,
-    );
-    if (!drop) {
-      const both = window.confirm("彻底删除文件（连同磁盘文件一并删除）？此操作不可撤销！");
-      if (!both) return;
-      await doDelete(it, true);
-      return;
-    }
-    await doDelete(it, false);
-  }
-
-  async function doDelete(it: ImageSummary, removeFile: boolean) {
+    // 右键菜单"删除图片"：直接删除图片 + 原文件 + 缩略图缓存，不做二次确认。
     try {
-      await imagesApi.remove(it.id, removeFile);
-      notify(removeFile ? "已删除图片 + 文件" : "已从索引移除");
-      // 如果删的是当前选中，清空选中
+      const resp = await imagesApi.remove(it.id, true);
+      notify(`已删除图片（清理缩略图 ${resp.cleaned_previews ?? 0} 个）`);
       if (selectedId === it.id) selectedId = null;
       await Promise.all([refreshFeed(), refreshStats()]);
     } catch (e) {

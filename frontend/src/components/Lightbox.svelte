@@ -81,7 +81,7 @@
       { label: "重命名", onClick: () => renameImage(it) },
       { label: "打开图片所在位置", onClick: () => revealImage(it) },
       { kind: "sep" },
-      { label: "删除图片", danger: true, onClick: () => deleteImage(it) },
+      { label: "删除图片（含缩略图）", danger: true, onClick: () => deleteImage(it) },
     ];
   });
 
@@ -129,26 +129,24 @@
 
   async function revealImage(it: any) {
     try {
-      await imagesApi.reveal(it.id);
+      const r = await imagesApi.reveal(it.id);
+      if (r.method && r.method !== "noop") {
+        notify(`已打开图片所在位置（${r.method}）`);
+      } else {
+        notify(`已请求打开图片所在位置`);
+      }
     } catch (e) {
       notify(`打开位置失败: ${(e as Error).message}`);
     }
   }
 
   async function deleteImage(it: any) {
-    if (!window.confirm(`确认删除 "${it.filename}"？\n\n点"确定"仅从索引移除；\n点"取消"后选"删除文件"走彻底删除流程。`)) {
-      if (!window.confirm("彻底删除文件（不可撤销）？")) return;
-      await doDelete(it, true);
-      return;
-    }
-    await doDelete(it, false);
-  }
-
-  async function doDelete(it: any, removeFile: boolean) {
+    // 直接删除图片 + 缩略图，不做二次确认。
     try {
-      await imagesApi.remove(it.id, removeFile);
-      notify(removeFile ? "已删除图片 + 文件" : "已从索引移除");
+      const resp = await imagesApi.remove(it.id, true);
+      notify(`已删除图片（清理缩略图 ${resp.cleaned_previews ?? 0} 个）`);
       if (selectedId === it.id) selectedId = null;
+      open = false;  // 关 Lightbox
       await Promise.all([refreshFeed(), refreshStats()]);
     } catch (e) {
       notify(`删除失败: ${(e as Error).message}`);

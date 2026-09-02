@@ -81,11 +81,17 @@ async def lifespan(app: FastAPI):
         save_config(cfg)
 
     indexer = get_indexer()
+    bus = get_bus()
 
-    async def _emit(payload: dict) -> None:
-        await get_bus().publish(payload)
+    def _on_event(payload: dict) -> None:
+        # 把 watchdog 线程的事件安全地切到 asyncio 循环
+        try:
+            loop = asyncio.get_running_loop()
+            asyncio.run_coroutine_threadsafe(bus.publish(payload), loop)
+        except RuntimeError:
+            pass
 
-    indexer.on_event = lambda payload: _schedule_emit(_emit, payload)
+    indexer.on_event = _on_event
     await indexer.start_watching(asyncio.get_running_loop())
     log.info("watching dirs: %s", cfg.watch_dirs)
     yield

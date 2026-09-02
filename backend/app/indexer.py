@@ -329,7 +329,9 @@ class Indexer:
 
     async def _emit(self, payload: dict) -> None:
         try:
-            await self.on_event(payload)
+            # on_event 是同步回调（直接 publish 到 bus），
+            # 主线程切到 asyncio 循环由 call_soon_threadsafe 完成
+            self.on_event(payload)
         except Exception as e:  # noqa: BLE001
             log.warning("emit failed: %s", e)
 

@@ -41,6 +41,21 @@ def get_image(image_id: int) -> ImageDetail:
     return row
 
 
+@router.get("/{image_id}/file")
+def get_original(image_id: int):
+    """返回原图字节流（Lightbox 用）。"""
+    from pathlib import Path
+    from fastapi.responses import FileResponse
+    from ..db import get_pool
+    row = get_pool().main().execute("SELECT path, filename FROM images WHERE id = ?", (image_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "图片不存在")
+    p = Path(row["path"])
+    if not p.exists():
+        raise HTTPException(404, "原文件不存在")
+    return FileResponse(p, filename=row["filename"])
+
+
 @router.delete("/{image_id}")
 def delete_image(image_id: int, remove_file: bool = False):
     """从索引中删除图片。可选同步删除原文件（默认 False：仅移除索引）。"""

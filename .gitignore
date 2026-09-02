@@ -44,3 +44,5 @@ uvicorn.log
 
 # Python egg-info (from pip install -e .)
 *.egg-info/
+
+%SystemDrive%/

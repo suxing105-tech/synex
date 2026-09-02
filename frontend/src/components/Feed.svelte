@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { feedItems, feedTotal, feedLoading, zoomSize, activeFolderName, newIds } from "../lib/stores";
+  import { feedItems, feedTotal, feedLoading, targetColumns, activeFolderName, newIds } from "../lib/stores";
   import type { ImageSummary } from "../lib/types";
 
   interface Props {
@@ -36,7 +36,7 @@
 
   // ---------- 真 masonry：JS 贪心分列 ----------
   //
-  // 列宽固定 = $zoomSize，每列独立，贪心把每张图放进当前最矮的列。
+  // 列数 = $targetColumns（4-12），列宽 = 容器宽 / 列数 - gap；贪心按 height 投放。
   // 既保留 mtime 顺序（不 shuffle），又让每列内自然横竖混合。
   // 因为列宽是 px 固定，拖动缩放滑块时缩略图会真的变大变小。
   const COL_GAP = 8;
@@ -45,22 +45,28 @@
   let containerWidth = $state(0);
 
   // 列数随容器宽度 + 缩放基线变
-  let columnCount = $derived.by(() => {
-    if (containerWidth <= 0) return 1;
-    const n = Math.floor((containerWidth + COL_GAP) / ($zoomSize + COL_GAP));
-    return Math.max(1, n);
+  // 列数直接来自 slider（4-12）；不靠容器宽度推算，避免临界点跳动
+  let columnCount = $derived(Math.max(1, $targetColumns));
+
+  // 列宽 = 容器宽均分 + gap，用于贪心分列预计算高度
+  let columnWidth = $derived.by(() => {
+    if (containerWidth <= 0) return 0;
+    const n = columnCount;
+    return (containerWidth - (n - 1) * COL_GAP) / n;
   });
 
   // 贪心分组
   let columns = $derived.by(() => {
     const n = columnCount;
+    const w = columnWidth;
     const cols: { items: ImageSummary[]; height: number }[] = Array.from(
       { length: n },
       () => ({ items: [], height: 0 }),
     );
+    if (w <= 0) return cols;
     for (const it of $feedItems) {
       const ratio = it.width && it.height ? it.height / it.width : 1;
-      const h = $zoomSize * ratio + COL_GAP;
+      const h = w * ratio + COL_GAP;
       // 找当前最矮的列
       let target = cols[0];
       for (let i = 1; i < n; i++) if (cols[i].height < target.height) target = cols[i];
@@ -79,17 +85,17 @@
     <div class="text-xs text-muted mt-0">{$feedTotal} 张</div>
   </div>
   <div class="ml-auto flex items-center gap-2 text-[12.5px] text-muted">
-    <span>🔍</span>
+    <span>列数</span>
     <input
       type="range"
-      min="140"
-      max="480"
-      step="10"
-      value={$zoomSize}
-      oninput={(e) => zoomSize.set(Number((e.target as HTMLInputElement).value))}
+      min="4"
+      max="12"
+      step="1"
+      value={$targetColumns}
+      oninput={(e) => targetColumns.set(Number((e.target as HTMLInputElement).value))}
       class="accent-accent w-32"
     />
-    <span class="text-zinc-200 font-mono">{$zoomSize}px</span>
+    <span class="text-zinc-200 font-mono">{$targetColumns} 列</span>
   </div>
 </div>
 
@@ -108,8 +114,8 @@
   {:else}
     <!--
       贪心 masonry：
-        - 列宽固定 = $zoomSize px（拖滑块时缩略图会真切变大变小）
-        - 列数 = floor((容器宽 + gap) / (zoomSize + gap))
+        - 列数固定 = $targetColumns，列宽 = 容器宽 / 列数 - gap（拖滑块时缩略图真切变大变小）
+        - 列数直接 = $targetColumns（不再推算）
         - 每张图放进当前最矮的列
         - 外层 overflow-x: auto 处理极窄屏兜底
     -->
@@ -119,7 +125,7 @@
     >
       <div
         class="masonry-grid"
-        style="grid-template-columns: repeat({columnCount}, minmax({$zoomSize}px, 1fr)); gap: {COL_GAP}px;"
+        style="grid-template-columns: repeat({columnCount}, minmax(0, 1fr)); gap: {COL_GAP}px;"
       >
         {#each columns as col}
           <div class="masonry-col" style="gap: {COL_GAP}px;">
@@ -159,7 +165,7 @@
 
 <style>
   .masonry-scroller {
-    /* 列宽固定 = zoomSize 时整排可能溢出，横向滚动兜底；
+    /* 容器宽变化时整排可能溢出，横向滚动兜底；
        纵向交给父级 overflow-y-auto 处理 */
     overflow-x: auto;
     overflow-y: visible;
@@ -169,7 +175,7 @@
     /* align-items: start 防止 grid 拉伸列高 */
     align-items: start;
     /* 不再 width: max-content，让 grid 占满父级；
-       repeat(n, minmax(zoomSize, 1fr)) 会自动把多余空间均分到各列 → 0 右缺口 */
+       repeat(n, minmax(0, 1fr)) 由 grid 平分容器宽，0 右缺口 */
   }
   .masonry-col {
     display: flex;

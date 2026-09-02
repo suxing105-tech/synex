@@ -2,11 +2,11 @@ import { describe, it, expect } from "vitest";
 import type { ImageSummary } from "../lib/types";
 
 // 与 Feed.svelte 里贪心分列同步的纯函数：按原顺序遍历图片，每张放进当前累计高度最小的那列。
-// 与 Feed.svelte 同步：根据容器宽 + zoomSize 算列数（每列固定 = zoomSize px）
-function calcColumnCount(containerWidth: number, columnWidth: number, gap = 8): number {
-  if (containerWidth <= 0) return 1;
-  const n = Math.floor((containerWidth + gap) / (columnWidth + gap));
-  return Math.max(1, n);
+// 与 Feed.svelte 同步：根据容器宽 + targetColumns 算列宽（每列均分）
+// 与 Feed.svelte 同步：根据容器宽 + targetColumns 算列宽（每列均分）
+function calcColumnWidth(containerWidth: number, columnCount: number, gap = 8): number {
+  if (containerWidth <= 0 || columnCount <= 0) return 0;
+  return (containerWidth - (columnCount - 1) * gap) / columnCount;
 }
 
 function greedySplit(
@@ -115,44 +115,45 @@ describe("Feed masonry 贪心分列", () => {
     expect(cols360.map((c) => c.items.length)).toEqual([3, 3]);
   });
 });
-describe("Feed 滑块 → 列数公式 calcColumnCount", () => {
-  it("默认 1920 视口 + zoomSize=220 → 5-6 列", () => {
-    // 1920 - 260(sidebar) - 360(detail) ≈ 1300 给 Feed；按 1300 估算
-    expect(calcColumnCount(1300, 220)).toBeGreaterThanOrEqual(5);
-    expect(calcColumnCount(1300, 220)).toBeLessThanOrEqual(6);
+describe("Feed 滑块 → 列宽公式 calcColumnWidth", () => {
+  it("默认 1300 容器宽 + targetColumns=7 → 列宽 ~182", () => {
+    // 1300 给 Feed，7 列：每列 (1300 - 6*8)/7 ≈ 178.86
+    const w = calcColumnWidth(1300, 7);
+    expect(w).toBeGreaterThanOrEqual(170);
+    expect(w).toBeLessThanOrEqual(190);
   });
 
-  it("缩小滑块 zoomSize 140 → 列数变多；放大 360 → 列数变少", () => {
-    const narrow = 800; // 视口较小时
-    const small = calcColumnCount(narrow, 140); // 期望 5
-    const big   = calcColumnCount(narrow, 360); // 期望 2
-    expect(small).toBeGreaterThan(big);
-    expect(small).toBe(5);
-    expect(big).toBe(2);
+  it("减少 targetColumns → 列宽变大；增加 targetColumns → 列宽变小", () => {
+    const w1000 = 1000;
+    const fewer = calcColumnWidth(w1000, 4);  // 列少 → 列宽大
+    const more  = calcColumnWidth(w1000, 10); // 列多 → 列宽小
+    expect(fewer).toBeGreaterThan(more);
+    expect(fewer).toBeCloseTo((1000 - 3 * 8) / 4, 1);
+    expect(more).toBeCloseTo((1000 - 9 * 8) / 10, 1);
   });
 
-  it("滑块在边界值 140 / 360 之间滑动时列数稳定变化（不抖动）", () => {
-    // 等于 (容器 + gap) / (列宽 + gap) 的零界点要稳定
+  it("滑块在边界值 4 / 12 之间滑动时列宽稳定变化（不抖动）", () => {
     const w = 1000;
-    expect(calcColumnCount(w, 140)).toBe(6);  // (1000+8)/(140+8)=6.81 floor
-    expect(calcColumnCount(w, 220)).toBe(4);  // (1000+8)/(220+8)=4.37
-    expect(calcColumnCount(w, 360)).toBe(2);  // (1000+8)/(360+8)=2.67
+    expect(calcColumnWidth(w, 4)).toBeCloseTo((1000 - 3 * 8) / 4, 1);
+    expect(calcColumnWidth(w, 7)).toBeCloseTo((1000 - 6 * 8) / 7, 1);
+    expect(calcColumnWidth(w, 12)).toBeCloseTo((1000 - 11 * 8) / 12, 1);
   });
 
-  it("容器未测量时退到 1 列，不报错", () => {
-    expect(calcColumnCount(0, 220)).toBe(1);
-    expect(calcColumnCount(-10, 220)).toBe(1);
+  it("容器未测量或非法列数时退到 0，不报错", () => {
+    expect(calcColumnWidth(0, 7)).toBe(0);
+    expect(calcColumnWidth(-10, 7)).toBe(0);
+    expect(calcColumnWidth(1000, 0)).toBe(0);
+    expect(calcColumnWidth(1000, -1)).toBe(0);
   });
 
-  it("缩放 + 当前容器宽下，贪心分组后每个 thumb 的高度与列宽一致", () => {
-    // 6 张竖图 1152x2064，列宽 220 时每列 thumb 理论高 = 220 * 2064/1152 ≈ 394
+  it("列数变化时，贪心分组后总张数守恒 + 列数 = 2 时强制 3+3", () => {
+    // 6 张竖图（1152x2064），列数从 4 变 2 时贪心分组的张数分配
     const items = [1,2,3,4,5,6].map(i => mkItem(i, 1152, 2064));
-    const n = calcColumnCount(1000, 220); // =4
-    const cols = greedySplit(items, n, 220);
-    // 总张数守恒
+    const w4 = calcColumnWidth(1000, 4);
+    const cols = greedySplit(items, 4, w4);
     expect(cols.flatMap(c => c.items).length).toBe(6);
-    // 滑块改 360，列数变 2，6 张 → 每列 3 张
-    expect(greedySplit(items, 2, 360).map(c => c.items.length)).toEqual([3, 3]);
+    const w2 = calcColumnWidth(1000, 2);
+    expect(greedySplit(items, 2, w2).map(c => c.items.length)).toEqual([3, 3]);
   });
 });
 

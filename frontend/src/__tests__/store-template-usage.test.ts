@@ -25,7 +25,7 @@ function listSvelte(dir: string): string[] {
 
 // stores.ts 导出的 writable store
 const STORE_NAMES = [
-  "selectedDetail", "selectedId", "folderId", "view", "query", "zoomSize",
+  "selectedDetail", "selectedId", "folderId", "view", "query", "targetColumns",
   "feedItems", "feedTotal", "feedLoading", "folders", "stats", "scanProgress",
   "newIds",
 ];

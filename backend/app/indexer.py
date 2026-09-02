@@ -111,6 +111,7 @@ class Indexer:
         """同步处理单张图；返回事件 payload 或 ``None``。"""
         path_str = self._normalize(path)
         if remove:
+            conn = get_pool().main()
             row = conn.execute("SELECT id FROM images WHERE path = ?", (path_str,)).fetchone()
             if row:
                 image_id = row["id"]
@@ -118,7 +119,6 @@ class Indexer:
                     conn.execute("DELETE FROM images WHERE id = ?", (image_id,))
                     fts_sync(conn, image_id, "delete")
                 return {"type": "image_removed", "id": image_id, "path": path_str}
-            return None
             return None
         if not path.exists() or path.suffix.lower() not in SUPPORTED_EXTS:
             return None

@@ -61,7 +61,7 @@ describe("前端 stores", () => {
       id: 1,
       filename: "a.png",
       path: "a.png",
-      thumb_url: "/thumbs/1.webp",
+      original_url: "/api/images/1/file?max=1024&v=1.0",
       width: 1024,
       height: 1024,
       mtime: 1.0,

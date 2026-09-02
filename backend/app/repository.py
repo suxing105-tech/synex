@@ -6,33 +6,9 @@ import sqlite3
 from collections.abc import Iterable
 from pathlib import Path
 
-from .config import thumbs_dir
 from .db import get_pool, transaction
 
 
-import os as _os
-from .config import thumbs_dir as _thumbs_dir
-
-
-def _thumb_version(thumb_path: str | None) -> int:
-    """返回缩略图文件的版本号（stat mtime，0 表示没有）—— 用来拼 ?v= 让浏览器别用缓存。
-
-    缩略图被重建后 mtime 变 → URL 变 → 浏览器重新拉新图，避免看到老糊图。
-    性能：一个 syscall 每张 thumb，完全可接受。
-    """
-    if not thumb_path:
-        return 0
-    try:
-        return int(_os.path.getmtime(thumb_path))
-    except OSError:
-        return 0
-
-
-def thumb_url_for(image_id: int, thumb_path: str | None, status: str | None) -> str | None:
-    """返回带 cache-bust 的缩略图 URL；status != ready 时返回 None。"""
-    if status != "ready":
-        return None
-    return f"/thumbs/{image_id}.webp?v={_thumb_version(thumb_path)}"
 
 def original_url_for(image_id: int, file_mtime: float | None, *, max_size: int | None = 1024) -> str | None:
     """返回带 cache-bust 的原图 URL（feed 直接拿原图让浏览器缩放）。
@@ -298,7 +274,6 @@ def _row_to_summary(row: sqlite3.Row) -> dict:
         "id": row["id"],
         "filename": row["filename"],
         "path": row["path"],
-        "thumb_url": thumb_url_for(row["id"], row["thumb_path"], row["thumb_status"]),
         "original_url": original_url_for(row["id"], row["mtime"]),
         "width": row["width"],
         "height": row["height"],
@@ -327,7 +302,6 @@ def _row_to_detail(row: sqlite3.Row) -> dict:
             "format": row["format"],
             "created_at": row["created_at"] if "created_at" in row.keys() else None,
             "indexed_at": row["indexed_at"] if "indexed_at" in row.keys() else None,
-            "thumb_status": row["thumb_status"],
         }
     )
     return summary
@@ -462,16 +436,12 @@ def tag_list() -> list[dict]:
 def stats() -> dict:
     conn = get_pool().main()
     total = conn.execute("SELECT COUNT(*) AS c FROM images").fetchone()["c"]
-    indexed = conn.execute(
-        "SELECT COUNT(*) AS c FROM images WHERE thumb_status = 'ready'"
-    ).fetchone()["c"]
     favorites = conn.execute(
         "SELECT COUNT(*) AS c FROM images WHERE favorite = 1"
     ).fetchone()["c"]
     folders = conn.execute("SELECT COUNT(*) AS c FROM folders").fetchone()["c"]
     return {
         "total_images": total,
-        "thumbs_ready": indexed,
         "favorites": favorites,
         "folders": folders,
     }

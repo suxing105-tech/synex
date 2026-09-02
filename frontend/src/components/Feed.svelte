@@ -132,19 +132,13 @@
                 onclick={() => (selectedId = it.id)}
                 ondblclick={() => openLightbox(it, $feedItems.findIndex((x) => x.id === it.id))}
               >
-                {#if it.original_url}
-                  <img
-                    src={it.original_url}
-                    alt={it.filename}
-                    loading="lazy"
-                    decoding="async"
-                    class="w-full h-full object-cover"
-                  />
-                {:else if it.thumb_url}
-                  <img src={it.thumb_url} alt={it.filename} loading="lazy" class="w-full h-full object-cover" />
-                {:else}
-                  <div class="w-full h-full flex items-center justify-center text-muted text-xs">无图可显示</div>
-                {/if}
+                <img
+                  src={it.original_url}
+                  alt={it.filename}
+                  loading="lazy"
+                  decoding="async"
+                  class="w-full h-full object-cover"
+                />
                 <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] truncate">
                   {it.filename}
                 </div>

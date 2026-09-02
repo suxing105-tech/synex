@@ -33,7 +33,7 @@ function mkItem(id: number, w: number | null, h: number | null): ImageSummary {
     id,
     filename: `img_${id}.png`,
     path: `x/${id}.png`,
-    thumb_url: `/thumbs/${id}.webp`,
+    original_url: `/api/images/${id}/file?max=1024`,
     width: w,
     height: h,
     mtime: 0,

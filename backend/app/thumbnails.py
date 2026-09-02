@@ -1,10 +1,11 @@
-"""缩略图生成。
+"""Feed 预览图生成（按需落盘到 ``data/previews/``）。
 
-设计：
-- 全部缩略图统一为 ``thumb_size`` 像素（默认 256，正方形外接框）。
-- 文件名：``<image_id>.webp``，用 WebP 体积小、解码快。
-- 失败容错：缩略图失败不影响图片入库，``thumb_status='failed'`` 即可。
-- 单线程同步接口：调用方负责调度（扫描时多线程并发生成）。
+历史：本模块最初是 thumb 系统的一部分。feed 切到 `?max=1024` 原图预览后，
+thumb 系统的所有调用方都已消失（materials/12），整个模块只剩下
+``generate_preview()`` 这一条生路在用。
+
+Pillow 的 LANCZOS 重采样 + WebP 编码作为通用工具，函数都集中在这里方便以后
+其他用途（比如 grid 子图 / 批量导出）复用。
 """
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ from pathlib import Path
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from .config import previews_dir, thumbs_dir
+from .config import previews_dir
 
 log = logging.getLogger(__name__)
 
@@ -23,34 +24,6 @@ log = logging.getLogger(__name__)
 Image.MAX_IMAGE_PIXELS = None
 
 _LOCK = threading.Lock()
-
-
-def generate(image_path: Path, image_id: int, size: int = 256, quality: int = 80) -> Path | None:
-    """为 ``image_path`` 生成缩略图，返回缩略图绝对路径；失败返回 ``None``。"""
-    out_path = thumbs_dir() / f"{image_id}.webp"
-    try:
-        with Image.open(image_path) as im:
-            im = ImageOps.exif_transpose(im)
-            im.thumbnail((size, size), Image.Resampling.LANCZOS)
-            if im.mode not in ("RGB", "RGBA"):
-                im = im.convert("RGB")
-            elif im.mode == "RGBA":
-                bg = Image.new("RGB", im.size, (18, 18, 20))
-                bg.paste(im, mask=im.split()[3])
-                im = bg
-            buf = io.BytesIO()
-            im.save(buf, format="WEBP", quality=quality, method=4)
-            data = buf.getvalue()
-        with _LOCK:
-            out_path.write_bytes(data)
-        return out_path
-    except (UnidentifiedImageError, OSError) as e:
-        log.warning("thumbnail failed: %s (%s)", image_path, e)
-        return None
-
-
-def thumb_url_path(image_id: int) -> str:
-    return f"/thumbs/{image_id}.webp"
 
 
 def generate_preview(image_path: Path, image_id: int, max_size: int, quality: int = 85) -> Path | None:
@@ -61,8 +34,7 @@ def generate_preview(image_path: Path, image_id: int, max_size: int, quality: in
     - 缓存 mtime < 源文件 mtime → 重生成（源文件被覆盖时自动失效）
     - 命中缓存 → 直接返回，O(1) 不解码原图
     """
-    from .config import previews_dir as _pd
-    out_path = _pd() / f"{image_id}_max{max_size}.webp"
+    out_path = previews_dir() / f"{image_id}_max{max_size}.webp"
     try:
         src_stat = image_path.stat()
     except OSError:

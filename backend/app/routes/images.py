@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from .. import repository
 from ..db import get_pool
 from ..models import ImageDetail
-from ..thumbnails import thumb_url_path
+
 
 router = APIRouter(prefix="/api/images", tags=["images"])
 
@@ -120,7 +120,7 @@ def get_original(image_id: int, request: Request, max: int | None = Query(defaul
 def delete_image(image_id: int, remove_file: bool = False):
     """从索引中删除图片。可选同步删除原文件（默认 False：仅移除索引）。"""
     conn = get_pool().main()
-    row = conn.execute("SELECT id, path, thumb_status FROM images WHERE id = ?", (image_id,)).fetchone()
+    row = conn.execute("SELECT id, path FROM images WHERE id = ?", (image_id,)).fetchone()
     if not row:
         raise HTTPException(404, "图片不存在")
     path = row["path"]

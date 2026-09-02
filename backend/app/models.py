@@ -14,8 +14,7 @@ class ImageSummary(BaseModel):
     id: int
     filename: str
     path: str
-    thumb_url: str | None = None
-    original_url: str | None = None  # 原图 URL（feed 直接拿原图缩放，避免缩略图二次采样）
+    original_url: str | None = None  # 原图 URL（feed 拿 ?max=1024 预览，浏览器缩放）
     width: int | None = None
     height: int | None = None
     mtime: float
@@ -39,7 +38,6 @@ class ImageDetail(ImageSummary):
     format: str | None = None
     created_at: datetime | None = None
     indexed_at: datetime | None = None
-    thumb_status: str = "pending"
 
 
 # ---------- 文件夹 ----------
@@ -82,8 +80,6 @@ class TagInfo(BaseModel):
 
 class ConfigOut(BaseModel):
     watch_dirs: list[str]
-    thumb_size: int
-    thumb_quality: int
     theme: str
     live_enabled: bool
     scan_workers: int
@@ -91,8 +87,6 @@ class ConfigOut(BaseModel):
 
 class ConfigUpdate(BaseModel):
     watch_dirs: list[str] | None = None
-    thumb_size: int | None = None
-    thumb_quality: int | None = None
     live_enabled: bool | None = None
 
 

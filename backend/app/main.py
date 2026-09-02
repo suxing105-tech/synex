@@ -24,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .config import data_dir, load_config, save_config, thumbs_dir
+from .config import data_dir, load_config, save_config
 from .db import get_pool, init_pool
 from .events import get_bus
 from .indexer import get_indexer
@@ -119,8 +119,6 @@ app.include_router(settings_route.router)
 # ---------- 静态资源 ----------
 
 
-app.mount("/thumbs", StaticFiles(directory=str(thumbs_dir())), name="thumbs")
-
 
 @app.get("/api/health")
 async def health():
@@ -165,7 +163,7 @@ async def root():
 
 @app.get("/{full_path:path}")
 async def spa_fallback(full_path: str):
-    if full_path.startswith("api/") or full_path.startswith("thumbs/") or full_path.startswith("ws/"):
+    if full_path.startswith("api/") or full_path.startswith("ws/"):
         return JSONResponse({"error": "not found"}, status_code=404)
     if _FRONTEND_INDEX and _FRONTEND_INDEX.exists():
         return FileResponse(_FRONTEND_INDEX)

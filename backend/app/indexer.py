@@ -3,7 +3,6 @@
 职责：
 1. 扫描指定目录（递归），对每个 PNG/WebP：
    - 解析元数据 → 写库（UPSERT）
-   - 生成缩略图 → 写库（thumb_path, thumb_status）
 2. 监听目录新文件 / 修改 / 删除事件，调用 ``process_*`` 接口。
 3. 提供进度回调 + 异步任务事件，供前端 WebSocket 订阅。
 
@@ -28,10 +27,9 @@ from pathlib import Path
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from .config import Config, load_config, save_config, thumbs_dir
+from .config import Config, load_config, save_config
 from .db import fts_sync, get_pool, transaction
 from .parser import SUPPORTED_EXTS, parse_metadata
-from .thumbnails import generate as generate_thumb
 
 log = logging.getLogger(__name__)
 
@@ -54,8 +52,8 @@ class Indexer:
         self._observer: Observer | None = None
         self._watched_dirs: set[str] = set()
         self._progress_lock = threading.Lock()
-        # WAL 模式下 SQLite 只允许单写者；扫描用 threadpool 跑解析+缩略图，
-        # 但写库（UPSERT / FTS sync / thumb status）必须串行化。
+        # WAL 模式下 SQLite 只允许单写者；扫描用 threadpool 跑元数据解析，
+        # 但写库（UPSERT / FTS sync）必须串行化。
         self._write_lock = threading.Lock()
         self._progress: dict = {
             "running": False,
@@ -112,20 +110,15 @@ class Indexer:
     def _process_path_sync(self, path: Path, *, remove: bool = False) -> dict | None:
         """同步处理单张图；返回事件 payload 或 ``None``。"""
         path_str = self._normalize(path)
-        conn = get_pool().main()
         if remove:
             row = conn.execute("SELECT id FROM images WHERE path = ?", (path_str,)).fetchone()
             if row:
                 image_id = row["id"]
-                conn.execute("DELETE FROM images WHERE id = ?", (image_id,))
-                fts_sync(conn, image_id, "delete")
-                # 清理缩略图
-                tpath = thumbs_dir() / f"{image_id}.webp"
-                try:
-                    tpath.unlink(missing_ok=True)
-                except OSError:
-                    pass
+                with self._write_lock:
+                    conn.execute("DELETE FROM images WHERE id = ?", (image_id,))
+                    fts_sync(conn, image_id, "delete")
                 return {"type": "image_removed", "id": image_id, "path": path_str}
+            return None
             return None
         if not path.exists() or path.suffix.lower() not in SUPPORTED_EXTS:
             return None
@@ -158,7 +151,7 @@ class Indexer:
                     c.execute(
                         "UPDATE images SET filename=?, size_bytes=?, mtime=?, positive_prompt=?, "
                         "negative_prompt=?, parameters=?, workflow=?, seed=?, model=?, sampler=?, "
-                        "steps=?, cfg=?, width=?, height=?, thumb_status='pending' WHERE id=?",
+                        "steps=?, cfg=?, width=?, height=? WHERE id=?",
                         (
                             path.name,
                             stat.st_size,
@@ -180,8 +173,8 @@ class Indexer:
                 else:
                     cur = c.execute(
                         "INSERT INTO images(path, filename, size_bytes, mtime, positive_prompt, "
-                        "negative_prompt, parameters, workflow, seed, model, sampler, steps, cfg, width, height, "
-                        "thumb_status) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+                        "negative_prompt, parameters, workflow, seed, model, sampler, steps, cfg, width, height) "
+                        "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         (
                             path_str,
                             path.name,
@@ -202,26 +195,12 @@ class Indexer:
                     )
                     image_id = cur.lastrowid
                 fts_sync(c, image_id, "update" if row else "insert")
-            # 缩略图（后台线程中跑，不阻塞事件循环）
-        with self._write_lock:
-            thumb_path = generate_thumb(path, image_id, self._cfg.thumb_size, self._cfg.thumb_quality)
-            if thumb_path:
-                conn.execute(
-                    "UPDATE images SET thumb_path=?, thumb_status='ready' WHERE id=?",
-                    (str(thumb_path), image_id),
-                )
-            else:
-                conn.execute(
-                    "UPDATE images SET thumb_status='failed' WHERE id=?",
-                    (image_id,),
-                )
         return {
             "type": "image_indexed",
             "id": image_id,
             "path": path_str,
             "filename": path.name,
             "mtime": stat.st_mtime,
-            "thumb_status": "ready" if thumb_path else "failed",
         }
 
     # ----- 首次扫描 -----
@@ -292,107 +271,6 @@ class Indexer:
             self._observer.join(timeout=3)
             self._observer = None
         self._watched_dirs.clear()
-
-    def rebuild_thumbnails(self, *, size: int | None = None, quality: int | None = None, fire_event: bool = True) -> dict:
-        """重建所有缩略图，按当前 / 指定 size + quality。
-
-        用于：用户把 thumb_size 调大、改了 quality、或升级算法后强制刷新。
-        不动 metadata；只重写 thumb_path / thumb_status。
-
-        并发数 = self._cfg.scan_workers（默认 4），写库走主线程。
-        """
-        target_size = size if size is not None else self._cfg.thumb_size
-        target_quality = quality if quality is not None else self._cfg.thumb_quality
-        conn = get_pool().main()
-        rows = conn.execute(
-            "SELECT id, path, filename FROM images ORDER BY id"
-        ).fetchall()
-        total = len(rows)
-        self._set_progress(running=True, scanned=0, indexed=0, total=total, current_path="")
-        if fire_event and self._loop is not None and self._loop.is_running():
-            try:
-                asyncio.run_coroutine_threadsafe(
-                    self._emit({"type": "thumb_rebuild_start", "total": total, "size": target_size}),
-                    self._loop,
-                )
-            except RuntimeError:
-                pass
-        indexed = 0
-        failed = 0
-        t0 = time.time()
-        futures = []
-        for row in rows:
-            futures.append(
-                self._executor.submit(
-                    self._rebuild_one_thumb, row["id"], Path(row["path"]), target_size, target_quality
-                )
-            )
-        for i, fut in enumerate(futures, 1):
-            ok = fut.result(timeout=60)
-            if ok:
-                indexed += 1
-            else:
-                failed += 1
-            fn = rows[i - 1]["filename"] if i <= total else ""
-            self._set_progress(scanned=i, indexed=indexed, current_path=fn)
-            if fire_event and self._loop is not None and self._loop.is_running() and i % 25 == 0:
-                try:
-                    asyncio.run_coroutine_threadsafe(
-                        self._emit({"type": "thumb_rebuild_progress", "done": i, "total": total}),
-                        self._loop,
-                    )
-                except RuntimeError:
-                    pass
-        elapsed = time.time() - t0
-        self._set_progress(running=False, current_path="")
-        log.info(
-            "thumb rebuild done: %d ok / %d fail in %.1fs (size=%d)",
-            indexed, failed, elapsed, target_size,
-        )
-        if fire_event and self._loop is not None and self._loop.is_running():
-            try:
-                asyncio.run_coroutine_threadsafe(
-                    self._emit({
-                        "type": "thumb_rebuild_done",
-                        "indexed": indexed,
-                        "failed": failed,
-                        "elapsed": elapsed,
-                        "size": target_size,
-                    }),
-                    self._loop,
-                )
-            except RuntimeError:
-                pass
-        return {
-            "indexed": indexed,
-            "failed": failed,
-            "total": total,
-            "elapsed": elapsed,
-            "size": target_size,
-        }
-
-    @staticmethod
-    def _rebuild_one_thumb(image_id: int, path: Path, size: int, quality: int) -> bool:
-        """单图重建缩略图。返回 True=ok，False=failed。"""
-        try:
-            if not path.exists():
-                return False
-            thumb_path = generate_thumb(path, image_id, size, quality)
-            with get_pool().main() as c:
-                if thumb_path:
-                    c.execute(
-                        "UPDATE images SET thumb_path=?, thumb_status='ready' WHERE id=?",
-                        (str(thumb_path), image_id),
-                    )
-                else:
-                    c.execute(
-                        "UPDATE images SET thumb_status='failed' WHERE id=?",
-                        (image_id,),
-                    )
-            return bool(thumb_path)
-        except Exception as e:  # noqa: BLE001
-            log.warning("rebuild thumb failed: %s (%s)", path, e)
-            return False
 
     def shutdown(self) -> None:
         self._stopping = True

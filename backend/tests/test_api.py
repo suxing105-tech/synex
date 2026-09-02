@@ -79,9 +79,10 @@ def test_assign_folder_and_filter(client):
 
 
 def test_settings_round_trip(client):
-    r = client.put("/api/settings", json={"thumb_size": 200})
+    """PUT /api/settings 接受 live_enabled，立刻回显。"""
+    r = client.put("/api/settings", json={"live_enabled": False})
     assert r.status_code == 200
-    assert r.json()["thumb_size"] == 200
+    assert r.json()["live_enabled"] is False
 
 
 def test_scan_progress(client):
@@ -99,27 +100,6 @@ def test_tags(client):
     names = [t["name"] for t in r.json()]
     assert "cat" in names
 
-
-def test_thumbnails_rebuild_route(client):
-    """POST /api/thumbnails/rebuild 接受 size/quality，立即返回 ok=true + started。"""
-    r = client.post("/api/thumbnails/rebuild", json={"size": 320})
-    assert r.status_code == 200
-    body = r.json()
-    assert body["ok"] is True
-    assert body["started"] is True
-    assert body["size"] == 320
-
-
-def test_thumbnails_rebuild_validates_size(client):
-    """size 越界应返回 400。"""
-    r = client.post("/api/thumbnails/rebuild", json={"size": 10})
-    assert r.status_code == 400
-    r = client.post("/api/thumbnails/rebuild", json={"size": 9999})
-    assert r.status_code == 400
-    r = client.post("/api/thumbnails/rebuild", json={"quality": 10})
-    assert r.status_code == 400
-    r = client.post("/api/thumbnails/rebuild", json={"quality": 200})
-    assert r.status_code == 400
 
 
 def test_file_endpoint_serves_original_bytes(client):

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 
-from app.repository import original_url_for, thumb_url_for
+from app.repository import original_url_for
 
 
 def test_original_url_includes_max_by_default():
@@ -23,23 +23,6 @@ def test_original_url_changes_when_mtime_changes():
     b = original_url_for(5, 2000.0)
     assert a != b
 
-
-def test_thumb_url_still_works():
-    """原有的 thumb_url_for 行为不能变（/thumbs/{id}.webp?v={file_mtime}）。"""
-    from pathlib import Path
-    import tempfile
-
-    with tempfile.TemporaryDirectory() as td:
-        td = Path(td)
-        # 写一个真实 thumb 文件让 _thumb_version 能 stat 到
-        thumb = td / "1.webp"
-        thumb.write_bytes(b"\x00")
-        time.sleep(0.01)
-        url = thumb_url_for(1, str(thumb), "ready")
-        assert url is not None
-        assert url.startswith("/thumbs/1.webp?v=")
-        v = int(url.split("?v=")[1])
-        assert v > 0
 
 def test_original_url_with_custom_max():
     """调用方显式传 max=2048 → URL 带上 max=2048。"""

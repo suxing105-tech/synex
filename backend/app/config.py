@@ -3,7 +3,7 @@
 设计要点：
 - 所有运行时数据落到 ``<cwd>/data/``，便于调试时直接看到文件。
 - 通过 ``SUXING_GALLERY_DATA_DIR`` 环境变量可切换，便于打包后使用 ``%APPDATA%``。
-- 配置文件 ``data/config.json`` 持久化监听目录、缩略图尺寸等用户偏好。
+- 配置文件 ``data/config.json`` 持久化监听目录、Live 开关等用户偏好。
 """
 from __future__ import annotations
 
@@ -23,8 +23,6 @@ class Config:
     """可持久化的用户配置。"""
 
     watch_dirs: list[str] = field(default_factory=list)
-    thumb_size: int = 360
-    thumb_quality: int = 80
     theme: str = "dark"  # 仅 dark；保留字段便于 P1 切亮色
     live_enabled: bool = True
     scan_workers: int = 4
@@ -39,18 +37,7 @@ class Config:
             return cls()
         # 兼容未知字段：仅取已声明的键
         valid_keys = {f for f in cls.__dataclass_fields__}
-        cfg = cls(**{k: v for k, v in raw.items() if k in valid_keys})
-        # 配置迁移：thumb_size 仍是旧默认值 → 抬到新默认，
-        # 这样历史用户不会被老 256 卡住，slider 拉到 360 也不会糊。
-        cfg._migrate_legacy_defaults()
-        return cfg
-
-    # 旧版本默认值（用于 config.json 迁移：用户没主动改过就抬到新默认）
-    _LEGACY_DEFAULTS: tuple[int, ...] = (256,)
-
-    def _migrate_legacy_defaults(self) -> None:
-        if self.thumb_size in self._LEGACY_DEFAULTS:
-            self.thumb_size = type(self).thumb_size
+        return cls(**{k: v for k, v in raw.items() if k in valid_keys})
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -74,12 +61,6 @@ def data_dir() -> Path:
 
 def db_path() -> Path:
     return data_dir() / "db.sqlite"
-
-
-def thumbs_dir() -> Path:
-    p = data_dir() / "thumbs"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
 
 
 def previews_dir() -> Path:

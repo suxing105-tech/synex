@@ -67,7 +67,7 @@
     <button class="absolute right-5 top-1/2 -translate-y-1/2 w-[54px] h-[86px] rounded-[10px] bg-white/8 border border-white/15 text-white text-[34px] hover:bg-white/20 flex items-center justify-center" onclick={next} title="下一张">›</button>
 
     <img
-      src={originalUrl ?? it.thumb_url ?? ''}
+      src={originalUrl ?? ''}
       alt={it.filename}
       class="max-w-[92vw] max-h-[84vh] object-contain rounded-md shadow-2xl"
       draggable="false"

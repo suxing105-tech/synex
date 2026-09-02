@@ -2,8 +2,7 @@ export interface ImageSummary {
   id: number;
   filename: string;
   path: string;
-  thumb_url: string | null;
-  original_url: string | null;  // 原图 URL（feed 直接用浏览器缩放，比 thumb 更清晰）
+  original_url: string | null;  // 原图 URL（feed 用 ?max=1024 拿预览）
   width: number | null;
   height: number | null;
   mtime: number;
@@ -27,7 +26,6 @@ export interface ImageDetail extends ImageSummary {
   format: string | null;
   created_at: string | null;
   indexed_at: string | null;
-  thumb_status: string;
 }
 
 export interface FolderNode {
@@ -54,8 +52,6 @@ export interface FeedResponse {
 
 export interface ConfigOut {
   watch_dirs: string[];
-  thumb_size: number;
-  thumb_quality: number;
   theme: string;
   live_enabled: boolean;
   scan_workers: number;
@@ -72,7 +68,6 @@ export interface ScanProgress {
 
 export interface Stats {
   total_images: number;
-  thumbs_ready: number;
   favorites: number;
   folders: number;
 }

@@ -133,13 +133,3 @@ export const statsApi = {
   },
 };
 
-// ---------- 缩略图重建 ----------
-
-export const thumbnailsApi = {
-  rebuild(opts: { size?: number; quality?: number } = {}): Promise<{ ok: boolean; started: boolean; size?: number; quality?: number }> {
-    return http(`/api/thumbnails/rebuild`, {
-      method: "POST",
-      body: JSON.stringify(opts),
-    });
-  },
-};

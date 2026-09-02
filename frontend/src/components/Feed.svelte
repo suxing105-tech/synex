@@ -1,6 +1,5 @@
 <script lang="ts">
   import { feedItems, feedTotal, feedLoading, zoomSize, activeFolderName, newIds } from "../lib/stores";
-  import { formatDate, formatSize } from "../lib/ws";
   import type { ImageSummary } from "../lib/types";
 
   interface Props {
@@ -10,25 +9,12 @@
   }
   let { selectedId = $bindable(), lightboxOpen = $bindable(), lightboxIndex = $bindable() }: Props = $props();
 
-  // 缩略图统一基准宽度。高度按各自原图比例自动算出，避免统一正方形裁剪。
-  const THUMB_BASE = 220;
-
   function aspectFor(it: ImageSummary): string {
-    // 缺尺寸时退到 1 / 1，保持布局稳定
+    // 缺尺寸时退到 1 / 1，保证布局不塌
     if (it.width && it.height && it.height > 0) {
       return `${it.width} / ${it.height}`;
     }
     return "1 / 1";
-  }
-
-  function gridMin(it: ImageSummary): string {
-    // 缩放滑块控制「基准宽度」，单图实际宽度 = 基准 × 原图宽高比
-    if (it.width && it.height && it.height > 0) {
-      const ratio = it.width / it.height;
-      const w = Math.round($zoomSize * ratio);
-      return `${w}px`;
-    }
-    return `${$zoomSize}px`;
   }
 
   function openLightbox(it: ImageSummary, idx: number) {
@@ -84,9 +70,14 @@
       <div class="text-[11px] mt-1">从左侧选择其他文件夹，或导入目录</div>
     </div>
   {:else}
+    <!--
+      流式瀑布：CSS columns 按列优先（自上而下再下一列）。
+      column-width 由缩放滑块控制 —— 浏览器视容器宽度自动算列数与列宽。
+      每张卡用 aspect-ratio 决定高度，break-inside: avoid 防止被列边界切开。
+    -->
     <div
-      class="grid gap-2"
-      style="grid-template-columns: repeat(auto-fill, minmax({THUMB_BASE}px, 1fr)); grid-auto-rows: {THUMB_BASE}px;"
+      class="masonry"
+      style="column-width: {$zoomSize}px;"
     >
       {#each $feedItems as it, idx (it.id)}
         <button
@@ -118,7 +109,18 @@
 </div>
 
 <style>
+  .masonry {
+    column-gap: 8px;
+  }
   .thumb {
+    /* CSS columns：每张卡必须显式 width: 100% 才不会溢出列宽 */
+    width: 100%;
+    margin-bottom: 8px;
+    display: inline-block;
+    /* 三处 break-inside 防被列边界切断 */
+    break-inside: avoid;
+    -webkit-column-break-inside: avoid;
+    page-break-inside: avoid;
     transition: transform 0.15s ease, box-shadow 0.15s ease;
   }
   .thumb:hover {

@@ -17,7 +17,7 @@ describe("前端 stores", () => {
     query.set("");
     view.set("all");
     folderId.set(null);
-    targetColumns.set(7);
+    targetColumns.set(5);
     feedItems.set([]);
     feedTotal.set(0);
     newIds.set(new Set());
@@ -31,8 +31,8 @@ describe("前端 stores", () => {
     expect(get(view)).toBe("all");
   });
 
-  it("默认列数 7", () => {
-    expect(get(targetColumns)).toBe(7);
+  it("默认列数 5", () => {
+    expect(get(targetColumns)).toBe(5);
   });
 
   it("列数范围在 4~12 内", () => {

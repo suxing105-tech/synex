@@ -15,7 +15,7 @@ export const folderId = writable<number | null>(null);
 export const view = writable<"all" | "favorite" | "recent">("all");
 export const query = writable<string>("");
 
-export const targetColumns = writable<number>(7);
+export const targetColumns = writable<number>(5);
 
 export const feedItems = writable<ImageSummary[]>([]);
 export const feedTotal = writable<number>(0);

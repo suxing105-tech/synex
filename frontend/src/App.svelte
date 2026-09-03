@@ -12,6 +12,14 @@
   import ScanProgressBar from "./components/ScanProgressBar.svelte";
   import { statsApi, settingsApi } from "./lib/api";
 
+  // 窗口级 drag/drop 兜底：拖到非 Feed 区域（如文件夹树 / 详情面板 / 空白处）
+  // 时让浏览器不要导航到 file:// 或打开图片。
+  function swallowDrag(e: DragEvent) {
+    if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files")) {
+      e.preventDefault();
+    }
+  }
+
   let onboardingOpen = $state(false);
   let settingsOpen = $state(false);
 
@@ -42,7 +50,7 @@
   });
 </script>
 
-<div class="h-screen w-screen flex flex-col bg-bg text-zinc-200">
+<div class="h-screen w-screen flex flex-col bg-bg text-zinc-200" ondragover={swallowDrag} ondrop={swallowDrag} role="application">
   <HeaderBar onOpenSettings={() => (settingsOpen = true)} onOpenOnboarding={() => (onboardingOpen = true)} />
   <ScanProgressBar />
   <div class="flex-1 min-h-0 grid grid-cols-[260px_1fr_360px] max-[1100px]:grid-cols-[220px_1fr_320px] max-[900px]:grid-cols-1">

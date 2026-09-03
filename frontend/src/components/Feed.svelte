@@ -10,6 +10,7 @@
   import { copyText } from "../lib/ws";
   import type { ImageSummary } from "../lib/types";
   import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
+  import { folderId } from "../lib/stores";
 
   interface Props {
     selectedId: number | null;
@@ -29,6 +30,126 @@
   function notify(msg: string) {
     toast = msg;
     setTimeout(() => (toast = null), 1800);
+  }
+
+  // ---------- 拖拽导入状态 ----------
+  // 用 dragCounter 避免子元素冒泡触发的 dragenter/leave 闪烁：
+  // 进入嵌套子元素时 +1，离开嵌套子元素时 -1，仅归零时才真正隐藏覆盖层。
+  let dragCounter = $state(0);
+  let dragFileCount = $state(0);  // dragenter 含 file 时统计
+  let importing = $state(false);   // 正在上传：用于锁定拖拽区 + 替换 overlay 文案
+  let importingProgress = $state({ done: 0, total: 0 });
+
+  // 派生：是否处于"可视的拖拽中"（counter > 0 且 dragenter 至少包含 1 个文件）
+  let dragHover = $derived(dragCounter > 0 && dragFileCount > 0 && !importing);
+
+  // 派生：拖拽时的目标文件夹展示名
+  let dropTargetLabel = $derived.by(() => {
+    if ($folderId == null) return "收件箱";
+    return $activeFolderName;
+  });
+
+  // 从拖拽事件里挑出可接受的图片 file 列表
+  function pickImageFiles(dt: DataTransfer | null): File[] {
+    if (!dt) return [];
+    const out: File[] = [];
+    if (dt.items && dt.items.length) {
+      for (let i = 0; i < dt.items.length; i++) {
+        const it = dt.items[i];
+        if (it.kind !== "file") continue;
+        const f = it.getAsFile();
+        if (f && f.type.startsWith("image/")) out.push(f);
+      }
+    } else if (dt.files) {
+      for (let i = 0; i < dt.files.length; i++) {
+        const f = dt.files[i];
+        if (f.type.startsWith("image/") || /\.(png|webp)$/i.test(f.name)) {
+          out.push(f);
+        }
+      }
+    }
+    return out;
+  }
+
+  function onDragEnter(e: DragEvent) {
+    if (!e.dataTransfer) return;
+    const types = Array.from(e.dataTransfer.types || []);
+    if (!types.includes("Files")) return;
+    e.preventDefault();
+    dragCounter++;
+    const files = pickImageFiles(e.dataTransfer);
+    if (files.length > 0) dragFileCount = files.length;
+  }
+
+  function onDragOver(e: DragEvent) {
+    if (!e.dataTransfer) return;
+    const types = Array.from(e.dataTransfer.types || []);
+    if (!types.includes("Files")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  }
+
+  function onDragLeave(e: DragEvent) {
+    if (!e.dataTransfer) return;
+    e.preventDefault();
+    dragCounter = Math.max(0, dragCounter - 1);
+    if (dragCounter === 0) dragFileCount = 0;
+  }
+
+  async function onDrop(e: DragEvent) {
+    e.preventDefault();
+    dragCounter = 0;
+    dragFileCount = 0;
+    const files = pickImageFiles(e.dataTransfer);
+    if (files.length === 0) {
+      notify("未检测到 PNG / WebP 图片");
+      return;
+    }
+    await importFiles(files);
+  }
+
+  async function importFiles(files: File[]) {
+    importing = true;
+    importingProgress = { done: 0, total: files.length };
+    notify(`导入中… 0/${files.length}`);
+    try {
+      const resp = await imagesApi.import(files, $folderId);
+      const saved = resp.saved?.length ?? 0;
+      const skipped = resp.skipped ?? [];
+      const folderTag = $folderId != null ? `「${dropTargetLabel}」` : "收件箱";
+      if (saved > 0 && skipped.length === 0) {
+        notify(`已导入 ${saved} 张到 ${folderTag}`);
+      } else if (saved > 0 && skipped.length > 0) {
+        const reasons = new Map<string, number>();
+        for (const s of skipped) reasons.set(s.reason, (reasons.get(s.reason) ?? 0) + 1);
+        const reasonText = Array.from(reasons.entries())
+          .map(([r, n]) => `${n} 张${reasonTextOf(r)}`)
+          .join("，");
+        notify(`已导入 ${saved} 张；跳过 ${reasonText}`);
+      } else if (saved === 0 && skipped.length > 0) {
+        notify(`全部 ${skipped.length} 张被跳过（${reasonTextOf(skipped[0].reason)}）`);
+      } else {
+        notify("导入完成");
+      }
+    } catch (err) {
+      notify(`导入失败：${(err as Error).message}`);
+    } finally {
+      importing = false;
+      importingProgress = { done: 0, total: 0 };
+    }
+  }
+
+  function reasonTextOf(reason: string): string {
+    switch (reason) {
+      case "unsupported_format": return "格式不支持";
+      case "too_large": return "超过 100MB";
+      case "write_failed": return "写入失败";
+      case "indexed_failed": return "索引失败";
+      case "name_collision_exhausted": return "同名过多";
+      default: return reason;
+    }
+
+
   }
 
   function aspectFor(it: ImageSummary): string {
@@ -369,9 +490,43 @@
 
 <div
   bind:this={scrollerEl}
-  class="overflow-y-auto p-3 feed-body"
+  class="overflow-y-auto p-3 feed-body relative"
   style="height: calc(100vh - 110px)"
+  ondragenter={onDragEnter}
+  ondragover={onDragOver}
+  ondragleave={onDragLeave}
+  ondrop={onDrop}
+  role="region"
+  aria-label="图片流；可拖拽文件到此处导入"
 >
+  {#if dragHover || importing}
+    <div
+      class="absolute inset-2 rounded-lg border-2 border-dashed border-accent bg-accent/10 backdrop-blur-sm flex items-center justify-center pointer-events-none z-20"
+      role="presentation"
+    >
+      <div class="text-center px-6 py-4 rounded-md bg-surface-2/80 border border-accent shadow-2xl">
+        {#if importing}
+          <div class="text-3xl mb-2">⏳</div>
+          <div class="text-[15px] font-medium">导入中…</div>
+          <div class="text-[12px] text-muted mt-1 font-mono">
+            {importingProgress.done}/{importingProgress.total}
+          </div>
+        {:else}
+          <div class="text-3xl mb-2">📥</div>
+          <div class="text-[15px] font-medium">释放以导入到{dropTargetLabel}</div>
+          <div class="text-[12px] text-muted mt-1">
+            {#if dragFileCount > 0}
+              <span class="inline-block px-2 py-0.5 rounded bg-accent/20 text-accent font-mono">
+                {dragFileCount} 个文件
+              </span>
+            {/if}
+          </div>
+          <div class="text-[11px] text-muted/80 mt-2">支持 PNG / WebP</div>
+        {/if}
+      </div>
+    </div>
+  {/if}
+
   {#if $feedLoading}
     <div class="text-center text-muted py-12">加载中…</div>
   {:else if $feedItems.length === 0}

@@ -4,14 +4,20 @@ import type {
   FeedResponse,
   FolderNode,
   ImageDetail,
+  ImportResponse,
   ScanProgress,
   Stats,
   TagInfo,
 } from "./types";
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
+  // FormData 时让浏览器自动设置 multipart 边界，绝不能手动覆盖 Content-Type。
+  const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
+  const headers = isFormData
+    ? { ...(init?.headers || {}) }
+    : { "Content-Type": "application/json", ...(init?.headers || {}) };
   const res = await fetch(path, {
-    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
+    headers,
     ...init,
   });
   if (!res.ok) {
@@ -76,6 +82,18 @@ export const imagesApi = {
   },
   reveal(id: number): Promise<{ ok: boolean; id: number; path: string }> {
     return http(`/api/images/${id}/reveal`, { method: "POST" });
+  },
+  /**
+   * 把多个文件拖入当前文件夹。
+   * - `folderId` 为 null/undefined → 仅入库收件箱，不分配文件夹；
+   * - 否则后端会校验文件夹存在并自动指派。
+   * 返回的 saved[] 与 skipped[] 各自带原因，前端用 toast 反馈。
+   */
+  import(files: File[], folderId: number | null | undefined): Promise<ImportResponse> {
+    const fd = new FormData();
+    for (const f of files) fd.append("files", f, f.name);
+    if (folderId != null) fd.append("folder_id", String(folderId));
+    return http<ImportResponse>("/api/images/import", { method: "POST", body: fd });
   },
 };
 

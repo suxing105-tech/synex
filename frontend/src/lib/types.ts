@@ -72,6 +72,24 @@ export interface Stats {
   folders: number;
 }
 
+export interface ImportResultItem {
+  id: number;
+  filename: string;
+  path: string;
+}
+
+export interface ImportSkippedItem {
+  filename: string;
+  reason: string;  // unsupported_format / too_large / write_failed / indexed_failed / name_collision_exhausted
+}
+
+export interface ImportResponse {
+  saved: ImportResultItem[];
+  skipped: ImportSkippedItem[];
+  folder_id: number | null;
+  inbox_dir: string;
+}
+
 export type FeedQuery = {
   folder_id?: number | null;
   view?: "all" | "favorite" | "recent";

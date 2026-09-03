@@ -1,82 +1,86 @@
-# 右键菜单功能 - 实施计划
+# 拖拽导入图片 — 实施计划
 
 ## 需求
-为图片缩略图增加鼠标右击菜单，包含 4 项：
-- 复制图片
-- 重命名
-- 打开图片所在位置
-- 删除图片
+用户把本地图片（PNG/WebP）从资源管理器拖到中间缩略图区域，自动保存到当前文件夹。
+设计良好的 UI 交互（覆盖层、计数、进度、结果反馈）。
 
-## 现状调研
+## 现状
+- 后端索引由 `Indexer._process_path_sync(path)` 完成（解析 + 写库 + FTS + 发事件）。
+- watchdog 监听 `watch_dirs` 内的目录，但 `data/inbox/` 不在监听范围。
+- 文件夹表是虚拟标签（`image_folders` M:N），不强制对应磁盘目录。
+- 前端 Feed 组件无任何拖拽逻辑。
 
-### 前端
-- `frontend/src/components/Feed.svelte`：图片瀑布流渲染，缩略图是 <button> 触发 onclick/ondblclick 选中或开 Lightbox。无右键处理。
-- `frontend/src/lib/api.ts`：定义 `imagesApi.remove(id, removeFile)`，包含 DELETE 接口，无 rename/reveal API。
-- `frontend/src/components/Lightbox.svelte`：独立的大图查看，无右键菜单。
+## 设计
 
-### 后端
-- `backend/app/routes/images.py`：存在 `DELETE /api/images/{id}`，无 rename/reveal 路由。
-- `backend/app/repository.py`：仅读/写，没有重命名实现。
-- `backend/app/models.py`：Pydantic schema 定义处。
-- 平台打开文件管理器：Windows 用 `explorer /select,path`，macOS 用 `open -R path`，Linux 通用 `xdg-open dir`。
+### UX 流程
+1. 拖入 Feed 区域 → 半透明遮罩 + 虚线框 + 居中图标 + 「释放以导入到 X」。
+2. dragenter/leave 用计数器避免子元素冒泡引起的闪烁。
+3. 释放 → 后端处理 → 进度 toast → 结果 toast。
+5. NEW 徽标（已有）会在新图上闪 3 秒提示。
 
-### 数据模型
-- `images.path` UNIQUE，存绝对路径。
-- `images.filename` 仅为文件名字符串。
-- 重命名要同步改 `path` + `filename`，并 bump `mtime` 让前端 cache bust。
+### 目标文件夹判定
+- 当前视图是用户文件夹 → `assign_folder(image_id, folder_id)`。
+- 当前是系统视图（全部图片 / 收藏 / 最近生成）→ 仅入库，不分配文件夹。
+- 用户可在 Settings 里后续把新图手动指派到文件夹（已有 UI）。
+
+### 收件箱位置
+- `data/inbox/`，固定路径。
+- 不加入 `watch_dirs`，避免 watchdog 重复扫描。
+- 索引走直接调用 `_process_path_sync`，确定性更强、反馈更快。
 
 ## 实施步骤
 
-### 1. 后端：新增 repository 函数
-- `rename_image(image_id, new_filename)`：
-  - 校验新文件名不为空、不含路径分隔符、不与已有文件冲突
-  - 重命名磁盘文件
-  - 写新 `path` + `filename`，`mtime` 取新 `stat.st_mtime`
-  - FTS 重同步
-  - 返回更新后的 summary
-- `reveal_image_path(image_id)`：返回绝对路径字符串或 None。
+### 1. 后端 — Pydantic models（models.py）
+- `ImportResultItem`: id, filename, path
+- `ImportSkippedItem`: filename, reason
+- `ImportResponse`: saved[], skipped[], folder_id
 
-### 2. 后端：新增路由
-- `PATCH /api/images/{image_id}/filename`，body {filename} → 200 + summary
-- `POST /api/images/{image_id}/reveal` → 在 OS 文件管理器打开该图片（Win `explorer /select`，mac `open -R`，Linux `xdg-open dir`）
+### 2. 后端 — config.py
+- `inbox_dir()` 辅助函数，返回并确保 `data/inbox/` 存在。
 
-### 3. 后端：测试（backend/tests/test_api.py）
-- rename 成功
-- rename 重复文件名 → 409
-- rename 含路径分隔符 → 400
-- rename 不存在的 id → 404
-- reveal 成功
-- reveal 不存在的 id → 404
+### 3. 后端 — 路由（routes/images.py）
+- `POST /api/images/import`：multipart `files` + 可选 `folder_id`。
+- 文件名校验：去掉路径分隔符 + 控制字符；空名 / `.png` 开头 → 改名。
+- 扩展名过滤：仅接受 `.png` / `.webp`，其它进 skipped（reason=`unsupported_format`）。
+- 同名冲突：自动追加 `_1` `_2`...
+- 写盘 → `Indexer._process_path_sync` → 可选 `repository.assign_folder`。
+- 错误：folder_id 不存在 → 400；无文件 → 400。
 
-### 4. 前端：新增 API 调用（api.ts）
-- `imagesApi.rename(id, filename)`
-- `imagesApi.reveal(id)`
+### 4. 后端 — 测试（tests/test_import.py）
+- PNG 上传成功 → 返回 saved + DB 行可见。
+- WebP 上传成功。
+- JPG 被跳过并给出 reason。
+- folder_id 分配生效（按 folder_id 查询能看到新图）。
+- folder_id 不存在 → 400。
+- 文件名冲突追加后缀。
+- 空 filename → 自动改名。
 
-### 5. 前端：新增组件 ContextMenu.svelte
-- 通用弹出菜单，接受 items、x、y、open
-- 支持 Esc / 外部点击关闭
-- 含分隔符支持
+### 5. 前端 — api.ts
+- `imagesApi.import(files, folderId?)` → FormData multipart POST。
 
-### 6. 前端：Feed 集成右键
-- oncontextmenu={e => { e.preventDefault(); openMenu(it, e.clientX, e.clientY) }}
-- 4 项点击回调：
-  - 复制图片：fetch 原图 → blob → navigator.clipboard.write([ClipboardItem])，降级复制 URL
-  - 重命名：prompt 弹窗（含扩展名校验）→ API
-  - 打开位置：API
-  - 删除图片：confirm 弹窗 + 二选（仅删索引 / 同时删文件）→ API → refreshFeed()
-- 任意变更后调用 refreshFeed() / refreshStats()
+### 6. 前端 — types.ts
+- `ImportResponse`, `ImportResultItem`, `ImportSkippedItem`。
 
-### 7. 前端：Lightbox 集成右键（顺手做，体验一致）
+### 7. 前端 — Feed.svelte
+- dragenter/dragleave/dragover/drop handlers。
+- dragcounter 状态机避免 leave 闪烁。
+- 覆盖层 DOM：dashed border + 半透明遮罩 + 居中文字 + 文件计数 chip。
+- 过滤 `dataTransfer.files` 中 type 包含 image 的项；空集时显示「仅支持 PNG/WebP」错误。
+- 调 API → 进度 toast → 结果 toast → 失败兜底。
+- 成功后 WS 自动触发 refreshFeed + markNew。
 
-### 8. 前端：测试
-- __tests__/api.test.ts：mock fetch 校验 rename/reveal 入参
-- __tests__/context-menu.test.ts：vitest 校验 items/坐标/关闭逻辑的纯函数
+### 8. 前端 — App.svelte
+- `<svelte:window ondragover preventDefault ondrop preventDefault>` 防止误拖到窗口非 Feed 区域时浏览器跳到 file://。
 
-### 9. 验证
-- 后端：pytest backend/tests -q
-- 前端：pnpm test + pnpm build
+### 9. 前端 — 测试
+- `__tests__/api-import.test.ts`：mock fetch 校验 FormData 与 endpoint URL。
+- `__tests__/drop-zone.test.ts`：纯函数 `filterImageFiles(fileList)`。
 
-### 10. Git commit
-按改动分 2 个 commit：
-1. feat(backend): 右键菜单 API - 重命名 + 打开位置
-2. feat(frontend): 右键菜单组件 + Feed/Lightbox 集成
+### 10. 文档 & 提交
+- `outputs/PLAN.md`：本计划。
+- `materials/notes-2026-09-03-drag-import.md`：实施记录 + 决策。
+- `README.md` P0 列表加「拖拽导入到当前文件夹」。
+- Git commit：
+  1. `feat(backend): POST /api/images/import` 多文件导入 + 文件夹自动指派
+  2. `feat(frontend): Feed 拖拽导入 + 覆盖层交互`
+  3. `docs: 拖拽导入计划与说明`

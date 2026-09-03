@@ -275,6 +275,11 @@
 
   // 容器宽度，由 bind:clientWidth 写入
   let containerWidth = $state(0);
+  // scroller DOM 引用 + lightbox 关闭时用于恢复 scrollTop
+  let scrollerEl: HTMLDivElement | null = $state(null);
+  let prevLightboxOpen = false;
+  let savedScrollTop = 0;
+
 
   // 列数随容器宽度 + 缩放基线变
   // 列数直接来自 slider（4-12）；不靠容器宽度推算，避免临界点跳动
@@ -306,6 +311,24 @@
       target.height += h;
     }
     return cols;
+  });
+
+  // Lightbox 开关时保留/恢复 scroller 滚动位置：
+  // 关闭瞬间 feed 容器可能因 layout / focus 转移导致 scrollTop 落回 0，
+  // 这里在打开时记一次，关闭后下一帧恢复，让用户继续在原来位置浏览。
+  $effect(() => {
+    const nowOpen = lightboxOpen;
+    const wasOpen = prevLightboxOpen;
+    prevLightboxOpen = nowOpen;
+    if (nowOpen && !wasOpen) {
+      if (scrollerEl) savedScrollTop = scrollerEl.scrollTop;
+    } else if (!nowOpen && wasOpen) {
+      const st = savedScrollTop;
+      // 下一帧恢复（让 Svelte 先把 Lightbox 从 DOM 移除）
+      queueMicrotask(() => {
+        if (scrollerEl) scrollerEl.scrollTop = st;
+      });
+    }
   });
 </script>
 
@@ -345,6 +368,7 @@
 </div>
 
 <div
+  bind:this={scrollerEl}
   class="overflow-y-auto p-3 feed-body"
   style="height: calc(100vh - 110px)"
 >

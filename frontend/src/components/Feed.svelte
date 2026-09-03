@@ -481,8 +481,8 @@
       max="12"
       step="1"
       value={$targetColumns}
-      oninput={(e) => targetColumns.set(Number((e.target as HTMLInputElement).value))}
-      class="accent-accent w-32"
+      class="columns-slider w-32"
+      style="--value: {$targetColumns}"
     />
     <span class="text-zinc-200">{$targetColumns} 列</span>
   </div>
@@ -624,5 +624,60 @@
   }
   .thumb:hover .thumb-img {
     transform: scale(1.04);
+  }
+  /* 列数滑块：精致风格 — 细轨 + 圆形 thumb + filled 进度 + hover 反馈 */
+  .columns-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(
+      to right,
+      rgb(242 78 78) 0%,
+      rgb(242 78 78) calc((var(--value) - 4) * 100% / 8),
+      rgb(50 50 55) calc((var(--value) - 4) * 100% / 8),
+      rgb(50 50 55) 100%
+    );
+    outline: none;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+  }
+  .columns-slider:hover { opacity: 0.92; }
+  .columns-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: rgb(242 78 78);
+    border: 2px solid rgb(24 24 27);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(242, 78, 78, 0.4);
+    cursor: grab;
+    transition: transform 0.15s cubic-bezier(0.2, 0.6, 0.2, 1), box-shadow 0.15s ease;
+  }
+  .columns-slider:hover::-webkit-slider-thumb {
+    transform: scale(1.15);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6), 0 0 0 4px rgba(242, 78, 78, 0.2);
+  }
+  .columns-slider:active::-webkit-slider-thumb {
+    cursor: grabbing;
+    transform: scale(1.1);
+  }
+  .columns-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: rgb(242 78 78);
+    border: 2px solid rgb(24 24 27);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(242, 78, 78, 0.4);
+    cursor: grab;
+  }
+  .columns-slider::-moz-range-track {
+    height: 4px;
+    border-radius: 2px;
+    background: rgb(50 50 55);
+  }
+  .columns-slider:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 0 4px rgba(242, 78, 78, 0.35);
   }
 </style>

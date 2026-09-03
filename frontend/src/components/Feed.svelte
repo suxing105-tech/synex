@@ -197,8 +197,14 @@
       return;
     }
     if (e.key === " " || e.code === "Space") {
+      // Lightbox 已开时让位给 Lightbox 自己的 handler（按空格翻下一张）。
+      // 否则两个 svelte:window handler 都触发：Feed 先把 lightboxOpen 改成 true，
+      // Lightbox 的 handler 看到 open=true 紧接着调 next()，结果展示的是选中图的下一张。
+      if (lightboxOpen) return;
       if (selectedId !== null) {
         e.preventDefault();
+        // 阻止 Lightbox 的 window keydown 也响应本次空格。
+        e.stopImmediatePropagation();
         const idx = $feedItems.findIndex((it) => it.id === selectedId);
         if (idx >= 0) {
           lightboxIndex = idx;

@@ -9,6 +9,7 @@
     nextZoomMode,
     type PanOffset,
   } from "../lib/lightbox-zoom";
+  import { getOrientedImageSize } from "../lib/image-dims";
 
   interface Props {
     open: boolean;
@@ -47,6 +48,11 @@
   let dragEl: HTMLElement | null = null;
   let imgNaturalW = $state(0);
   let imgNaturalH = $state(0);
+  // 视觉尺寸（已应用 EXIF 旋转），用于 fitSize/displayW/clampPan 等所有计算。
+  // imgNaturalW/H 来自 bind:naturalWidth，是存储像素；visualW/H 是浏览器实际渲染的尺寸。
+  // 不一致 = EXIF 旋转 = 之前大横图变形的根因。
+  let visualW = $state(0);
+  let visualH = $state(0);
   let viewportW = $state(0);
   let viewportH = $state(0);
   let imgEl: HTMLImageElement | null = $state(null);
@@ -70,19 +76,19 @@
 
   // fit 模式下保持宽高比缩到 92vw × 84vh 内
   let fitRatio = $derived.by(() => {
-    if (imgNaturalW <= 0 || imgNaturalH <= 0 || viewportW <= 0 || viewportH <= 0) return 1;
-    return Math.min((viewportW * 0.92) / imgNaturalW, (viewportH * 0.84) / imgNaturalH);
+    if (visualW <= 0 || visualH <= 0 || viewportW <= 0 || viewportH <= 0) return 1;
+    return Math.min((viewportW * 0.92) / visualW, (viewportH * 0.84) / visualH);
   });
 
   let displayW = $derived(
-    imgNaturalW <= 0 ? 0 :
-    zoomMode === "zoom" ? imgNaturalW :
-    Math.max(1, Math.round(imgNaturalW * fitRatio))
+    visualW <= 0 ? 0 :
+    zoomMode === "zoom" ? visualW :
+    Math.max(1, Math.round(visualW * fitRatio))
   );
   let displayH = $derived(
-    imgNaturalH <= 0 ? 0 :
-    zoomMode === "zoom" ? imgNaturalH :
-    Math.max(1, Math.round(imgNaturalH * fitRatio))
+    visualH <= 0 ? 0 :
+    zoomMode === "zoom" ? visualH :
+    Math.max(1, Math.round(visualH * fitRatio))
   );
 
   let imgTransition = $derived(
@@ -149,7 +155,7 @@
       { x: dragStartPanX, y: dragStartPanY },
     );
     // 内联 clampPan，并 guard 写入：避免和后续 effect 形成死循环
-    const clamped = clampPan(next, { w: imgNaturalW, h: imgNaturalH }, viewportSize());
+    const clamped = clampPan(next, { w: visualW, h: visualH }, viewportSize());
     if (clamped.x !== pan.x || clamped.y !== pan.y) {
       pan = clamped;
     }
@@ -305,6 +311,27 @@
         selectedId = it.id;
       }
     }
+  });
+
+  // 切图 → fetch + createImageBitmap 拿视觉尺寸（EXIF 旋转后），写入 visualW/H。
+  // createImageBitmap(imageOrientation: from-image) 在 Chrome / Firefox / Safari 都返回浏览器
+  // 实际渲染的尺寸，是统一可靠的来源；失败时 fallback 到 imgNaturalW/H。
+  $effect(() => {
+    const url = originalUrl;
+    if (!url) {
+      visualW = 0;
+      visualH = 0;
+      return;
+    }
+    let cancelled = false;
+    getOrientedImageSize(url, { w: imgNaturalW, h: imgNaturalH }).then((dims) => {
+      if (cancelled) return;
+      if (dims.w > 0 && dims.h > 0) {
+        visualW = dims.w;
+        visualH = dims.h;
+      }
+    });
+    return () => { cancelled = true; };
   });
 
   // 切图 → 重置 zoom + 拖动状态；不重置 naturalWidth（让 img 直接换 src 复用）

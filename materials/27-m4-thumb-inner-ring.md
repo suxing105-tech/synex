@@ -1,38 +1,53 @@
-# 缩略图选中态高亮改为内描边 (2026-09-03 16:49)
+# 缩略图选中态高亮改为内描边 (2026-09-03 16:49, 修订 16:55)
 
-## 变更
+## 最终方案
 
 `frontend\src\components\Feed.svelte` 第 562 行缩略图 button 的选中态 class：
 
-- 之前：`ring-2 ring-accent`（外描边，box-shadow 外扩 2px）
-- 现在：`ring-2 ring-inset ring-accent`（内描边，box-shadow 内陷 2px）
+- 第一版：`ring-2 ring-inset ring-accent`（不可见，下面解释原因）
+- 最终版：`outline outline-2 outline-accent outline-offset-[-2px]`
 
-唯一修改 `frontend\src\components\Feed.svelte` 1 行；新增 `frontend\src\__tests__\thumb-selected-class.test.ts`（3 个用例）。
+## 关键 bug 复盘
 
-## 目的
+第一版按直觉把 `ring-2 ring-accent` 加 `ring-inset`，以为"内描边"就是把 box-shadow 从外圈换到内圈。但实际 Playwright 抓取 + 截图验证发现：
 
-- 选中态高亮不再"外溢"到 layout，缩略图之间的间距保持稳定。
-- 与 `border border-border` 一起呈现一个"卡内"红框，与未选中态形成清晰视觉差。
-- 颜色不变（`#f24e4e`，与品牌色 / 监听呼吸灯一致），宽度不变（2px）。
+- 计算 box-shadow 是对的：`rgb(255,255,255) 0 0 0 0 inset, rgb(242,78,78) 0 0 0 2px inset, rgba(0,0,0,0) 0 0 0 0`
+- 但按钮内部有 `<img class="thumb-img w-full h-full object-cover">`，图片像素**完整覆盖**按钮内部
+- Tailwind 的 `ring-*` 走 `box-shadow` 通道，inset box-shadow 渲染在 background 之上、content（图片）之下 → 被图片完全盖住
+- 结果：DOM 看到 ring-inset 应用了，computed style 看起来都对，但视觉上完全消失
 
-## 复刻式单测
+## 改用 outline + 负偏移
 
-新文件 `frontend\src\__tests__\thumb-selected-class.test.ts`：
+CSS `outline` 走另一条渲染通道：默认画在 box border 外面，但 `outline-offset: -2px` 把它拉回 box 内部 2px，并且 outline 渲染在所有 content 之上（规范约定），所以会透过图片显示一条 2px 红线。
 
-- 复刻 Feed.svelte 里的 class 组合纯函数 `thumbClassFor({isSelected,isNew})`
-- 断言 1：已选中 → class 同时含 `ring-2` / `ring-inset` / `ring-accent`
-- 断言 2：未选中 → class 不含 `ring-accent` 也不含 `ring-inset`
-- 断言 3：已选中 + 新图 → 同时含 `ring-inset` / `ring-accent` / `new-badge`
+实测 computed style：
 
-与 `feed-aspect.test.ts` 的"复刻 + 单测"模式一致；不依赖组件挂载。
+```
+className:   "thumb ... outline outline-2 outline-accent outline-offset-[-2px]"
+outline:     rgb(242, 78, 78) solid 2px
+outlineWidth:2px
+outlineOffset:-2px
+```
+
+截屏：选中后第一张图四周可见 2px 红边内描边；其它图未选时无高亮。截图存档在 `outputs\thumb-inner-ring-selected-2026-09-03.png`。
+
+## 改动文件
+
+- `frontend\src\components\Feed.svelte` — 第 562 行选中态 class 改为 outline 系列
+- `frontend\src\__tests__\thumb-selected-class.test.ts` — 3 个用例，已同步更新断言（用 outline，不再用 ring-inset），并显式断言 `not.toContain("ring-inset")` 作为回归保护
+- `materials\27-m4-thumb-inner-ring.md` — 本文件
+- `outputs\thumb-inner-ring-selected-2026-09-03.png` — 截图证据
 
 ## 验证
 
-- 已有 121 个 vitest + 新增 3 个 = 124 个全过（16 个文件）。包含 ws.test.ts / api*.test.ts 内对 `127.0.0.1:3000` 的 ECONNREFUSED 警告，是现有行为，非本次引入。
-- vite dev HMR 已应用改动（log 显示 `16:47:24 [vite] hmr update /src/components/Feed.svelte`）。
-- 后端 8765 / 前端 5173 进程未重启；刷新浏览器即可看到内描边效果。
+- vitest：16 个文件 / 124 个用例全过（含 3 个新增 outline 内描边用例）
+- Playwright 抓 DOM + 截图：第一张图选中后明显可见 2px 红边内描边
+- 后端 8765 / 前端 5173 进程未重启，HMR 已应用
 
 ## 影响面
 
-- `ring-2 ring-inset` 会让缩略图内部图片可视区域缩小 2px（缩略图本身外尺寸不变，外圈 2px 高亮变成内圈 2px 红边）。所有缩略图统一缩小，肉眼几乎不可察；列数 / 列宽 / 瀑布高度均不受影响。
-- 仅影响视觉高亮，不影响选区逻辑、详情面板、Lightbox。
+- 选中态高亮由"外 2px 红圈" → "内 2px 红线（盖在图片像素之上）"
+- 缩略图外尺寸不变（outline 不占布局空间，不像 `p-px` 那样让图片缩 4px）
+- 与 `.new-badge`（绿色 box-shadow 动画）共存：outline 在 box-shadow 之上，两者不冲突
+- 选中态 + hover 缩放（`.thumb:hover .thumb-img { transform: scale(1.04) }`）依然可用，outline 位置不动
+- 多选（多张都加 outline-accent）行为不变

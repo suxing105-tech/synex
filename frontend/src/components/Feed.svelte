@@ -38,6 +38,9 @@
   // 当前多选张数（派生：用于 header 计数器）
   let selectedCount = $derived($multiSelectedIds.size);
 
+  // 当前鼠标滑过的缩略图 id（空格键放大这张；不受 selectedId 影响）
+  let hoveredId = $state<number | null>(null);
+
   // 反向同步：applySelection 写 store.selectedId 但不会反向写到这里的 prop，
   // 导致 handleKey（空格开 Lightbox）读到旧 prop。
   // 这里把 store 反向写到 prop，比较相等时跳过，避免 prop→store→prop 回环。
@@ -201,11 +204,13 @@
       // 否则两个 svelte:window handler 都触发：Feed 先把 lightboxOpen 改成 true，
       // Lightbox 的 handler 看到 open=true 紧接着调 next()，结果展示的是选中图的下一张。
       if (lightboxOpen) return;
-      if (selectedId !== null) {
+      // 空格放大：当前鼠标滑过的那张，不再依赖 selectedId。
+      // 鼠标没在任何缩略图上 → 不响应（避免误触发）。
+      if (hoveredId !== null) {
         e.preventDefault();
         // 阻止 Lightbox 的 window keydown 也响应本次空格。
         e.stopImmediatePropagation();
-        const idx = $feedItems.findIndex((it) => it.id === selectedId);
+        const idx = $feedItems.findIndex((it) => it.id === hoveredId);
         if (idx >= 0) {
           lightboxIndex = idx;
           lightboxOpen = true;
@@ -340,6 +345,8 @@
                 onclick={(e) => onThumbClick(e, it)}
                 ondblclick={() => openLightbox(it, $feedItems.findIndex((x) => x.id === it.id))}
                 oncontextmenu={(e) => openContextMenu(e, it)}
+                onmouseenter={() => (hoveredId = it.id)}
+                onmouseleave={() => { if (hoveredId === it.id) hoveredId = null; }}
               >
                 <img
                   src={it.original_url}

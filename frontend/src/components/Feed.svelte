@@ -481,6 +481,7 @@
       max="12"
       step="1"
       value={$targetColumns}
+      oninput={(e) => targetColumns.set(Number((e.target as HTMLInputElement).value))}
       class="columns-slider w-32"
       style="--value: {$targetColumns}"
     />

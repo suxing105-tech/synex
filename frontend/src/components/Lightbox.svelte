@@ -32,11 +32,9 @@
   let originalUrl = $state<string | null>(null);
 
   // ---------- 100% 放大 + 抓手拖动 ----------
-  //
-  // fit 模式：图片按 92vw × 84vh 等比缩放居中（与旧行为一致）。
-  // zoom 模式：图片按 naturalWidth × naturalHeight 渲染，可超出视口；
-  //           cursor 切到 grab/grabbing，鼠标左键拖动 = 平移图像。
-  // 双击图片切换两种模式，并用 CSS transition 平滑过渡 width/height/transform。
+  // 用 pointer events + setPointerCapture 是最稳的拖动模式：
+  // 即使光标移出图片元素（甚至移出视口），所有 pointermove 还是会送到同一元素，
+  // 不会因为 img 在 zoom 模式下溢出视口而丢事件。
   let zoomMode = $state<"fit" | "zoom">("fit");
   let pan = $state<PanOffset>({ x: 0, y: 0 });
   let isDragging = $state(false);
@@ -44,11 +42,14 @@
   let dragStartMouseY = 0;
   let dragStartPanX = 0;
   let dragStartPanY = 0;
+  // 记录拖动时的 pointerId + 元素引用，便于 releasePointerCapture
+  let dragPointerId = -1;
+  let dragEl: HTMLElement | null = null;
   let imgNaturalW = $state(0);
   let imgNaturalH = $state(0);
-  // 视口尺寸，监听 resize 保持最新；fit 模式下算 fitRatio 用它
   let viewportW = $state(0);
   let viewportH = $state(0);
+  let imgEl: HTMLImageElement | null = $state(null);
 
   function viewportSize(): { w: number; h: number } {
     if (viewportW > 0 && viewportH > 0) return { w: viewportW, h: viewportH };
@@ -67,15 +68,12 @@
     return () => window.removeEventListener("resize", sync);
   });
 
-  // fit 模式下保持宽高比，把图缩到 92vw × 84vh 内
+  // fit 模式下保持宽高比缩到 92vw × 84vh 内
   let fitRatio = $derived.by(() => {
     if (imgNaturalW <= 0 || imgNaturalH <= 0 || viewportW <= 0 || viewportH <= 0) return 1;
     return Math.min((viewportW * 0.92) / imgNaturalW, (viewportH * 0.84) / imgNaturalH);
   });
 
-  // DOM 渲染尺寸：fit 用 fitSize（动态算），zoom 用 natural。
-  // 用显式 width/height 而不是 max-w/object-contain，
-  // 这样 fit ↔ zoom 之间 transition 能拿到稳定的 from/to 值。
   let displayW = $derived(
     imgNaturalW <= 0 ? 0 :
     zoomMode === "zoom" ? imgNaturalW :
@@ -87,38 +85,62 @@
     Math.max(1, Math.round(imgNaturalH * fitRatio))
   );
 
-  // 拖动时关掉 transform 的 transition，避免 pan 跟手延迟；
-  // 不拖时 transition 平滑 fit ↔ zoom 大小变化 + 退出 zoom 时 pan 回 0。
   let imgTransition = $derived(
     isDragging
       ? "width 0.28s ease, height 0.28s ease"
       : "width 0.28s ease, height 0.28s ease, transform 0.28s ease"
   );
 
-  function onImgDblClick(e: MouseEvent) {
-    // 阻止冒泡到外层 div 的 close 处理器
-    e.stopPropagation();
-    e.preventDefault();
+  function resetZoom() {
+    zoomMode = "fit";
+    pan = { x: 0, y: 0 };
+    isDragging = false;
+    dragPointerId = -1;
+    if (dragEl && dragPointerId >= 0) {
+      try { dragEl.releasePointerCapture(dragPointerId); } catch {}
+    }
+    dragEl = null;
+  }
+
+  function toggleZoom() {
     const r = nextZoomMode(zoomMode);
     zoomMode = r.mode;
     pan = r.pan;
   }
 
-  function onImgMouseDown(e: MouseEvent) {
+  function onImgDblClick(e: MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+    toggleZoom();
+  }
+
+  // ---------- Pointer events 拖动 ----------
+  //
+  // 为什么用 pointerdown 而不是 mousedown：
+  //   - pointerdown 是统一的指针事件，鼠标/触摸/笔都走同一条路；
+  //   - setPointerCapture 后，光标移出 img 也会继续送 pointermove 给同一元素，
+  //     即便 img 在 zoom 模式下溢出视口 / 元素被遮，也不会丢事件；
+  //   - pointercancel（系统级中断，如 alt-tab）也正确收尾。
+  function onImgPointerDown(e: PointerEvent) {
     if (zoomMode !== "zoom") return;
-    if (e.button !== 0) return;
+    // 只响应左键 / 触摸 / 笔
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
+    const target = e.currentTarget as HTMLElement;
     isDragging = true;
     dragStartMouseX = e.clientX;
     dragStartMouseY = e.clientY;
     dragStartPanX = pan.x;
     dragStartPanY = pan.y;
+    dragPointerId = e.pointerId;
+    dragEl = target;
+    try { target.setPointerCapture(e.pointerId); } catch {}
   }
 
-  function onImgMouseMove(e: MouseEvent) {
-    // window 级别的 mousemove：拖动时一直跟手；不拖时早返回（性能）
+  function onImgPointerMove(e: PointerEvent) {
     if (!isDragging) return;
+    if (dragPointerId !== e.pointerId) return;
     const next = panFromDrag(
       e.clientX,
       e.clientY,
@@ -126,18 +148,27 @@
       dragStartMouseY,
       { x: dragStartPanX, y: dragStartPanY },
     );
-    pan = clampPan(next, { w: imgNaturalW, h: imgNaturalH }, viewportSize());
+    // 内联 clampPan，并 guard 写入：避免和后续 effect 形成死循环
+    const clamped = clampPan(next, { w: imgNaturalW, h: imgNaturalH }, viewportSize());
+    if (clamped.x !== pan.x || clamped.y !== pan.y) {
+      pan = clamped;
+    }
   }
 
-  function onImgMouseUp() {
+  function onImgPointerUp(e: PointerEvent) {
+    if (dragPointerId !== e.pointerId) return;
+    if (dragEl) {
+      try { dragEl.releasePointerCapture(e.pointerId); } catch {}
+    }
     isDragging = false;
+    dragPointerId = -1;
+    dragEl = null;
   }
 
   function close() {
     open = false;
     originalUrl = null;
-    zoomMode = "fit";
-    pan = { x: 0, y: 0 };
+    resetZoom();
   }
 
   function prev() {
@@ -152,12 +183,9 @@
   function handleKey(e: KeyboardEvent) {
     if (!open) return;
     if (e.key === "Escape") {
-      // zoom 模式下 Esc 先退出 zoom，再按一次才关 Lightbox（避免误关）
       if (zoomMode === "zoom") {
         e.preventDefault();
-        const r = nextZoomMode(zoomMode);
-        zoomMode = r.mode;
-        pan = r.pan;
+        toggleZoom();
         return;
       }
       e.preventDefault();
@@ -249,9 +277,7 @@
     try {
       const r = await imagesApi.reveal(it.id);
       if (r.method && r.method !== "noop") {
-        notify(`已打开图片所在位置（${r.method}）`);
       } else {
-        notify(`已请求打开图片所在位置`);
       }
     } catch (e) {
       notify(`打开位置失败: ${(e as Error).message}`);
@@ -281,22 +307,15 @@
     }
   });
 
-  // 切图 / 重置缩放：跟踪 index 变化 + 清自然尺寸让 transition 重新算起止
+  // 切图 → 重置 zoom + 拖动状态；不重置 naturalWidth（让 img 直接换 src 复用）
   $effect(() => {
     index;
-    zoomMode = "fit";
-    pan = { x: 0, y: 0 };
-    isDragging = false;
-    imgNaturalW = 0;
-    imgNaturalH = 0;
+    resetZoom();
+    // 等新图加载完再清 natural，避免短暂 0×0 让 fitSize 计算抖动
+    // 这里不清，依赖 imgNaturalW 重新绑定新图的尺寸即可
   });
 
-  // 原始尺寸就绪 → zoom 模式下 clamp pan 到新范围（首次加载 / 切换图片）
-  $effect(() => {
-    if (zoomMode === "zoom" && imgNaturalW > 0 && imgNaturalH > 0) {
-      pan = clampPan(pan, { w: imgNaturalW, h: imgNaturalH }, viewportSize());
-    }
-  });
+
 
   let imgCursor = $derived(
     zoomMode === "fit"
@@ -307,11 +326,7 @@
   );
 </script>
 
-<svelte:window
-  onkeydown={handleKey}
-  onmouseup={onImgMouseUp}
-  onmousemove={onImgMouseMove}
-/>
+<svelte:window onkeydown={handleKey} />
 
 {#if open && $feedItems.length > 0 && $feedItems[index]}
   {@const it = $feedItems[index]}
@@ -326,12 +341,23 @@
     <button class="absolute right-5 top-1/2 -translate-y-1/2 w-[54px] h-[86px] rounded-[10px] bg-white/8 border border-white/15 text-white text-[34px] hover:bg-white/20 flex items-center justify-center" onclick={next} title="下一张">›</button>
 
     <!--
-      渲染策略：始终用显式 width/height（displayW/H 派生），
-      fit 模式 = fitSize，zoom 模式 = natural；CSS transition 0.28s ease 平滑切换。
-      transform 仅在 zoom 模式下用，平移 clampPan 过的 pan 偏移。
-      拖动时 transition 临时禁掉 transform，避免拖动跟手延迟。
+      zoom 模式额外给一个明显的"返回"按钮，避免 dblclick 没生效时用户卡住。
+      pointer events 全绑在 img 上：pointerdown 起 + setPointerCapture，
+      pointermove/up 自动送到同元素，跟手稳定不丢事件。
     -->
+    {#if zoomMode === "zoom"}
+      <button
+        type="button"
+        class="absolute top-5 left-5 px-3 py-1.5 rounded-full bg-white/10 border border-white/20 text-white text-[12.5px] hover:bg-white/22"
+        onclick={(e) => { e.stopPropagation(); toggleZoom(); }}
+        title="退出 100%（Esc）"
+      >
+        ↩ 退出 100%
+      </button>
+    {/if}
+
     <img
+      bind:this={imgEl}
       src={originalUrl ?? ""}
       alt={it.filename}
       bind:naturalWidth={imgNaturalW}
@@ -342,8 +368,12 @@
       style:transform={zoomMode === "zoom" ? `translate(${pan.x}px, ${pan.y}px)` : "none"}
       style:transition={imgTransition}
       style:cursor={imgCursor}
+      style:touch-action="none"
       draggable="false"
-      onmousedown={onImgMouseDown}
+      onpointerdown={onImgPointerDown}
+      onpointermove={onImgPointerMove}
+      onpointerup={onImgPointerUp}
+      onpointercancel={onImgPointerUp}
       ondblclick={onImgDblClick}
     />
 
@@ -374,8 +404,6 @@
 {/if}
 
 <style>
-  /* 防止图片被原生拖拽；禁掉 dblclick 时浏览器选中文字；
-     拖动时跟手要 1:1，禁用过渡在拖动分支里已处理 */
   .lightbox-img {
     -webkit-user-drag: none;
     user-select: none;

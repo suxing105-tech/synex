@@ -33,10 +33,10 @@
 
   // ---------- 100% 放大 + 抓手拖动 ----------
   //
-  // fit 模式：原行为，按 max-w/max-h/object-contain 缩进视口。
-  // zoom 模式：图像渲染成 naturalWidth × naturalHeight，translate 平移查看细节。
-  // 双击图片切换两种模式；zoom 模式下鼠标变 grab/grabbing，拖动平移。
-  // 切换图片 / 关闭 / 重新打开 → 缩放状态重置为 fit + pan=0。
+  // fit 模式：图片按 92vw × 84vh 等比缩放居中（与旧行为一致）。
+  // zoom 模式：图片按 naturalWidth × naturalHeight 渲染，可超出视口；
+  //           cursor 切到 grab/grabbing，鼠标左键拖动 = 平移图像。
+  // 双击图片切换两种模式，并用 CSS transition 平滑过渡 width/height/transform。
   let zoomMode = $state<"fit" | "zoom">("fit");
   let pan = $state<PanOffset>({ x: 0, y: 0 });
   let isDragging = $state(false);
@@ -44,14 +44,56 @@
   let dragStartMouseY = 0;
   let dragStartPanX = 0;
   let dragStartPanY = 0;
-  // 当前图像原始尺寸（bind 到 <img>），用于 clamp pan 范围
   let imgNaturalW = $state(0);
   let imgNaturalH = $state(0);
+  // 视口尺寸，监听 resize 保持最新；fit 模式下算 fitRatio 用它
+  let viewportW = $state(0);
+  let viewportH = $state(0);
 
   function viewportSize(): { w: number; h: number } {
-    if (typeof window === "undefined") return { w: 0, h: 0 };
-    return { w: window.innerWidth, h: window.innerHeight };
+    if (viewportW > 0 && viewportH > 0) return { w: viewportW, h: viewportH };
+    if (typeof window !== "undefined") return { w: window.innerWidth, h: window.innerHeight };
+    return { w: 0, h: 0 };
   }
+
+  $effect(() => {
+    if (typeof window === "undefined") return;
+    const sync = () => {
+      viewportW = window.innerWidth;
+      viewportH = window.innerHeight;
+    };
+    sync();
+    window.addEventListener("resize", sync);
+    return () => window.removeEventListener("resize", sync);
+  });
+
+  // fit 模式下保持宽高比，把图缩到 92vw × 84vh 内
+  let fitRatio = $derived.by(() => {
+    if (imgNaturalW <= 0 || imgNaturalH <= 0 || viewportW <= 0 || viewportH <= 0) return 1;
+    return Math.min((viewportW * 0.92) / imgNaturalW, (viewportH * 0.84) / imgNaturalH);
+  });
+
+  // DOM 渲染尺寸：fit 用 fitSize（动态算），zoom 用 natural。
+  // 用显式 width/height 而不是 max-w/object-contain，
+  // 这样 fit ↔ zoom 之间 transition 能拿到稳定的 from/to 值。
+  let displayW = $derived(
+    imgNaturalW <= 0 ? 0 :
+    zoomMode === "zoom" ? imgNaturalW :
+    Math.max(1, Math.round(imgNaturalW * fitRatio))
+  );
+  let displayH = $derived(
+    imgNaturalH <= 0 ? 0 :
+    zoomMode === "zoom" ? imgNaturalH :
+    Math.max(1, Math.round(imgNaturalH * fitRatio))
+  );
+
+  // 拖动时关掉 transform 的 transition，避免 pan 跟手延迟；
+  // 不拖时 transition 平滑 fit ↔ zoom 大小变化 + 退出 zoom 时 pan 回 0。
+  let imgTransition = $derived(
+    isDragging
+      ? "width 0.28s ease, height 0.28s ease"
+      : "width 0.28s ease, height 0.28s ease, transform 0.28s ease"
+  );
 
   function onImgDblClick(e: MouseEvent) {
     // 阻止冒泡到外层 div 的 close 处理器
@@ -64,7 +106,6 @@
 
   function onImgMouseDown(e: MouseEvent) {
     if (zoomMode !== "zoom") return;
-    // 只响应左键；右键交由外层 openMenu
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
@@ -76,6 +117,7 @@
   }
 
   function onImgMouseMove(e: MouseEvent) {
+    // window 级别的 mousemove：拖动时一直跟手；不拖时早返回（性能）
     if (!isDragging) return;
     const next = panFromDrag(
       e.clientX,
@@ -94,7 +136,6 @@
   function close() {
     open = false;
     originalUrl = null;
-    // 关闭时重置缩放，下次打开是 fit
     zoomMode = "fit";
     pan = { x: 0, y: 0 };
   }
@@ -110,7 +151,7 @@
 
   function handleKey(e: KeyboardEvent) {
     if (!open) return;
-    if (e.key === 'Escape') {
+    if (e.key === "Escape") {
       // zoom 模式下 Esc 先退出 zoom，再按一次才关 Lightbox（避免误关）
       if (zoomMode === "zoom") {
         e.preventDefault();
@@ -121,13 +162,13 @@
       }
       e.preventDefault();
       close();
-    } else if (e.key === 'ArrowLeft') {
+    } else if (e.key === "ArrowLeft") {
       e.preventDefault();
       prev();
-    } else if (e.key === 'ArrowRight') {
+    } else if (e.key === "ArrowRight") {
       e.preventDefault();
       next();
-    } else if (e.key === ' ') {
+    } else if (e.key === " ") {
       e.preventDefault();
       next();
     }
@@ -162,7 +203,7 @@
     ];
   });
 
-  async function fetchBlob(it) {
+  async function fetchBlob(it: any): Promise<Blob | null> {
     const url = it.original_url ?? `/api/images/${it.id}/file`;
     try {
       const r = await fetch(url, { cache: "no-cache" });
@@ -173,7 +214,7 @@
     }
   }
 
-  async function copyImage(it) {
+  async function copyImage(it: any) {
     if (!navigator.clipboard || typeof ClipboardItem === "undefined") {
       const ok = await copyText(it.original_url ?? `/api/images/${it.id}/file`);
       notify(ok ? "已复制图片地址（剪贴板不支持图片）" : "复制失败");
@@ -190,7 +231,7 @@
     }
   }
 
-  async function renameImage(it) {
+  async function renameImage(it: any) {
     const stem = it.filename.replace(/.[^.]+$/, "");
     const next = window.prompt("新文件名（保留扩展名）:", stem);
     if (next === null) return;
@@ -200,11 +241,11 @@
       notify("已重命名");
       await Promise.all([refreshFeed(), refreshStats()]);
     } catch (e) {
-      notify(`重命名失败: ${e.message}`);
+      notify(`重命名失败: ${(e as Error).message}`);
     }
   }
 
-  async function revealImage(it) {
+  async function revealImage(it: any) {
     try {
       const r = await imagesApi.reveal(it.id);
       if (r.method && r.method !== "noop") {
@@ -213,24 +254,23 @@
         notify(`已请求打开图片所在位置`);
       }
     } catch (e) {
-      notify(`打开位置失败: ${e.message}`);
+      notify(`打开位置失败: ${(e as Error).message}`);
     }
   }
 
-  async function deleteImage(it) {
-    // 直接删除图片 + 缩略图，不做二次确认。
+  async function deleteImage(it: any) {
     try {
       const resp = await imagesApi.remove(it.id, true);
       notify(`已删除图片（清理缩略图 ${resp.cleaned_previews ?? 0} 个）`);
       if (selectedId === it.id) selectedId = null;
-      open = false;  // 关 Lightbox
+      open = false;
       await Promise.all([refreshFeed(), refreshStats()]);
     } catch (e) {
-      notify(`删除失败: ${e.message}`);
+      notify(`删除失败: ${(e as Error).message}`);
     }
   }
 
-  // 切换图片（index 变化）或重新打开 → 重置缩放状态并清自然尺寸
+  // 切换图片 / 重新打开：设置 URL + 选中
   $effect(() => {
     if (open) {
       const it = $feedItems[index];
@@ -241,9 +281,8 @@
     }
   });
 
-  // 监听 index 变化重置 zoom（保持上一张的 zoom 模式不迁移）
+  // 切图 / 重置缩放：跟踪 index 变化 + 清自然尺寸让 transition 重新算起止
   $effect(() => {
-    // 读 index 让依赖被追踪
     index;
     zoomMode = "fit";
     pan = { x: 0, y: 0 };
@@ -252,14 +291,13 @@
     imgNaturalH = 0;
   });
 
-  // 图像原始尺寸变了（首次加载 / 切换图片加载完成）→ zoom 模式下 clamp pan 到新范围
+  // 原始尺寸就绪 → zoom 模式下 clamp pan 到新范围（首次加载 / 切换图片）
   $effect(() => {
     if (zoomMode === "zoom" && imgNaturalW > 0 && imgNaturalH > 0) {
       pan = clampPan(pan, { w: imgNaturalW, h: imgNaturalH }, viewportSize());
     }
   });
 
-  // 当前光标样式：fit 默认；zoom 未拖 grab；zoom 拖动 grabbing
   let imgCursor = $derived(
     zoomMode === "fit"
       ? "default"
@@ -269,36 +307,40 @@
   );
 </script>
 
-<svelte:window onkeydown={handleKey} onmouseup={onImgMouseUp} />
+<svelte:window
+  onkeydown={handleKey}
+  onmouseup={onImgMouseUp}
+  onmousemove={onImgMouseMove}
+/>
 
 {#if open && $feedItems.length > 0 && $feedItems[index]}
   {@const it = $feedItems[index]}
-  <div class="fixed inset-0 z-[80] bg-black/94 flex items-center justify-center backdrop-blur-md" role="dialog" ondblclick={close} oncontextmenu={openMenu}>
+  <div
+    class="fixed inset-0 z-[80] bg-black/94 flex items-center justify-center backdrop-blur-md overflow-hidden"
+    role="dialog"
+    ondblclick={close}
+    oncontextmenu={openMenu}
+  >
     <button class="absolute top-5 right-5 w-[42px] h-[42px] rounded-full bg-white/10 border border-white/20 text-white text-[22px] hover:bg-white/22" onclick={close} title="关闭">×</button>
     <button class="absolute left-5 top-1/2 -translate-y-1/2 w-[54px] h-[86px] rounded-[10px] bg-white/8 border border-white/15 text-white text-[34px] hover:bg-white/20 flex items-center justify-center" onclick={prev} title="上一张">‹</button>
     <button class="absolute right-5 top-1/2 -translate-y-1/2 w-[54px] h-[86px] rounded-[10px] bg-white/8 border border-white/15 text-white text-[34px] hover:bg-white/20 flex items-center justify-center" onclick={next} title="下一张">›</button>
 
     <!--
-      缩放策略：
-        fit 模式：max-w-[92vw] max-h-[84vh] object-contain，跟原行为一致。
-        zoom 模式：图像按 naturalWidth × naturalHeight 渲染，超出视口部分 overflow 可见；
-                   用 transform: translate(panX, panY) 偏移，cursor 切到 grab/grabbing。
-        切换图片 / 关闭 / 重新打开时 effect 会把 zoomMode 重置回 fit。
+      渲染策略：始终用显式 width/height（displayW/H 派生），
+      fit 模式 = fitSize，zoom 模式 = natural；CSS transition 0.28s ease 平滑切换。
+      transform 仅在 zoom 模式下用，平移 clampPan 过的 pan 偏移。
+      拖动时 transition 临时禁掉 transform，避免拖动跟手延迟。
     -->
     <img
-      src={originalUrl ?? ''}
+      src={originalUrl ?? ""}
       alt={it.filename}
       bind:naturalWidth={imgNaturalW}
       bind:naturalHeight={imgNaturalH}
-      class="rounded-md shadow-2xl select-none"
-      class:max-w-[92vw]={zoomMode === "fit"}
-      class:max-h-[84vh]={zoomMode === "fit"}
-      class:object-contain={zoomMode === "fit"}
-      style:max-width={zoomMode === "zoom" ? "none" : null}
-      style:max-height={zoomMode === "zoom" ? "none" : null}
-      style:width={zoomMode === "zoom" && imgNaturalW > 0 ? `${imgNaturalW}px` : null}
-      style:height={zoomMode === "zoom" && imgNaturalH > 0 ? `${imgNaturalH}px` : null}
+      class="rounded-md shadow-2xl select-none lightbox-img"
+      style:width={displayW > 0 ? `${displayW}px` : null}
+      style:height={displayH > 0 ? `${displayH}px` : null}
       style:transform={zoomMode === "zoom" ? `translate(${pan.x}px, ${pan.y}px)` : "none"}
+      style:transition={imgTransition}
       style:cursor={imgCursor}
       draggable="false"
       onmousedown={onImgMouseDown}
@@ -332,8 +374,11 @@
 {/if}
 
 <style>
-  /* 防止图片被原生拖拽；同时 dblclick 时浏览器选中文字 */
-  img {
+  /* 防止图片被原生拖拽；禁掉 dblclick 时浏览器选中文字；
+     拖动时跟手要 1:1，禁用过渡在拖动分支里已处理 */
+  .lightbox-img {
     -webkit-user-drag: none;
+    user-select: none;
+    -webkit-user-select: none;
   }
 </style>

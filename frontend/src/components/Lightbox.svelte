@@ -9,7 +9,7 @@
     nextZoomMode,
     type PanOffset,
   } from "../lib/lightbox-zoom";
-  import { getOrientedImageSize } from "../lib/image-dims";
+  import { getOrientedImageSize, safeOrientedSize } from "../lib/image-dims";
 
   interface Props {
     open: boolean;
@@ -53,6 +53,15 @@
   // 不一致 = EXIF 旋转 = 之前大横图变形的根因。
   let visualW = $state(0);
   let visualH = $state(0);
+  // 安全视觉尺寸：用于 fitRatio / displayW / displayH / clampPan 的真值源。
+  // 防御场景_00002_ 这类大横图切图时 visualW/H 还没异步回来就先用旧值、把新图挤变形。
+  // 详见 ../lib/image-dims.ts 的 safeOrientedSize。
+  let safeVisualW = $derived(
+    safeOrientedSize({ w: imgNaturalW, h: imgNaturalH }, { w: visualW, h: visualH }).w,
+  );
+  let safeVisualH = $derived(
+    safeOrientedSize({ w: imgNaturalW, h: imgNaturalH }, { w: visualW, h: visualH }).h,
+  );
   let viewportW = $state(0);
   let viewportH = $state(0);
   let imgEl: HTMLImageElement | null = $state(null);
@@ -74,21 +83,21 @@
     return () => window.removeEventListener("resize", sync);
   });
 
-  // fit 模式下保持宽高比缩到 92vw × 84vh 内
+  // fit 模式下保持宽高比缩到 92vw × 84vh 内 — 用 safeVisual 防旧 visualW/H 跨图污染
   let fitRatio = $derived.by(() => {
-    if (visualW <= 0 || visualH <= 0 || viewportW <= 0 || viewportH <= 0) return 1;
-    return Math.min((viewportW * 0.92) / visualW, (viewportH * 0.84) / visualH);
+    if (safeVisualW <= 0 || safeVisualH <= 0 || viewportW <= 0 || viewportH <= 0) return 1;
+    return Math.min((viewportW * 0.92) / safeVisualW, (viewportH * 0.84) / safeVisualH);
   });
 
   let displayW = $derived(
-    visualW <= 0 ? 0 :
-    zoomMode === "zoom" ? visualW :
-    Math.max(1, Math.round(visualW * fitRatio))
+    safeVisualW <= 0 ? 0 :
+    zoomMode === "zoom" ? safeVisualW :
+    Math.max(1, Math.round(safeVisualW * fitRatio))
   );
   let displayH = $derived(
-    visualH <= 0 ? 0 :
-    zoomMode === "zoom" ? visualH :
-    Math.max(1, Math.round(visualH * fitRatio))
+    safeVisualH <= 0 ? 0 :
+    zoomMode === "zoom" ? safeVisualH :
+    Math.max(1, Math.round(safeVisualH * fitRatio))
   );
 
   let imgTransition = $derived(
@@ -155,7 +164,7 @@
       { x: dragStartPanX, y: dragStartPanY },
     );
     // 内联 clampPan，并 guard 写入：避免和后续 effect 形成死循环
-    const clamped = clampPan(next, { w: visualW, h: visualH }, viewportSize());
+    const clamped = clampPan(next, { w: safeVisualW, h: safeVisualH }, viewportSize());
     if (clamped.x !== pan.x || clamped.y !== pan.y) {
       pan = clamped;
     }

@@ -3,6 +3,7 @@
     feedItems, feedTotal, feedLoading, refreshFeed, refreshStats,
     targetColumns, activeFolderName, newIds,
     multiSelectedIds,
+    selectedId as selectedIdStore,
     applySelection, clearSelection,
   } from "../lib/stores";
   import { imagesApi } from "../lib/api";
@@ -36,6 +37,14 @@
 
   // 当前多选张数（派生：用于 header 计数器）
   let selectedCount = $derived($multiSelectedIds.size);
+
+  // 反向同步：applySelection 写 store.selectedId 但不会反向写到这里的 prop，
+  // 导致 handleKey（空格开 Lightbox）读到旧 prop。
+  // 这里把 store 反向写到 prop，比较相等时跳过，避免 prop→store→prop 回环。
+  $effect(() => {
+    const v = $selectedIdStore;
+    if (selectedId !== v) selectedId = v;
+  });
 
   function openLightbox(it: ImageSummary, idx: number) {
     // 双击只对 primary 生效，不动多选集合

@@ -558,7 +558,7 @@
             {#each col.items as it (it.id)}
               <button
                 type="button"
-                class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 hover:border-accent text-left {$multiSelectedIds.has(it.id) ? 'ring-2 ring-accent' : ''} {$newIds.has(it.id) ? 'new-badge' : ''}"
+                class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 text-left {$multiSelectedIds.has(it.id) ? 'ring-2 ring-accent' : ''} {$newIds.has(it.id) ? 'new-badge' : ''}"
                 style="aspect-ratio: {aspectFor(it)}; width: 100%;"
                 title={it.filename}
                 onclick={(e) => onThumbClick(e, it)}
@@ -572,7 +572,7 @@
                   alt={it.filename}
                   loading="lazy"
                   decoding="async"
-                  class="w-full h-full object-cover"
+                  class="thumb-img w-full h-full object-cover"
                 />
                 <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] truncate">
                   {it.filename}
@@ -619,10 +619,10 @@
     display: flex;
     flex-direction: column;
   }
-  .thumb {
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  .thumb-img {
+    transition: transform 0.35s cubic-bezier(0.2, 0.6, 0.2, 1); will-change: transform;
   }
-  .thumb:hover {
-    transform: translateY(-2px);
+  .thumb:hover .thumb-img {
+    transform: scale(1.04);
   }
 </style>

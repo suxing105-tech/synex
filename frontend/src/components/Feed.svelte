@@ -559,7 +559,7 @@
             {#each col.items as it (it.id)}
               <button
                 type="button"
-                class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 text-left {$multiSelectedIds.has(it.id) ? 'ring-2 ring-accent' : ''} {$newIds.has(it.id) ? 'new-badge' : ''}"
+                class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 text-left {$newIds.has(it.id) ? 'new-badge' : ''}"
                 style="aspect-ratio: {aspectFor(it)}; width: 100%;"
                 title={it.filename}
                 onclick={(e) => onThumbClick(e, it)}
@@ -578,9 +578,6 @@
                 <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] truncate">
                   {it.filename}
                 </div>
-                {#if $multiSelectedIds.has(it.id)}
-                  <div class="absolute top-1 left-1 bg-accent text-bg text-[10px] font-bold px-1.5 rounded shadow">✓</div>
-                {/if}
                 {#if it.favorite}
                   <div class="absolute top-1 right-1 text-danger text-[14px] drop-shadow">♥</div>
                 {/if}

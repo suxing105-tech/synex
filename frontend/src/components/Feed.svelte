@@ -4,7 +4,7 @@
     targetColumns, activeFolderName, newIds,
     multiSelectedIds,
     selectedId as selectedIdStore,
-    applySelection, clearSelection,
+    applySelection, clearSelection, removeIdsFromSelection,
   } from "../lib/stores";
   import { imagesApi } from "../lib/api";
   import { copyText } from "../lib/ws";
@@ -22,7 +22,8 @@
   let menuOpen = $state(false);
   let menuX = $state(0);
   let menuY = $state(0);
-  let menuTarget = $state<ImageSummary | null>(null);
+  // 右键菜单的目标 id 列表：右键目标在多选集合里 → 整个集合；否则 → [右键那张]。单图时菜单走单图逻辑（重命名 / 打开位置 / 复制单图），多图时只暴露「批量删除」和「复制 URL 列表」两条。
+  let menuTargetIds = $state<number[]>([]);
   let menuTick = $state(0);
   let toast = $state<string | null>(null);
   function notify(msg: string) {
@@ -67,41 +68,44 @@
   function openContextMenu(e: MouseEvent, it: ImageSummary) {
     e.preventDefault();
     e.stopPropagation();
-    // 右键默认就是"单选这张"，与文件管理器一致；用户也可以右键多选集合里的项后操作单张
+    // 右键的图不在当前多选集合里 → 先单选这张（与文件管理器行为一致），菜单对单图生效。
+    // 右键的图已在多选集合里 → 不改选区，菜单对整个集合生效（多选才有意义）。
     if (!$multiSelectedIds.has(it.id)) {
       applySelection($feedItems, it.id, "none");
+      menuTargetIds = [it.id];
+    } else {
+      // 复制当前多选集合快照，避免后续状态变化污染菜单项
+      menuTargetIds = [...$multiSelectedIds];
     }
-    menuTarget = it;
     menuX = e.clientX;
     menuY = e.clientY;
     menuTick++;
     menuOpen = true;
   }
 
-  // 派生：根据 menuTick + menuTarget 重建菜单项
+  // 派生：根据 menuTick + menuTargetIds + 当前 feed 派生菜单项。
+  // 单图：复制图片 / 重命名 / 打开位置 / 删除。
+  // 多图：复制 N 个图片地址（Clipboard 一次只能写一张图，多张降级为 URL 文本）/ 批量删除。
   let menuItems = $derived.by<ContextMenuItem[]>(() => {
     void menuTick;
-    const t = menuTarget;
-    if (!t) return [];
+    const ids = menuTargetIds;
+    if (ids.length === 0) return [];
+    const items = $feedItems.filter((x) => ids.includes(x.id));
+    if (items.length === 0) return [];
+    if (items.length === 1) {
+      const t = items[0];
+      return [
+        { label: "复制图片", onClick: () => copyImageToClipboard(t) },
+        { label: "重命名", onClick: () => renameImage(t) },
+        { label: "打开图片所在位置", onClick: () => revealImage(t) },
+        { kind: "sep" },
+        { label: "删除图片（含缩略图）", danger: true, onClick: () => deleteImages(items) },
+      ];
+    }
     return [
-      {
-        label: "复制图片",
-        onClick: () => copyImageToClipboard(t),
-      },
-      {
-        label: "重命名",
-        onClick: () => renameImage(t),
-      },
-      {
-        label: "打开图片所在位置",
-        onClick: () => revealImage(t),
-      },
+      { label: `复制 ${items.length} 个图片地址`, onClick: () => copyImageUrls(items) },
       { kind: "sep" },
-      {
-        label: "删除图片（含缩略图）",
-        danger: true,
-        onClick: () => deleteImage(t),
-      },
+      { label: `批量删除 ${items.length} 张图片`, danger: true, onClick: () => deleteImages(items) },
     ];
   });
 
@@ -169,16 +173,44 @@
     }
   }
 
-  async function deleteImage(it: ImageSummary) {
-    // 右键菜单"删除图片"：直接删除图片 + 原文件 + 缩略图缓存，不做二次确认。
-    try {
-      const resp = await imagesApi.remove(it.id, true);
-      notify(`已删除图片（清理缩略图 ${resp.cleaned_previews ?? 0} 个）`);
-      if (selectedId === it.id) selectedId = null;
-      await Promise.all([refreshFeed(), refreshStats()]);
-    } catch (e) {
-      notify(`删除失败: ${(e as Error).message}`);
+  // 批量删除：单图也走这条，传 length=1 的数组即可。
+  // 失败的项不会从多选集合里剔除，保留以便用户重试。
+  async function deleteImages(items: ImageSummary[]) {
+    if (items.length === 0) return;
+    const succeeded: number[] = [];
+    const failed: number[] = [];
+    let cleaned = 0;
+    for (const it of items) {
+      try {
+        const resp = await imagesApi.remove(it.id, true);
+        succeeded.push(it.id);
+        cleaned += resp.cleaned_previews ?? 0;
+      } catch (e) {
+        failed.push(it.id);
+        console.error("delete failed", it.id, e);
+      }
     }
+    // 同步从多选集合里剔除真正删除成功的（失败的保留以便重试）
+    removeIdsFromSelection(succeeded);
+    const okCount = succeeded.length;
+    const failCount = failed.length;
+    if (okCount > 0 && failCount === 0) {
+      notify(okCount === 1 ? `已删除图片（清理缩略图 ${cleaned} 个）` : `已删除 ${okCount} 张图片（清理缩略图 ${cleaned} 个）`);
+    } else if (okCount > 0 && failCount > 0) {
+      notify(`已删除 ${okCount} 张，${failCount} 张失败`);
+    } else {
+      notify(`删除失败（${failCount} 张）`);
+    }
+    await Promise.all([refreshFeed(), refreshStats()]);
+  }
+
+  // 批量复制图片地址（多张时降级为 URL 文本）。
+  // 浏览器 Clipboard 一次只能写一张 ClipboardItem（图片），多张只能合并成 text。
+  async function copyImageUrls(items: ImageSummary[]) {
+    const urls = items.map((it) => it.original_url ?? `/api/images/${it.id}/file`);
+    const text = urls.join("\n");
+    const ok = await copyText(text);
+    notify(ok ? `已复制 ${items.length} 个图片地址` : "复制失败");
   }
 
   // 全局键盘：Esc 清空选区（仅在 feed 聚焦时；input 焦点时让原生处理）

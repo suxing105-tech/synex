@@ -113,6 +113,25 @@ class FeedResponse(BaseModel):
 # ---------- 扫描进度 ----------
 
 
+# ---------- 拖拽导入 ----------
+class ImportResultItem(BaseModel):
+    id: int
+    filename: str
+    path: str
+
+
+class ImportSkippedItem(BaseModel):
+    filename: str
+    reason: str  # unsupported_format / empty_filename / write_failed / indexed_failed
+
+
+class ImportResponse(BaseModel):
+    saved: list[ImportResultItem] = Field(default_factory=list)
+    skipped: list[ImportSkippedItem] = Field(default_factory=list)
+    folder_id: int | None = None
+    inbox_dir: str
+
+
 class ScanProgress(BaseModel):
     running: bool
     scanned: int = 0

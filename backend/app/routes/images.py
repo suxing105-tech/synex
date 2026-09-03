@@ -1,13 +1,23 @@
 """/api/images 路由：feed / detail / 删除 / 标签 / 收藏。"""
 from __future__ import annotations
 
+import logging
 import os
-from fastapi import APIRouter, HTTPException, Query, Request
+import re
+from pathlib import Path
+
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 
 from .. import repository
+from ..config import inbox_dir
 from ..db import get_pool
-from ..models import ImageDetail
-
+from ..indexer import get_indexer
+from ..models import (
+    ImageDetail,
+    ImportResponse,
+    ImportResultItem,
+    ImportSkippedItem,
+)
 
 router = APIRouter(prefix="/api/images", tags=["images"])
 
@@ -276,3 +286,136 @@ def reveal_image(image_id: int):
     }
 
 
+_ALLOWED_EXTS = {".png", ".webp"}
+_MAX_FILE_BYTES = 100 * 1024 * 1024  # 100 MB 单文件上限
+_FILENAME_BAD = re.compile(r"[\\/\x00-\x1f\x7f]+")
+_FILENAME_TRAILING_DOTS = re.compile(r"^[.]+|[.]+$")
+
+
+def _sanitize_filename(raw: str) -> str:
+    """把用户拖入的文件名清洗成安全的目标名。
+
+    - 去掉所有路径分隔符（含 Windows 反斜杠 + 正斜杠）和控制字符；
+    - 去掉首尾点（避免 ".png" / "..png" 这类容易出问题的名）；
+    - 空名 / 全清洗掉 → 返回 None，由调用方换成默认名。
+    """
+    if not raw:
+        return None
+    # 取 basename：手动剥路径部分
+    name = raw.replace("\\", "/").rsplit("/", 1)[-1]
+    cleaned = _FILENAME_BAD.sub("_", name).strip().strip(".")
+    cleaned = _FILENAME_TRAILING_DOTS.sub("", cleaned)
+    return cleaned or None
+
+
+def _ensure_unique(target_dir: Path, filename: str) -> Path:
+    """同名追加 _1 _2 直到不冲突。"""
+    target = target_dir / filename
+    if not target.exists():
+        return target
+    stem = target.stem
+    ext = target.suffix
+    i = 1
+    while True:
+        cand = target_dir / f"{stem}_{i}{ext}"
+        if not cand.exists():
+            return cand
+        i += 1
+        if i > 9999:  # 防止极端情况死循环
+            raise HTTPException(500, "收件箱内同名文件过多")
+
+
+@router.post("/import")
+def import_images(
+    files: list[UploadFile] = File(..., description="拖入的图片文件"),
+    folder_id: int | None = Form(default=None, description="目标虚拟文件夹 id；None = 不分配文件夹"),
+):
+    """把拖入的文件保存到 data/inbox/ 并立即入库；可选自动归到指定文件夹。
+
+    - 仅接收 .png / .webp（与 indexer 的 SUPPORTED_EXTS 对齐），其它进 skipped 列表。
+    - 文件名冲突自动追加 _1 _2...
+    - 直接调用 Indexer._process_path_sync 索引，不走 watchdog（inbox 不在 watch_dirs）。
+    - folder_id 校验存在；不存在 → 400。
+    """
+    if not files:
+        raise HTTPException(400, "files 不能为空")
+
+    # 校验 folder_id（如有）
+    if folder_id is not None:
+        from ..db import get_pool
+
+        row = (
+            get_pool()
+            .main()
+            .execute("SELECT id FROM folders WHERE id = ?", (folder_id,))
+            .fetchone()
+        )
+        if not row:
+            raise HTTPException(400, f"文件夹 {folder_id} 不存在")
+
+    inbox = inbox_dir()
+    indexer = get_indexer()
+    saved: list[ImportResultItem] = []
+    skipped: list[ImportSkippedItem] = []
+
+    for f in files:
+        original_name = f.filename or ""
+        ext = Path(original_name).suffix.lower()
+        if ext not in _ALLOWED_EXTS:
+            skipped.append(
+                ImportSkippedItem(filename=original_name, reason="unsupported_format")
+            )
+            continue
+
+        safe_name = _sanitize_filename(original_name)
+        if not safe_name:
+            safe_name = f"image{ext}"
+
+        try:
+            target = _ensure_unique(inbox, safe_name)
+        except HTTPException:
+            skipped.append(
+                ImportSkippedItem(filename=original_name, reason="name_collision_exhausted")
+            )
+            continue
+
+        try:
+            content = f.file.read()
+            if len(content) > _MAX_FILE_BYTES:
+                skipped.append(
+                    ImportSkippedItem(filename=original_name, reason="too_large")
+                )
+                continue
+            target.write_bytes(content)
+        except OSError as e:
+            log.warning("write failed: %s (%s)", target, e)
+            skipped.append(
+                ImportSkippedItem(filename=original_name, reason="write_failed")
+            )
+            continue
+
+        payload = indexer._process_path_sync(target)
+        if not payload:
+            skipped.append(
+                ImportSkippedItem(filename=target.name, reason="indexed_failed")
+            )
+            continue
+
+        image_id = payload["id"]
+        if folder_id is not None:
+            repository.assign_folder(image_id, folder_id)
+
+        saved.append(
+            ImportResultItem(
+                id=image_id,
+                filename=target.name,
+                path=str(target),
+            )
+        )
+
+    return ImportResponse(
+        saved=saved,
+        skipped=skipped,
+        folder_id=folder_id,
+        inbox_dir=str(inbox),
+    )

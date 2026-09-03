@@ -69,6 +69,20 @@ def previews_dir() -> Path:
     return p
 
 
+def inbox_dir() -> Path:
+    """拖拽导入的固定收件箱目录。
+
+    设计取舍：
+    - 不放到 watch_dirs：拖入时直接调用 Indexer._process_path_sync 索引，
+      避免 watchdog + 直接调用双路径导致的重复扫描。
+    - 文件保留在收件箱（用户可从 DetailPanel「打开位置」到 OS 文件管理器查看）。
+    """
+    p = data_dir() / "inbox"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+
 def logs_dir() -> Path:
     p = data_dir() / "logs"
     p.mkdir(parents=True, exist_ok=True)

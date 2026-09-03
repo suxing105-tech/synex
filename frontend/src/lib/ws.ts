@@ -18,7 +18,15 @@ export function connectEvents() {
         await refreshStats();
         markNew([payload.id]);
       } else if (payload.type === "image_removed") {
-        await refreshFeed();
+        // 乐观更新本地 feedItems（filter 掉该 id），避免 refreshFeed 重排导致滚动条跳顶。
+        const id = payload.id;
+        let removed = false;
+        feedItems.update((items) => {
+          const next = items.filter((it) => it.id !== id);
+          removed = next.length !== items.length;
+          return next;
+        });
+        if (removed) feedTotal.update((n) => Math.max(0, n - 1));
         await refreshStats();
       } else if (payload.type === "scan_progress") {
         // 后端会发 scan 进度；用单独轮询补上

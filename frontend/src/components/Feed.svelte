@@ -201,7 +201,15 @@
     } else {
       notify(`删除失败（${failCount} 张）`);
     }
-    await Promise.all([refreshFeed(), refreshStats()]);
+    // 乐观更新本地 feedItems：直接从数组里过滤掉已删 id。
+    // 不调 refreshFeed() —— 整个数组替换会让 masonry 贪心分组重算，滚动条跳回顶部。
+    // feedItems 用 (it.id) keyed each，Svelte 会复用 DOM，scroll 位置自然保持。
+    if (okCount > 0) {
+      const removed = new Set(succeeded);
+      feedItems.update((items) => items.filter((it) => !removed.has(it.id)));
+      feedTotal.update((n) => Math.max(0, n - okCount));
+    }
+    await refreshStats();
   }
 
   // 批量复制图片地址（多张时降级为 URL 文本）。

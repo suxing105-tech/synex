@@ -484,7 +484,7 @@
       oninput={(e) => targetColumns.set(Number((e.target as HTMLInputElement).value))}
       class="accent-accent w-32"
     />
-    <span class="text-zinc-200 font-mono">{$targetColumns} 列</span>
+    <span class="text-zinc-200">{$targetColumns} 列</span>
   </div>
 </div>
 

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { folders, folderId, view, stats } from "../lib/stores";
+  import Icon from "./Icon.svelte";
   import type { FolderNode } from "../lib/types";
   import { foldersApi } from "../lib/api";
   import { refreshFolders } from "../lib/stores";
@@ -98,32 +99,32 @@
 
 <div class="px-[14px] pt-[14px] pb-[8px] flex items-center justify-between">
   <h3 class="text-[11px] uppercase text-muted tracking-wider">文件夹</h3>
-  <button class="bg-transparent border border-border text-muted w-6 h-6 rounded-[5px] hover:border-accent hover:text-zinc-200 flex items-center justify-center" onclick={(e) => { e.stopPropagation(); startNew(null); }} title="在根目录新建文件夹">＋</button>
+  <button class="bg-transparent border border-border text-muted w-6 h-6 rounded-[5px] hover:border-accent hover:text-zinc-200 flex items-center justify-center" onclick={(e) => { e.stopPropagation(); startNew(null); }} title="在根目录新建文件夹"><Icon name="plus" size={12} /></button>
 </div>
 <div class="flex-1 overflow-y-auto px-2 pb-3">
   <div class="text-[10px] uppercase text-muted tracking-wider px-[10px] py-[10px] opacity-70">系统</div>
   <div class="folder-item {$view === 'all' && $folderId === null ? 'active' : ''}" onclick={() => { view.set('all'); folderId.set(null); }}>
     <span class="caret-spacer"></span>
-    <span class="icon">🖼</span>
+    <span class="icon"><Icon name="image" size={13} /></span>
     <span class="label">全部图片</span>
     <span class="count">{$stats.total_images}</span>
   </div>
   <div class="folder-item {$view === 'favorite' ? 'active' : ''}" onclick={() => setView("favorite")}>
     <span class="caret-spacer"></span>
-    <span class="icon">⭐</span>
+    <span class="icon"><Icon name="star" size={13} /></span>
     <span class="label">收藏</span>
     <span class="count">{$stats.favorites}</span>
   </div>
   <div class="folder-item {$view === 'recent' ? 'active' : ''}" onclick={() => setView("recent")}>
     <span class="caret-spacer"></span>
-    <span class="icon">🕐</span>
+    <span class="icon"><Icon name="clock" size={13} /></span>
     <span class="label">最近生成</span>
     <span class="count"></span>
   </div>
 
   <div class="flex items-center justify-between px-[10px] pt-[14px] pb-[4px]">
     <div class="text-[10px] uppercase text-muted tracking-wider opacity-70">我的文件夹</div>
-    <button class="bg-transparent border-0 text-muted text-[12px] hover:text-zinc-200" onclick={(e) => { e.stopPropagation(); startNew(null); }} title="新建文件夹">＋</button>
+    <button class="bg-transparent border-0 text-muted text-[12px] hover:text-zinc-200" onclick={(e) => { e.stopPropagation(); startNew(null); }} title="新建文件夹"><Icon name="plus" size={12} /></button>
   </div>
 
   {#if $folders.length === 0}
@@ -206,10 +207,10 @@
 {#snippet folderItem(folder: FolderNode, depth: number)}
   <div class="folder-item {$folderId === folder.id ? 'active' : ''}" onclick={() => pickFolder(folder)}>
     <span class="caret-spacer" style="width: {depth * 14 + 12}px"></span>
-    <span class="icon">📁</span>
+    <span class="icon"><Icon name="folder" size={13} /></span>
     <span class="label">{folder.name}</span>
     <span class="count">{folder.recursive_count}</span>
-    <button class="menu-btn" onclick={(e) => openMenu(folder.id, e)}>⋮</button>
+    <button class="menu-btn" onclick={(e) => openMenu(folder.id, e)}><Icon name="more-vertical" size={14} /></button>
   </div>
   {#each folder.children as child (child.id)}
     {@render folderItem(child, depth + 1)}

@@ -3,6 +3,7 @@
   import { imagesApi, foldersApi } from "../lib/api";
   import { copyText, formatSize, formatDate, paramsToKv, allParamsText } from "../lib/ws";
   import type { ImageDetail, FolderNode } from "../lib/types";
+  import Icon from "./Icon.svelte";
 
   let toast = $state<string | null>(null);
   let tagInput = $state<string>("");
@@ -77,7 +78,7 @@
 {#if !$selectedDetail}
   <div class="h-full flex items-center justify-center text-center text-muted p-8">
     <div>
-      <div class="text-4xl mb-3 opacity-50">👈</div>
+      <div class="mb-3 opacity-50"><Icon name="arrow-left" size={36} /></div>
       <div class="text-[12.5px]">在中间选一张图片<br />查看详情和操作</div>
     </div>
   </div>

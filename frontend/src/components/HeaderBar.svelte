@@ -61,7 +61,7 @@
     <img
       src="/logo.png"
       alt="苏醒图库"
-      class="w-[28px] h-[28px] rounded-[7px] object-cover"
+      class="w-[22px] h-[22px] rounded-[7px] object-cover"
     />
     <span>苏醒图库</span>
   </div>

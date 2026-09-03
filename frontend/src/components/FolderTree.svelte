@@ -234,7 +234,7 @@
   }
   :global(.folder-item.active) {
     background: #27272a;
-    color: #818cf8;
+    color: #f24e4e;
   }
   :global(.folder-item.active::before) {
     content: "";
@@ -243,7 +243,7 @@
     top: 4px;
     bottom: 4px;
     width: 2px;
-    background: #818cf8;
+    background: #f24e4e;
     border-radius: 1px;
   }
   :global(.folder-item .icon) {
@@ -263,7 +263,7 @@
     flex-shrink: 0;
   }
   :global(.folder-item.active .count) {
-    color: #818cf8;
+    color: #f24e4e;
   }
   :global(.folder-item .menu-btn) {
     opacity: 0;

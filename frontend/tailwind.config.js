@@ -10,7 +10,7 @@ export default {
         "surface-3": "#323237",
         border: "#2e2e33",
         muted: "#8a8a8e",
-        accent: "#818cf8",
+        accent: "#f24e4e",
         "accent-2": "#f472b6",
         danger: "#fb7185",
         success: "#34d399",

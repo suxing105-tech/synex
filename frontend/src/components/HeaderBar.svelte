@@ -163,7 +163,7 @@
 <style>
   /* watch-pill 在 hover 时给整块一个浅色底，强调"这是个可点的状态" */
   .watch-pill:focus-visible {
-    outline: 2px solid #818cf8;
+    outline: 2px solid #f24e4e;
     outline-offset: 1px;
   }
 </style>

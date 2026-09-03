@@ -462,7 +462,7 @@
       {$feedTotal} 张
       {#if selectedCount > 0}
         <span class="ml-2 inline-flex items-center gap-1 text-accent">
-          <span class="font-mono">已选 {selectedCount} 张</span>
+          <span>已选 {selectedCount} 张</span>
           <button
             type="button"
             class="px-1.5 py-0.5 text-[11px] rounded border border-border hover:border-accent"

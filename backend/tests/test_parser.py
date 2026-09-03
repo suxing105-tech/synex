@@ -1,5 +1,5 @@
 """PNG/WebP 元数据解析器测试。"""
-from __future__ import annotations
+
 
 from pathlib import Path
 
@@ -315,4 +315,123 @@ def test_extract_comfyui_prompts_seed_missing_returns_none():
     }
     pos, neg, params = _extract_comfyui_prompts(wf)
     assert "seed" not in params
+
+
+
+"""End-to-end regression test for the user's actual ComfyUI workflow pattern.
+
+Real user workflow (Krea2):
+  KSamplerAdvanced
+      noise_seed -> easy seed (custom node, plain int)
+      positive   -> CLIPTextEncode -> ZML_SelectTextV2
+                                          文本1 -> Lora Loader (LoraManager) STRING output
+                                          文本2 -> ZML_TextInput (real user prompt)
+                                          分隔符 = ",\n", 启用1/2 = True
+      negative   -> ConditioningZeroOut (intentionally empty)
+
+Earlier uvicorn sessions that loaded an older parser turned the un-walked
+`positive` link `["71", 0]` into the literal Python repr `"['71', 0]"` and
+stored `seed = null`. This regression test asserts the *combined* chain
+(sampler + clip encode + ZML multi-segment + lora STRING link + conditioning
+zero + easy seed link) produces the right prompts and seed in one shot —
+guards against future single-feature fixes that drop coverage of the union
+of features.
+"""
+
+
+from pathlib import Path
+
+from app.parser import parse_metadata
+
+from .conftest import make_png
+
+
+def test_real_user_workflow_ksampler_advanced_zml_lora_easy_seed(tmp_path: Path):
+    wf = {
+        # 7 = CLIPTextEncode, text link -> 71
+        "7": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": ["71", 0], "clip": ["226", 1]},
+        },
+        # 9 = ConditioningZeroOut for the negative side
+        "9": {
+            "class_type": "ConditioningZeroOut",
+            "inputs": {"conditioning": ["7", 0]},
+        },
+        # 71 = ZML_SelectTextV2 with two segments joined by `,\n`
+        "71": {
+            "class_type": "ZML_SelectTextV2",
+            "inputs": {
+                "\u6587\u672c1": ["226", 2],          # link to Lora Loader STRING output
+                "\u6587\u672c2": ["232", 0],          # link to ZML_TextInput
+                "\u6587\u672c3": "",
+                "\u6587\u672c4": "",
+                "\u6587\u672c5": "",
+                "\u5206\u9694\u7b26": ",\n",
+                "\u542f\u75281": True,
+                "\u542f\u75282": True,
+                "\u542f\u75283": False,
+                "\u542f\u75284": False,
+                "\u542f\u75285": False,
+            },
+        },
+        # 226 = Lora Loader (LoraManager) emitting a STRING of lora tags via inputs.text
+        "226": {
+            "class_type": "Lora Loader (LoraManager)",
+            "inputs": {
+                "text": "<lora:Krea2/wukong:1.2> <lora:Krea2/detail:0.6>",
+                "loras": [],
+            },
+        },
+        # 232 = ZML_TextInput with the real user-written prompt
+        "232": {
+            "class_type": "ZML_TextInput",
+            "inputs": {"\u6587\u672c": "Create a tranquil coastal scene in Greece."},
+        },
+        # 256 = easy seed: stores plain int
+        "256": {
+            "class_type": "easy seed",
+            "inputs": {"seed": 341872450086182},
+        },
+        # 86 = KSamplerAdvanced (user uses two passes, take the first)
+        "86": {
+            "class_type": "KSamplerAdvanced",
+            "inputs": {
+                "add_noise": "enable",
+                "noise_seed": ["256", 0],
+                "steps": 8,
+                "cfg": 1.0,
+                "sampler_name": "er_sde",
+                "scheduler": "simple",
+                "start_at_step": 5,
+                "end_at_step": 10000,
+                "return_with_leftover_noise": "disable",
+                "model": ["226", 0],
+                "positive": ["7", 0],
+                "negative": ["9", 0],
+                "latent_image": ["177", 0],
+            },
+        },
+    }
+
+    p = tmp_path / "user_real_workflow.png"
+    make_png(p, prompt=wf, width=1152, height=2064)
+    meta = parse_metadata(p)
+
+    # prompt: 文本1 (lora tags) joined by `,\n` with 文本2 (user text)
+    assert meta["positive_prompt"] == (
+        "<lora:Krea2/wukong:1.2> <lora:Krea2/detail:0.6>,\n"
+        "Create a tranquil coastal scene in Greece."
+    )
+    # negative intentionally routed through ConditioningZeroOut
+    assert meta["negative_prompt"] == ""
+    # seed walked through easy seed link
+    assert meta["seed"] == 341872450086182
+    assert meta["steps"] == 8
+    assert meta["cfg"] == 1.0
+    assert meta["sampler"] == "er_sde"
+    # raw inputs preserved (latent_image / noise_seed links kept as-is, that's expected)
+    assert meta["parameters"]["noise_seed"] == ["256", 0]
+    assert meta["parameters"]["sampler_name"] == "er_sde"
+    assert meta["parameters"]["add_noise"] == "enable"
 

@@ -228,3 +228,91 @@ def test_extract_comfyui_prompts_zml_select_text_v2_joins_segments():
     assert pos.startswith("lora:foo:1.0")  # segment 1 joined first
     assert neg == ""
 
+
+
+def test_extract_comfyui_prompts_resolves_ksampler_advanced_noise_seed_link():
+    """KSamplerAdvanced uses inputs.noise_seed (not inputs.seed), and the value
+    is often a [node_id, output_index] link to a separate seed-source node like
+    `easy seed` / `RandomNoise`. The parser must follow the link and return
+    the underlying int.
+    """
+    from app.parser import _extract_comfyui_prompts
+    wf = {
+        "1": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": "hello", "clip": ["3", 0]},
+        },
+        "3": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "sd_xl"}},
+        "10": {
+            "class_type": "easy seed",
+            "inputs": {"seed": 601532383345810},
+        },
+        "20": {
+            "class_type": "KSamplerAdvanced",
+            "inputs": {
+                "noise_seed": ["10", 0],
+                "steps": 8, "cfg": 1.0,
+                "sampler_name": "er_sde", "scheduler": "simple",
+                "positive": ["1", 0],
+                "negative": ["1", 0],
+                "model": ["3", 0],
+            },
+        },
+    }
+    pos, neg, params = _extract_comfyui_prompts(wf)
+    assert params.get("seed") == 601532383345810
+
+
+def test_extract_comfyui_prompts_resolves_ksampler_advanced_inline_int_seed():
+    """KSamplerAdvanced sometimes has noise_seed as a plain int (no link).
+    The parser should still surface it as `seed`.
+    """
+    from app.parser import _extract_comfyui_prompts
+    wf = {
+        "1": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": "hello", "clip": ["3", 0]},
+        },
+        "3": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "sd_xl"}},
+        "20": {
+            "class_type": "KSamplerAdvanced",
+            "inputs": {
+                "noise_seed": 12345,
+                "steps": 8, "cfg": 1.0,
+                "sampler_name": "er_sde", "scheduler": "simple",
+                "positive": ["1", 0],
+                "negative": ["1", 0],
+                "model": ["3", 0],
+            },
+        },
+    }
+    pos, neg, params = _extract_comfyui_prompts(wf)
+    assert params.get("seed") == 12345
+
+
+def test_extract_comfyui_prompts_seed_missing_returns_none():
+    """If the sampler has no noise_seed / seed at all, params["seed"] is absent
+    (not present at all, not 0, not None). parse_metadata then leaves result["seed"]
+    as None.
+    """
+    from app.parser import _extract_comfyui_prompts
+    wf = {
+        "1": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": "hello", "clip": ["3", 0]},
+        },
+        "3": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "sd_xl"}},
+        "20": {
+            "class_type": "KSamplerAdvanced",
+            "inputs": {
+                "steps": 8, "cfg": 1.0,
+                "sampler_name": "er_sde", "scheduler": "simple",
+                "positive": ["1", 0],
+                "negative": ["1", 0],
+                "model": ["3", 0],
+            },
+        },
+    }
+    pos, neg, params = _extract_comfyui_prompts(wf)
+    assert "seed" not in params
+

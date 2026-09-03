@@ -118,6 +118,63 @@ def _parse_parameters_text(text: str) -> tuple[str, str, dict[str, Any]]:
     return positive, negative, params
 
 
+def _resolve_seed(prompt_obj: dict[str, Any], sampler_info: dict[str, Any]) -> int | None:
+    """Pull a numeric seed out of a sampler node's inputs.
+
+    ComfyUI is inconsistent about the field name + whether the value is a
+    literal int or a [node_id, output_index] link to a separate seed-source
+    node:
+      - KSampler.inputs.seed                (legacy, usually an int)
+      - KSamplerAdvanced.inputs.noise_seed  (modern, often a link e.g. -> easy seed)
+      - SamplerCustomAdvanced.inputs.noise_seed  (same)
+
+    Return the int seed, or None if we could not find one.
+    """
+    if not isinstance(prompt_obj, dict) or not isinstance(sampler_info, dict):
+        return None
+
+    def _coerce(v: Any) -> int | None:
+        if isinstance(v, bool):
+            return None
+        if isinstance(v, int):
+            return v
+        if isinstance(v, float):
+            return int(v)
+        if isinstance(v, str):
+            s = v.strip()
+            if not s:
+                return None
+            try:
+                return int(s)
+            except ValueError:
+                try:
+                    return int(float(s))
+                except ValueError:
+                    return None
+        if isinstance(v, list) and len(v) == 2 and isinstance(v[1], int):
+            # ComfyUI link: walk to source node, find its seed / noise_seed int.
+            try:
+                next_id = str(int(v[0]))
+            except (TypeError, ValueError):
+                return None
+            target = prompt_obj.get(next_id)
+            if not isinstance(target, dict):
+                return None
+            ins = target.get("inputs") or {}
+            for sk in ("seed", "noise_seed"):
+                if sk in ins:
+                    val = _coerce(ins[sk])
+                    if val is not None:
+                        return val
+        return None
+
+    for key in ("seed", "noise_seed"):
+        if key in sampler_info:
+            v = _coerce(sampler_info[key])
+            if v is not None:
+                return v
+    return None
+
 def _extract_comfyui_prompts(prompt_obj: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
     """从 ComfyUI ``prompt`` JSON 抽取正向 / 反向 prompt + 关键参数。
 
@@ -285,9 +342,19 @@ def _extract_comfyui_prompts(prompt_obj: dict[str, Any]) -> tuple[str, str, dict
                 model = str(ckpt)
                 break
 
+    # Extract seed. ComfyUI varies the field name and may store it as a link:
+    #   - KSampler.inputs.seed            (legacy, usually int)
+    #   - KSamplerAdvanced.inputs.noise_seed  (modern, often a link to a seed-source node)
+    #   - SamplerCustomAdvanced.inputs.noise_seed  (same)
+    # When it is a link, follow it to a node like `easy seed` / `SeedGenerator` /
+    # `RandomNoise` whose `seed` / `noise_seed` field is a plain int.
+    seed = _resolve_seed(prompt_obj, sampler_info)
+
     merged: dict[str, Any] = dict(sampler_info)
     if model:
         merged["model"] = model
+    if seed is not None:
+        merged["seed"] = seed
     return pos.strip(), neg.strip(), merged
 
 

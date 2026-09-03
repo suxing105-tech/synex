@@ -145,6 +145,124 @@ def _extract_comfyui_prompts(prompt_obj: dict[str, Any]) -> tuple[str, str, dict
         ks = ksamplers[0]
         sampler_info = {k: v for k, v in (ks.get("inputs") or {}).items() if k != "model" and k != "positive" and k != "negative"}
 
+        # _text_from_node: walk a node and extract its prompt text.
+        # Handles:
+        #  - CLIPTextEncode.inputs.text string  -> return directly.
+        #  - CLIPTextEncode.inputs.text list    -> if [node_id, output_index] link, recurse;
+        #                                         otherwise treat list as multi-line prompt.
+        #  - ZML_* / PromptExpand dictionary nodes (text1/text2 + separator + enabled flags):
+        #                                         join all enabled segments by separator.
+        #  - ShowText|pysssss debug nodes: inputs.text is a link (display-only),
+        #                                   inputs.text_0/text_1/... are the user-written prompt.
+        #                                   Must prefer those over following the text link,
+        #                                   which would lead into PromptExpand -> LLM context chain.
+        def _text_from_node(node: dict[str, Any]) -> str:
+            inputs = node.get("inputs") or {}
+            ct = (node.get("class_type") or "").strip()
+
+            # Conditioning-only nodes (e.g. ConditioningZeroOut) intentionally produce
+            # empty / non-text conditioning. They often have a `conditioning` link pointing
+            # back at the positive CLIP encode chain, which the generic fallback below
+            # would otherwise follow and return the *positive* prompt as the negative.
+            # Short-circuit: no text to extract here.
+            if ct == "ConditioningZeroOut":
+                return ""
+
+            def _resolve_value(v: Any) -> str:
+                """Resolve any value: link -> recurse; str -> as-is; list -> join; else str()."""
+                if v is None:
+                    return ""
+                if isinstance(v, str):
+                    return v
+                if isinstance(v, list):
+                    # ComfyUI link format: [node_id, output_index]
+                    if len(v) == 2 and isinstance(v[1], int):
+                        try:
+                            next_id = str(int(v[0]))
+                        except (TypeError, ValueError):
+                            next_id = None
+                        if next_id and next_id in prompt_obj:
+                            nxt = prompt_obj[next_id]
+                            if isinstance(nxt, dict):
+                                # Honor the link: whatever the target produced (including
+                                # empty string for nodes like ConditioningZeroOut).
+                                # Do NOT silently fall through to the multi-line join,
+                                # which would treat [node_id, output_index] as text.
+                                return _text_from_node(nxt)
+                        # Valid link format but target node missing/unreadable -> empty.
+                        return ""
+                    # Not a link format -> treat list as multi-line prompt (newer ComfyUI
+                    # sometimes stores a multi-line CLIP text input as a list of strings).
+                    parts = [str(x) for x in v if x not in (None, "")]
+                    return "\n".join(parts)
+                return str(v)
+
+            # ShowText|pysssss debug nodes: text is a link (canvas display only),
+            # text_0/text_1/... are the real user-written prompt strings. Prefer them.
+            if ct.startswith("ShowText"):
+                text_n_keys = sorted(
+                    (k for k in inputs if k.startswith("text_") and k[5:].isdigit()),
+                    key=lambda k: int(k[5:]),
+                )
+                if text_n_keys:
+                    parts: list[str] = []
+                    for k in text_n_keys:
+                        v = inputs.get(k)
+                        if v not in (None, ""):
+                            parts.append(str(v))
+                    if parts:
+                        return "\n".join(parts)
+
+            # Standard field: text
+            text_val = inputs.get("text")
+            if text_val is not None:
+                t = _resolve_value(text_val)
+                if t:
+                    return t
+
+            # ZML/PromptExpand style nodes: text1/text2/... + separator + enabled flags
+            text_keys = sorted(k for k in inputs.keys()
+                               if (k.startswith("\u6587\u672c") or k.startswith("text_"))
+                               and not k.endswith("\u542f\u7528"))
+            if text_keys:
+                sep = inputs.get("\u5206\u9694\u7b26") or inputs.get("separator") or ",\n"
+                parts: list[str] = []
+                for tk in text_keys:
+                    # Corresponding enabled flag: ZML uses enabled1/enabled2/... (same
+                    # trailing number as the text key, e.g. \u6587\u672c3 -> \u542f\u75283).
+                    enabled = True
+                    tk_suffix = ""
+                    for c in reversed(tk):
+                        if c.isdigit():
+                            tk_suffix = c + tk_suffix
+                        else:
+                            break
+                    if tk_suffix:
+                        ek_guess = "\u542f\u7528" + tk_suffix  # ZML convention
+                        if ek_guess in inputs:
+                            enabled = bool(inputs[ek_guess])
+                    # Fallback: text_0_enabled/text_1_enabled/... style
+                    if enabled and not tk_suffix:
+                        for ek in inputs.keys():
+                            if ek.endswith("_enabled") and ek.startswith("text_"):
+                                enabled = bool(inputs.get(ek))
+                                break
+                    if not enabled:
+                        continue
+                    t = _resolve_value(inputs.get(tk))
+                    if t:
+                        parts.append(t)
+                if parts:
+                    return sep.join(parts)
+
+            # Generic fallback: scan inputs for any link and follow it
+            for v in inputs.values():
+                if isinstance(v, list) and len(v) >= 1:
+                    t = _resolve_value(v)
+                    if t:
+                        return t
+            return ""
+
         def resolve_text(link: list[Any] | None) -> str:
             if not link or not isinstance(link, list) or len(link) < 1:
                 return ""
@@ -152,15 +270,7 @@ def _extract_comfyui_prompts(prompt_obj: dict[str, Any]) -> tuple[str, str, dict
             target = prompt_obj.get(str(target_id))
             if not isinstance(target, dict):
                 return ""
-            if target.get("class_type") == "CLIPTextEncode":
-                return str((target.get("inputs") or {}).get("text") or "")
-            # 某些变体：Reroute / ConditioningCombine 等，再向上一层
-            for v in (target.get("inputs") or {}).values():
-                if isinstance(v, list) and v:
-                    t = resolve_text(v)
-                    if t:
-                        return t
-            return ""
+            return _text_from_node(target)
 
         inputs = ks.get("inputs") or {}
         pos = resolve_text(inputs.get("positive"))

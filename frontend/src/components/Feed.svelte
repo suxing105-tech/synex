@@ -559,7 +559,7 @@
             {#each col.items as it (it.id)}
               <button
                 type="button"
-                class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 text-left {$newIds.has(it.id) ? 'new-badge' : ''}"
+                class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 text-left {$multiSelectedIds.has(it.id) ? 'ring-2 ring-accent' : ''} {$newIds.has(it.id) ? 'new-badge' : ''}"
                 style="aspect-ratio: {aspectFor(it)}; width: 100%;"
                 title={it.filename}
                 onclick={(e) => onThumbClick(e, it)}

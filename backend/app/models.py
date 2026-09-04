@@ -165,13 +165,14 @@ class ComfyuiConfigUpdate(BaseModel):
 
 
 class OpenWorkflowResult(BaseModel):
-    """打开工作流动作的返回：临时文件路径 + 是否真的弹了浏览器。"""
+    """打开工作流动作的返回：临时文件路径 + 工作流名（取自图片文件名）。"""
 
 
     ok: bool
     image_id: int
     file_path: str
+    workflow_name: str  # 落盘的 .json 文件名（不含扩展名）
     comfyui_url: str
-    browser_opened: bool
+    browser_opened: bool  # 后端不再弹窗，恒为 False；保留字段以兼容前端
     message: str = ""
 

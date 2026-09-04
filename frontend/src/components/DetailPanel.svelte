@@ -5,6 +5,7 @@
   import type { ImageDetail, FolderNode } from "../lib/types";
   import Icon from "./Icon.svelte";
   import { get } from "svelte/store";
+  import { openOrReuseComfyuiTab } from "../lib/comfyui-window";
 
   let toast = $state<string | null>(null);
   let tagInput = $state<string>("");
@@ -14,9 +15,12 @@
   async function openInComfyui() {
     const det = get(selectedDetail);
     if (!det) return;
+    // 1. 同步打开 / 复用 ComfyUI 标签页（必须在 await 之前）
+    openOrReuseComfyuiTab($comfyuiStatus.url || "http://127.0.0.1:8188");
+    // 2. 后端落盘 workflow JSON
     try {
       const r = await comfyuiApi.openWorkflow(det.id);
-      notify(r.message || `已生成 ${r.file_path}`);
+      notify(`${r.workflow_name}.json 已写入 ${r.file_path}`);
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e);
       const detail = m.match(/→ \d+: (.+)$/)?.[1] || m;

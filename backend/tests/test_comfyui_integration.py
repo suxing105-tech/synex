@@ -1,14 +1,17 @@
-"""ComfyUI 集成端到端测试：probe + status + open_workflow + config。
+"""ComfyUI 集成端到端测试：probe + status + open_workflow + config + 文件命名。
 
 覆盖：
-- ``probe()`` 离线返回 False（用 monkeypatch 替成 ``URLError``）。
+- ``probe()`` 离线 / 在线 / 超时。
 - ``/api/integrations/comfyui/status`` 返回 ``enabled`` 与 ``running`` 字段。
 - ``PUT /config`` 更新 ``data/config.json`` 并触发重探测。
 - ``POST /open_workflow/<id>``：
   - 图片无 workflow → 400 ``no_workflow``
   - 图片不存在 → 404
-  - 有 workflow + comfyui 离线 → 409 ``comfyui_offline``（待实现），目前为写文件 + 返回 offline 信息
-  - 有 workflow + comfyui 在线（mock） → 200，``file_path`` 落盘，``browser_opened`` 字段存在
+  - 有 workflow + comfyui 离线 → 200，``browser_opened=False``，文件以图片文件名落盘
+  - 有 workflow + comfyui 在线 → 200，``browser_opened=False``（后端不再弹窗）
+  - 返回 ``workflow_name`` 等于图片文件名（去扩展名）
+  - 冲突时自动追加 ``_1`` / ``_2`` 后缀
+- ``sanitize_filename``：去扩展名 / 清洗非法字符 / 兜底
 - ``ImageSummary.has_workflow`` 字段在 feed 中能正确返回。
 """
 from __future__ import annotations
@@ -105,6 +108,72 @@ def test_probe_timeout(monkeypatch):
     assert comfyui.probe("http://127.0.0.1:8188") is False
 
 
+# ---------- sanitize_filename ----------
+
+
+def test_sanitize_filename_basic():
+    """去扩展名 → stem。"""
+    assert comfyui.sanitize_filename("foo.png") == "foo"
+    assert comfyui.sanitize_filename("a/b/c.png") == "a_b_c"  # / 也算非法字符
+    assert comfyui.sanitize_filename("no_ext") == "no_ext"
+
+
+def test_sanitize_filename_unsafe_chars():
+    """Windows / POSIX 非法字符 → 下划线。"""
+    assert comfyui.sanitize_filename("a:b*c.png") == "a_b_c"
+    assert comfyui.sanitize_filename("with spaces.png") == "with spaces"  # 空格保留
+    assert comfyui.sanitize_filename("a\\b/c.png") == "a_b_c"
+    assert comfyui.sanitize_filename("quote\"test.png") == "quote_test"
+
+
+def test_sanitize_filename_empty_and_fallback():
+    """空 / 纯符号 → ``workflow`` 兜底。"""
+    assert comfyui.sanitize_filename("") == "workflow"
+    assert comfyui.sanitize_filename("   ") == "workflow"
+    assert comfyui.sanitize_filename("...png") == "workflow"
+
+
+def test_sanitize_filename_length_cap():
+    """超长 → 截断。"""
+    long = "x" * 500
+    out = comfyui.sanitize_filename(long + ".png")
+    assert len(out) == comfyui._MAX_NAME_LEN
+    assert out == "x" * comfyui._MAX_NAME_LEN
+
+
+# ---------- write_workflow_temp ----------
+
+
+def test_write_workflow_temp_uses_image_filename(tmp_path: Path, monkeypatch):
+    """落盘文件名 = 图片文件名（去扩展名）。"""
+    monkeypatch.setattr(comfyui, "data_dir", lambda: tmp_path)
+    target = comfyui.write_workflow_temp("hello world.png", "{}")
+    assert target is not None
+    assert target.name == "hello world.json"
+    assert target.exists()
+
+
+def test_write_workflow_temp_collision_suffix(tmp_path: Path, monkeypatch):
+    """重复同名 → ``_1`` / ``_2`` 后缀。"""
+    monkeypatch.setattr(comfyui, "data_dir", lambda: tmp_path)
+    p1 = comfyui.write_workflow_temp("dup.png", "{}")
+    p2 = comfyui.write_workflow_temp("dup.png", "{}")
+    p3 = comfyui.write_workflow_temp("dup.png", "{}")
+    assert p1 is not None and p2 is not None and p3 is not None
+    assert p1.name == "dup.json"
+    assert p2.name == "dup_1.json"
+    assert p3.name == "dup_2.json"
+    assert p1.exists() and p2.exists() and p3.exists()
+
+
+def test_write_workflow_temp_empty_returns_none(tmp_path: Path, monkeypatch):
+    """空 workflow 字符串 → 返回 None。"""
+    monkeypatch.setattr(comfyui, "data_dir", lambda: tmp_path)
+    assert comfyui.write_workflow_temp("x.png", "") is None
+    assert comfyui.write_workflow_temp("x.png", "   ") is None
+    assert comfyui.write_workflow_temp("x.png", None) is None
+
+
 # ---------- /status ----------
 
 
@@ -184,7 +253,7 @@ def test_open_workflow_disabled(client):
 
 
 def test_open_workflow_ok_comfyui_offline(client, tmp_path: Path, offline_probe):
-    """comfyui 探测不到 → 仍落临时文件，browser_opened=False。"""
+    """comfyui 探测不到 → 仍落临时文件（文件名取自图片），browser_opened=False。"""
     items = client.get("/api/images", params={"limit": 10}).json()["items"]
     target = next(x for x in items if x["filename"] == "a.png")
     r = client.post(f"/api/integrations/comfyui/open_workflow/{target['id']}")
@@ -193,27 +262,39 @@ def test_open_workflow_ok_comfyui_offline(client, tmp_path: Path, offline_probe)
     assert body["ok"] is True
     assert body["browser_opened"] is False
     assert body["image_id"] == target["id"]
-    # 文件已落盘到 tmp_path/comfyui_temp/<id>.json
-    tmp = tmp_path / "comfyui_temp" / f"{target['id']}.json"
+    assert body["workflow_name"] == "a"  # 取自图片 filename
+    # 文件已落盘到 tmp_path/comfyui_temp/a.json
+    tmp = tmp_path / "comfyui_temp" / "a.json"
     assert tmp.exists()
-    # 内容是原始 workflow JSON 字符串
     assert tmp.read_text(encoding="utf-8") == '{"a": 1}'
 
 
-def test_open_workflow_ok_with_browser_open(client, tmp_path: Path, monkeypatch):
-    """comfyui 在线 + monkeypatch webbrowser.open → browser_opened=True。"""
-    # 让 probe 永远 True
+def test_open_workflow_no_browser_open_online(client, tmp_path: Path, monkeypatch):
+    """comfyui 在线 → 后端不再弹窗，browser_opened 恒为 False（前端负责复用窗口）。"""
     monkeypatch.setattr("app.integrations.comfyui.probe", lambda url: True)
-    # 让 webbrowser.open 返回一个 truthy（True）对象
-    monkeypatch.setattr("app.routes.comfyui.webbrowser.open", lambda *a, **kw: True)
     items = client.get("/api/images", params={"limit": 10}).json()["items"]
     target = next(x for x in items if x["filename"] == "a.png")
     r = client.post(f"/api/integrations/comfyui/open_workflow/{target['id']}")
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is True
-    assert body["browser_opened"] is True
+    assert body["browser_opened"] is False
+    assert body["workflow_name"] == "a"
     assert "comfyui_temp" in body["file_path"]
+
+
+def test_open_workflow_same_filename_collision(client, tmp_path: Path, offline_probe):
+    """同名图片两次发送 → 第二次走 ``_1`` 后缀，不会覆盖。"""
+    items = client.get("/api/images", params={"limit": 10}).json()["items"]
+    target = next(x for x in items if x["filename"] == "a.png")
+    r1 = client.post(f"/api/integrations/comfyui/open_workflow/{target['id']}")
+    r2 = client.post(f"/api/integrations/comfyui/open_workflow/{target['id']}")
+    assert r1.status_code == 200
+    assert r2.status_code == 200
+    assert r1.json()["file_path"].endswith("a.json")
+    assert r2.json()["file_path"].endswith("a_1.json")
+    assert (tmp_path / "comfyui_temp" / "a.json").exists()
+    assert (tmp_path / "comfyui_temp" / "a_1.json").exists()
 
 
 # ---------- feed has_workflow 字段 ----------
@@ -238,4 +319,4 @@ def test_list_temp_files(client):
     r = client.get("/api/integrations/comfyui/temp_files")
     assert r.status_code == 200
     body = r.json()
-    assert f"{target['id']}.json" in body["files"]
+    assert "a.json" in body["files"]

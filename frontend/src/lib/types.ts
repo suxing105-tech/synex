@@ -121,7 +121,10 @@ export interface OpenWorkflowResult {
   ok: boolean;
   image_id: number;
   file_path: string;
+  /** 落盘的 .json 文件名（不含扩展名），取自图片 filename */
+  workflow_name: string;
   comfyui_url: string;
+  /** 后端不再弹窗，恒为 false；保留字段以兼容既有响应类型 */
   browser_opened: boolean;
   message: string;
 }

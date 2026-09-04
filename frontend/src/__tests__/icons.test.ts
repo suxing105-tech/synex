@@ -43,4 +43,15 @@ describe("lib/icons 数据契约", () => {
   it("未知 name → ICON_PATHS 返回 undefined（让 Icon.svelte 走空分支）", () => {
     expect(ICON_PATHS["nope"]).toBeUndefined();
   });
+
+  it("comfyui 图标：3 个圆 + 2 条线，Y 形 workflow 拓扑，无外框", () => {
+    // 锁住“极简节点图”设计，避免又被改回六边形 / 多边形。
+    const p = ICON_PATHS["comfyui"];
+    const circles = (p.match(/<circle /g) ?? []).length;
+    const lines = (p.match(/<line /g) ?? []).length;
+    expect(circles, "comfyui 图标应有 3 个节点").toBe(3);
+    expect(lines, "comfyui 图标应有 2 条连线（Y 形）").toBe(2);
+    expect(p.includes("<polygon"), "comfyui 图标不应再含 polygon 外框").toBe(false);
+    expect(p.includes("<path"), "comfyui 图标不应含 <path>").toBe(false);
+  });
 });

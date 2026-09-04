@@ -11,6 +11,7 @@
   import { imagesApi, comfyuiApi } from "../lib/api";
   import Icon from "./Icon.svelte";
   import { copyText } from "../lib/ws";
+  import { openOrReuseComfyuiTab } from "../lib/comfyui-window";
   import type { ImageSummary } from "../lib/types";
   import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
   import FolderPickerModal from "./FolderPickerModal.svelte";
@@ -41,9 +42,13 @@
     setTimeout(() => (toast = null), 1800);
   }
   async function openInComfyui(it: ImageSummary) {
+    // 1. 同步打开 / 复用 ComfyUI 标签页（必须在 await 之前，否则被弹窗拦截器拦掉）
+    const url = $comfyuiStatus.url || "http://127.0.0.1:8188";
+    openOrReuseComfyuiTab(url);
+    // 2. 后端落盘 workflow JSON（异步，与窗口复用解耦）
     try {
       const r = await comfyuiApi.openWorkflow(it.id);
-      notify(r.message || `已生成 ${r.file_path}`);
+      notify(`${r.workflow_name}.json 已写入 ${r.file_path}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       // 403 / 400 / 404 都从 detail 拿

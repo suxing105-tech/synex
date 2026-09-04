@@ -2,15 +2,14 @@
 
 设计要点：
 - 探测独立于图片，仅需 ComfyUI URL；前端可手动触发重探测。
-- open_workflow 需要图片存在 + 携带 workflow；写临时文件后尝试 webbrowser.open。
-  webbrowser.open 在 headless / 无 GUI 环境会失败，返回 ``browser_opened=False``，
-  前端据此降级为只展示文件路径。
+- open_workflow 需要图片存在 + 携带 workflow；写临时文件后由前端负责
+  打开 / 复用 ComfyUI 浏览器标签页（统一窗口名，浏览器自动复用）。
+  后端不再调用 ``webbrowser.open``，避免 ``new=2`` 每次都新开标签页。
 """
 from __future__ import annotations
 
 import logging
 import time
-import webbrowser
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -70,13 +69,14 @@ def update_config(payload: ComfyuiConfigUpdate, request: Request) -> ComfyuiStat
 
 @router.post("/open_workflow/{image_id}", response_model=OpenWorkflowResult)
 def open_workflow(image_id: int) -> OpenWorkflowResult:
-    """把图片的 workflow 写到 ``data/comfyui_temp/<id>.json``，并尝试弹 ComfyUI。
+    """把图片的 workflow 写到 ``data/comfyui_temp/<image_filename>.json``。
 
     - 图片不存在 → 404
     - 图片无 workflow → 400 ``no_workflow``
     - 集成未启用 → 403 ``disabled``
-    - 探测不到 ComfyUI → 409 ``comfyui_offline``（仍写临时文件）
-    - webbrowser.open 失败 → ``browser_opened=False``，文件路径仍可用
+
+    注意：浏览器标签页的「打开 / 复用」由前端负责（统一 ``suxing_comfyui``
+    窗口名，浏览器自动复用），后端不再调用 ``webbrowser.open``。
     """
     cfg = load_config()
     if not cfg.comfyui_enabled:
@@ -84,44 +84,32 @@ def open_workflow(image_id: int) -> OpenWorkflowResult:
 
     pool = get_pool()
     row = pool.main().execute(
-        "SELECT id, workflow FROM images WHERE id = ?", (image_id,)
+        "SELECT id, filename, workflow FROM images WHERE id = ?", (image_id,)
     ).fetchone()
     if not row:
         raise HTTPException(404, f"图片 {image_id} 不存在")
+    image_filename = row["filename"] or f"image_{image_id}"
     workflow_json = row["workflow"] or ""
     if not workflow_json.strip():
         raise HTTPException(400, "no_workflow")
 
-    target = write_workflow_temp(image_id, workflow_json)
+    target = write_workflow_temp(image_filename, workflow_json)
     if not target:
         # 二次保险：上面已经判过空，这里只是兜底
         raise HTTPException(400, "no_workflow")
 
     comfyui_url = cfg.comfyui_url
-    running = probe(comfyui_url)
-    browser_opened = False
-    if running:
-        try:
-            browser_opened = webbrowser.open(comfyui_url, new=2) is not None
-        except Exception as e:  # noqa: BLE001
-            log.warning("webbrowser.open failed: %s", e)
-            browser_opened = False
-
     message = (
-        f"工作流已保存到 {target}；请在 ComfyUI 中拖入该文件。"
-        if not running
-        else (
-            f"已尝试打开 ComfyUI（{comfyui_url}）；如未弹出请在 ComfyUI 中拖入 {target}"
-            if browser_opened
-            else f"已保存到 {target}，但浏览器拦截了弹窗，请手动打开 ComfyUI 后拖入该文件"
-        )
+        f"工作流已追加：{target.name}（位于 {target.parent}）。"
+        f"ComfyUI 中 File → Load 即可加载。"
     )
     return OpenWorkflowResult(
         ok=True,
         image_id=image_id,
         file_path=str(target),
+        workflow_name=target.stem,
         comfyui_url=comfyui_url,
-        browser_opened=browser_opened,
+        browser_opened=False,  # 由前端管窗口复用，后端不负责弹窗
         message=message,
     )
 

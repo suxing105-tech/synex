@@ -47,9 +47,10 @@ describe("comfyuiApi", () => {
       jsonResponse({
         ok: true,
         image_id: 42,
-        file_path: "C:/data/comfyui_temp/42.json",
+        file_path: "C:/data/comfyui_temp/some_image.json",
+        workflow_name: "some_image",  // 取自图片 filename
         comfyui_url: "http://127.0.0.1:8188",
-        browser_opened: true,
+        browser_opened: false,  // 后端不再弹窗，由前端复用窗口
         message: "已生成",
       })
     );
@@ -58,7 +59,9 @@ describe("comfyuiApi", () => {
     expect(url).toBe("/api/integrations/comfyui/open_workflow/42");
     expect(init.method).toBe("POST");
     expect(r.image_id).toBe(42);
-    expect(r.file_path.endsWith("42.json")).toBe(true);
+    expect(r.file_path.endsWith("some_image.json")).toBe(true);
+    expect(r.workflow_name).toBe("some_image");
+    expect(r.browser_opened).toBe(false);
   });
 
   it("HTTP 错误 → 抛出包含 URL/状态码的 Error", async () => {

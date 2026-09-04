@@ -5,8 +5,11 @@
     multiSelectedIds, folders, refreshFolders,
     selectedId as selectedIdStore,
     applySelection, clearSelection, removeIdsFromSelection,
+    comfyuiStatus,
   } from "../lib/stores";
-  import { imagesApi } from "../lib/api";
+  
+  import { imagesApi, comfyuiApi } from "../lib/api";
+  import Icon from "./Icon.svelte";
   import { copyText } from "../lib/ws";
   import type { ImageSummary } from "../lib/types";
   import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
@@ -36,6 +39,17 @@
   function notify(msg: string) {
     toast = msg;
     setTimeout(() => (toast = null), 1800);
+  }
+  async function openInComfyui(it: ImageSummary) {
+    try {
+      const r = await comfyuiApi.openWorkflow(it.id);
+      notify(r.message || `已生成 ${r.file_path}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // 403 / 400 / 404 都从 detail 拿
+      const detail = msg.match(/→ \d+: (.+)$/)?.[1] || msg;
+      notify(`在 ComfyUI 中打开失败：${detail}`);
+    }
   }
 
   // ---------- 拖拽导入状态 ----------
@@ -614,6 +628,20 @@
                 {#if it.favorite}
                   <div class="absolute top-1 right-1 text-danger text-[14px] drop-shadow">♥</div>
                 {/if}
+
+                {#if $comfyuiStatus.running && it.has_workflow && (hoveredId === it.id || $selectedIdStore === it.id || $multiSelectedIds.has(it.id))}
+                  <div
+                    role="button"
+                    tabindex="-1"
+                    class="comfyui-open-btn absolute top-1 right-1 w-7 h-7 rounded-full flex items-center justify-center bg-black/65 hover:bg-accent text-white border border-accent/70 hover:border-accent backdrop-blur-sm transition-colors cursor-pointer"
+                    title="在 ComfyUI 中打开工作流"
+                    aria-label="在 ComfyUI 中打开工作流"
+                    onclick={(e) => { e.stopPropagation(); e.preventDefault(); openInComfyui(it); }}
+                    onmousedown={(e) => e.stopPropagation()}
+                  >
+                    <Icon name="comfyui" size={15} />
+                  </div>
+                {/if}
                 {#if $newIds.has(it.id)}
                   <div class="absolute bottom-8 left-1 bg-success text-bg text-[10px] font-bold px-1.5 rounded shadow">NEW</div>
                 {/if}
@@ -658,6 +686,11 @@
   .masonry-col {
     display: flex;
     flex-direction: column;
+  }
+  /* ComfyUI 圆形按钮：thumb 上 hover/选中时浮起的强调按钮 */
+  .comfyui-open-btn {
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+    z-index: 2;
   }
   .thumb-img {
     transition: transform 0.35s cubic-bezier(0.2, 0.6, 0.2, 1); will-change: transform;

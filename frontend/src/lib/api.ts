@@ -1,10 +1,13 @@
 import type {
+  ComfyuiConfigUpdate,
+  ComfyuiStatus,
   ConfigOut,
   FeedQuery,
   FeedResponse,
   FolderNode,
   ImageDetail,
   ImportResponse,
+  OpenWorkflowResult,
   ScanProgress,
   Stats,
   TagInfo,
@@ -177,3 +180,25 @@ export const statsApi = {
   },
 };
 
+
+
+// ---------- ComfyUI 集成 ----------
+
+
+export const comfyuiApi = {
+  status(): Promise<ComfyuiStatus> {
+    return http<ComfyuiStatus>("/api/integrations/comfyui/status");
+  },
+  updateConfig(patch: ComfyuiConfigUpdate): Promise<ComfyuiStatus> {
+    return http<ComfyuiStatus>("/api/integrations/comfyui/config", {
+      method: "PUT",
+      body: JSON.stringify(patch),
+    });
+  },
+  openWorkflow(id: number): Promise<OpenWorkflowResult> {
+    return http<OpenWorkflowResult>(
+      `/api/integrations/comfyui/open_workflow/${id}`,
+      { method: "POST" },
+    );
+  },
+};

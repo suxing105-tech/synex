@@ -48,6 +48,16 @@ export const ICON_PATHS: Record<string, string> = {
   "circle-slash":
     '<circle cx="12" cy="12" r="10"/>' +
     '<line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>',
+
+  // ComfyUI logo 简笔画：六边形外框 + 3 个内部节点 + 连线，模拟 workflow graph
+  comfyui:
+    '<polygon points="12 2.5 21 7.5 21 16.5 12 21.5 3 16.5 3 7.5"/>' +
+    '<circle cx="12" cy="9" r="1.4"/>' +
+    '<circle cx="7.5" cy="15" r="1.4"/>' +
+    '<circle cx="16.5" cy="15" r="1.4"/>' +
+    '<line x1="12" y1="9" x2="7.5" y2="15"/>' +
+    '<line x1="12" y1="9" x2="16.5" y2="15"/>' +
+    '<line x1="7.5" y1="15" x2="16.5" y2="15"/>',
 };
 
 /** 列出所有支持的图标名（用于代码生成 / 测试 / 帮助页）。 */

@@ -13,6 +13,7 @@ export interface ImageSummary {
   model: string | null;
   seed: number | null;
   new?: boolean;
+  has_workflow?: boolean;
 }
 
 export interface ImageDetail extends ImageSummary {
@@ -101,3 +102,26 @@ export type FeedQuery = {
   limit?: number;
   offset?: number;
 };
+
+// ---------- ComfyUI 集成 ----------
+
+export interface ComfyuiStatus {
+  running: boolean;
+  url: string;
+  enabled: boolean;
+  checked_at: number;
+}
+
+export interface ComfyuiConfigUpdate {
+  url?: string;
+  enabled?: boolean;
+}
+
+export interface OpenWorkflowResult {
+  ok: boolean;
+  image_id: number;
+  file_path: string;
+  comfyui_url: string;
+  browser_opened: boolean;
+  message: string;
+}

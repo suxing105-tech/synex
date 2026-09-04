@@ -1,14 +1,28 @@
 <script lang="ts">
-  import { selectedDetail, folders, refreshFolders } from "../lib/stores";
-  import { imagesApi, foldersApi } from "../lib/api";
+  import { selectedDetail, folders, refreshFolders , comfyuiStatus } from "../lib/stores";
+  import { imagesApi, foldersApi , comfyuiApi } from "../lib/api";
   import { copyText, formatSize, formatDate, paramsToKv, allParamsText } from "../lib/ws";
   import type { ImageDetail, FolderNode } from "../lib/types";
   import Icon from "./Icon.svelte";
+  import { get } from "svelte/store";
 
   let toast = $state<string | null>(null);
   let tagInput = $state<string>("");
   let showTagInput = $state<boolean>(false);
   let showFolderPicker = $state<boolean>(false);
+
+  async function openInComfyui() {
+    const det = get(selectedDetail);
+    if (!det) return;
+    try {
+      const r = await comfyuiApi.openWorkflow(det.id);
+      notify(r.message || `已生成 ${r.file_path}`);
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e);
+      const detail = m.match(/→ \d+: (.+)$/)?.[1] || m;
+      notify(`在 ComfyUI 中打开失败：${detail}`);
+    }
+  }
 
   function notify(msg: string) {
     toast = msg;
@@ -102,6 +116,15 @@
         <button class="px-2 py-1 text-[11px] rounded border border-border hover:border-accent" onclick={() => copy(String(d.seed ?? ""), "Seed")}># Seed</button>
         <button class="px-2 py-1 text-[11px] rounded border border-border hover:border-accent" onclick={() => copy(allParamsText(d), "完整参数")}>所有参数</button>
         <button class="px-2 py-1 text-[11px] rounded border border-border hover:border-accent" onclick={() => copy(d.workflow || "", "Workflow JSON")}>Workflow</button>
+        <button
+          class="px-2 py-1 text-[11px] rounded border border-border hover:border-accent disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+          disabled={!$comfyuiStatus.running || !d.workflow}
+          onclick={openInComfyui}
+          title={!d.workflow ? "该图片没有 ComfyUI 工作流" : !$comfyuiStatus.running ? "未检测到 ComfyUI" : "在 ComfyUI 中打开工作流"}
+        >
+          <Icon name="comfyui" size={12} />
+          <span>在 ComfyUI 中打开</span>
+        </button>
       </div>
 
       <!-- 正向 Prompt -->

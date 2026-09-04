@@ -1,5 +1,5 @@
 import { writable, derived } from "svelte/store";
-import type { FeedResponse, FolderNode, ImageDetail, ImageSummary, ScanProgress, Stats } from "./types";
+import type { ComfyuiStatus, FeedResponse, FolderNode, ImageDetail, ImageSummary, ScanProgress, Stats } from "./types";
 import { foldersApi, imagesApi, scanApi, statsApi } from "./api";
 import { nextSelection, type Modifier, type SelectionState } from "./selection";
 
@@ -258,3 +258,17 @@ export const activeFolderName = derived(
       return find($folders)?.name ?? "全部图片";
     }
 );
+
+
+// ---------- ComfyUI 集成 ----------
+
+
+export const comfyuiStatus = writable<ComfyuiStatus>({
+  running: false,
+  url: "http://127.0.0.1:8188",
+  enabled: true,
+  checked_at: 0,
+});
+
+
+export const comfyuiEnabled = writable<boolean>(true);

@@ -16,6 +16,7 @@ describe("lib/icons 数据契约", () => {
       "plus",
       "more-vertical",
       "arrow-left",
+      "comfyui",
     ];
     for (const n of required) {
       expect(ICON_PATHS[n], `缺少 ${n}`).toBeDefined();

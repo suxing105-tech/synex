@@ -185,3 +185,34 @@ describe("前端 stores", () => {
     });
   });
 });
+
+
+describe("ComfyUI stores", () => {
+  it("comfyuiStatus 初始值：not running, 默认 URL, enabled", async () => {
+    const { comfyuiStatus } = await import("../lib/stores");
+    const v = get(comfyuiStatus);
+    expect(v.running).toBe(false);
+    expect(v.url).toBe("http://127.0.0.1:8188");
+    expect(v.enabled).toBe(true);
+    expect(typeof v.checked_at).toBe("number");
+  });
+
+  it("comfyuiEnabled 初始值为 true，可独立 set", async () => {
+    const { comfyuiEnabled } = await import("../lib/stores");
+    expect(get(comfyuiEnabled)).toBe(true);
+    comfyuiEnabled.set(false);
+    expect(get(comfyuiEnabled)).toBe(false);
+    comfyuiEnabled.set(true);
+    expect(get(comfyuiEnabled)).toBe(true);
+  });
+
+  it("comfyuiStatus.set() 正常更新字段", async () => {
+    const { comfyuiStatus } = await import("../lib/stores");
+    comfyuiStatus.set({ running: true, url: "http://x", enabled: true, checked_at: 42 });
+    const v = get(comfyuiStatus);
+    expect(v.running).toBe(true);
+    expect(v.checked_at).toBe(42);
+    // 复位
+    comfyuiStatus.set({ running: false, url: "http://127.0.0.1:8188", enabled: true, checked_at: 0 });
+  });
+});

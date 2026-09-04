@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { connectEvents, disconnectEvents } from "./lib/ws";
-  import { refreshFolders, refreshStats, refreshFeed, selectedId } from "./lib/stores";
+  import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, comfyuiEnabled } from "./lib/stores";
   import HeaderBar from "./components/HeaderBar.svelte";
   import FolderTree from "./components/FolderTree.svelte";
   import Feed from "./components/Feed.svelte";
@@ -10,7 +10,7 @@
   import OnboardingModal from "./components/OnboardingModal.svelte";
   import SettingsModal from "./components/SettingsModal.svelte";
   import ScanProgressBar from "./components/ScanProgressBar.svelte";
-  import { statsApi, settingsApi } from "./lib/api";
+  import { statsApi, settingsApi, comfyuiApi } from "./lib/api";
 
   // 窗口级 drag/drop 兜底：拖到非 Feed 区域（如文件夹树 / 详情面板 / 空白处）
   // 时让浏览器不要导航到 file:// 或打开图片。
@@ -32,6 +32,19 @@
     selectedId.set(selectedIdValue);
   });
 
+  let comfyuiTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function refreshComfyuiStatus() {
+    try {
+      const s = await comfyuiApi.status();
+      comfyuiStatus.set(s);
+      comfyuiEnabled.set(s.enabled);
+    } catch (e) {
+      // 探测失败不报错（ComfyUI 没启动是正常状态）
+      comfyuiStatus.update((cur) => ({ ...cur, running: false }));
+    }
+  }
+
   onMount(async () => {
     try {
       await Promise.all([refreshFolders(), refreshStats(), refreshFeed()]);
@@ -43,10 +56,18 @@
       console.error("init failed", e);
     }
     connectEvents();
+    // 启动一次 ComfyUI 探测；之后每 30s 轮询 + 切回标签页时立刻探
+    await refreshComfyuiStatus();
+    comfyuiTimer = setInterval(refreshComfyuiStatus, 30000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") refreshComfyuiStatus();
+    };
+    document.addEventListener("visibilitychange", onVis);
   });
 
   onDestroy(() => {
     disconnectEvents();
+    if (comfyuiTimer) clearInterval(comfyuiTimer);
   });
 </script>
 

@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { settingsApi } from "../lib/api";
+  import { settingsApi, comfyuiApi } from "../lib/api";
+  import { comfyuiStatus } from "../lib/stores";
   import type { ConfigOut } from "../lib/types";
   import { onMount } from "svelte";
 
@@ -21,6 +22,39 @@
       settingsApi.get().then((c) => (cfg = c));
     }
   });
+
+  let comfyuiUrlInput = $state<string>("http://127.0.0.1:8188");
+  let comfyuiEnabledLocal = $state<boolean>(true);
+  let probing = $state<boolean>(false);
+  let comfyuiStatusLocal = $state<{ running: boolean; url: string } | null>(null);
+
+  async function refreshComfyui() {
+    probing = true;
+    try {
+      const s = await comfyuiApi.status();
+      comfyuiStatusLocal = { running: s.running, url: s.url };
+      comfyuiUrlInput = s.url;
+      comfyuiEnabledLocal = s.enabled;
+      comfyuiStatus.set(s);
+    } catch (e) {
+      comfyuiStatusLocal = { running: false, url: comfyuiUrlInput };
+    } finally {
+      probing = false;
+    }
+  }
+
+  async function saveComfyui() {
+    try {
+      const s = await comfyuiApi.updateConfig({
+        url: comfyuiUrlInput,
+        enabled: comfyuiEnabledLocal,
+      });
+      comfyuiStatusLocal = { running: s.running, url: s.url };
+      comfyuiStatus.set(s);
+    } catch (e) {
+      console.error(e);
+    }
+  }
 
   async function save() {
     if (!cfg) return;
@@ -87,6 +121,44 @@
           <input type="checkbox" bind:checked={cfg.live_enabled} class="accent-accent" />
           <span>启用文件系统监听（新文件自动流入 feed）</span>
         </label>
+      </section>
+
+      
+      <section class="space-y-2 mb-5">
+        <h3 class="text-[11px] uppercase text-muted tracking-wider">ComfyUI 集成</h3>
+        <div class="flex items-center gap-2">
+          <input
+            type="text"
+            bind:value={comfyuiUrlInput}
+            placeholder="http://127.0.0.1:8188"
+            class="flex-1 bg-bg border border-border rounded px-2 py-1 text-[12px] outline-none focus:border-accent font-mono"
+          />
+          <button
+            class="text-[12px] px-3 py-1 rounded border border-border hover:border-accent disabled:opacity-50"
+            disabled={probing}
+            onclick={refreshComfyui}
+            title="重新探测本机 ComfyUI"
+          >
+            {probing ? "探测中…" : "重新探测"}
+          </button>
+          <span
+            class="inline-block w-2.5 h-2.5 rounded-full"
+            class:bg-success={comfyuiStatusLocal?.running}
+            class:bg-danger={comfyuiStatusLocal && !comfyuiStatusLocal.running}
+            class:bg-muted={!comfyuiStatusLocal}
+            title={comfyuiStatusLocal?.running ? "ComfyUI 在跑" : "未探测到 ComfyUI"}
+          ></span>
+        </div>
+        <label class="flex items-center gap-2 text-[13px] cursor-pointer">
+          <input type="checkbox" bind:checked={comfyuiEnabledLocal} class="accent-accent" />
+          <span>启用 ComfyUI 工作流一键打开（仅在 ComfyUI 运行时显示按钮）</span>
+        </label>
+        <div class="flex justify-end">
+          <button
+            class="text-[11px] px-2 py-1 rounded border border-border hover:border-accent"
+            onclick={saveComfyui}
+          >保存 ComfyUI 设置</button>
+        </div>
       </section>
 
       <div class="flex justify-end gap-2 pt-3 border-t border-border">

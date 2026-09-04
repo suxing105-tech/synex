@@ -35,6 +35,8 @@ export interface FolderNode {
   order: number;
   image_count: number;
   recursive_count: number;
+  is_system?: boolean; // 监听目录文件系统子目录（不可重命名/删除/move）
+  path?: string | null; // system folder 时存绝对路径（前端可在 tooltip 显示）
   children: FolderNode[];
 }
 

@@ -33,6 +33,14 @@
 
   function openMenu(id: number, e: MouseEvent) {
     e.stopPropagation();
+    const node = findNode($folders, id);
+    // system folder 的右键菜单里只有"在文件管理器中打开"，改用专门分支
+    if (node?.is_system) {
+      menuFor = id;
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      menuPos = { x: rect.right, y: rect.bottom };
+      return;
+    }
     if (menuFor === id) {
       menuFor = null;
       return;
@@ -71,6 +79,16 @@
     await refreshFolders();
   }
 
+  async function revealSystemFolder(_path: string | null | undefined, folderId: number) {
+    // 后端 /api/folders/{id}/reveal 会调 explorer / xdg-open / open 打开目录
+    try {
+      await fetch(`/api/folders/${folderId}/reveal`, { method: "POST" });
+    } catch {
+      /* ignore */
+    }
+    menuFor = null;
+  }
+
   function startNew(parent: number | null) {
     newFolderFor = { parent };
     newFolderName = "";
@@ -93,57 +111,112 @@
     newFolderFor = null;
     renameFor = null;
   }
+
+  // 把 folder 树按 is_system 拆成两份：user / system。
+  // 注意：后端 folder_tree() 已经按 parent_id 嵌套好了；这里只是按根节点过滤。
+  let userFolders = $derived($folders.filter((f) => !f.is_system));
+  let systemFolders = $derived($folders.filter((f) => !!f.is_system));
 </script>
 
 <svelte:window onclick={closeAll} />
 
 <div class="px-[14px] pt-[14px] pb-[8px] flex items-center justify-between">
   <h3 class="text-[11px] uppercase text-muted tracking-wider">文件夹</h3>
-  <button class="bg-transparent border border-border text-muted w-6 h-6 rounded-[5px] hover:border-accent hover:text-zinc-200 flex items-center justify-center" onclick={(e) => { e.stopPropagation(); startNew(null); }} title="在根目录新建文件夹"><Icon name="plus" size={12} /></button>
+  <button
+    class="bg-transparent border border-border text-muted w-6 h-6 rounded-[5px] hover:border-accent hover:text-zinc-200 flex items-center justify-center"
+    onclick={(e) => {
+      e.stopPropagation();
+      startNew(null);
+    }}
+    title="在根目录新建文件夹"
+  >
+    <Icon name="plus" size={12} />
+  </button>
 </div>
 <div class="flex-1 overflow-y-auto px-2 pb-3">
-  <div class="text-[10px] uppercase text-muted tracking-wider px-[10px] py-[10px] opacity-70">系统</div>
-  <div class="folder-item {$view === 'all' && $folderId === null ? 'active' : ''}" onclick={() => { view.set('all'); folderId.set(null); }}>
+  <div class="text-[10px] uppercase text-muted tracking-wider px-[10px] py-[10px] opacity-70">
+    系统
+  </div>
+  <div
+    class="folder-item {$view === 'all' && $folderId === null ? 'active' : ''}"
+    onclick={() => {
+      view.set('all');
+      folderId.set(null);
+    }}
+  >
     <span class="caret-spacer"></span>
     <span class="icon"><Icon name="image" size={13} /></span>
     <span class="label">全部图片</span>
     <span class="count">{$stats.total_images}</span>
   </div>
-  <div class="folder-item {$view === 'favorite' ? 'active' : ''}" onclick={() => setView("favorite")}>
+  <div
+    class="folder-item {$view === 'favorite' ? 'active' : ''}"
+    onclick={() => setView('favorite')}
+  >
     <span class="caret-spacer"></span>
     <span class="icon"><Icon name="star" size={13} /></span>
     <span class="label">收藏</span>
     <span class="count">{$stats.favorites}</span>
   </div>
-  <div class="folder-item {$view === 'recent' ? 'active' : ''}" onclick={() => setView("recent")}>
+  <div
+    class="folder-item {$view === 'recent' ? 'active' : ''}"
+    onclick={() => setView('recent')}
+  >
     <span class="caret-spacer"></span>
     <span class="icon"><Icon name="clock" size={13} /></span>
     <span class="label">最近生成</span>
     <span class="count"></span>
   </div>
 
+  {#if systemFolders.length > 0}
+    <div class="flex items-center justify-between px-[10px] pt-[14px] pb-[4px]">
+      <div class="text-[10px] uppercase text-muted tracking-wider opacity-70">
+        来源（监听目录子目录）
+      </div>
+    </div>
+    {#each systemFolders as f (f.id)}
+      {@render systemFolderItem(f, 0)}
+    {/each}
+  {/if}
+
   <div class="flex items-center justify-between px-[10px] pt-[14px] pb-[4px]">
     <div class="text-[10px] uppercase text-muted tracking-wider opacity-70">我的文件夹</div>
-    <button class="bg-transparent border-0 text-muted text-[12px] hover:text-zinc-200" onclick={(e) => { e.stopPropagation(); startNew(null); }} title="新建文件夹"><Icon name="plus" size={12} /></button>
+    <button
+      class="bg-transparent border-0 text-muted text-[12px] hover:text-zinc-200"
+      onclick={(e) => {
+        e.stopPropagation();
+        startNew(null);
+      }}
+      title="新建文件夹"
+    >
+      <Icon name="plus" size={12} />
+    </button>
   </div>
 
-  {#if $folders.length === 0}
+  {#if userFolders.length === 0}
     <div class="text-[12px] text-muted px-3 py-2">还没有文件夹</div>
   {/if}
 
-  {#each $folders as f (f.id)}
-    {@render folderItem(f, 0)}
+  {#each userFolders as f (f.id)}
+    {@render userFolderItem(f, 0)}
   {/each}
 </div>
 <div class="border-t border-border px-4 py-[10px] text-[11px] text-muted flex justify-between">
   <span>{$stats.total_images} 张图片</span>
-  <span>本地存储</span>
+  <span>本地缓存</span>
 </div>
 
 {#if newFolderFor !== null}
-  <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" role="presentation" onclick={closeAll}>
-    <div class="bg-surface-2 border border-border rounded-[10px] p-5 w-[360px]" onclick={(e) => e.stopPropagation()}>
-      <h3 class="text-sm font-medium mb-3">{newFolderFor.parent === null ? "新建根文件夹" : "新建子文件夹"}</h3>
+  <div
+    class="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+    role="presentation"
+    onclick={closeAll}
+  >
+    <div
+      class="bg-surface-2 border border-border rounded-[10px] p-5 w-[360px]"
+      onclick={(e) => e.stopPropagation()}
+    >
+      <h3 class="text-sm font-medium mb-3">新建文件夹</h3>
       <input
         type="text"
         bind:value={newFolderName}
@@ -156,16 +229,33 @@
         autofocus
       />
       <div class="flex justify-end gap-2 mt-3">
-        <button class="text-[12px] px-3 py-1 rounded border border-border hover:border-accent" onclick={closeAll}>取消</button>
-        <button class="text-[12px] px-3 py-1 rounded bg-accent text-bg font-medium" onclick={submitNewFolder}>创建</button>
+        <button
+          class="text-[12px] px-3 py-1 rounded border border-border hover:border-accent"
+          onclick={closeAll}
+        >
+          取消
+        </button>
+        <button
+          class="text-[12px] px-3 py-1 rounded bg-accent text-bg font-medium"
+          onclick={submitNewFolder}
+        >
+          创建
+        </button>
       </div>
     </div>
   </div>
 {/if}
 
 {#if renameFor !== null}
-  <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" role="presentation" onclick={closeAll}>
-    <div class="bg-surface-2 border border-border rounded-[10px] p-5 w-[360px]" onclick={(e) => e.stopPropagation()}>
+  <div
+    class="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+    role="presentation"
+    onclick={closeAll}
+  >
+    <div
+      class="bg-surface-2 border border-border rounded-[10px] p-5 w-[360px]"
+      onclick={(e) => e.stopPropagation()}
+    >
       <h3 class="text-sm font-medium mb-3">重命名文件夹</h3>
       <input
         type="text"
@@ -178,42 +268,120 @@
         autofocus
       />
       <div class="flex justify-end gap-2 mt-3">
-        <button class="text-[12px] px-3 py-1 rounded border border-border hover:border-accent" onclick={closeAll}>取消</button>
-        <button class="text-[12px] px-3 py-1 rounded bg-accent text-bg font-medium" onclick={submitRename}>保存</button>
+        <button
+          class="text-[12px] px-3 py-1 rounded border border-border hover:border-accent"
+          onclick={closeAll}
+        >
+          取消
+        </button>
+        <button
+          class="text-[12px] px-3 py-1 rounded bg-accent text-bg font-medium"
+          onclick={submitRename}
+        >
+          保存
+        </button>
       </div>
     </div>
   </div>
 {/if}
 
 {#if menuFor !== null}
+  {@const menuNode = findNode($folders, menuFor)}
+  {@const isSys = !!menuNode?.is_system}
   <div
-    class="folder-menu fixed bg-surface-2 border border-border rounded-[8px] py-1 min-w-[140px] z-40 text-[13px] shadow-xl"
+    class="folder-menu fixed bg-surface-2 border border-border rounded-[8px] py-1 min-w-[160px] z-40 text-[13px] shadow-xl"
     style="left: {menuPos.x}px; top: {menuPos.y}px;"
     role="menu"
     onclick={(e) => e.stopPropagation()}
   >
-    <button class="block w-full text-left px-3 py-1 hover:bg-surface-3" onclick={() => {
-      const node = findNode($folders, menuFor!);
-      if (node) startRename(menuFor!, node.name);
-    }}>重命名</button>
-    <button class="block w-full text-left px-3 py-1 hover:bg-surface-3" onclick={() => menuFor !== null && move(menuFor, "up")}>上移</button>
-    <button class="block w-full text-left px-3 py-1 hover:bg-surface-3" onclick={() => menuFor !== null && move(menuFor, "down")}>下移</button>
-    <button class="block w-full text-left px-3 py-1 hover:bg-surface-3" onclick={() => menuFor !== null && startNew(menuFor)}>新建子文件夹</button>
-    <div class="border-t border-border my-1"></div>
-    <button class="block w-full text-left px-3 py-1 hover:bg-danger/30 text-danger" onclick={() => menuFor !== null && remove(menuFor)}>删除</button>
+    {#if isSys}
+      <div class="px-3 py-1 text-muted text-[11px]">系统文件夹（只读）</div>
+      <button
+        class="block w-full text-left px-3 py-1 hover:bg-surface-3"
+        onclick={() => menuFor !== null && revealSystemFolder(menuNode?.path, menuFor)}
+      >
+        在文件管理器中打开
+      </button>
+    {:else}
+      <button
+        class="block w-full text-left px-3 py-1 hover:bg-surface-3"
+        onclick={() => {
+          const node = findNode($folders, menuFor!);
+          if (node) startRename(menuFor!, node.name);
+        }}
+      >
+        重命名
+      </button>
+      <button
+        class="block w-full text-left px-3 py-1 hover:bg-surface-3"
+        onclick={() => menuFor !== null && move(menuFor, 'up')}
+      >
+        上移
+      </button>
+      <button
+        class="block w-full text-left px-3 py-1 hover:bg-surface-3"
+        onclick={() => menuFor !== null && move(menuFor, 'down')}
+      >
+        下移
+      </button>
+      <button
+        class="block w-full text-left px-3 py-1 hover:bg-surface-3"
+        onclick={() => menuFor !== null && startNew(menuFor)}
+      >
+        新建子文件夹
+      </button>
+      <div class="border-t border-border my-1"></div>
+      <button
+        class="block w-full text-left px-3 py-1 hover:bg-danger/30 text-danger"
+        onclick={() => menuFor !== null && remove(menuFor)}
+      >
+        删除
+      </button>
+    {/if}
   </div>
 {/if}
 
-{#snippet folderItem(folder: FolderNode, depth: number)}
-  <div class="folder-item {$folderId === folder.id ? 'active' : ''}" onclick={() => pickFolder(folder)}>
+{#snippet userFolderItem(folder: FolderNode, depth: number)}
+  <div
+    class="folder-item {$folderId === folder.id ? 'active' : ''}"
+    onclick={() => pickFolder(folder)}
+  >
     <span class="caret-spacer" style="width: {depth * 14 + 12}px"></span>
     <span class="icon"><Icon name="folder" size={13} /></span>
     <span class="label">{folder.name}</span>
     <span class="count">{folder.recursive_count}</span>
-    <button class="menu-btn" onclick={(e) => openMenu(folder.id, e)}><Icon name="more-vertical" size={14} /></button>
+    <button
+      class="menu-btn"
+      onclick={(e) => openMenu(folder.id, e)}
+      aria-label="文件夹操作"
+    >
+      <Icon name="more-vertical" size={14} />
+    </button>
   </div>
   {#each folder.children as child (child.id)}
-    {@render folderItem(child, depth + 1)}
+    {@render userFolderItem(child, depth + 1)}
+  {/each}
+{/snippet}
+
+{#snippet systemFolderItem(folder: FolderNode, depth: number)}
+  <div
+    class="folder-item system {$folderId === folder.id ? 'active' : ''}"
+    onclick={() => pickFolder(folder)}
+  >
+    <span class="caret-spacer" style="width: {depth * 14 + 12}px"></span>
+    <span class="icon"><Icon name="folder" size={13} /></span>
+    <span class="label" title={folder.path ?? folder.name}>{folder.name}</span>
+    <span class="count">{folder.recursive_count}</span>
+    <button
+      class="menu-btn"
+      onclick={(e) => openMenu(folder.id, e)}
+      aria-label="来源操作"
+    >
+      <Icon name="more-vertical" size={14} />
+    </button>
+  </div>
+  {#each folder.children as child (child.id)}
+    {@render systemFolderItem(child, depth + 1)}
   {/each}
 {/snippet}
 
@@ -285,5 +453,20 @@
   :global(.caret-spacer) {
     display: inline-block;
     flex-shrink: 0;
+  }
+  /* system folder：略微区分（图标色保留，但文字色偏暗；hover/active 用主色） */
+  :global(.folder-item.system) {
+    color: #c2c2c8;
+  }
+  :global(.folder-item.system .icon) {
+    color: #8a8a8e;
+    opacity: 1;
+  }
+  :global(.folder-item.system:hover) {
+    background: #27272a;
+    color: #e4e4e7;
+  }
+  :global(.folder-item.system.active) {
+    color: #f24e4e;
   }
 </style>

@@ -54,3 +54,36 @@ def delete_folder(folder_id: int):
         raise HTTPException(400, "系统文件夹不可删除")
     repository.folder_delete(folder_id)
     return {"ok": True}
+
+
+@router.post("/{folder_id}/reveal")
+def reveal_folder(folder_id: int):
+    """在系统文件管理器中打开 system folder 目录（前端"在文件管理器中打开"用）。
+
+    system folder 的 path 字段存的就是绝对路径，直接 explorer.exe / xdg-open / open 打开。
+    user folder 无 on-disk 实体，没有此需求。
+    """
+    import platform
+    import subprocess
+    from pathlib import Path
+
+    conn = repository.get_pool()  # uses the imported get_pool from ..db
+    row = conn.execute(
+        "SELECT path, is_system FROM folders WHERE id = ?", (folder_id,)
+    ).fetchone()
+    if not row or not row["is_system"] or not row["path"]:
+        raise HTTPException(404, "system folder 不存在或缺少 path")
+    p = Path(row["path"])
+    if not p.exists():
+        raise HTTPException(404, f"路径不存在: {p}")
+    system = platform.system()
+    try:
+        if system == "Windows":
+            subprocess.Popen(["explorer", str(p)])
+        elif system == "Darwin":
+            subprocess.Popen(["open", str(p)])
+        else:
+            subprocess.Popen(["xdg-open", str(p)])
+    except OSError as e:
+        raise HTTPException(500, f"打开目录失败: {e}") from e
+    return {"ok": True, "path": str(p), "platform": system}

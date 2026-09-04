@@ -60,8 +60,11 @@ CREATE TABLE IF NOT EXISTS folders (
     name TEXT NOT NULL,
     "order" INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_system INTEGER NOT NULL DEFAULT 0,
+    path TEXT,
     UNIQUE(parent_id, name)
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_folders_path ON folders(path) WHERE path IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_id, "order");
 CREATE TABLE IF NOT EXISTS tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -132,6 +135,9 @@ class ConnectionPool:
                 return
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self._main = self._new_conn()
+            # 迁移必须先于 SCHEMA：旧库缺 is_system/path 列，
+            # SCHEMA 里的 CREATE INDEX ... ON folders(path) 会失败。
+            migrate_system_folders(self._main)
             self._main.executescript(SCHEMA)
             self._initialized = True
             self._ready_event.set()
@@ -255,6 +261,24 @@ def fts_sync(conn: sqlite3.Connection, image_id: int, op: str) -> None:
         )
 
 
+
+
+def migrate_system_folders(conn: sqlite3.Connection) -> None:
+    """幂等迁移：补齐 folders.is_system / folders.path 字段 + 索引。"""
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(folders)").fetchall()}
+    if "is_system" not in cols:
+        conn.execute(
+            "ALTER TABLE folders ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0"
+        )
+    if "path" not in cols:
+        conn.execute("ALTER TABLE folders ADD COLUMN path TEXT")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_folders_path "
+        "ON folders(path) WHERE path IS NOT NULL"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_folders_is_system ON folders(is_system)"
+    )
 def get_int_meta(key: str, default: int = 0) -> int:
     row = get_pool().main().execute(
         "SELECT value FROM meta WHERE key = ?", (key,)
@@ -273,3 +297,5 @@ def set_meta(key: str, value: object) -> None:
         "ON CONFLICT(key) DO UPDATE SET value = excluded",
         (key, str(value)),
     )
+
+

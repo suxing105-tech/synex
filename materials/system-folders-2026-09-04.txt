@@ -1,0 +1,29 @@
+# 2026-09-04 09:30 system folder 功能交付
+
+## 完成的功能
+watch dir 下文件系统子目录自动作为 system folder 出现在左侧「来源」树里：
+- 缩略图按所在子目录挂到对应 system folder
+- system folder 不可重命名/删除/move（前端右键菜单隐藏；后端 API 返回 400）
+- 新建空目录也会立刻在树上显示（watchdog on_created 预挂节点）
+- lifespan 启动时 backfill 已有的 96 张图
+
+## 测试
+- backend pytest：98/98 通过（含新增 test_system_folders.py 17 个）
+- frontend vitest：133/133 通过（含新增 system-folders.test.ts 7 个）
+
+## 端到端验证（uvicorn 重启后实际 API）
+- GET /api/folders 返回 4 个根 folder：
+  - [SYS] krea2 (path=D:/AI/.../output/krea2, recursive_count=80)
+  - [SYS] 视频分镜 (path=D:/AI/.../output/视频分镜, recursive_count=16)
+  - [USR] 灵感（之前用户建的）
+  - [USR] 项目（之前用户建的）
+- GET /api/images?folder_id=8 (krea2)：返回 80 张图，全部路径含 krea2/
+- PATCH /api/folders/8 改名 → 400（system folder 受保护）
+
+## commit
+- 83bf4a3 feat(backend): system folder（监听目录文件系统子目录自动镜像）
+- c16a9e6 feat(frontend): system folder 树渲染 + 后端 reveal 端点
+
+## 已知差异
+Audio 子目录只有 .flac 文件，parser 不索引音频所以不会挂 system folder。
+这是预期行为（system folder 与已索引图绑定）。

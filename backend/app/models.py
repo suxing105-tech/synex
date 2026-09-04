@@ -50,6 +50,8 @@ class FolderNode(BaseModel):
     order: int
     image_count: int = 0
     recursive_count: int = 0
+    is_system: bool = False  # True = 监听目录的文件系统子目录（不可重命名/删除）
+    path: str | None = None  # system folder 时存绝对路径（前端可显示完整来源）
     children: list["FolderNode"] = Field(default_factory=list)
 
 

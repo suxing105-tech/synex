@@ -64,7 +64,8 @@ CREATE TABLE IF NOT EXISTS folders (
     path TEXT,
     UNIQUE(parent_id, name)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_folders_path ON folders(path) WHERE path IS NOT NULL;
+-- 注意：idx_folders_path 唯一索引不在这里建，留给 migrate_system_folders
+-- （旧库缺 path 列时 SCHEMA 直接建索引会失败）。
 CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_id, "order");
 CREATE TABLE IF NOT EXISTS tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,10 +136,10 @@ class ConnectionPool:
                 return
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self._main = self._new_conn()
-            # 迁移必须先于 SCHEMA：旧库缺 is_system/path 列，
-            # SCHEMA 里的 CREATE INDEX ... ON folders(path) 会失败。
-            migrate_system_folders(self._main)
+            # SCHEMA 先跑（建表 + 索引；老库缺 path 列时 idx_folders_path 不在这里建）。
+            # migrate_system_folders 后跑：老库 ALTER 补列 + 建唯一索引；新库 no-op。
             self._main.executescript(SCHEMA)
+            migrate_system_folders(self._main)
             self._initialized = True
             self._ready_event.set()
 
@@ -225,7 +226,7 @@ def transaction() -> Iterator[sqlite3.Connection]:
 def fts_sync(conn: sqlite3.Connection, image_id: int, op: str) -> None:
     """op in {insert, delete, update}。"""
     if op == "delete":
-        # contentless FTS5 必须用 special 'delete-rowid' 命令
+        # contentless FTS5 必须用 special "delete-rowid" 命令
         conn.execute(
             "INSERT INTO images_fts(images_fts, rowid, positive_prompt, negative_prompt, filename, model) "
             "VALUES('delete', ?, '', '', '', '')",
@@ -261,10 +262,21 @@ def fts_sync(conn: sqlite3.Connection, image_id: int, op: str) -> None:
         )
 
 
-
-
 def migrate_system_folders(conn: sqlite3.Connection) -> None:
-    """幂等迁移：补齐 folders.is_system / folders.path 字段 + 索引。"""
+    """幂等迁移：补齐 folders.is_system / folders.path 字段 + 索引。
+
+    调用前提：SCHEMA 已执行（folders 表已存在）。
+    - 新库：列已存在，no-op；
+    - 老库（迁移前）：ALTER TABLE 补 is_system / path，再建唯一索引 idx_folders_path。
+    """
+    tables = {
+        r["name"]
+        for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    if "folders" not in tables:
+        return
     cols = {row["name"] for row in conn.execute("PRAGMA table_info(folders)").fetchall()}
     if "is_system" not in cols:
         conn.execute(
@@ -279,6 +291,8 @@ def migrate_system_folders(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_folders_is_system ON folders(is_system)"
     )
+
+
 def get_int_meta(key: str, default: int = 0) -> int:
     row = get_pool().main().execute(
         "SELECT value FROM meta WHERE key = ?", (key,)
@@ -297,5 +311,3 @@ def set_meta(key: str, value: object) -> None:
         "ON CONFLICT(key) DO UPDATE SET value = excluded",
         (key, str(value)),
     )
-
-

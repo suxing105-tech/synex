@@ -73,6 +73,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:  # noqa: BLE001
         log.warning("startup diag failed: %s", e)
 
+    # 把已索引但未挂 system folder 的图按 watch_dirs 子目录挂上。
+    # 这是一次性历史回填；之后由 indexer 自动维护。
+    try:
+        from pathlib import Path as _P
+        from . import repository as _repo
+        added = _repo.backfill_system_folders([_P(d) for d in cfg.watch_dirs])
+        if added:
+            log.info("backfilled %d images into system folders", added)
+    except Exception as e:  # noqa: BLE001
+        log.warning("backfill_system_folders failed: %s", e)
+
     cfg = load_config()
     if not cfg.watch_dirs:
         sample = data_dir() / "sample_images"

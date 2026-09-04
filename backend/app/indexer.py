@@ -3,6 +3,7 @@
 职责：
 1. 扫描指定目录（递归），对每个 PNG/WebP：
    - 解析元数据 → 写库（UPSERT）
+   - 若路径落在监听根目录下：自动挂到对应的 system folder（不覆盖用户整理）
 2. 监听目录新文件 / 修改 / 删除事件，调用 ``process_*`` 接口。
 3. 提供进度回调 + 异步任务事件，供前端 WebSocket 订阅。
 
@@ -10,6 +11,9 @@
 - 首次扫描用 ``concurrent.futures.ThreadPoolExecutor`` 并行解析元数据；
   DB 写入统一收口到主线程，避免写锁冲突。
 - watchdog 事件放入 ``asyncio.Queue`` 串行化处理。
+- system folder 是 watch dir 下文件系统子目录的镜像；由 ``repository`` 模块
+  提供的 helpers 负责建/查，本文件只负责调用。已被用户移动到其它 user folder 的
+  图片不会被覆盖式重挂（用 INSERT OR IGNORE + 是否已挂 system folder 判定）。
 """
 from __future__ import annotations
 
@@ -30,6 +34,7 @@ from watchdog.observers import Observer
 from .config import Config, load_config, save_config
 from .db import fts_sync, get_pool, transaction
 from .parser import SUPPORTED_EXTS, parse_metadata
+from . import repository
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +51,9 @@ class Indexer:
     def __init__(self, on_event: Callable[[dict], None] | None = None):
         self.on_event = on_event or (lambda e: None)
         self._cfg: Config = load_config()
+        # 缓存 watch root（绝对路径），用于在 _process_path_sync 内挂 system folder。
+        # 注意：这里只快照当前配置的根目录；后续 update_config 改动要重新刷新。
+        self._watch_roots: list[Path] = [Path(d) for d in self._cfg.watch_dirs]
         self._executor = ThreadPoolExecutor(
             max_workers=self._cfg.scan_workers, thread_name_prefix="indexer"
         )
@@ -78,6 +86,8 @@ class Indexer:
     def update_config(self, **kwargs: object) -> Config:
         self._cfg.update(**kwargs)
         save_config(self._cfg)
+        if "watch_dirs" in kwargs:
+            self._watch_roots = [Path(d) for d in self._cfg.watch_dirs]
         if "scan_workers" in kwargs:
             try:
                 self._executor.shutdown(wait=False, cancel_futures=True)
@@ -104,6 +114,61 @@ class Indexer:
     def _normalize(path: Path | str) -> str:
         p = Path(path).resolve()
         return str(p).replace(os.sep, "/")
+
+    # ----- system folder 自动挂载 -----
+
+    def _assign_system_folder(self, image_id: int, path: Path) -> None:
+        """在 _write_lock 内将图片挂到对应 system folder（如果适用）。
+
+        规则：
+        - 只在图片路径落在任一 watch root 的子目录时挂 system folder；
+        - 用 INSERT OR IGNORE + 是否已挂 system folder 判定，避免覆盖用户手动整理。
+        """
+        try:
+            watch_root = repository.find_watch_root(path, self._watch_roots)
+        except Exception as e:  # noqa: BLE001
+            log.warning("find_watch_root failed for %s: %s", path, e)
+            return
+        if watch_root is None:
+            return
+        try:
+            folder_id = repository.ensure_system_folder_chain(path, watch_root)
+        except Exception as e:  # noqa: BLE001
+            log.warning("ensure_system_folder_chain failed for %s: %s", path, e)
+            return
+        if folder_id is None:
+            return
+        conn = get_pool().main()
+        # 已挂过 system folder？跳过（用户未把图移到其它 system folder 就不动它）
+        already = conn.execute(
+            "SELECT 1 FROM image_folders if_ "
+            "JOIN folders f ON f.id = if_.folder_id "
+            "WHERE if_.image_id = ? AND f.is_system = 1 LIMIT 1",
+            (image_id,),
+        ).fetchone()
+        if already:
+            return
+        conn.execute(
+            "INSERT OR IGNORE INTO image_folders(image_id, folder_id) VALUES(?, ?)",
+            (image_id, folder_id),
+        )
+
+
+
+    def _ensure_system_folder_for_dir(self, dir_path: Path) -> None:
+        """让 watch root 下新建的空目录也立刻出现在 system folder 树上。
+
+        ``ensure_system_folder_chain`` 是为文件设计的（会丢掉最后一段当文件名），
+        这里用占位 sentinel 让它把目录本身也算进链里。
+        """
+        dir_path = Path(dir_path).resolve()
+        watch_root = repository.find_watch_root(dir_path, self._watch_roots)
+        if watch_root is None:
+            return
+        try:
+            repository.ensure_system_folder_chain(dir_path / ".__folder_sentinel__", watch_root)
+        except Exception as e:  # noqa: BLE001
+            log.warning("ensure_system_folder_for_dir failed: %s (%s)", dir_path, e)
 
     # ----- 单图处理 -----
 
@@ -195,6 +260,8 @@ class Indexer:
                     )
                     image_id = cur.lastrowid
                 fts_sync(c, image_id, "update" if row else "insert")
+            # system folder 挂载（在写锁内同一线程；幂等且不阻塞）
+            self._assign_system_folder(image_id, path)
         return {
             "type": "image_indexed",
             "id": image_id,
@@ -333,6 +400,12 @@ class _Handler(FileSystemEventHandler):
 
     def on_created(self, event):
         if event.is_directory:
+            # 监听目录被创建时，预先在 system folder 树上挂一个节点，
+            # 让空目录也能立刻出现在左侧"来源"树里。
+            try:
+                self.indexer._ensure_system_folder_for_dir(Path(event.src_path))
+            except Exception as e:  # noqa: BLE001
+                log.warning("ensure dir failed: %s (%s)", event.src_path, e)
             return
         self.indexer.enqueue("create", event.src_path)
 
@@ -343,6 +416,11 @@ class _Handler(FileSystemEventHandler):
 
     def on_moved(self, event):
         if event.is_directory:
+            # 目录重命名：把新路径预先挂上 system folder 链（空目录也能看见）
+            try:
+                self.indexer._ensure_system_folder_for_dir(Path(event.dest_path))
+            except Exception as e:  # noqa: BLE001
+                log.warning("ensure moved dir failed: %s (%s)", event.dest_path, e)
             return
         # watchdog 的 moved 事件没有 is_directory 属性在某些版本上；
         # 用后缀判断
@@ -352,6 +430,8 @@ class _Handler(FileSystemEventHandler):
 
     def on_deleted(self, event):
         if event.is_directory:
+            # 目录删除属于"被文件系统同步"事件；不动 system folder 表
+            # （用户如果在子目录里删了所有图，目录还会留在树上，递归计数 = 0）。
             return
         self.indexer.enqueue("delete", event.src_path)
 

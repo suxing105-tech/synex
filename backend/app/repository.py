@@ -41,12 +41,12 @@ def _normalize_path(p: Path) -> str:
 def folder_tree() -> list[dict]:
     conn = get_pool().main()
     rows = conn.execute(
-        "SELECT id, parent_id, name, \"order\" FROM folders ORDER BY parent_id, \"order\", name"
+        "SELECT id, parent_id, name, \"order\", is_system, path FROM folders ORDER BY parent_id, \"order\", name"
     ).fetchall()
     by_parent: dict[int | None, list[dict]] = {}
     for r in rows:
         by_parent.setdefault(r["parent_id"], []).append(
-            {"id": r["id"], "parent_id": r["parent_id"], "name": r["name"], "order": r["order"]}
+            {"id": r["id"], "parent_id": r["parent_id"], "name": r["name"], "order": r["order"], "is_system": bool(r["is_system"]), "path": r["path"]}
         )
 
     # 计算每节点直接图片数 + 递归后代数
@@ -596,3 +596,121 @@ def stats() -> dict:
         "favorites": favorites,
         "folders": folders,
     }
+
+
+
+
+# ---------- system folder helpers (filesystem subdirs auto-promoted) ----------
+
+
+def _normalize_folder_path(p: Path) -> str:
+    return str(p).replace("\\", "/")
+
+
+def is_system_folder(folder_id: int) -> bool:
+    conn = get_pool().main()
+    row = conn.execute(
+        "SELECT is_system FROM folders WHERE id = ?", (folder_id,)
+    ).fetchone()
+    return bool(row and row["is_system"])
+
+
+def find_watch_root(file_path: Path, watch_roots: list[Path]) -> Path | None:
+    """返回包含 file_path 的最深 watch root；都不在则 None。"""
+    p = Path(file_path).resolve()
+    best: Path | None = None
+    for root in watch_roots:
+        try:
+            p.relative_to(Path(root).resolve())
+        except ValueError:
+            continue
+        if best is None or len(str(root)) > len(str(best)):
+            best = Path(root).resolve()
+    return best
+
+
+def ensure_system_folder_chain(file_path: Path, watch_root: Path) -> int | None:
+    """为 file_path 在 watch_root 下的子目录链建立 system folder 记录。
+
+    返回最深一层 folder 的 id；若文件就在 watch_root 顶层（无子目录），返回 None。
+    已存在的 system folder 复用其 id，仅在 parent 指向错误时修正。
+    """
+    file_path = Path(file_path).resolve()
+    watch_root = Path(watch_root).resolve()
+    try:
+        rel = file_path.relative_to(watch_root)
+    except ValueError:
+        return None
+    parts = rel.parts[:-1]  # 去掉文件名
+    if not parts:
+        return None
+    conn = get_pool().main()
+    parent_id: int | None = None
+    deepest_id: int | None = None
+    cumulative = watch_root
+    for part in parts:
+        cumulative = cumulative / part
+        cumulative_norm = _normalize_folder_path(cumulative)
+        row = conn.execute(
+            "SELECT id, parent_id FROM folders WHERE is_system = 1 AND path = ?",
+            (cumulative_norm,),
+        ).fetchone()
+        if row:
+            deepest_id = row["id"]
+            if row["parent_id"] != parent_id:
+                conn.execute(
+                    "UPDATE folders SET parent_id = ? WHERE id = ?",
+                    (parent_id, deepest_id),
+                )
+        else:
+            cur = conn.execute(
+                "INSERT INTO folders(parent_id, name, \"order\", is_system, path) "
+                "VALUES(?, ?, 0, 1, ?)",
+                (parent_id, part, cumulative_norm),
+            )
+            deepest_id = cur.lastrowid
+        parent_id = deepest_id
+    return deepest_id
+
+
+def get_folder_descendants(folder_id: int) -> list[int]:
+    """返回 folder_id 自身 + 所有后代 id（深度优先）。"""
+    conn = get_pool().main()
+    out: list[int] = [folder_id]
+    stack = [folder_id]
+    while stack:
+        cur = stack.pop()
+        children = conn.execute(
+            "SELECT id FROM folders WHERE parent_id = ?", (cur,)
+        ).fetchall()
+        for c in children:
+            out.append(c["id"])
+            stack.append(c["id"])
+    return out
+
+
+def backfill_system_folders(watch_dirs: list[Path]) -> int:
+    """为已索引但未挂 system folder 的图片建立归属。返回处理的图片数。"""
+    conn = get_pool().main()
+    images = conn.execute(
+        "SELECT i.id, i.path FROM images i "
+        "WHERE NOT EXISTS (SELECT 1 FROM image_folders if_ "
+        "  WHERE if_.image_id = i.id AND if_.folder_id IN "
+        "  (SELECT id FROM folders WHERE is_system = 1))"
+    ).fetchall()
+    count = 0
+    for img in images:
+        watch_root = find_watch_root(Path(img["path"]), watch_dirs)
+        if watch_root is None:
+            continue
+        folder_id = ensure_system_folder_chain(Path(img["path"]), watch_root)
+        if folder_id is None:
+            continue
+        with transaction() as c:
+            c.execute(
+                "INSERT OR IGNORE INTO image_folders(image_id, folder_id) "
+                "VALUES(?, ?)",
+                (img["id"], folder_id),
+            )
+        count += 1
+    return count

@@ -319,6 +319,7 @@ def _row_to_summary(row: sqlite3.Row) -> dict:
         "model": row["model"],
         "seed": row["seed"],
         "new": False,
+        "has_workflow": bool(row["workflow"]),
     }
 
 

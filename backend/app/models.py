@@ -25,6 +25,7 @@ class ImageSummary(BaseModel):
     model: str | None = None
     seed: int | None = None
     new: bool = False  # 标记 NEW 徽标
+    has_workflow: bool = False  # 是否携带 ComfyUI workflow JSON
 
 
 class ImageDetail(ImageSummary):
@@ -141,3 +142,36 @@ class ScanProgress(BaseModel):
     total: int = 0
     current_path: str = ""
     error: str | None = None
+
+# ---------- ComfyUI 集成 ----------
+
+
+class ComfyuiStatus(BaseModel):
+    """本机 ComfyUI 实时运行状态（前端轮询）。"""
+
+
+    running: bool
+    url: str
+    enabled: bool = True
+    checked_at: float = 0.0
+
+
+class ComfyuiConfigUpdate(BaseModel):
+    """ComfyUI 集成配置更新入参（部分字段可选）。"""
+
+
+    url: str | None = None
+    enabled: bool | None = None
+
+
+class OpenWorkflowResult(BaseModel):
+    """打开工作流动作的返回：临时文件路径 + 是否真的弹了浏览器。"""
+
+
+    ok: bool
+    image_id: int
+    file_path: str
+    comfyui_url: str
+    browser_opened: bool
+    message: str = ""
+

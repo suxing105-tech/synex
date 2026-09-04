@@ -28,6 +28,7 @@ from .config import data_dir, load_config, save_config
 from .db import get_pool, init_pool
 from .events import get_bus
 from .indexer import get_indexer
+from .routes import comfyui as comfyui_route
 from .routes import folders as folders_route
 from .routes import images as images_route
 from .routes import settings as settings_route
@@ -120,6 +121,7 @@ app.add_middleware(
 )
 
 
+app.include_router(comfyui_route.router)
 app.include_router(images_route.router)
 app.include_router(folders_route.router)
 app.include_router(tags_route.router)

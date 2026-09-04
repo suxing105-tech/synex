@@ -26,6 +26,8 @@ class Config:
     theme: str = "dark"  # 仅 dark；保留字段便于 P1 切亮色
     live_enabled: bool = True
     scan_workers: int = 4
+    comfyui_url: str = "http://127.0.0.1:8188"  # 本机 ComfyUI 地址
+    comfyui_enabled: bool = True  # 是否启用 ComfyUI 集成
 
     @classmethod
     def load(cls, path: Path) -> "Config":

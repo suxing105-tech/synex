@@ -30,6 +30,7 @@
 - Onboarding 引导（首次启动扫描进度）
 - 设置页（监听目录 / 缩略图参数 / Live 开关）
 - 拖拽导入（拖入 PNG/WebP 到中间缩略图区域 → 自动保存到当前文件夹；不支持格式给出来因）
+- ComfyUI 一键打开（hover/选中缩略图右上角出现圆形按钮 → 后端落临时 .json + 自动打开 ComfyUI 标签页）
 
 ### 已排除（明确推迟）
 
@@ -130,6 +131,10 @@ pnpm build          # 产物落到 frontend\dist\
 | POST | | /api/scan |
 | GET  | | /api/scan/progress |
 | GET  | | /api/stats |
+| GET  | | /api/integrations/comfyui/status |
+| PUT  | | /api/integrations/comfyui/config |
+| POST | | /api/integrations/comfyui/open_workflow/{id} |
+| GET  | | /api/integrations/comfyui/temp_files (调试) |
 | WS   | | /ws/events |
 
 ## 后续路线图

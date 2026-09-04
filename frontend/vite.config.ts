@@ -5,6 +5,9 @@ export default defineConfig({
   plugins: [svelte()],
   server: {
     port: 5173,
+    // 显式绑 127.0.0.1，避免 Windows IPv6 优先时部分浏览器/工具走 127.0.0.1 连不上。
+    // 想暴露给局域网/容器就用 --host 0.0.0.0 启动。
+    host: "127.0.0.1",
     proxy: {
       // uvicorn 后端默认 8765 端口（与 README quick-start 一致）。
       // 用环境变量 VITE_BACKEND_PORT 覆盖，便于开发时启用多 uvicorn 实例。

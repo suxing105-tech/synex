@@ -218,6 +218,40 @@ def assign_folder(image_id: int, folder_id: int | None) -> None:
             )
 
 
+def bulk_assign_folder(image_ids: list[int], folder_id: int | None) -> int:
+    """批量替换 image_folders 归属（单事务）。
+
+    - folder_id=None → 把这些图从所有 user folder 移出（保留 system folder）
+    - folder_id=int → 替换归属（同 assign_folder，不动 system folder）
+
+    返回成功写入的图数。
+    """
+    if not image_ids:
+        return 0
+    placeholders = ",".join("?" * len(image_ids))
+    with transaction() as c:
+        # 先把这批图从所有非 system folder 的归属清掉
+        c.execute(
+            f"DELETE FROM image_folders WHERE image_id IN ({placeholders}) "
+            f"AND folder_id IN (SELECT id FROM folders WHERE is_system = 0)",
+            image_ids,
+        )
+        if folder_id is not None:
+            # 确保目标 folder 存在且非 system（system folder 不接收用户手动移动）
+            target = c.execute(
+                "SELECT id, is_system FROM folders WHERE id = ?", (folder_id,)
+            ).fetchone()
+            if not target:
+                raise ValueError(f"文件夹 {folder_id} 不存在")
+            if target["is_system"]:
+                raise ValueError("不能把图片移动到系统文件夹")
+            c.executemany(
+                "INSERT OR IGNORE INTO image_folders(image_id, folder_id) VALUES(?, ?)",
+                [(iid, folder_id) for iid in image_ids],
+            )
+    return len(image_ids)
+
+
 def set_favorite(image_id: int, favorite: bool) -> None:
     get_pool().main().execute(
         "UPDATE images SET favorite = ? WHERE id = ?", (1 if favorite else 0, image_id)

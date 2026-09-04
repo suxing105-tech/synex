@@ -198,6 +198,34 @@ def update_folder(image_id: int, payload: dict):
     return {"id": image_id, "folder_id": folder_id}
 
 
+@router.post("/bulk-assign-folder")
+def bulk_update_folder(payload: dict):
+    """把多张图批量移动到指定 user folder（替换式）。
+
+    body: ``{"image_ids": [int, ...], "folder_id": int | null}``
+
+    - folder_id=null：把图从所有 user folder 移出（保留 system folder 自动挂的归属）
+    - folder_id=int：必须存在且 is_system=0
+    """
+    image_ids = payload.get("image_ids") or []
+    if not isinstance(image_ids, list) or not image_ids:
+        raise HTTPException(400, "image_ids 必须为非空数组")
+    cleaned_ids: list[int] = []
+    for x in image_ids:
+        if isinstance(x, int) and not isinstance(x, bool):
+            cleaned_ids.append(x)
+    if not cleaned_ids:
+        raise HTTPException(400, "image_ids 没有合法的 int 元素")
+    folder_id = payload.get("folder_id")
+    if folder_id is not None and (not isinstance(folder_id, int) or isinstance(folder_id, bool)):
+        raise HTTPException(400, "folder_id 必须为 int 或 null")
+    try:
+        repository.bulk_assign_folder(cleaned_ids, folder_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return {"ids": cleaned_ids, "folder_id": folder_id}
+
+
 @router.patch("/{image_id}/filename")
 def rename_image(image_id: int, payload: dict):
     """重命名图片文件 + 更新索引。

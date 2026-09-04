@@ -2,7 +2,7 @@
   import {
     feedItems, feedTotal, feedLoading, refreshFeed, refreshStats,
     targetColumns, activeFolderName, newIds,
-    multiSelectedIds,
+    multiSelectedIds, folders, refreshFolders,
     selectedId as selectedIdStore,
     applySelection, clearSelection, removeIdsFromSelection,
   } from "../lib/stores";
@@ -10,6 +10,7 @@
   import { copyText } from "../lib/ws";
   import type { ImageSummary } from "../lib/types";
   import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
+  import FolderPickerModal from "./FolderPickerModal.svelte";
   import { folderId } from "../lib/stores";
 
   interface Props {
@@ -26,6 +27,11 @@
   // 右键菜单的目标 id 列表：右键目标在多选集合里 → 整个集合；否则 → [右键那张]。单图时菜单走单图逻辑（重命名 / 打开位置 / 复制单图），多图时只暴露「批量删除」和「复制 URL 列表」两条。
   let menuTargetIds = $state<number[]>([]);
   let menuTick = $state(0);
+
+  // 移动到文件夹选择器
+  let movePickerOpen = $state(false);
+  let movePickerIds = $state<number[]>([]);
+  let movePickerCount = $state(0);
   let toast = $state<string | null>(null);
   function notify(msg: string) {
     toast = msg;
@@ -219,12 +225,14 @@
         { label: "复制图片", onClick: () => copyImageToClipboard(t) },
         { label: "重命名", onClick: () => renameImage(t) },
         { label: "打开图片所在位置", onClick: () => revealImage(t) },
+        { label: "移动到...", onClick: () => openMovePicker(items) },
         { kind: "sep" },
         { label: "删除图片（含缩略图）", danger: true, onClick: () => deleteImages(items) },
       ];
     }
     return [
       { label: `复制 ${items.length} 个图片地址`, onClick: () => copyImageUrls(items) },
+      { label: `移动到...`, onClick: () => openMovePicker(items) },
       { kind: "sep" },
       { label: `批量删除 ${items.length} 张图片`, danger: true, onClick: () => deleteImages(items) },
     ];
@@ -340,6 +348,31 @@
     const text = urls.join("\n");
     const ok = await copyText(text);
     notify(ok ? `已复制 ${items.length} 个图片地址` : "复制失败");
+  }
+
+  // 打开「移动到...」选择器（单/多图共用）
+  function openMovePicker(items: ImageSummary[]) {
+    if (items.length === 0) return;
+    movePickerIds = items.map((it) => it.id);
+    movePickerCount = items.length;
+    movePickerOpen = true;
+  }
+
+  // 实际执行批量移动：folder=null 表示从 user folder 移出（保留 system folder 自动挂的）
+  async function moveToFolder(folder: { id: number; name: string } | null) {
+    if (movePickerIds.length === 0) return;
+    const ids = movePickerIds;
+    const count = movePickerCount;
+    try {
+      const r = await imagesApi.bulkAssignFolder(ids, folder ? folder.id : null);
+      const ok = r.ids.length;
+      const where = folder ? `「${folder.name}」` : "无文件夹";
+      notify(ok === 1 ? `已移动到 ${where}` : `已移动 ${ok} 张到 ${where}`);
+      // 刷新 folders（image_count 变化）+ feed（folder_ids 变化）
+      await Promise.all([refreshFolders(), refreshFeed()]);
+    } catch (e) {
+      notify(`移动失败: ${(e as Error).message}`);
+    }
   }
 
   // 全局键盘：Esc 清空选区（仅在 feed 聚焦时；input 焦点时让原生处理）
@@ -594,6 +627,15 @@
 </div>
 
 <ContextMenu bind:open={menuOpen} x={menuX} y={menuY} items={menuItems} />
+
+<FolderPickerModal
+  open={movePickerOpen}
+  folders={$folders}
+  title={movePickerCount > 1 ? `移动 ${movePickerCount} 张图片` : "移动到文件夹"}
+  subtitle="system folder 不会列出（物理镜像，不可作为整理目的地）"
+  onPick={moveToFolder}
+  onClose={() => (movePickerOpen = false)}
+/>
 
 {#if toast}
   <div class="toast">{toast}</div>

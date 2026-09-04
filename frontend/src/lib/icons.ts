@@ -43,6 +43,11 @@ export const ICON_PATHS: Record<string, string> = {
   "arrow-left":
     '<line x1="19" y1="12" x2="5" y2="12"/>' +
     '<polyline points="12 19 5 12 12 5"/>',
+
+  // 圆形加斜线：表示"无 / 取消"
+  "circle-slash":
+    '<circle cx="12" cy="12" r="10"/>' +
+    '<line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>',
 };
 
 /** 列出所有支持的图标名（用于代码生成 / 测试 / 帮助页）。 */

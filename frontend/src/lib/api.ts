@@ -71,6 +71,16 @@ export const imagesApi = {
       body: JSON.stringify({ folder_id }),
     });
   },
+
+  bulkAssignFolder(
+    image_ids: number[],
+    folder_id: number | null,
+  ): Promise<{ ids: number[]; folder_id: number | null }> {
+    return http(`/api/images/bulk-assign-folder`, {
+      method: "POST",
+      body: JSON.stringify({ image_ids, folder_id }),
+    });
+  },
   remove(id: number, removeFile = false): Promise<{ ok: boolean }> {
     return http(`/api/images/${id}?remove_file=${removeFile}`, { method: "DELETE" });
   },

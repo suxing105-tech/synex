@@ -1,0 +1,35 @@
+# 2026-09-04 12:10 多选批量移动功能
+
+## 功能
+右键菜单（单图/多图）增加「移动到...」项：
+1. 单图右键：菜单出现「移动到...」
+2. 多图右键（多选 ≥ 2 张）：菜单出现「移动 N 张图片」
+3. 选择目标后弹出 FolderPickerModal：
+   - 列出所有 user folder（DFS 摊平 + 按 name zh 排序）
+   - 自动过滤 system folder（krea2 / 视频分镜 等物理镜像不能作为整理目的地）
+   - 首项固定为「不分配 / 从文件夹移出」
+   - 支持 ↑↓ 选 / Enter 确认 / Esc 取消
+
+## 后端
+- repository.bulk_assign_folder：单事务批量替换 image_folders 归属
+  - folder_id=None：把图从所有 user folder 移出（保留 system folder）
+  - folder_id=int：替换式（不动 system folder）
+  - 拒绝 system folder 目标
+  - 拒绝不存在的 folder
+- 路由 POST /api/images/bulk-assign-folder
+  - 校验 image_ids 为非空 int 列表（自动过滤非 int 元素）
+  - 校验 folder_id 为 int 或 null
+  - 错误返回 400 + 中文消息
+
+## 测试
+- backend pytest：13 个新测试，全过；总计 111/111
+- frontend vitest：7 个新测试，全过；总计 141/141
+
+## 端到端验证
+- POST /api/images/bulk-assign-folder {image_ids: [545,542,541], folder_id: 1} → 200
+- 移动后 image 545 的 folder_ids = [1, 8]（1=灵感 user，8=krea2 system 保留）
+- POST 到 system folder 8 → 400 "不能把图片移动到系统文件夹"
+
+## commit
+- e5e60e7 feat(backend): 批量移动图片到文件夹
+- 6f4d5e8 feat(frontend): 多选右键菜单支持批量移动到文件夹

@@ -66,30 +66,40 @@
       <div class="px-2 py-1 text-[11px] uppercase text-muted tracking-wider bg-surface-2 border-b border-border rounded-t-md">
         {g.label}
       </div>
-      <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 p-2 text-[12px]">
-        {#each g.entries as [k, v]}
-          {#if k === "seed"}
-            <dt class="text-muted">seed</dt>
-            <dd class="font-mono flex items-center gap-1">
-              <span class="truncate">{v}</span>
-              <button
-                type="button"
-                class="opacity-50 hover:opacity-100 hover:text-accent"
-                title="复制 seed"
-                aria-label="复制 seed"
-                onclick={() => copy(v)}
-              >
-                <Icon name="copy" size={11} />
-              </button>
-            </dd>
-          {:else}
-            <dt class="text-muted">{k}</dt>
-            <dd class="font-mono">
-              <span title={v} class="break-all">{truncateValue(v, 32)}</span>
-            </dd>
-          {/if}
-        {/each}
-      </dl>
+      {#if g.id === "lora"}
+        <!-- LoRA 列表：名称 truncate，强度固定列宽右对齐，避免被挤到换行 -->
+        <ul class="p-2 text-[12px] space-y-0.5">
+          {#each g.entries as [k, v]}
+            <li class="flex items-center gap-2 min-w-0" title={`${k}: ${v}`}>
+              <span class="text-muted truncate min-w-0 flex-1">{k}</span>
+              <span class="font-mono tabular-nums whitespace-nowrap text-zinc-300">{v}</span>
+            </li>
+          {/each}
+        </ul>
+      {:else}
+        <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 p-2 text-[12px]">
+          {#each g.entries as [k, v]}
+            {#if k === "seed"}
+              <dt class="text-muted">seed</dt>
+              <dd class="font-mono flex items-center gap-1 min-w-0">
+                <span class="truncate min-w-0">{v}</span>
+                <button
+                  type="button"
+                  class="opacity-50 hover:opacity-100 hover:text-accent shrink-0"
+                  title="复制 seed"
+                  aria-label="复制 seed"
+                  onclick={() => copy(v)}
+                >
+                  <Icon name="copy" size={11} />
+                </button>
+              </dd>
+            {:else}
+              <dt class="text-muted">{k}</dt>
+              <dd class="font-mono truncate" title={v}>{truncateValue(v, 32)}</dd>
+            {/if}
+          {/each}
+        </dl>
+      {/if}
     </div>
   {/each}
   {#if groups.length === 0}

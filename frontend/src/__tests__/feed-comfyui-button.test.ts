@@ -81,3 +81,26 @@ describe("Feed 缩略图 ComfyUI 按钮可见性", () => {
     expect(isComfyuiButtonVisible(makeImage({ id: 2 }))).toBe(true);
   });
 });
+it("ComfyUI 打开按钮：去掉外圈圆框，只保留实色背景 + 圆角矩形", () => {
+  // 设计锁：用户明确要求"不要外面这个圆框"。
+  // 因此 .comfyui-open-btn 不再使用 rounded-full，也不带 border / border-accent*。
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const p = path.resolve(__dirname, "..", "components", "Feed.svelte");
+  const src = fs.readFileSync(p, "utf8");
+  const idx = src.indexOf('class="comfyui-open-btn');
+  expect(idx, "Feed.svelte 应包含 comfyui-open-btn class").toBeGreaterThanOrEqual(0);
+  const start = idx + 'class="'.length;
+  const endQuote = src.indexOf('"', start);
+  const cls = src.slice(idx, endQuote);
+  expect(cls, "comfyui-open-btn 不应再使用 rounded-full").not.toMatch(/rounded-full/);
+  expect(cls, "comfyui-open-btn 不应再带 border 描边").not.toMatch(/border/);
+  expect(cls).toMatch(/w-7 h-7/);
+  expect(cls).toMatch(/flex items-center justify-center/);
+});
+
+
+
+
+
+

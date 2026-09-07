@@ -638,7 +638,7 @@
                   <div
                     role="button"
                     tabindex="-1"
-                    class="comfyui-open-btn absolute top-1 right-1 w-7 h-7 rounded-full flex items-center justify-center bg-black/65 hover:bg-accent text-white border border-accent/70 hover:border-accent backdrop-blur-sm transition-colors cursor-pointer"
+                    class="comfyui-open-btn absolute top-1 right-1 w-7 h-7 rounded-[6px] flex items-center justify-center bg-black/70 hover:bg-accent text-white backdrop-blur-sm transition-colors cursor-pointer"
                     title="在 ComfyUI 中打开工作流"
                     aria-label="在 ComfyUI 中打开工作流"
                     onclick={(e) => { e.stopPropagation(); e.preventDefault(); openInComfyui(it); }}

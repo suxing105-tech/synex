@@ -9,7 +9,7 @@
    */
   import { copyText } from "../lib/ws";
   import Icon from "./Icon.svelte";
-  import { groupParams, truncateValue, type ParamGroup } from "../lib/params";
+  import { groupParams, truncateValue, formatWeight, type ParamGroup } from "../lib/params";
 
   interface Props {
     /** detail.parameters */
@@ -58,10 +58,6 @@
     return next;
   }
 
-  function formatWeight(w: number): string {
-    if (Number.isInteger(w)) return String(w);
-    return w.toFixed(2).replace(/\.?0+$/, "");
-  }
 </script>
 
 <section class="params-card space-y-3">

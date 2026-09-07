@@ -227,8 +227,14 @@ function push(
   target.push([k, String(v)]);
 }
 
+// LoRA 强度统一保留 2 位小数（如 "1.00" / "0.80"），让列表右对齐列宽统一。
+export function formatWeight(w: number): string {
+  return w.toFixed(2);
+}
+
 // 工具：长值截断 + tooltip（前端展示用）。
 export function truncateValue(s: string, max = 24): string {
   if (s.length <= max) return s;
   return s.slice(0, max - 1) + "…";
 }
+

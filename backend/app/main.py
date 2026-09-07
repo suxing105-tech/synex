@@ -189,6 +189,13 @@ async def root():
 async def spa_fallback(full_path: str):
     if full_path.startswith("api/") or full_path.startswith("ws/"):
         return JSONResponse({"error": "not found"}, status_code=404)
+    # 静态资源（frontend/public/*）优先于 SPA fallback
+    pub = (PUBLIC_DIR / full_path).resolve()
+    try:
+        if pub.is_file() and pub.is_relative_to(PUBLIC_DIR.resolve()):
+            return FileResponse(pub, headers={"Cache-Control": "public, max-age=86400"})
+    except OSError:
+        pass
     if _FRONTEND_INDEX and _FRONTEND_INDEX.exists():
         return FileResponse(_FRONTEND_INDEX)
     return JSONResponse({"error": "frontend not built"}, status_code=404)

@@ -21,7 +21,7 @@
 - 文件夹树管理（嵌套 / 重命名 / 上移下移 / 新建子 / 删除）
 - 文件夹递归计数与筛选
 - 流式 feed（时间倒序 + NEW 徽标 + 缩放滑块 140~360px）
-- 详情面板 + 快捷复制条（Prompt / 反向 Prompt / Seed / 全部参数 / Workflow）
+- 详情面板（Header 缩略图 + 主操作 / Prompt 卡片 / 按域分组的参数 + LoRA 列表 / 元数据 / Workflow JSON；快捷键 P/N/S/Shift+C/F/T/Esc + 列宽可拖拽 + 窄屏抽屉）
 - Lightbox 大图查看（双击 / 空格 / ←→）
 - 全文搜索（FTS5 + 模糊双轨）
 - 标签管理（覆盖式，逗号分隔，自动去重）
@@ -140,3 +140,4 @@ pnpm build          # 产物落到 frontend\dist\
 ## 后续路线图
 
 详见 `outputs\tech-design.md` §12 里程碑 + `materials\01-m1-m2-delivery.md`。
+

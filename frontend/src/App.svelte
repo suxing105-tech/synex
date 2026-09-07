@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { connectEvents, disconnectEvents } from "./lib/ws";
-  import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, comfyuiEnabled } from "./lib/stores";
+  import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, comfyuiEnabled, feedItems, tag, folderId, query, view } from "./lib/stores";
   import HeaderBar from "./components/HeaderBar.svelte";
   import FolderTree from "./components/FolderTree.svelte";
   import Feed from "./components/Feed.svelte";
@@ -45,6 +45,27 @@
     }
   }
 
+// 详情面板缩略图点击 → 打开 Lightbox
+  function handleOpenLightbox(e: Event) {
+    const id = (e as CustomEvent<{ id: number }>).detail?.id;
+    if (id == null) return;
+    const idx = $feedItems.findIndex((it) => it.id === id);
+    if (idx < 0) return;
+    selectedIdValue = id;
+    lightboxIndex = idx;
+    lightboxOpen = true;
+  }
+
+  // 详情面板点击标签 → 触发 tag 搜索（清除 folder/view/q，避免叠加过滤）
+  function handleTagSearch(e: Event) {
+    const t = (e as CustomEvent<{ tag: string }>).detail?.tag;
+    if (!t) return;
+    folderId.set(null);
+    view.set("all");
+    query.set("");
+    tag.set(t);
+  }
+
   onMount(async () => {
     try {
       await Promise.all([refreshFolders(), refreshStats(), refreshFeed()]);
@@ -63,11 +84,15 @@
       if (document.visibilityState === "visible") refreshComfyuiStatus();
     };
     document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("open-lightbox", handleOpenLightbox);
+    window.addEventListener("open-tag-search", handleTagSearch);
   });
 
   onDestroy(() => {
     disconnectEvents();
     if (comfyuiTimer) clearInterval(comfyuiTimer);
+    window.removeEventListener("open-lightbox", handleOpenLightbox);
+    window.removeEventListener("open-tag-search", handleTagSearch);
   });
 </script>
 

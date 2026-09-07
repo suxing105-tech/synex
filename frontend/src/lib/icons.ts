@@ -49,15 +49,68 @@ export const ICON_PATHS: Record<string, string> = {
     '<circle cx="12" cy="12" r="10"/>' +
     '<line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>',
 
-  // ComfyUI logo 简笔画：3 个小节点 + 2 条连线形成的 Y 形 workflow 图（Lucide share-2 同款）。
-  // 不画外框 / 多角形，只保留最小节点拓扑，精致简洁。
-  comfyui:
-    '<circle cx="6" cy="7" r="1.8"/>' +
-    '<circle cx="18" cy="7" r="1.8"/>' +
-    '<circle cx="12" cy="17" r="1.8"/>' +
-    '<line x1="7.4" y1="8.4" x2="10.8" y2="15.4"/>' +
-    '<line x1="16.6" y1="8.4" x2="13.2" y2="15.4"/>',
+  // 心（线）
+  heart:
+    '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>',
+
+  // 心（实心，favorite 用）
+  "heart-fill":
+    '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" fill="currentColor" stroke="none"/>',
+
+  // 复制
+  copy:
+    '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>' +
+    '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+
+  // 外部链接（在新窗口打开）
+  "external-link":
+    '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>' +
+    '<polyline points="15 3 21 3 21 9"/>' +
+    '<line x1="10" y1="14" x2="21" y2="3"/>',
+
+  // 标签
+  tag:
+    '<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>' +
+    '<line x1="7" y1="7" x2="7.01" y2="7"/>',
+
+  // 下载
+  download:
+    '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>' +
+    '<polyline points="7 10 12 15 17 10"/>' +
+    '<line x1="12" y1="15" x2="12" y2="3"/>',
+
+  // 右箭头（展开/详情）
+  "chevron-right":
+    '<polyline points="9 18 15 12 9 6"/>',
+
+  // 下箭头（展开）
+  "chevron-down":
+    '<polyline points="6 9 12 15 18 9"/>',
+
+  // 上箭头（收起）
+  "chevron-up":
+    '<polyline points="18 15 12 9 6 15"/>',
+
+  // 代码 <>
+  code:
+    '<polyline points="16 18 22 12 16 6"/>' +
+    '<polyline points="8 6 2 12 8 18"/>',
+
+  // 井号（seed 标识）
+  hash:
+    '<line x1="4" y1="9" x2="20" y2="9"/>' +
+    '<line x1="4" y1="15" x2="20" y2="15"/>' +
+    '<line x1="10" y1="3" x2="8" y2="21"/>' +
+    '<line x1="16" y1="3" x2="14" y2="21"/>',
+
+  // 关闭 ×
+  x:
+    '<line x1="18" y1="6" x2="6" y2="18"/>' +
+    '<line x1="6" y1="6" x2="18" y2="18"/>',
+
+  // comfyui 走 PNG 真 logo（品牌识别强），见 Icon.svelte 的 special case；
+  // PNG 在 frontend/public/comfyui-logo.png，由 vite 静态托管。
 };
 
-/** 列出所有支持的图标名（用于代码生成 / 测试 / 帮助页）。 */
+/** 列出所有支持图标名（用于代码生成 / 测试 / 帮助页）。 */
 export const ICON_NAMES = Object.keys(ICON_PATHS);

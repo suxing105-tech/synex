@@ -26,6 +26,7 @@ export const selectionAnchorId = writable<number | null>(null);
 export const folderId = writable<number | null>(null);
 export const view = writable<"all" | "favorite" | "recent">("all");
 export const query = writable<string>("");
+export const tag = writable<string | null>(null);
 
 export const targetColumns = writable<number>(5);
 
@@ -148,13 +149,16 @@ export async function refreshFeed() {
     let folder: number | null | undefined;
     let v: "all" | "favorite" | "recent" | undefined;
     let q: string | undefined;
+    let tg: string | null | undefined;
     folderId.subscribe((v) => (folder = v))();
     view.subscribe((vv) => (v = vv as "all" | "favorite" | "recent"))();
     query.subscribe((vv) => (q = vv))();
+    tag.subscribe((vv) => (tg = vv))();
     const resp = await imagesApi.list({
       folder_id: folder,
       view: v === "all" ? undefined : v,
       q,
+      tag: tg ?? undefined,
       limit: 1000,
     });
     feedItems.set(resp.items);
@@ -192,6 +196,7 @@ function debouncedRefresh() {
 folderId.subscribe(debouncedRefresh);
 view.subscribe(debouncedRefresh);
 query.subscribe(debouncedRefresh);
+tag.subscribe(debouncedRefresh);
 
 // ---------- 选中图片详情加载 ----------
 
@@ -212,6 +217,7 @@ selectedId.subscribe(async (id) => {
 folderId.subscribe(() => clearSelection());
 view.subscribe(() => clearSelection());
 query.subscribe(() => clearSelection());
+tag.subscribe(() => clearSelection());
 
 // feedItems 变化（删除某张图 / 新入库）→ 把不存在的 id 从选区里剔除
 feedItems.subscribe((items) => {
@@ -272,3 +278,4 @@ export const comfyuiStatus = writable<ComfyuiStatus>({
 
 
 export const comfyuiEnabled = writable<boolean>(true);
+

@@ -16,7 +16,7 @@ describe("lib/icons 数据契约", () => {
       "plus",
       "more-vertical",
       "arrow-left",
-      "comfyui",
+      // comfyui 不在这里：它走 Icon.svelte 的 PNG 真 logo 通道（见 "comfyui 走 PNG" 测试）
     ];
     for (const n of required) {
       expect(ICON_PATHS[n], `缺少 ${n}`).toBeDefined();
@@ -35,7 +35,7 @@ describe("lib/icons 数据契约", () => {
     for (const [name, p] of Object.entries(ICON_PATHS)) {
       const fillMatch = p.match(/fill="([^"]+)"/g) ?? [];
       for (const m of fillMatch) {
-        expect(m, `${name} 不应硬编码 fill 非 none`).toMatch(/fill="none"/);
+        expect(m, `${name} fill 仅允许 none 或 currentColor`).toMatch(/fill="(none|currentColor)"/);
       }
     }
   });
@@ -44,14 +44,27 @@ describe("lib/icons 数据契约", () => {
     expect(ICON_PATHS["nope"]).toBeUndefined();
   });
 
-  it("comfyui 图标：3 个圆 + 2 条线，Y 形 workflow 拓扑，无外框", () => {
-    // 锁住“极简节点图”设计，避免又被改回六边形 / 多边形。
-    const p = ICON_PATHS["comfyui"];
-    const circles = (p.match(/<circle /g) ?? []).length;
-    const lines = (p.match(/<line /g) ?? []).length;
-    expect(circles, "comfyui 图标应有 3 个节点").toBe(3);
-    expect(lines, "comfyui 图标应有 2 条连线（Y 形）").toBe(2);
-    expect(p.includes("<polygon"), "comfyui 图标不应再含 polygon 外框").toBe(false);
-    expect(p.includes("<path"), "comfyui 图标不应含 <path>").toBe(false);
+  it("comfyui 走 PNG 真 logo（不在 ICON_PATHS 走 SVG 通道）", () => {
+    // 锁住品牌识别：使用 PNG 真 logo，不再用手画的 SVG 简笔画。
+    expect(ICON_PATHS["comfyui"], "comfyui 不应再以 SVG 形式出现在 ICON_PATHS").toBeUndefined();
+    expect(ICON_NAMES).not.toContain("comfyui");
+  });
+
+  it("comfyui-logo.png 静态资源存在并为 RGBA PNG", () => {
+    // 锁住资源文件不被误删 / 被换格式。
+    // 用 import.meta.url 解析相对路径，避免依赖 vite / 测试环境的 cwd。
+    // vitest 默认 cwd 是项目根目录，public/ 在仓库根目录的 frontend/ 下。
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const p = path.resolve(__dirname, "..", "..", "public", "comfyui-logo.png");
+    expect(fs.existsSync(p), `comfyui-logo.png 应在 ${p}`).toBe(true);
+    const buf = fs.readFileSync(p);
+    // PNG magic: 89 50 4E 47 0D 0A 1A 0A
+    expect(buf[0]).toBe(0x89);
+    expect(buf[1]).toBe(0x50);
+    expect(buf[2]).toBe(0x4e);
+    expect(buf[3]).toBe(0x47);
+    expect(buf.length).toBeGreaterThan(1000);
   });
 });
+

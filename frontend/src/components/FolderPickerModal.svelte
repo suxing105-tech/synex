@@ -43,8 +43,21 @@
 
   let listEl: HTMLDivElement | null = $state(null);
 
+  // 搜索：按 name 模糊匹配（不区分大小写）；空字符串不过滤
+  let query = $state("");
+  const filtered = $derived.by(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return flat;
+    return flat.filter((it) => it.name.toLowerCase().includes(q));
+  });
+  $effect(() => {
+    // 搜索时重置高亮
+    query;
+    selectedIdx = 0;
+  });
+
   async function pickItem(idx: number) {
-    if (idx < 0 || idx >= flat.length) return;
+    if (idx < 0 || idx >= filtered.length) return;
     const item = flat[idx];
     await onPick({ id: item.id, name: item.name });
     onClose();
@@ -63,7 +76,7 @@
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
       // +1 因为第 0 项是「不分配」
-      const max = flat.length; // 含 null 项
+      const max = filtered.length; // 含 null 项
       selectedIdx = Math.min(max - 1, selectedIdx + 1);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
@@ -98,6 +111,19 @@
         <div class="mb-3"></div>
       {/if}
 
+      <div class="relative mb-2">
+        <input
+          type="text"
+          bind:value={query}
+          placeholder="搜索文件夹…"
+          class="w-full bg-bg border border-border rounded px-2 py-1 text-[12px] outline-none focus:border-accent pl-7"
+          aria-label="搜索文件夹"
+        />
+        <span class="absolute left-2 top-1/2 -translate-y-1/2 text-muted pointer-events-none">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </span>
+      </div>
+
       <div bind:this={listEl} class="flex-1 overflow-y-auto -mx-1 px-1">
         <button
           type="button"
@@ -107,10 +133,10 @@
           <span class="fp-icon"><Icon name="circle-slash" size={13} /></span>
           <span class="fp-label">不分配 / 从文件夹移出</span>
         </button>
-        {#if flat.length === 0}
+        {#if filtered.length === 0}
           <p class="text-[12px] text-muted px-2 py-3">还没有 user folder</p>
         {/if}
-        {#each flat as item, i (item.id)}
+        {#each filtered as item, i (item.id)}
           <button
             type="button"
             class="fp-item w-full text-left px-3 py-2 rounded-md {selectedIdx === i + 1 ? 'active' : ''}"

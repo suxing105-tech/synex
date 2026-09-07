@@ -10,6 +10,7 @@
   import OnboardingModal from "./components/OnboardingModal.svelte";
   import SettingsModal from "./components/SettingsModal.svelte";
   import ScanProgressBar from "./components/ScanProgressBar.svelte";
+import Toast from "./components/Toast.svelte";
   import { statsApi, settingsApi, comfyuiApi } from "./lib/api";
 
   // 窗口级 drag/drop 兜底：拖到非 Feed 区域（如文件夹树 / 详情面板 / 空白处）
@@ -120,3 +121,4 @@
 
 <OnboardingModal bind:open={onboardingOpen} />
 <SettingsModal bind:open={settingsOpen} />
+<Toast />

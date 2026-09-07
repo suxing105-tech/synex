@@ -24,6 +24,7 @@
   } from "../lib/stores";
   import { imagesApi } from "../lib/api";
   import { copyText, formatSize, formatDate, allParamsText } from "../lib/ws";
+  import { pushToast } from "../lib/toast";
   import { extractLoras } from "../lib/params";
   import type { ImageDetail, FolderNode } from "../lib/types";
   import Icon from "./Icon.svelte";
@@ -32,17 +33,14 @@
   import MetadataCard from "./MetadataCard.svelte";
   import FolderPickerModal from "./FolderPickerModal.svelte";
 
-  // ---------- 通知 ----------
-  let toast = $state<string | null>(null);
-  function notify(msg: string) {
-    toast = msg;
-    setTimeout(() => (toast = null), 1500);
-  }
+  // ---------- 通知（全局 toast） ----------
   async function copy(text: string, label: string) {
     if (!text) return;
     const ok = await copyText(text);
-    notify(ok ? `已复制 ${label}` : "复制失败");
+    pushToast(ok ? `已复制 ${label}` : "复制失败", { kind: ok ? "success" : "error" });
   }
+  const notify = (msg: string, kind: "info" | "success" | "error" = "info") =>
+    pushToast(msg, { kind });
 
   // ---------- ⋯ 菜单 ----------
   let menuOpen = $state(false);
@@ -342,14 +340,14 @@
         title="正向 Prompt"
         text={d.positive_prompt}
         copyLabel="正向 Prompt"
-        onCopy={(ok) => notify(ok ? "已复制 正向 Prompt" : "复制失败")}
+        onCopy={(ok) => notify(ok ? "已复制 正向 Prompt" : "复制失败", ok ? "success" : "error")}
         initiallyExpanded
       />
       <PromptCard
         title="反向 Prompt"
         text={d.negative_prompt}
         copyLabel="反向 Prompt"
-        onCopy={(ok) => notify(ok ? "已复制 反向 Prompt" : "复制失败")}
+        onCopy={(ok) => notify(ok ? "已复制 反向 Prompt" : "复制失败", ok ? "success" : "error")}
       />
 
       <!-- 参数分组（含 LoRA） -->
@@ -367,7 +365,7 @@
             height: d.height,
           }}
           loras={loras}
-          onCopy={(ok) => notify(ok ? "已复制" : "复制失败")}
+          onCopy={(ok) => notify(ok ? "已复制" : "复制失败", ok ? "success" : "error")}
         />
       </section>
 
@@ -495,9 +493,6 @@
   onClose={() => (showFolderPicker = false)}
 />
 
-{#if toast}
-  <div class="toast">{toast}</div>
-{/if}
 
 <style>
   .detail-body {

@@ -200,12 +200,10 @@
     background: transparent;
     position: relative;
   }
-  .splitter:hover,
   .splitter:focus-visible {
     background: rgba(242, 78, 78, 0.4);
     outline: none;
-  }
-  .splitter::before {
+  }.splitter::before {
     content: "";
     position: absolute;
     left: 50%;
@@ -247,6 +245,7 @@
     }
   }
 </style>
+
 
 
 

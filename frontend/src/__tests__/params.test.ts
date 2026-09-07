@@ -162,4 +162,45 @@ describe("truncateValue（长值截断）", () => {
     expect(truncateValue("a".repeat(50))).toHaveLength(24);
     expect(truncateValue("a".repeat(24))).toHaveLength(24);
   });
+
+
+  it("parameters.used_loras 优先于 prompt 文本和 parameters.loras（权威来源）", () => {
+    // prompt 文本里写了 bypass:0.5 和 foo:0.9，但后端只标 foo 为"实际使用"
+    const items = extractLoras("<lora:bypass:0.5> <lora:foo:0.9>", {
+      used_loras: [{ name: "foo", strength: 0.9 }],
+      loras: [{ name: "another", strength: 0.7 }],
+    });
+    expect(items).toEqual([{ name: "foo", weight: 0.9 }]);
+  });
+
+  it("parameters.used_loras 支持对象形式 {name: weight}", () => {
+    const items = extractLoras("", {
+      used_loras: { "a/b": 0.4, "c/d": 1.2 },
+    } as Record<string, unknown>);
+    expect(items).toEqual([
+      { name: "c/d", weight: 1.2 },
+      { name: "a/b", weight: 0.4 },
+    ]);
+  });
+
+  it("parameters.used_loras 支持字符串 'name:weight'", () => {
+    const items = extractLoras("", {
+      used_loras: "foo:0.5, bar:0.7",
+    } as Record<string, unknown>);
+    expect(items).toEqual([
+      { name: "bar", weight: 0.7 },
+      { name: "foo", weight: 0.5 },
+    ]);
+  });
+
+  it("没有 used_loras 时回退现有逻辑（prompt <lora:> 仍然有效）", () => {
+    const items = extractLoras("<lora:foo:0.5>", {});
+    expect(items).toEqual([{ name: "foo", weight: 0.5 }]);
+  });
+
+  it("parameters.used_loras 为空数组 → 空列表（即使 prompt 文本里有 lora tag）", () => {
+    const items = extractLoras("<lora:foo:0.5>", { used_loras: [] });
+    expect(items).toEqual([]);
+  });
+
 });

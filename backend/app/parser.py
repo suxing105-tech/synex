@@ -358,6 +358,241 @@ def _extract_comfyui_prompts(prompt_obj: dict[str, Any]) -> tuple[str, str, dict
     return pos.strip(), neg.strip(), merged
 
 
+# ---------- LoRA 节点抽取 ----------
+# ComfyUI 里"实际被执行"的 LoRA 节点；bypassed 节点在 API prompt JSON 里
+# 根本不会出现，所以从 API prompt 抽 LoRA = 天然只包含"已使用"的 LoRA。
+LORA_NODE_TYPES = frozenset({
+    # 核心节点
+    "LoraLoader",
+    "LoRALoader",
+    "LoraLoaderAdvanced",
+    "LoRALoaderAdvanced",
+    "LoraLoaderMgr",
+    "LoraStackLoader",
+    # rgthird-party / rgthree
+    "PowerLoraLoader",
+    "Power Lora Loader (rgthree)",
+    "PowerLoRAStacker",
+    "Power Lora Stacker (rgthree)",
+    "Power Lora Loader (rgthree) - Bypass",
+    # Cosmicai / efficient
+    "EfficientLoraLoader",
+    "Efficient Lora Loader",
+    # 一些常见第三方
+    "CR LoRA Stack",
+    "LoraTagLoader",
+    "LoRA Stacker",
+})
+
+# inputs 字段名 -> strength 优先级，匹配第一个非空值
+_LORA_STRENGTH_KEYS = (
+    "strength_model",
+    "model_strength",
+    "strength",
+    "strength_clip",
+    "clip_strength",
+    "lora_strength",
+)
+
+
+def _is_lora_node(node: Any) -> bool:
+    """判断一个 API prompt 节点是不是 LoRA loader。"""
+    if not isinstance(node, dict):
+        return False
+    ct = (node.get("class_type") or "").strip()
+    if ct in LORA_NODE_TYPES:
+        return True
+    # 启发式：inputs 里有 lora_name 字符串字段 -> 典型 LoRA 特征
+    inputs = node.get("inputs") or {}
+    if not isinstance(inputs, dict):
+        return False
+    name_v = inputs.get("lora_name")
+    return isinstance(name_v, str) and bool(name_v.strip())
+
+
+def _lora_strength_from_inputs(inputs: dict[str, Any]) -> float:
+    """从 inputs 里抽 strength；找不到返回 1.0。"""
+    if not isinstance(inputs, dict):
+        return 1.0
+    for k in _LORA_STRENGTH_KEYS:
+        v = inputs.get(k)
+        if v is None:
+            continue
+        if isinstance(v, bool):
+            continue
+        if isinstance(v, (int, float)):
+            return float(v)
+        if isinstance(v, str):
+            try:
+                return float(v.strip())
+            except ValueError:
+                continue
+    return 1.0
+
+
+# ComfyUI-LoraManager 插件（willmiao/ComfyUI-Lora-Manager）的 LoRA Loader 节点类型。
+# 该节点的 widgets_values 结构:
+#   [0] = { version, textWidgetName }    元数据对象
+#   [1] = "<lora:NAME:WEIGHT> ..."      注入到 prompt 的字符串（含未勾选的 LoRA）
+#   [2] = [{ name, strength, active, ... }, ...]  结构化 LoRA 列表（每个有 active 字段）
+LORA_MANAGER_NODE_TYPES = frozenset({
+    "Lora Loader (LoraManager)",
+    "Lora Manager",
+    "LoraLoader (LoraManager)",
+})
+
+
+# UI workflow JSON 里节点的 "mode" 字段含义（ComfyUI 约定）：
+# 0 = muted (节点被禁用，bypass)，4 = bypass。其它值视为启用。
+_LORA_BYPASS_MODES = frozenset({0, 4})
+
+
+def _extract_active_loras_from_lora_manager(workflow_obj: Any) -> list[dict[str, Any]]:
+    """从 ComfyUI-LoraManager 节点的 widgets_values 抽"实际激活"的 LoRA。
+
+    适用 willmiao/ComfyUI-Lora-Manager 插件。
+
+    注意：LoraManager 节点的 widgets_values[2] 里 active=false 项是用户手工取消勾选的，
+    即使该节点 mode=0/4 (bypass) 也照抽，因为用户可能主动 bypass 节点但仍用 widgets 列表管理 LoRA。
+    节点本身不输出 model/clip，但 active 列表仍是用户当前真正想用的 LoRA。
+
+    返回 [{name, strength}, ...]，按 |strength| 降序。
+    """
+    nodes = _workflow_nodes(workflow_obj)
+    merged: dict[str, float] = {}
+    for node in nodes:
+        ct = (node.get("type") or "").strip()
+        if ct not in LORA_MANAGER_NODE_TYPES:
+            continue
+        wv = node.get("widgets_values")
+        if not isinstance(wv, list) or len(wv) < 3:
+            continue
+        loras = wv[2]
+        if not isinstance(loras, list):
+            continue
+        for item in loras:
+            if not isinstance(item, dict):
+                continue
+            if not item.get("active"):
+                continue
+            name = str(item.get("name") or "").strip()
+            if not name:
+                continue
+            # strength 可能是字符串或数字，统一转 float
+            raw_s = item.get("strength")
+            try:
+                strength = float(raw_s) if raw_s is not None else 1.0
+            except (TypeError, ValueError):
+                strength = 1.0
+            prev = merged.get(name)
+            if prev is None or abs(strength) > abs(prev):
+                merged[name] = strength
+    return sorted(
+        ({"name": n, "strength": s} for n, s in merged.items()),
+        key=lambda x: abs(x["strength"]),
+        reverse=True,
+    )
+
+
+def _workflow_nodes(workflow_obj: Any) -> list[dict[str, Any]]:
+    """从 UI workflow JSON 抽取 nodes 数组。"""
+    if not isinstance(workflow_obj, dict):
+        return []
+    nodes = workflow_obj.get("nodes")
+    return [n for n in nodes if isinstance(n, dict)] if isinstance(nodes, list) else []
+
+
+def _extract_used_loras_from_workflow(workflow_obj: Any) -> list[dict[str, Any]]:
+    """从 UI workflow JSON 抽"实际使用"的 LoRA 节点。
+
+    判定规则：
+    - 节点 type 在 LORA_NODE_TYPES 白名单 或 inputs 启发式命中 LoRA 特征
+    - 节点 mode 不是 0/4 (bypass)
+    - name: widgets_values[0]（LoRA 文件名）或 inputs.lora_name
+    - strength: widgets_values[1] (model_strength) / widgets_values[2] (clip_strength)
+      或 inputs.{strength_model, model_strength, strength}
+    - 同名 LoRA 多节点：strength 取绝对值大者
+    """
+    nodes = _workflow_nodes(workflow_obj)
+    if not nodes:
+        return []
+    merged: dict[str, float] = {}
+    for node in nodes:
+        # bypass 过滤：mode 为 0/4 视为未启用
+        if node.get("mode") in _LORA_BYPASS_MODES:
+            continue
+        if not _is_workflow_lora_node(node):
+            continue
+        name = _lora_name_from_workflow_node(node)
+        if not name:
+            continue
+        strength = _lora_strength_from_workflow_node(node)
+        prev = merged.get(name)
+        if prev is None or abs(strength) > abs(prev):
+            merged[name] = strength
+    return sorted(
+        ({"name": n, "strength": s} for n, s in merged.items()),
+        key=lambda x: abs(x["strength"]),
+        reverse=True,
+    )
+
+
+def _is_workflow_lora_node(node: dict[str, Any]) -> bool:
+    """判断 UI workflow 节点是不是 LoRA loader。
+
+    白名单优先；启发式仅放行 type 含 "lora" 子串的节点，避免误判 CheckpointLoader / VAELoader 等。
+    """
+    ct = (node.get("type") or "").strip()
+    if ct in LORA_NODE_TYPES:
+        return True
+    # 启发式：type 含 "lora"（不区分大小写） -> 算 LoRA 节点（兜底新插件 / 第三方节点）
+    return "lora" in ct.lower()
+
+
+def _lora_name_from_workflow_node(node: dict[str, Any]) -> str:
+    """从 UI workflow 节点抽 LoRA 文件名（去扩展名）。"""
+    # 优先 widgets_values[0]
+    wv = node.get("widgets_values")
+    if isinstance(wv, list) and wv:
+        first = wv[0]
+        if isinstance(first, str) and first.strip():
+            name = first.strip()
+            # 去常见扩展名（前端 matchLoras 也会去，这里保持一致）
+            for ext in (".safetensors", ".ckpt", ".pt", ".pth"):
+                if name.lower().endswith(ext):
+                    name = name[: -len(ext)]
+                    break
+            return name
+    # 回退 inputs.lora_name（链接型 [<n>, <out>] 跳过）
+    inputs = node.get("inputs") or {}
+    if isinstance(inputs, dict):
+        n = inputs.get("lora_name")
+        if isinstance(n, str) and n.strip():
+            return n.strip()
+    return ""
+
+
+def _lora_strength_from_workflow_node(node: dict[str, Any]) -> float:
+    """从 UI workflow 节点抽 strength。widgets_values 通常 [name, model_strength, clip_strength]；否则回退 inputs。"""
+    wv = node.get("widgets_values")
+    if isinstance(wv, list):
+        # model_strength / clip_strength 通常相等；取第一个非空数值
+        for v in wv[1:]:
+            if isinstance(v, bool):
+                continue
+            if isinstance(v, (int, float)):
+                return float(v)
+            if isinstance(v, str):
+                try:
+                    return float(v.strip())
+                except ValueError:
+                    continue
+    inputs = node.get("inputs") or {}
+    if isinstance(inputs, dict):
+        return _lora_strength_from_inputs(inputs)
+    return 1.0
+
+
 # ---------- WebP RIFF 解析 ----------
 
 
@@ -465,6 +700,18 @@ def parse_metadata(path: Path) -> dict[str, Any]:
                     pass
             if workflow_raw:
                 result["workflow"] = workflow_raw.decode("utf-8", errors="replace")
+                # 抽"实际使用"的 LoRA，优先级：
+                # 1) ComfyUI-LoraManager 节点的 active LoRA 列表（精确到 active=false 关闭项）
+                # 2) UI workflow 里 mode 非 bypass 的标准 LoRA 节点（兜底）
+                try:
+                    wf_obj = json.loads(workflow_raw.decode("utf-8", errors="replace"))
+                    _used = _extract_active_loras_from_lora_manager(wf_obj)
+                    if not _used:
+                        _used = _extract_used_loras_from_workflow(wf_obj)
+                    if _used:
+                        result["parameters"]["used_loras"] = _used
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    pass
             if params_raw:
                 try:
                     text = params_raw.decode("utf-8", errors="replace")

@@ -67,10 +67,52 @@ const LORA_KEYS = new Set(["loras", "lora_name", "lora_strength"]);
 // 允许大括号包住 / 空格 / 复合权重 <lora:a:0.5:0.8> → 只取第一个权重。
 const LORA_REGEX = /<lora:([^:>]+):(-?\d+(?:\.\d+)?)(?::[^>]+)?>/gi;
 
+// 把 parameters.used_loras（后端权威来源）归一化成 LoraItem[]。
+// 支持数组 / 对象 / 字符串三种形式，与 parameters.loras 一致。
+function _extractFromUsedLoras(raw: unknown): LoraItem[] {
+  const map = new Map<string, number>();
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      if (item == null) continue;
+      if (typeof item === "string") {
+        for (const it of parseLoraString(item)) mergeLora(map, it);
+      } else if (typeof item === "object") {
+        const obj = item as Record<string, unknown>;
+        const name = String(obj.name ?? obj.lora ?? "").trim();
+        const w = firstNumber([
+          obj.strength,
+          obj.model_strength,
+          obj.weight,
+          obj.strength_model,
+          obj.clip_strength,
+        ]);
+        if (name && w !== null) mergeLora(map, { name, weight: w });
+      }
+    }
+  } else if (raw && typeof raw === "object") {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      const w = firstNumber([v]);
+      if (w !== null) mergeLora(map, { name: k.trim(), weight: w });
+    }
+  } else if (typeof raw === "string") {
+    for (const it of parseLoraString(raw)) mergeLora(map, it);
+  }
+  return Array.from(map, ([name, weight]) => ({ name, weight })).sort(
+    (a, b) => Math.abs(b.weight) - Math.abs(a.weight),
+  );
+}
+
 export function extractLoras(
   positivePrompt: string | null | undefined,
   parameters: Record<string, unknown>,
 ): LoraItem[] {
+  // 后端权威来源：API prompt JSON 抽出的"实际使用"的 LoRA 节点列表。
+  // bypassed / mode 0/4 节点在 API prompt 里根本不存在，自动被过滤。
+  // 优先于 prompt 文本和 parameters.loras。
+  const used = parameters.used_loras;
+  if (used !== undefined && used !== null) {
+    return _extractFromUsedLoras(used);
+  }
   const map = new Map<string, number>();
 
   // 1) prompt 中 <lora:name:weight>

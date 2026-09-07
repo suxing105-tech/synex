@@ -435,3 +435,354 @@ def test_real_user_workflow_ksampler_advanced_zml_lora_easy_seed(tmp_path: Path)
     assert meta["parameters"]["sampler_name"] == "er_sde"
     assert meta["parameters"]["add_noise"] == "enable"
 
+
+
+def _wf(nodes):  # 构造 UI workflow JSON 的小工具
+    """wf = {"nodes": nodes}"""
+    return {"nodes": nodes}
+
+
+def test_extract_used_loras_basic():
+    """3 个 LoRA 节点（含 1 个 PowerLoraLoader） -> used_loras 长度=3，按 |strength| 降序。"""
+    from app.parser import _extract_used_loras_from_workflow
+    workflow = _wf([
+        {"id": 1, "type": "CheckpointLoaderSimple", "widgets_values": ["x.safetensors"]},
+        {"id": 20, "type": "LoraLoader", "widgets_values": ["foo.safetensors", 0.8, 0.8]},
+        {"id": 21, "type": "LoRALoader", "widgets_values": ["bar.safetensors", 1.0, 1.0]},
+        {"id": 22, "type": "Power Lora Loader (rgthree)", "widgets_values": ["baz.safetensors", 0.5]},
+    ])
+    result = _extract_used_loras_from_workflow(workflow)
+    assert len(result) == 3
+    assert result[0] == {"name": "bar", "strength": 1.0}
+    assert result[1] == {"name": "foo", "strength": 0.8}
+    assert result[2] == {"name": "baz", "strength": 0.5}
+
+
+def test_extract_used_loras_skips_bypassed_nodes():
+    """mode 0 / mode 4 (bypass) 的 LoRA 节点被过滤。"""
+    from app.parser import _extract_used_loras_from_workflow
+    workflow = _wf([
+        {"id": 20, "type": "LoraLoader", "widgets_values": ["foo.safetensors", 0.8, 0.8]},
+        {"id": 21, "type": "LoraLoader", "mode": 0, "widgets_values": ["bypassed0.safetensors", 1.0, 1.0]},
+        {"id": 22, "type": "LoraLoader", "mode": 4, "widgets_values": ["bypassed4.safetensors", 1.0, 1.0]},
+        {"id": 23, "type": "LoraLoader", "mode": 1, "widgets_values": ["active1.safetensors", 0.5, 0.5]},
+        {"id": 24, "type": "LoraLoader", "mode": 2, "widgets_values": ["active2.safetensors", 0.6, 0.6]},
+    ])
+    result = _extract_used_loras_from_workflow(workflow)
+    names = [r["name"] for r in result]
+    # mode 0 / mode 4 被过滤，mode 1 / mode 2 / 无 mode 都视为启用
+    assert "bypassed0" not in names
+    assert "bypassed4" not in names
+    assert "active1" in names
+    assert "active2" in names
+    assert "foo" in names
+
+
+def test_extract_used_loras_skips_non_lora_nodes():
+    """CheckpointLoader / KSampler / CLIPTextEncode 不算 LoRA。"""
+    from app.parser import _extract_used_loras_from_workflow
+    workflow = _wf([
+        {"id": 10, "type": "CheckpointLoaderSimple", "widgets_values": ["x.safetensors"]},
+        {"id": 30, "type": "KSampler", "widgets_values": [12345]},
+        {"id": 40, "type": "CLIPTextEncode", "widgets_values": ["girl"]},
+    ])
+    assert _extract_used_loras_from_workflow(workflow) == []
+
+
+def test_extract_used_loras_dedup_same_name():
+    """同名 LoRA 多节点 -> strength 取绝对值大者。"""
+    from app.parser import _extract_used_loras_from_workflow
+    workflow = _wf([
+        {"id": 20, "type": "LoraLoader", "widgets_values": ["foo.safetensors", 0.3, 0.3]},
+        {"id": 21, "type": "LoraLoader", "widgets_values": ["foo.safetensors", 0.9, 0.9]},
+    ])
+    result = _extract_used_loras_from_workflow(workflow)
+    assert result == [{"name": "foo", "strength": 0.9}]
+
+
+def test_extract_used_loras_default_strength():
+    """没指定 strength 字段 -> 默认 1.0。"""
+    from app.parser import _extract_used_loras_from_workflow
+    workflow = _wf([
+        {"id": 20, "type": "LoraLoader", "widgets_values": ["foo.safetensors"]},
+    ])
+    assert _extract_used_loras_from_workflow(workflow) == [{"name": "foo", "strength": 1.0}]
+
+
+def test_extract_used_loras_handles_invalid_input():
+    """非 dict / 无 nodes 字段 -> 空列表，不抛异常。"""
+    from app.parser import _extract_used_loras_from_workflow
+    assert _extract_used_loras_from_workflow(None) == []
+    assert _extract_used_loras_from_workflow("not a dict") == []
+    assert _extract_used_loras_from_workflow([]) == []
+    assert _extract_used_loras_from_workflow({"nodes": "not a list"}) == []
+    assert _extract_used_loras_from_workflow({"k": "v"}) == []
+    assert _extract_used_loras_from_workflow({"nodes": ["not a dict"]}) == []
+
+
+def test_extract_used_loras_heuristic_safetensors_filename():
+    """启发式：不在白名单但 widgets_values[0] 是 .safetensors 文件名 -> 也算 LoRA 节点。"""
+    from app.parser import _extract_used_loras_from_workflow
+    workflow = _wf([
+        {
+            "id": 20,
+            "type": "CustomLoraLoader_v2",
+            "widgets_values": ["experimental.safetensors", 0.6],
+        },
+    ])
+    result = _extract_used_loras_from_workflow(workflow)
+    assert result == [{"name": "experimental", "strength": 0.6}]
+
+
+def test_extract_used_loras_strips_extensions():
+    """name 自动去常见扩展名（.safetensors / .ckpt / .pt / .pth）。"""
+    from app.parser import _extract_used_loras_from_workflow
+    workflow = _wf([
+        {"id": 20, "type": "LoraLoader", "widgets_values": ["foo.safetensors", 0.5, 0.5]},
+        {"id": 21, "type": "LoraLoader", "widgets_values": ["bar.ckpt", 0.6, 0.6]},
+        {"id": 22, "type": "LoraLoader", "widgets_values": ["baz.pt", 0.7, 0.7]},
+    ])
+    result = _extract_used_loras_from_workflow(workflow)
+    names = {r["name"] for r in result}
+    assert names == {"foo", "bar", "baz"}
+
+
+def test_parse_metadata_writes_used_loras():
+    """parse_metadata 从 workflow chunk 抽出 used_loras，写进 parameters。"""
+    import struct
+    import zlib
+    from pathlib import Path
+    from app.parser import parse_metadata
+
+    def _png_chunk(tag: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    ihdr_chunk = _png_chunk(b"IHDR", ihdr)
+    raw = b"\x00\xff\x00\x00"
+    idat_chunk = _png_chunk(b"IDAT", zlib.compress(raw))
+    # UI workflow JSON: 一个启用 LoRA 节点 + 一个 bypassed 节点
+    workflow_json = (
+        '{"nodes": ['
+        '  {"id": 20, "type": "LoraLoader", "widgets_values": ["foo.safetensors", 0.7, 0.7]},'
+        '  {"id": 21, "type": "LoraLoader", "mode": 4, "widgets_values": ["hidden.safetensors", 1.0, 1.0]}'
+        ']}'
+    ).encode("utf-8")
+    workflow_chunk = _png_chunk(b"tEXt", b"workflow\x00" + workflow_json)
+    iend_chunk = _png_chunk(b"IEND", b"")
+    png_bytes = sig + ihdr_chunk + workflow_chunk + idat_chunk + iend_chunk
+
+    tmp = Path("outputs/_used_loras_fixture.png")
+    tmp.parent.mkdir(exist_ok=True)
+    tmp.write_bytes(png_bytes)
+    try:
+        meta = parse_metadata(tmp)
+        used = meta["parameters"].get("used_loras")
+        assert used is not None, f"expected used_loras, got parameters={meta['parameters']}"
+        # 只有 foo (启用)，hidden (bypass) 被过滤
+        assert used == [{"name": "foo", "strength": 0.7}]
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def test_extract_lora_manager_active_only():
+    """LoraManager 节点有 18 个 LoRA 配置，只有 5 个 active=true -> used_loras 只有 5 个。"""
+    from app.parser import _extract_active_loras_from_lora_manager
+    workflow = _wf([
+        {
+            "id": 226,
+            "type": "Lora Loader (LoraManager)",
+            "widgets_values": [
+                {"version": 1, "textWidgetName": "text"},
+                "<lora:foo:0.8> <lora:bar:0.5> ...",
+                [
+                    {"name": "foo", "strength": "0.8", "active": True},
+                    {"name": "bar", "strength": "0.5", "active": False},  # 关闭
+                    {"name": "baz", "strength": "1.0", "active": True},
+                    {"name": "qux", "strength": "0.3", "active": False},  # 关闭
+                    {"name": "quux", "strength": "0.6", "active": True},
+                ],
+            ],
+        },
+    ])
+    result = _extract_active_loras_from_lora_manager(workflow)
+    names = [r["name"] for r in result]
+    assert names == ["baz", "foo", "quux"]  # 按 |strength| 降序 (1.0 > 0.8 > 0.6)
+    by_name = {r["name"]: r["strength"] for r in result}
+    assert by_name["foo"] == 0.8
+    assert by_name["baz"] == 1.0
+    assert by_name["quux"] == 0.6
+    # 关闭项不在结果里
+    assert "bar" not in names
+    assert "qux" not in names
+
+
+def test_extract_lora_manager_bypassed_node_still_uses_active_list():
+    """LoraManager 节点 mode=0 (bypass) 仍抽 active LoRA —— 用户可能主动 bypass 节点但用 widgets 列表管 LoRA。"""
+    from app.parser import _extract_active_loras_from_lora_manager
+    workflow = _wf([
+        {
+            "id": 226,
+            "type": "Lora Loader (LoraManager)",
+            "mode": 0,
+            "widgets_values": [
+                {"version": 1},
+                "<lora:foo:0.8>",
+                [
+                    {"name": "foo", "strength": "0.8", "active": True},
+                    {"name": "bar", "strength": "0.5", "active": False},
+                ],
+            ],
+        },
+    ])
+    result = _extract_active_loras_from_lora_manager(workflow)
+    # bypass 节点仍抽 active LoRA（这是用户管理 LoRA 的真实意图）
+    assert result == [{"name": "foo", "strength": 0.8}]
+
+
+def test_extract_lora_manager_dedup_same_name():
+    """多个 LoraManager 节点同名 LoRA -> strength 取绝对值大者。"""
+    from app.parser import _extract_active_loras_from_lora_manager
+    workflow = _wf([
+        {
+            "id": 1,
+            "type": "Lora Loader (LoraManager)",
+            "widgets_values": [
+                {}, "",
+                [{"name": "foo", "strength": "0.3", "active": True}],
+            ],
+        },
+        {
+            "id": 2,
+            "type": "Lora Loader (LoraManager)",
+            "widgets_values": [
+                {}, "",
+                [{"name": "foo", "strength": "0.9", "active": True}],
+            ],
+        },
+    ])
+    result = _extract_active_loras_from_lora_manager(workflow)
+    assert result == [{"name": "foo", "strength": 0.9}]
+
+
+def test_extract_lora_manager_handles_invalid_input():
+    """异常输入 -> 空列表，不抛。"""
+    from app.parser import _extract_active_loras_from_lora_manager
+    assert _extract_active_loras_from_lora_manager(None) == []
+    assert _extract_active_loras_from_lora_manager({"nodes": "x"}) == []
+    workflow = _wf([
+        {
+            "id": 1,
+            "type": "Lora Loader (LoraManager)",
+            "widgets_values": [{}, "", "not a list"],
+        },
+    ])
+    assert _extract_active_loras_from_lora_manager(workflow) == []
+
+
+def test_extract_lora_manager_strength_string_to_float():
+    """strength 是字符串数字 -> 正确转 float。"""
+    from app.parser import _extract_active_loras_from_lora_manager
+    workflow = _wf([
+        {
+            "id": 1,
+            "type": "Lora Loader (LoraManager)",
+            "widgets_values": [
+                {}, "",
+                [
+                    {"name": "foo", "strength": "0.85", "active": True},
+                    {"name": "bar", "strength": 0.5, "active": True},
+                    {"name": "baz", "strength": "1", "active": True},
+                ],
+            ],
+        },
+    ])
+    result = _extract_active_loras_from_lora_manager(workflow)
+    by_name = {r["name"]: r["strength"] for r in result}
+    assert by_name["foo"] == 0.85
+    assert by_name["bar"] == 0.5
+    assert by_name["baz"] == 1.0
+
+
+def test_parse_metadata_lora_manager_priority():
+    """parse_metadata 优先用 LoraManager active LoRA，忽略 prompt 文本里的 <lora:> tags。"""
+    import struct
+    import zlib
+    from pathlib import Path
+    from app.parser import parse_metadata
+
+    def _png_chunk(tag, data):
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    ihdr_chunk = _png_chunk(b"IHDR", ihdr)
+    raw = b"\x00\xff\x00\x00"
+    idat_chunk = _png_chunk(b"IDAT", zlib.compress(raw))
+    workflow_obj = {
+        "nodes": [
+            {
+                "id": 226,
+                "type": "Lora Loader (LoraManager)",
+                "widgets_values": [
+                    {"version": 1, "textWidgetName": "text"},
+                    "<lora:active1:0.8> <lora:active2:0.5> <lora:closed1:0.7> <lora:closed2:0.6>",
+                    [
+                        {"name": "active1", "strength": "0.8", "active": True},
+                        {"name": "active2", "strength": "0.5", "active": True},
+                        {"name": "closed1", "strength": "0.7", "active": False},
+                        {"name": "closed2", "strength": "0.6", "active": False},
+                    ],
+                ],
+            },
+        ],
+    }
+    import json as _json
+    workflow_json = _json.dumps(workflow_obj).encode("utf-8")
+    workflow_chunk = _png_chunk(b"tEXt", b"workflow\x00" + workflow_json)
+    iend_chunk = _png_chunk(b"IEND", b"")
+    png_bytes = sig + ihdr_chunk + workflow_chunk + idat_chunk + iend_chunk
+
+    tmp = Path("outputs/_lora_manager_fixture.png")
+    tmp.parent.mkdir(exist_ok=True)
+    tmp.write_bytes(png_bytes)
+    try:
+        meta = parse_metadata(tmp)
+        used = meta["parameters"].get("used_loras")
+        assert used is not None
+        names = [r["name"] for r in used]
+        assert set(names) == {"active1", "active2"}
+        assert "closed1" not in names
+        assert "closed2" not in names
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def test_parse_metadata_no_workflow_chunk_no_used_loras():
+    """PNG 没有 workflow chunk -> 不写 used_loras，让前端走 fallback。"""
+    import struct
+    import zlib
+    from pathlib import Path
+    from app.parser import parse_metadata
+
+    def _png_chunk(tag: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    ihdr_chunk = _png_chunk(b"IHDR", ihdr)
+    raw = b"\x00\xff\x00\x00"
+    idat_chunk = _png_chunk(b"IDAT", zlib.compress(raw))
+    iend_chunk = _png_chunk(b"IEND", b"")
+    png_bytes = sig + ihdr_chunk + idat_chunk + iend_chunk
+
+    tmp = Path("outputs/_no_workflow_fixture.png")
+    tmp.parent.mkdir(exist_ok=True)
+    tmp.write_bytes(png_bytes)
+    try:
+        meta = parse_metadata(tmp)
+        assert "used_loras" not in meta["parameters"]
+    finally:
+        tmp.unlink(missing_ok=True)
+

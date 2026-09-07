@@ -172,6 +172,20 @@ class Indexer:
 
     # ----- 单图处理 -----
 
+    def emit_event_sync(self, payload: dict) -> bool:
+        """从同步上下文（HTTP 路由、watchdog worker 线程）广播一条已构建好的事件 payload。
+
+        - 与 watchdog `_flush_pending` 走同一条路径：往主 asyncio 循环的 `_emit` 上调度。
+        - 没有可用的运行中循环时（例如单元测试）→ 返回 False，调用方决定是否自己 publish。
+        """
+        if self._loop is None or not self._loop.is_running():
+            return False
+        try:
+            asyncio.run_coroutine_threadsafe(self._emit(payload), self._loop)
+        except RuntimeError:
+            return False
+        return True
+
     def _process_path_sync(self, path: Path, *, remove: bool = False) -> dict | None:
         """同步处理单张图；返回事件 payload 或 ``None``。"""
         path_str = self._normalize(path)

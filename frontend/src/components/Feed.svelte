@@ -143,8 +143,12 @@
       const skipped = resp.skipped ?? [];
       const folderTag = $folderId != null ? `「${dropTargetLabel}」` : "收件箱";
       if (saved > 0 && skipped.length === 0) {
+        // 兜底刷新：后端 import 已经入库并广播 image_indexed，
+        // 但 WS 偶发丢事件时也能立刻让缩略图出现（不依赖 WS）。
+        await Promise.all([refreshFeed(), refreshStats()]);
         notify(`已导入 ${saved} 张到 ${folderTag}`);
       } else if (saved > 0 && skipped.length > 0) {
+        await Promise.all([refreshFeed(), refreshStats()]);
         const reasons = new Map<string, number>();
         for (const s of skipped) reasons.set(s.reason, (reasons.get(s.reason) ?? 0) + 1);
         const reasonText = Array.from(reasons.entries())

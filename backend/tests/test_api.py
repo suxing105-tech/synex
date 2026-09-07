@@ -10,6 +10,7 @@ from app import repository
 from app.db import init_pool
 from app.indexer import Indexer
 from app.main import app
+from app.events import get_bus
 
 from .conftest import make_comfy_prompt, make_png
 
@@ -425,6 +426,42 @@ def test_logo_endpoint_serves_png(client):
     cc = r.headers.get("cache-control", "")
     assert "max-age" in cc
 
+
+import asyncio
+import json
+
+@pytest.mark.asyncio
+async def test_import_broadcasts_image_indexed(client):
+    """拖入图片入库后必须把 image_indexed 推到 EventBus，前端 WS 才能刷新 feed。
+
+    不广播 → 前端要手动刷新页面才看到新图（回归：拖入后不显示缩略图）。
+    """
+    from app.config import inbox_dir
+    bus = get_bus()
+    q = await bus.subscribe()
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8), (10, 20, 30)).save(buf, format="PNG")
+    buf.seek(0)
+    r = client.post(
+        "/api/images/import",
+        files=[("files", ("drop.png", buf, "image/png"))],
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    new_id = body["saved"][0]["id"]
+    # 给事件循环最多 1s 时间把 payload 推进订阅队列
+    try:
+        payload = await asyncio.wait_for(q.get(), timeout=1.0)
+    finally:
+        await bus.unsubscribe(q)
+    assert payload["type"] == "image_indexed", payload
+    assert payload["id"] == new_id
+    assert payload["filename"] == "drop.png"
+    assert payload["path"].endswith("drop.png")
+    # 推出来的 inbox 文件应已入库
+    assert Path(payload["path"]).exists()
 
 def test_feed_includes_max_in_original_url(client):
     """feed 返回的 original_url 默认带 max=1024 → 后端出 webp 预览。"""

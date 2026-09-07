@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import asyncio
 import os
 import re
 from pathlib import Path
@@ -12,6 +13,7 @@ from .. import repository
 from ..config import inbox_dir
 from ..db import get_pool
 from ..indexer import get_indexer
+from ..events import get_bus
 from ..models import (
     ImageDetail,
     ImportResponse,
@@ -428,6 +430,17 @@ def import_images(
                 ImportSkippedItem(filename=target.name, reason="indexed_failed")
             )
             continue
+
+        # 拖入的图入库后必须像 watchdog 一样广播 image_indexed，
+        # 否则前端 WS 不会刷新 feed，缩略图要等手动刷新才出现。
+        # 走 indexer 自带的 emit 路径：与 watchdog `_flush_pending` 同源，
+        # 复用 lifespan 启动时挂上的主 asyncio 循环。
+        if not indexer.emit_event_sync(payload):
+            # 没有可用的运行中循环（单元测试 / 同步脚本）→ 直接同步 publish 兜底。
+            try:
+                asyncio.run(get_bus().publish(payload))
+            except RuntimeError:
+                pass
 
         image_id = payload["id"]
         if folder_id is not None:

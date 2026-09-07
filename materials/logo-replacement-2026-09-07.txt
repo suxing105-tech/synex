@@ -1,0 +1,7 @@
+Logo replacement verification
+Date: 2026-09-07
+Source: C:\Users\Administrator\Desktop\苏醒logo\suxing-logo.png
+Target: frontend/public/logo.png
+Target bytes: 15855
+Target SHA256: 1D256BA212906831A8A54785168687562475A409ADE4365FAAC8B24E9008D075
+References: frontend/index.html, frontend/src/components/HeaderBar.svelte, backend/app/main.py

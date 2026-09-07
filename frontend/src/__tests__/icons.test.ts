@@ -66,5 +66,15 @@ describe("lib/icons 数据契约", () => {
     expect(buf[3]).toBe(0x47);
     expect(buf.length).toBeGreaterThan(1000);
   });
+
+  it("苏醒图库主 logo 静态资源存在并为 PNG", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const p = path.resolve(__dirname, "..", "..", "public", "logo.png");
+    expect(fs.existsSync(p), `logo.png 应在 ${p}`).toBe(true);
+    const buf = fs.readFileSync(p);
+    expect(buf.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    expect(buf.length).toBeGreaterThan(1000);
+  });
 });
 

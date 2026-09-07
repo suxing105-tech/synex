@@ -114,6 +114,8 @@
   import { comfyuiStatus } from "../lib/stores";
   import { comfyuiApi } from "../lib/api";
   import { openOrReuseComfyuiTab } from "../lib/comfyui-window";
+  import { registerShortcuts } from "../lib/shortcuts";
+  import { onMount, onDestroy } from "svelte";
 
   async function openInComfyui() {
     const det = get(selectedDetail);
@@ -168,6 +170,68 @@
       new CustomEvent("open-lightbox", { detail: { id: d.id } }),
     );
   }
+
+  // ---------- 快捷键 ----------
+  // P / N / S / Shift+C / F / T / Esc（在详情面板有选中时生效）
+  let shortcutOff: (() => void) | null = null;
+  onMount(() => {
+    shortcutOff = registerShortcuts([
+      {
+        key: "p",
+        handler: () => {
+          const d = $selectedDetail;
+          if (!d) return;
+          copy(d.positive_prompt, "正向 Prompt");
+        },
+      },
+      {
+        key: "n",
+        handler: () => {
+          const d = $selectedDetail;
+          if (!d) return;
+          copy(d.negative_prompt, "反向 Prompt");
+        },
+      },
+      {
+        key: "s",
+        handler: () => {
+          const d = $selectedDetail;
+          if (!d || d.seed == null) return;
+          copy(String(d.seed), "Seed");
+        },
+      },
+      {
+        key: "shift+c",
+        handler: () => {
+          if ($selectedDetail) openInComfyui();
+        },
+      },
+      {
+        key: "f",
+        handler: () => {
+          if ($selectedDetail) toggleFav();
+        },
+      },
+      {
+        key: "t",
+        handler: () => {
+          if ($selectedDetail) showTagInput = !showTagInput;
+        },
+      },
+      {
+        key: "escape",
+        handler: () => {
+          if (showFolderPicker) showFolderPicker = false;
+          else if (showTagInput) showTagInput = false;
+          else if (menuOpen) menuOpen = false;
+        },
+      },
+    ]);
+  });
+  onDestroy(() => {
+    shortcutOff?.();
+    shortcutOff = null;
+  });
 </script>
 
 <svelte:window

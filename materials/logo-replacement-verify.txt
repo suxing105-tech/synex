@@ -1,0 +1,25 @@
+Logo replacement verification @ 2026-09-02T10:18:05.402Z
+
+Source: C:/Users/Administrator/Desktop/Flogo.png (51308 bytes)
+Tracked copy: frontend/public/logo.png (51308 bytes)
+Backup copy (gitignored): backend/data/public/logo.png (51308 bytes)
+
+Changes:
+  M backend/app/main.py (added /logo.png endpoint + PUBLIC_DIR)
+  M backend/tests/test_api.py (added test_logo_endpoint_serves_png)
+  M frontend/index.html (favicon → /logo.png)
+  M frontend/src/components/HeaderBar.svelte (gradient → <img src=/logo.png>)
+  ?? frontend/public/logo.png (new)
+  ?  frontend/dist/* (rebuilt; ignored)
+
+Backend tests: 63/63 pass
+Frontend tests: 51/51 pass
+Endpoints verified:
+  GET http://127.0.0.1:8000/logo.png → 200 image/png 51308 bytes cache-control: public, max-age=86400
+  GET http://[::1]:5173/logo.png (vite) → 200 51308 bytes
+  GET http://127.0.0.1:8000/api/health → 200 application/json {"status":"ok"}
+
+uvicorn PID: 900 (port 8000 LISTENING)
+vite PID: 41732 (port 5173 LISTENING)
+
+Committed: 1e75ec6 (5 files, +29/-2)

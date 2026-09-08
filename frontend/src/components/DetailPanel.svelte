@@ -257,7 +257,7 @@
     <header class="px-4 py-3 border-b border-border bg-surface-2 flex items-start gap-3">
       <button
         type="button"
-        class="shrink-0 w-12 h-12 rounded-md overflow-hidden bg-surface-3 border border-border hover:border-accent focus:outline-none focus:border-accent"
+        class="shrink-0 w-12 h-12 rounded-md overflow-hidden bg-surface-3 border border-border hover:bg-bg focus:outline-none focus:border-accent"
         title="查看大图"
         aria-label="查看大图"
         onclick={() => openLightbox(d)}
@@ -303,7 +303,7 @@
       <div class="shrink-0 flex items-center gap-1" data-menu-root>
         <button
           type="button"
-          class="p-1.5 rounded border border-border hover:border-accent"
+          class="p-1.5 rounded border border-border hover:bg-surface-3"
           class:!border-danger={d.favorite}
           class:text-danger={d.favorite}
           title={d.favorite ? "取消收藏" : "加入收藏"}
@@ -315,7 +315,7 @@
         </button>
         <button
           type="button"
-          class="p-1.5 rounded border border-border hover:border-accent"
+          class="p-1.5 rounded border border-border hover:bg-surface-3"
           title="在 ComfyUI 中打开"
           aria-label="在 ComfyUI 中打开"
           onclick={openInComfyui}
@@ -325,7 +325,7 @@
         <div class="relative">
           <button
             type="button"
-            class="p-1.5 rounded border border-border hover:border-accent"
+            class="p-1.5 rounded border border-border hover:bg-surface-3"
             class:!border-accent={menuOpen}
             title="更多操作"
             aria-label="更多操作"
@@ -499,14 +499,14 @@
             <div class="px-2 pb-2 flex items-center gap-1">
               <button
                 type="button"
-                class="text-[11px] px-2 py-0.5 rounded border border-border hover:border-accent inline-flex items-center gap-1"
+                class="text-[11px] px-2 py-0.5 rounded border border-border hover:bg-surface-3 inline-flex items-center gap-1"
                 onclick={() => copy(d.workflow, "Workflow JSON")}
               >
                 <Icon name="copy" size={10} />复制
               </button>
               <button
                 type="button"
-                class="text-[11px] px-2 py-0.5 rounded border border-border hover:border-accent inline-flex items-center gap-1"
+                class="text-[11px] px-2 py-0.5 rounded border border-border hover:bg-surface-3 inline-flex items-center gap-1"
                 onclick={() => {
                   try {
                     const formatted = JSON.stringify(JSON.parse(d.workflow), null, 2);
@@ -523,7 +523,7 @@
               </button>
               <button
                 type="button"
-                class="text-[11px] px-2 py-0.5 rounded border border-border hover:border-accent inline-flex items-center gap-1"
+                class="text-[11px] px-2 py-0.5 rounded border border-border hover:bg-surface-3 inline-flex items-center gap-1"
                 onclick={() => {
                   const blob = new Blob([d.workflow], { type: "application/json" });
                   const url = URL.createObjectURL(blob);

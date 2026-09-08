@@ -55,7 +55,7 @@
     {:else}
       <div class="flex flex-wrap gap-1">
         {#each tags as t (t)}
-          <span class="group inline-flex items-center gap-1 bg-surface-2 border border-border rounded-full pl-2.5 pr-1 py-0.5 text-[11px] hover:border-accent">
+          <span class="group inline-flex items-center gap-1 bg-surface-2 border border-border rounded-full pl-2.5 pr-1 py-0.5 text-[11px] hover:bg-surface-3">
             <button
               type="button"
               class="hover:text-accent"

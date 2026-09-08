@@ -17,8 +17,21 @@ dist/
 .vite/
 .svelte-kit/
 
-# Tauri (later)
-src-tauri/target/
+# Tauri
+frontend/src-tauri/target/
+frontend/src-tauri/gen/
+frontend/src-tauri/logs/
+frontend/src-tauri/binaries/*.exe
+frontend/src-tauri/binaries/*.stdout
+frontend/src-tauri/binaries/*.stderr
+
+# PyInstaller (sidecar bundling)
+frontend/pyinstaller/build/
+frontend/pyinstaller/dist/
+
+# Frontend sidecar diagnostics
+frontend/src/revert_splash.py
+outputs/app-compiled.js
 
 # OS / Editor
 .DS_Store

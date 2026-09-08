@@ -60,7 +60,7 @@
     <span class="ml-auto flex items-center gap-1">
       <button
         type="button"
-        class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-border hover:border-accent text-muted hover:text-zinc-200 disabled:opacity-40"
+        class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-border hover:bg-surface-3 text-muted hover:text-zinc-200 disabled:opacity-40 disabled:hover:bg-transparent"
         onclick={copy}
         disabled={!text}
         title="复制"

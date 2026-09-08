@@ -1,0 +1,36 @@
+[package]
+name = "suxing-gallery"
+version = "0.1.0"
+description = "苏醒图库 — ComfyUI 本地图库管理器"
+authors = ["Suxing Gallery"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "suxing_gallery_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "process", "io-util", "rt-multi-thread", "sync", "time"] }
+log = "0.4"
+env_logger = "0.11"
+thiserror = "1"
+once_cell = "1"
+
+[features]
+# 用于启用自定义协议（asset://）预留，P1 启用
+# custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

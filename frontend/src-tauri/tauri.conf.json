@@ -1,0 +1,68 @@
+{
+  "$schema": "https://schema.tauri.app/config/2.0.0",
+  "productName": "苏醒图库",
+  "version": "0.1.0",
+  "identifier": "com.suxing.gallery",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "苏醒图库",
+        "label": "main",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 640,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "decorations": true,
+        "transparent": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: http://127.0.0.1:8765 asset: https://asset.localhost; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' http://127.0.0.1:8765 ws://127.0.0.1:8765 ipc: http://ipc.localhost"
+    },
+    "withGlobalTauri": true
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/python-backend"
+    ],
+    "resources": [],
+    "category": "Productivity",
+    "copyright": "© 2026 Suxing Gallery",
+    "shortDescription": "苏醒图库 — ComfyUI 本地图库管理器",
+    "longDescription": "苏醒图库是面向 ComfyUI 用户的轻量级本地图库管理器，支持监听导入、元数据解析、缩略图生成、全文搜索、标签管理与一键打开 ComfyUI 工作流。",
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine",
+        "languages": [
+          "SimpChinese",
+          "English"
+        ],
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico"
+      },
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      }
+    }
+  }
+}

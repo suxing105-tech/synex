@@ -1,16 +1,38 @@
 # 苏醒图库
 
+## 桌面 App 快速开始（NSIS 安装包）
+
+```powershell
+# 一次性
+& "frontend\scripts\build-sidecar.ps1"      # 打包 PyInstaller sidecar（~30s）
+cd "frontend\src-tauri"
+& cargo tauri build                             # 构建 Tauri + NSIS（约 5 min）
+# 产物
+#   target\release\suxing-gallery.exe              主程序 4.5 MB
+#   target\release\bundle\nsis\苏醒图库_0.1.0_x64-setup.exe  NSIS 安装包 29.6 MB
+# 安装 + 启动
+& "target\release\bundle\nsis\苏醒图库_0.1.0_x64-setup.exe" /S
+& "C:\Program Files\苏醒图库\suxing-gallery.exe"
+```
+
+实现细节、决策记录与已知问题见 `materials\29-tauri-m0-delivery.md`。
+
+---
+
+
+
 本仓库是面向 ComfyUI 用户的轻量级本地图库管理器 MVP。设计思路见：
 - 产品设计：`outputs\mvp-product-design.md`
 - 技术方案：`outputs\tech-design.md`
 - UI 原型：`outputs\demo.html`
 - 调研 / 决策记录：`materials\`
 
-## 本轮交付（M0 → M2）
+## 本轮交付
 
+- Web 版 + **Tauri 桌面 App 版**（NSIS 安装包）双轨并行。
 - 原方案：Tauri 2.x (Rust 壳 + Python sidecar) + Svelte 5 + SQLite/FTS5，仅 Windows。
-- 本环境无 Rust 工具链，因此本轮先交付 **可本地运行的 Web 版**（FastAPI 静态托管 Svelte），所有 P0 功能落地。
-- 后续切桌面版只需把 `frontend\dist\` 通过 Tauri 的 `distDir` 引用；sidecar 用同一份 Python 代码。
+- Web 版先于桌面版交付（M0 → M2），所有 P0 功能跑 FastAPI + Vite。
+- 桌面版 M0 已跑通：NSIS 安装 + sidecar spawn + HTTP API + AppData 持久化；UI 渲染问题留 M0-f。详见 `materials\29-tauri-m0-delivery.md`。
 
 ### 已实现的产品 P0 功能
 

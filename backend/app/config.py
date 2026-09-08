@@ -2,7 +2,8 @@
 
 设计要点：
 - 所有运行时数据落到 ``<cwd>/data/``，便于调试时直接看到文件。
-- 通过 ``SUXING_GALLERY_DATA_DIR`` 环境变量可切换，便于打包后使用 ``%APPDATA%``。
+- 通过 ``SUXING_DATA_DIR`` (Tauri sidecar 注入) 或 ``SUXING_GALLERY_DATA_DIR`` (旧 dev 别名)
+  环境变量切换；后者用于向后兼容。
 - 配置文件 ``data/config.json`` 持久化监听目录、Live 开关等用户偏好。
 """
 from __future__ import annotations
@@ -15,7 +16,11 @@ from pathlib import Path
 
 # ---------- 路径 ----------
 
-DEFAULT_DATA_DIR = Path(os.environ.get("SUXING_GALLERY_DATA_DIR", Path.cwd() / "data"))
+DEFAULT_DATA_DIR = Path(
+    os.environ.get("SUXING_DATA_DIR")
+    or os.environ.get("SUXING_GALLERY_DATA_DIR")
+    or (Path.cwd() / "data")
+)
 
 
 @dataclass
@@ -82,7 +87,6 @@ def inbox_dir() -> Path:
     p = data_dir() / "inbox"
     p.mkdir(parents=True, exist_ok=True)
     return p
-
 
 
 def logs_dir() -> Path:

@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from "svelte";
   import { connectEvents, disconnectEvents } from "./lib/ws";
   import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, comfyuiEnabled, feedItems, tag, folderId, query, view, selectedDetail } from "./lib/stores";
-  import { isTauri, onSidecarReady, onSidecarDied } from "./lib/tauri";
+  import { createSplashGate } from "./lib/splash-gate.svelte";
   import HeaderBar from "./components/HeaderBar.svelte";
   import FolderTree from "./components/FolderTree.svelte";
   import Feed from "./components/Feed.svelte";
@@ -69,20 +69,13 @@
     tag.set(t);
   }
 
-  // ============ 后端就绪状态（Tauri sidecar 生命周期） ============
-  // M0-f 修复：dist 产物的 App.svelte 含 splash overlay 但源码此前没有，
-  // 下次 cargo tauri build 后必再次黑屏。把 splash 落到源码以确保 prod 可见。
-  // - isTauri()：浏览器 dev / 静态托管为 false；Tauri WebView2 为 true。
-  // - 浏览器路径直接 await doInit()（vite proxy / FastAPI 已在 8765）；
-  // - Tauri 路径订阅 Rust 端 sidecar-ready / sidecar-died 事件，
-  //   等到后端真正 READY 才允许主 UI 渲染，避免 #app 空 div 黑屏。
-  let backendReady = $state(!isTauri());
-  let backendError: string | null = $state(null);
-  let initStarted = false;
-  let sidecarReadyUnsub: (() => void) | null = null;
-  let sidecarDiedUnsub: (() => void) | null = null;
-  let backendBootTimeout: ReturnType<typeof setTimeout> | null = null;
+  // ============ 后端就绪门（composable） ============
+  // M0-f 第三轮：把 sidecar 生命周期抽出到 lib/splash-gate.svelte.ts。
+  // gate 拥有 backendReady / backendError / sidecar 订阅 / 30s 超时，
+  // App.svelte 只剩 init 业务逻辑（doInit）+ browser-only 副作用。
+  const gate = createSplashGate();
 
+  let initStarted = false;
   async function doInit() {
     if (initStarted) return;
     initStarted = true;
@@ -98,42 +91,12 @@
     connectEvents();
   }
 
-  function markBackendReady() {
-    backendReady = true;
-    backendError = null;
-    if (backendBootTimeout) {
-      clearTimeout(backendBootTimeout);
-      backendBootTimeout = null;
-    }
-    void doInit();
-  }
-
-  function markBackendFailed(reason: string) {
-    backendReady = false;
-    backendError = reason;
-    if (backendBootTimeout) {
-      clearTimeout(backendBootTimeout);
-      backendBootTimeout = null;
-    }
-  }
-
   onMount(async () => {
-    if (isTauri()) {
-      // Tauri 路径：等 Rust 端的 sidecar-ready 事件，否则一直显示 splash。
-      // 30s 超时切错误卡（一般 1~2s 就能 ready；30s 留给冷启动 / 防卡死）。
-      sidecarReadyUnsub = await onSidecarReady(() => markBackendReady());
-      sidecarDiedUnsub = await onSidecarDied((p) => {
-        markBackendFailed(p?.reason || "sidecar died");
-      });
-      backendBootTimeout = setTimeout(() => {
-        if (!backendReady) {
-          markBackendFailed(backendError || "后端进程启动超时（30s）");
-        }
-      }, 30000);
-      return;
-    }
-    // 浏览器 dev / 静态托管：直接 init（vite proxy / FastAPI 已在 8765）
-    await doInit();
+    // gate.start()：浏览器模式立即 await doInit() 返回 true；
+    // Tauri 模式订阅 sidecar-ready / sidecar-died + 30s 超时返回 false。
+    const isBrowser = await gate.start(doInit);
+    if (!isBrowser) return;
+    // 浏览器 / 静态托管专用：comfyui 轮询 + window 事件
     await refreshComfyuiStatus();
     comfyuiTimer = setInterval(refreshComfyuiStatus, 30000);
     const onVis = () => {
@@ -147,9 +110,7 @@
   });
 
   onDestroy(() => {
-    if (sidecarReadyUnsub) sidecarReadyUnsub();
-    if (sidecarDiedUnsub) sidecarDiedUnsub();
-    if (backendBootTimeout) clearTimeout(backendBootTimeout);
+    gate.dispose();
     disconnectEvents();
     if (comfyuiTimer) clearInterval(comfyuiTimer);
     window.removeEventListener("open-lightbox", handleOpenLightbox);
@@ -252,7 +213,7 @@
 <SettingsModal bind:open={settingsOpen} />
 <Toast />
 
-<SplashOverlay ready={backendReady} error={backendError} />
+<SplashOverlay ready={gate.ready} error={gate.error} />
 
 <style>
   .splitter {

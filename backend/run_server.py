@@ -8,6 +8,49 @@ import json
 import os
 import sys
 import traceback
+import threading
+
+
+def _watch_parent(parent_pid: int | None = None) -> None:
+    """PyInstaller 的服务子进程随桌面父进程退出，防止遗留端口占用。"""
+    parent = parent_pid or os.environ.get("SUXING_PARENT_PID")
+    if not parent or sys.platform != "win32":
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel.WaitForSingleObject.restype = wintypes.DWORD
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    handle = kernel.OpenProcess(0x00100000, False, int(parent))  # SYNCHRONIZE
+    if not handle:
+        raise OSError(ctypes.get_last_error(), "无法监控桌面父进程")
+
+    def wait() -> None:
+        result = kernel.WaitForSingleObject(handle, 0xFFFFFFFF)
+        kernel.CloseHandle(handle)
+        if result == 0:  # WAIT_OBJECT_0
+            os._exit(0)
+
+    threading.Thread(target=wait, daemon=True, name="desktop-parent-watch").start()
+
+
+async def _serve(server, port: int) -> None:
+    original_startup = server.startup
+
+    async def startup(sockets=None):
+        await original_startup(sockets=sockets)
+        if not server.started:
+            raise RuntimeError("后端初始化失败，请查看启动日志")
+        _emit_ready(port)
+
+    server.startup = startup
+    # 直接等待 serve，启动失败会立即传回，不会卡在独立 Event 上。
+    await server.serve()
 
 
 def _emit_ready(port: int) -> None:
@@ -16,6 +59,13 @@ def _emit_ready(port: int) -> None:
 
 
 def main() -> int:
+    # PyInstaller 不保证采用 PYTHONIOENCODING；显式保证 Rust 按 UTF-8 读管道。
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+    _watch_parent()
+    if getattr(sys, "frozen", False) and os.environ.get("SUXING_PARENT_PID"):
+        _watch_parent(os.getppid())  # 同时跟随 PyInstaller 启动器，处理超时 kill。
     port = int(os.environ.get("SUXING_PORT", "8765"))
     host = os.environ.get("SUXING_HOST", "127.0.0.1")
 
@@ -38,24 +88,8 @@ def main() -> int:
     server = uvicorn.Server(config)
 
     import asyncio
-    install_done = asyncio.Event()
-
-    original_startup = server.startup
-
-    async def _hooked_startup(sockets=None):
-        await original_startup(sockets=sockets)
-        install_done.set()
-
-    server.startup = _hooked_startup  # type: ignore[assignment]
-
-    async def _run() -> None:
-        serve_task = asyncio.create_task(server.serve())
-        await install_done.wait()
-        _emit_ready(port)
-        await serve_task
-
     try:
-        asyncio.run(_run())
+        asyncio.run(_serve(server, port))
     except KeyboardInterrupt:
         return 0
     except SystemExit as e:

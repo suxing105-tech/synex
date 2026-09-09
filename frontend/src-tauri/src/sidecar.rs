@@ -137,16 +137,19 @@ impl SidecarState {
     }
 
     pub fn mark_ready(&self) {
+        if let Ok(mut g) = self.last_error.lock() { *g = None; }
         self.ready.store(true, Ordering::SeqCst);
     }
 
     pub fn set_error(&self, msg: String) {
+        self.ready.store(false, Ordering::SeqCst);
         if let Ok(mut g) = self.last_error.lock() {
             *g = Some(msg);
         }
     }
 
     pub fn kill(&self) {
+        self.ready.store(false, Ordering::SeqCst);
         if let Ok(mut g) = self.child.lock() {
             if let Some(mut c) = g.take() {
                 let _ = c.start_kill();
@@ -163,11 +166,25 @@ pub enum SidecarError {
     Timeout(u64),
     #[error("exe not found at {0}")]
     ExeNotFound(PathBuf),
+    #[error("{0}")]
+    Startup(String),
+}
+
+fn check_port(port: u16) -> Result<(), SidecarError> {
+    std::net::TcpListener::bind(("127.0.0.1", port))
+        .map(|listener| drop(listener))
+        .map_err(|e| SidecarError::Startup(format!(
+            "无法使用本地端口 {port}，请关闭其他图库窗口或占用该端口的程序后重试：{e}"
+        )))
 }
 
 /// spawn sidecar，等待 READY（或超时）
 pub async fn spawn(app: AppHandle, state: Arc<SidecarState>) -> Result<(), SidecarError> {
     let cfg = state.cfg.clone();
+    if let Err(e) = check_port(cfg.port) {
+        state.set_error(e.to_string());
+        return Err(e);
+    }
 
     if !cfg.exe_path.exists() {
         let _msg = format!(
@@ -195,9 +212,12 @@ pub async fn spawn(app: AppHandle, state: Arc<SidecarState>) -> Result<(), Sidec
         .env("SUXING_DATA_DIR", &cfg.data_dir)
         .env("SUXING_PARENT_PID", std::process::id().to_string())
         .env("SUXING_FRONTEND_ORIGIN", "tauri")
+        .env("PYTHONIOENCODING", "utf-8")
+        .env("PYTHONUNBUFFERED", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .stdin(Stdio::null());
+        .stdin(Stdio::null())
+        .kill_on_drop(true);
 
     // 隐藏 PyInstaller 控制台窗口（spec 仍 console=True 以保留 stdout pipe）
     #[cfg(windows)]
@@ -239,24 +259,86 @@ pub async fn spawn(app: AppHandle, state: Arc<SidecarState>) -> Result<(), Sidec
     });
 
     // task B：stderr，全部 warn
+    let stderr_tail = Arc::new(Mutex::new(String::new()));
+    let tail_writer = stderr_tail.clone();
     tauri::async_runtime::spawn(async move {
         let mut reader = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = reader.next_line().await {
             log::warn!("[sidecar:stderr] {line}");
+            if let Ok(mut tail) = tail_writer.lock() { *tail = line; }
         }
         log::warn!("[sidecar] stderr EOF");
+    });
+
+    // 进程提前退出时立即报告，并在 READY 后继续监控崩溃。
+    let monitor_state = state.clone();
+    let monitor_app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            let exited = {
+                let mut guard = monitor_state.child.lock().expect("child lock");
+                match guard.as_mut() {
+                    Some(child) => child.try_wait(),
+                    None => return,
+                }
+            };
+            let reason = match exited {
+                Ok(Some(code)) => Some(format!("后端进程已退出（{code}）：{}", stderr_tail.lock().unwrap())),
+                Err(e) => Some(format!("无法读取后端进程状态：{e}")),
+                Ok(None) => None,
+            };
+            if let Some(reason) = reason {
+                monitor_state.set_error(reason.clone());
+                emit_died(&monitor_app, &reason);
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
     });
 
     // 主动等 READY（带超时）
     let timeout_secs = 30u64;
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
     while std::time::Instant::now() < deadline {
+        if let Some(reason) = state.status().last_error {
+            return Err(SidecarError::Startup(reason));
+        }
         if state.ready.load(Ordering::SeqCst) {
             return Ok(());
         }
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
-    Err(SidecarError::Timeout(timeout_secs))
+    state.kill();
+    let error = SidecarError::Timeout(timeout_secs);
+    state.set_error(error.to_string());
+    Err(error)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn occupied_port_reports_conflict_without_waiting() {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let error = check_port(listener.local_addr().unwrap().port()).unwrap_err();
+        assert!(error.to_string().contains("端口"));
+    }
+
+    #[test]
+    fn failure_and_shutdown_clear_ready_state() {
+        let state = SidecarState::new(SidecarConfig {
+            exe_path: PathBuf::new(), port: 8765, data_dir: PathBuf::new(),
+        });
+        state.mark_ready();
+        state.set_error("exited".into());
+        assert!(!state.status().ready);
+        assert_eq!(state.status().last_error.as_deref(), Some("exited"));
+        state.mark_ready();
+        assert!(state.status().last_error.is_none());
+        state.kill();
+        assert!(!state.status().ready);
+    }
 }
 
 /// 向前端发 died 事件

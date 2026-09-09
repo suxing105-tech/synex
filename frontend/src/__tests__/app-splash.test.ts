@@ -1,9 +1,9 @@
-﻿import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve, dirname } from "node:path";
 
-// 回归测试：Tauri M0-f 黑屏修复（App.svelte 端 + SplashOverlay 组件拆分）。
+// 回归测试：Tauri M0-f 黑屏修复（App.svelte 端 + sidecar 生命周期 composable 拆分）。
 //
 // 根因：dist/assets/index-*.js 含 splash overlay（splash-overlay / splash-spinner
 // / splash-err / splash-hint / @keyframes splash-spin），但 frontend/src/App.svelte
@@ -11,11 +11,18 @@ import { resolve, dirname } from "node:path";
 // div 黑屏。详见 materials/29-tauri-m0-delivery.md §7.1 + 30。
 //
 // 本测试覆盖：
-// - App.svelte 端：sidecar 生命周期（backendReady / backendError / doInit / mark*
-//   / onMount 订阅 / 30s 超时 / onDestroy cleanup），并验证 splash 视觉已抽出
-//   到独立组件（不再内联模板 / 不再含 splash CSS），由 <SplashOverlay ready=... error=.../>
-//   替代。
-// - SplashOverlay.svelte 端：组件 Props 接口 + 模板 + CSS（见 splash-overlay.test.ts）。
+// - App.svelte 端：M0-f 第三轮把 sidecar 生命周期（backendReady / backendError /
+//   sidecar 订阅 / 30s 超时 / mark* / onDestroy cleanup）整体抽到
+//   lib/splash-gate.svelte.ts 的 createSplashGate()，App.svelte 只剩：
+//     - const gate = createSplashGate()
+//     - onMount 内 await gate.start(doInit)
+//     - onDestroy 内 gate.dispose()
+//     - <SplashOverlay ready={gate.ready} error={gate.error} />
+// - 反例：App.svelte 不应再 import ./lib/tauri 的 isTauri / onSidecarReady /
+//   onSidecarDied（防止直接调用绕过 gate），不应再含内联 splash 模板或
+//   @keyframes splash-spin。
+// - gate 行为（composable 端）见 splash-gate.test.ts。
+// - SplashOverlay.svelte 端：组件 Props 接口 + 模板 + CSS 见 splash-overlay.test.ts。
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appPath = resolve(here, "..", "App.svelte");
@@ -35,93 +42,117 @@ const afterScript = raw.slice(raw.indexOf("</script>") + "</script>".length);
 const templateSrc = beforeScript + afterScript;
 
 describe("App.svelte Tauri splash 防黑屏（M0-f）", () => {
-  describe("<script> 必须含后端就绪状态与启动流程", () => {
-    it("import isTauri / onSidecarReady / onSidecarDied from ./lib/tauri", () => {
+  describe("<script> 必须把 sidecar 生命周期交给 createSplashGate composable", () => {
+    it("import { createSplashGate } from ./lib/splash-gate.svelte", () => {
       expect(
-        /import\s*\{\s*isTauri\s*,\s*onSidecarReady\s*,\s*onSidecarDied\s*\}\s*from\s*"\.\/lib\/tauri"/.test(scriptSrc),
-        "App.svelte 必须 import { isTauri, onSidecarReady, onSidecarDied } from \"./lib/tauri\""
+        /import\s*\{\s*createSplashGate\s*\}\s*from\s*"\.\/lib\/splash-gate\.svelte"/.test(scriptSrc),
+        "App.svelte 必须 import { createSplashGate } from \"./lib/splash-gate.svelte\""
       ).toBe(true);
     });
 
-    it("声明 backendReady = $state(!isTauri())", () => {
+    it("声明 const gate = createSplashGate()", () => {
       expect(
-        /let\s+backendReady\s*=\s*\$state\(\s*!\s*isTauri\(\)\s*\)/.test(scriptSrc),
-        "App.svelte 必须有 `let backendReady = $state(!isTauri())` 控制 splash 显示"
+        /\bconst\s+gate\s*=\s*createSplashGate\s*\(\s*\)/.test(scriptSrc),
+        "App.svelte 必须有 `const gate = createSplashGate()` 持有 splash 状态"
       ).toBe(true);
     });
 
-    it("声明 backendError = $state(null)", () => {
-      expect(
-        /let\s+backendError[^=]*=\s*\$state\(\s*null\s*\)/.test(scriptSrc),
-        "App.svelte 必须有 `let backendError = $state(null)` 记录后端错误"
-      ).toBe(true);
-    });
-
-    it("声明 doInit()：原 onMount 内 init 逻辑抽出来", () => {
+    it("声明 doInit()：原 onMount 内 init 业务逻辑仍在 App.svelte", () => {
       expect(
         /\b(?:async\s+)?function\s+doInit\s*\(/.test(scriptSrc),
-        "App.svelte 必须有 `function doInit()` 封装原 onMount init 流程"
-      ).toBe(true);
-    });
-
-    it("声明 markBackendReady()：切 ready + 清 error + 调 doInit", () => {
-      expect(
-        /\bfunction\s+markBackendReady\s*\(/.test(scriptSrc),
-        "App.svelte 必须有 `function markBackendReady()`"
-      ).toBe(true);
-    });
-
-    it("声明 markBackendFailed(reason)：切错误卡", () => {
-      expect(
-        /\bfunction\s+markBackendFailed\s*\(\s*reason\s*:/.test(scriptSrc),
-        "App.svelte 必须有 `function markBackendFailed(reason: string)`"
+        "App.svelte 必须有 `function doInit()`（gate 只负责 splash 状态，业务 init 仍在 App.svelte）"
       ).toBe(true);
     });
   });
 
-  describe("onMount 必须订阅 sidecar 事件 + 30s 超时", () => {
-    it("onMount 内调用 onSidecarReady(...) 订阅 ready", () => {
+  describe("onMount 必须通过 gate 启动", () => {
+    it("onMount 内 await gate.start(doInit)", () => {
+      expect(
+        /\bawait\s+gate\.start\s*\(\s*doInit\s*\)/.test(scriptSrc),
+        "App.svelte onMount 必须 await gate.start(doInit)"
+      ).toBe(true);
+    });
+  });
+
+  describe("onDestroy 必须释放 gate 订阅", () => {
+    it("onDestroy 调用 gate.dispose()", () => {
+      expect(
+        /\bgate\.dispose\s*\(\s*\)/.test(scriptSrc),
+        "App.svelte onDestroy 必须调用 gate.dispose() 防泄漏"
+      ).toBe(true);
+    });
+  });
+
+  describe("模板用 <SplashOverlay gate.ready / gate.error>", () => {
+    it("App.svelte 模板用 <SplashOverlay ready={gate.ready} error={gate.error} />", () => {
+      expect(
+        /<SplashOverlay\s+ready=\{gate\.ready\}\s+error=\{gate\.error\}\s*\/>/.test(templateSrc),
+        "App.svelte 模板必须用 <SplashOverlay ready={gate.ready} error={gate.error} />（gate 暴露 ready/error getter）"
+      ).toBe(true);
+    });
+  });
+
+  describe("App.svelte 不应直接调用 sidecar 生命周期 API（绕过 gate）", () => {
+    it("App.svelte 不应 import { isTauri, onSidecarReady, onSidecarDied } from ./lib/tauri", () => {
+      expect(
+        /import\s*\{[^}]*\bisTauri\s*,\s*onSidecarReady\s*,\s*onSidecarDied\s*[^}]*\}\s*from\s*"\.\/lib\/tauri"/.test(scriptSrc),
+        "App.svelte 不应再 import isTauri/onSidecarReady/onSidecarDied（生命周期已归 gate，避免双份订阅）"
+      ).toBe(false);
+    });
+
+    it("App.svelte 不应再调用 onSidecarReady(...)", () => {
       expect(
         /\bonSidecarReady\s*\(/.test(scriptSrc),
-        "App.svelte onMount 必须调用 onSidecarReady(...) 等待后端就绪"
-      ).toBe(true);
+        "App.svelte 不应再直接调 onSidecarReady（已迁到 gate）"
+      ).toBe(false);
     });
 
-    it("onMount 内调用 onSidecarDied(...) 订阅 died", () => {
+    it("App.svelte 不应再调用 onSidecarDied(...)", () => {
       expect(
         /\bonSidecarDied\s*\(/.test(scriptSrc),
-        "App.svelte onMount 必须调用 onSidecarDied(...) 监听后端崩溃"
-      ).toBe(true);
+        "App.svelte 不应再直接调 onSidecarDied（已迁到 gate）"
+      ).toBe(false);
     });
 
-    it("onMount 内 setTimeout(..., 30000) 设置 30s 启动超时", () => {
+    it("App.svelte 不应再设 30s 启动超时 setTimeout(..., 30000)", () => {
       expect(
         /\bsetTimeout\s*\(\s*\(\s*\)\s*=>\s*\{[\s\S]*?\}\s*,\s*30000\s*\)/.test(scriptSrc),
-        "App.svelte onMount 必须 setTimeout(..., 30000) 30s 启动超时（防卡死）"
-      ).toBe(true);
+        "App.svelte 不应再 setTimeout(..., 30000)（30s 超时已迁到 gate）"
+      ).toBe(false);
     });
 
-    it("onMount 包含 `if (isTauri())` 分支", () => {
+    it("App.svelte 不应再声明 backendReady / backendError / sidecar*Unsub / backendBootTimeout", () => {
       expect(
-        /\bif\s*\(\s*isTauri\s*\(\s*\)\s*\)\s*\{/.test(scriptSrc),
-        "App.svelte onMount 必须 if (isTauri()) 区分 Tauri / 浏览器路径"
-      ).toBe(true);
+        /\b(?:let|const)\s+backendReady\b/.test(scriptSrc),
+        "App.svelte 不应再声明 backendReady（已迁到 gate）"
+      ).toBe(false);
+      expect(
+        /\b(?:let|const)\s+backendError\b/.test(scriptSrc),
+        "App.svelte 不应再声明 backendError（已迁到 gate）"
+      ).toBe(false);
+      expect(
+        /\b(?:let|const)\s+sidecarReadyUnsub\b/.test(scriptSrc),
+        "App.svelte 不应再声明 sidecarReadyUnsub（已迁到 gate）"
+      ).toBe(false);
+      expect(
+        /\b(?:let|const)\s+sidecarDiedUnsub\b/.test(scriptSrc),
+        "App.svelte 不应再声明 sidecarDiedUnsub（已迁到 gate）"
+      ).toBe(false);
+      expect(
+        /\b(?:let|const)\s+backendBootTimeout\b/.test(scriptSrc),
+        "App.svelte 不应再声明 backendBootTimeout（已迁到 gate）"
+      ).toBe(false);
     });
-  });
 
-  describe("onDestroy 必须释放 sidecar 监听", () => {
-    it("onDestroy 调用 sidecarReadyUnsub()", () => {
+    it("App.svelte 不应再定义 markBackendReady / markBackendFailed", () => {
       expect(
-        /\bif\s*\(\s*sidecarReadyUnsub\s*\)\s+sidecarReadyUnsub\s*\(/.test(scriptSrc),
-        "App.svelte onDestroy 必须调用 sidecarReadyUnsub() 防泄漏"
-      ).toBe(true);
-    });
-
-    it("onDestroy clearTimeout(backendBootTimeout)", () => {
+        /\bfunction\s+markBackendReady\s*\(/.test(scriptSrc),
+        "App.svelte 不应再定义 markBackendReady（已迁到 gate）"
+      ).toBe(false);
       expect(
-        /\bif\s*\(\s*backendBootTimeout\s*\)\s+clearTimeout\s*\(\s*backendBootTimeout\s*\)/.test(scriptSrc),
-        "App.svelte onDestroy 必须 clearTimeout(backendBootTimeout) 防泄漏"
-      ).toBe(true);
+        /\bfunction\s+markBackendFailed\s*\(/.test(scriptSrc),
+        "App.svelte 不应再定义 markBackendFailed（已迁到 gate）"
+      ).toBe(false);
     });
   });
 
@@ -133,15 +164,7 @@ describe("App.svelte Tauri splash 防黑屏（M0-f）", () => {
       ).toBe(true);
     });
 
-    it("App.svelte 模板用 <SplashOverlay ready={backendReady} error={backendError} />", () => {
-      expect(
-        /<SplashOverlay\s+ready=\{backendReady\}\s+error=\{backendError\}\s*\/>/.test(templateSrc),
-        "App.svelte 模板必须调 <SplashOverlay ready={backendReady} error={backendError} />"
-      ).toBe(true);
-    });
-
     it("App.svelte 不再内联 splash overlay 模板（防止重复渲染）", () => {
-      // 反例：模板不应再含 class="splash-overlay" 内联 div，否则会双重渲染
       expect(
         /class="splash-overlay"/.test(templateSrc),
         "App.svelte 模板不应再内联 splash-overlay div（已抽到 SplashOverlay 组件）"
@@ -149,7 +172,6 @@ describe("App.svelte Tauri splash 防黑屏（M0-f）", () => {
     });
 
     it("App.svelte 不再含 splash CSS（防止样式散落两处）", () => {
-      // 反例：<style> 内不应再含 splash-* 规则
       expect(
         /@keyframes\s+splash-spin/.test(raw),
         "App.svelte 不应再含 @keyframes splash-spin（已抽到 SplashOverlay 组件）"

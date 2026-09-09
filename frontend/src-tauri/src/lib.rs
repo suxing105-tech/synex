@@ -23,7 +23,8 @@ pub fn run() {
             let handle = app.handle().clone();
             let state_for_task = state.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = sidecar::spawn(handle.clone(), state_for_task).await {
+                if let Err(e) = sidecar::spawn(handle.clone(), state_for_task.clone()).await {
+                    state_for_task.set_error(e.to_string());
                     log::error!("[sidecar] spawn failed: {e}");
                     sidecar::emit_died(&handle, &format!("spawn failed: {e}"));
                 }

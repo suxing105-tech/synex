@@ -24,7 +24,7 @@
 {#if !ready}
   <div class="splash-overlay" role="alert" aria-live="polite">
     <div class="splash-card">
-      <div class="splash-logo">苏醒图库</div>
+      <div class="splash-logo"><img src="/logo.png" alt="" width="32" height="32" />苏醒图库</div>
       {#if error}
         <div class="splash-err">后端进程异常：{error}</div>
         <div class="splash-hint">
@@ -62,6 +62,9 @@
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   }
   .splash-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     font-size: 22px;
     font-weight: 600;
     letter-spacing: 0.04em;

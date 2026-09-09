@@ -64,7 +64,7 @@ describe("SplashOverlay.svelte 视觉组件（M0-f 拆分）", () => {
       expect(/class="splash-card"/.test(templateSrc)).toBe(true);
       expect(/class="splash-logo"/.test(templateSrc)).toBe(true);
       // logo 文案
-      expect(/<div class="splash-logo">苏醒图库<\/div>/.test(templateSrc)).toBe(true);
+      expect(/<div class="splash-logo"><img src="\/logo.png" alt="" width="32" height="32" \/>苏醒图库<\/div>/.test(templateSrc)).toBe(true);
     });
 
     it("默认（无 error）显示 splash-spinner + splash-hint", () => {

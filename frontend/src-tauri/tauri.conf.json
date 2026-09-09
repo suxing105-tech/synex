@@ -13,6 +13,8 @@
     "windows": [
       {
         "title": "苏醒图库",
+        "theme": "Dark",
+        "backgroundColor": "#18181b",
         "label": "main",
         "width": 1280,
         "height": 800,

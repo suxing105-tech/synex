@@ -1,0 +1,1 @@
+PASS: plan facts match current versions, installer mode, app identity, plugins, port and source files. Documentation validation only.

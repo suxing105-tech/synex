@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from "svelte";
   import { connectEvents, disconnectEvents } from "./lib/ws";
   import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, comfyuiEnabled, feedItems, tag, folderId, query, view, selectedDetail } from "./lib/stores";
+  import { isTauri, onSidecarReady, onSidecarDied } from "./lib/tauri";
   import HeaderBar from "./components/HeaderBar.svelte";
   import FolderTree from "./components/FolderTree.svelte";
   import Feed from "./components/Feed.svelte";
@@ -67,7 +68,23 @@
     tag.set(t);
   }
 
-  onMount(async () => {
+  // ============ 后端就绪状态（Tauri sidecar 生命周期） ============
+  // M0-f 修复：dist 产物的 App.svelte 含 splash overlay 但源码此前没有，
+  // 下次 cargo tauri build 后必再次黑屏。把 splash 落到源码以确保 prod 可见。
+  // - isTauri()：浏览器 dev / 静态托管为 false；Tauri WebView2 为 true。
+  // - 浏览器路径直接 await doInit()（vite proxy / FastAPI 已在 8765）；
+  // - Tauri 路径订阅 Rust 端 sidecar-ready / sidecar-died 事件，
+  //   等到后端真正 READY 才允许主 UI 渲染，避免 #app 空 div 黑屏。
+  let backendReady = $state(!isTauri());
+  let backendError: string | null = $state(null);
+  let initStarted = false;
+  let sidecarReadyUnsub: (() => void) | null = null;
+  let sidecarDiedUnsub: (() => void) | null = null;
+  let backendBootTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  async function doInit() {
+    if (initStarted) return;
+    initStarted = true;
     try {
       await Promise.all([refreshFolders(), refreshStats(), refreshFeed()]);
       const cfg = await settingsApi.get();
@@ -78,7 +95,44 @@
       console.error("init failed", e);
     }
     connectEvents();
-    // 启动一次 ComfyUI 探测；之后每 30s 轮询 + 切回标签页时立刻探
+  }
+
+  function markBackendReady() {
+    backendReady = true;
+    backendError = null;
+    if (backendBootTimeout) {
+      clearTimeout(backendBootTimeout);
+      backendBootTimeout = null;
+    }
+    void doInit();
+  }
+
+  function markBackendFailed(reason: string) {
+    backendReady = false;
+    backendError = reason;
+    if (backendBootTimeout) {
+      clearTimeout(backendBootTimeout);
+      backendBootTimeout = null;
+    }
+  }
+
+  onMount(async () => {
+    if (isTauri()) {
+      // Tauri 路径：等 Rust 端的 sidecar-ready 事件，否则一直显示 splash。
+      // 30s 超时切错误卡（一般 1~2s 就能 ready；30s 留给冷启动 / 防卡死）。
+      sidecarReadyUnsub = await onSidecarReady(() => markBackendReady());
+      sidecarDiedUnsub = await onSidecarDied((p) => {
+        markBackendFailed(p?.reason || "sidecar died");
+      });
+      backendBootTimeout = setTimeout(() => {
+        if (!backendReady) {
+          markBackendFailed(backendError || "后端进程启动超时（30s）");
+        }
+      }, 30000);
+      return;
+    }
+    // 浏览器 dev / 静态托管：直接 init（vite proxy / FastAPI 已在 8765）
+    await doInit();
     await refreshComfyuiStatus();
     comfyuiTimer = setInterval(refreshComfyuiStatus, 30000);
     const onVis = () => {
@@ -92,6 +146,9 @@
   });
 
   onDestroy(() => {
+    if (sidecarReadyUnsub) sidecarReadyUnsub();
+    if (sidecarDiedUnsub) sidecarDiedUnsub();
+    if (backendBootTimeout) clearTimeout(backendBootTimeout);
     disconnectEvents();
     if (comfyuiTimer) clearInterval(comfyuiTimer);
     window.removeEventListener("open-lightbox", handleOpenLightbox);
@@ -194,6 +251,21 @@
 <SettingsModal bind:open={settingsOpen} />
 <Toast />
 
+{#if !backendReady}
+  <div class="splash-overlay" role="alert" aria-live="polite">
+    <div class="splash-card">
+      <div class="splash-logo">苏醒图库</div>
+      {#if backendError}
+        <div class="splash-err">后端进程异常：{backendError}</div>
+        <div class="splash-hint">请关闭应用并重试；若反复失败，运行 <code>build-sidecar.ps1</code> 重建 sidecar 后再启。</div>
+      {:else}
+        <div class="splash-spinner"></div>
+        <div class="splash-hint">正在启动后端进程…</div>
+      {/if}
+    </div>
+  </div>
+{/if}
+
 <style>
   .splitter {
     cursor: col-resize;
@@ -244,6 +316,66 @@
       grid-template-columns: 220px 1fr 6px 320px !important;
     }
   }
+  .splash-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #18181b;
+    color: #fafafa;
+  }
+  .splash-card {
+    background: #2e2e33;
+    border: 1px solid #27272a;
+    border-radius: 12px;
+    padding: 32px 40px;
+    min-width: 320px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  }
+  .splash-logo {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: #f24e4e;
+  }
+  .splash-spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid #27272a;
+    border-top-color: #f24e4e;
+    border-radius: 50%;
+    animation: splash-spin 0.9s linear infinite;
+  }
+  .splash-hint {
+    font-size: 12px;
+    color: #8a8a8e;
+    text-align: center;
+    line-height: 1.5;
+  }
+  .splash-hint code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    background: #18181b;
+    padding: 1px 6px;
+    border-radius: 4px;
+    color: #fb7185;
+  }
+  .splash-err {
+    font-size: 13px;
+    color: #fb7185;
+    text-align: center;
+    font-weight: 500;
+  }
+  @keyframes splash-spin {
+    to { transform: rotate(360deg); }
+  }
+
 </style>
 
 

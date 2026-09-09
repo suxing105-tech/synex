@@ -1,13 +1,14 @@
 param(
     [string]$SigningKeyPath,
-    [string]$ReleaseNotes
+    [string]$ReleaseNotes,
+    [string]$OutputDirectory
 )
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 $RepoRoot = (Resolve-Path "$PSScriptRoot/../..").Path
-$OutputDir = Join-Path $RepoRoot "outputs/auto-update-v1"
+$OutputDir = if ($OutputDirectory) { [System.IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $RepoRoot "outputs/auto-update-v1" }
 $Python = Join-Path $RepoRoot "backend/.venv/Scripts/python.exe"
-if (!$SigningKeyPath) { $SigningKeyPath = Join-Path $OutputDir "private/updater.key" }
+if (!$SigningKeyPath) { $SigningKeyPath = Join-Path $RepoRoot "outputs/auto-update-v1/private/updater.key" }
 if (!$ReleaseNotes) { $ReleaseNotes = Join-Path $OutputDir "release-notes.md" }
 if (!(Test-Path -LiteralPath $SigningKeyPath)) { throw "缺少更新签名私钥，不能构建发布包。" }
 if (!(Test-Path -LiteralPath $ReleaseNotes)) { throw "缺少版本说明。" }

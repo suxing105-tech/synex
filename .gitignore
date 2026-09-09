@@ -67,3 +67,9 @@ outputs/auto-update-v1/sidecar/
 outputs/auto-update-v1/app/
 outputs/auto-update-v1/*.exe
 outputs/auto-update-v1/*.sig
+outputs/folder-picker-v1/build/
+outputs/folder-picker-v1/sidecar/
+outputs/folder-picker-v1/app/
+outputs/folder-picker-v1/test-data/
+outputs/folder-picker-v1/*.exe
+outputs/folder-picker-v1/*.sig

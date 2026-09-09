@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import logging
 import os
@@ -85,8 +86,10 @@ class Indexer:
         return self._cfg
 
     def update_config(self, **kwargs: object) -> Config:
-        self._cfg.update(**kwargs)
-        save_config(self._cfg)
+        updated = copy.deepcopy(self._cfg)
+        updated.update(**kwargs)
+        save_config(updated)
+        self._cfg = updated
         if "watch_dirs" in kwargs:
             self._watch_roots = [Path(d) for d in self._cfg.watch_dirs]
         if "scan_workers" in kwargs:
@@ -295,9 +298,16 @@ class Indexer:
             return self.get_progress()
         self._set_progress(running=True, scanned=0, indexed=0, total=0, error=None)
         all_files: list[Path] = []
-        for p in root.rglob("*"):
-            if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS:
-                all_files.append(p)
+        failures = 0
+        def walk_error(error):
+            nonlocal failures
+            failures += 1
+            log.warning("scan directory unreadable: %s", error)
+        for directory, _, files in os.walk(root, onerror=walk_error, followlinks=False):
+            for name in files:
+                p = Path(directory) / name
+                if p.suffix.lower() in SUPPORTED_EXTS:
+                    all_files.append(p)
         total = len(all_files)
         self._set_progress(total=total)
         indexed = 0
@@ -320,14 +330,32 @@ class Indexer:
                         except RuntimeError:
                             pass
             except Exception as e:
+                failures += 1
                 log.warning("scan item failed: %s", e)
             self._set_progress(scanned=scanned, indexed=indexed, current_path=str(all_files[scanned - 1]) if scanned else "")
         elapsed = time.time() - t0
         log.info("scan finished: %d files in %.1fs", total, elapsed)
-        self._set_progress(running=False, current_path="")
+        self._set_progress(running=False, current_path="", error=f"有 {failures} 个文件或子目录未能读取，请检查权限或文件内容后重试" if failures else None)
         return self.get_progress()
 
     # ----- 监听 -----
+
+    async def watch_added_directory(self, target: Path) -> None:
+        if not self._cfg.live_enabled:
+            return
+        if self._observer is None:
+            await self.start_watching(asyncio.get_running_loop())
+            return
+        # 已被父目录递归监听覆盖时，不再增加重复监听。
+        normalized = os.path.normcase(str(target.resolve()))
+        for watched in self._watched_dirs:
+            try:
+                Path(normalized).relative_to(os.path.normcase(str(Path(watched).resolve())))
+                return
+            except ValueError:
+                pass
+        self._observer.schedule(_Handler(self), str(target), recursive=True)
+        self._watched_dirs.add(str(target))
 
     async def start_watching(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop

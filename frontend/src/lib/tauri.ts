@@ -22,6 +22,12 @@ export function isTauri(): boolean {
   return typeof window !== "undefined" && !!(window as any).__TAURI__;
 }
 
+/** 原生单目录选择；取消返回 null，不触发保存或扫描。 */
+export async function selectImportDirectory(current = "", previous = ""): Promise<string | null> {
+  if (!isTauri()) throw new Error("文件夹选择仅在桌面版提供，请手动输入后台电脑上的路径");
+  return (window as any).__TAURI__.core.invoke("select_import_directory", { current, previous });
+}
+
 /**
  * 读取 sidecar 当前状态（同步 invoke）。
  * Tauri 不可用时返回 null。

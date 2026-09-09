@@ -1,8 +1,10 @@
 import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { svelteTesting } from "@testing-library/svelte/vite";
 
 export default defineConfig({
-  plugins: [svelte()],
+  plugins: [svelte(), svelteTesting()],
+  resolve: process.env.VITEST ? { conditions: ["browser"] } : {},
   server: {
     port: 5173,
     // 显式绑 127.0.0.1，避免 Windows IPv6 优先时部分浏览器/工具走 127.0.0.1 连不上。

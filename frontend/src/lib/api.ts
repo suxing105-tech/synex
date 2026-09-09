@@ -32,7 +32,9 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
       /* ignore */
     }
     const url = (init && (init as any).method) ? `${(init as any).method} ${path}` : path;
-    throw new Error(`${url} → ${res.status}${body ? `: ${body}` : ""}`);
+    let detail: string | undefined;
+    try { const parsed = JSON.parse(body); if (typeof parsed.detail === "string") detail = parsed.detail; } catch { /* 非 JSON 错误保留在诊断信息中 */ }
+    throw Object.assign(new Error(`${url} → ${res.status}${body ? `: ${body}` : ""}`), { detail });
   }
   if (res.headers.get("content-type")?.includes("text/html")) {
     throw new Error("接口返回了网页，未连接到图库后端。请更新桌面版后重试。");
@@ -167,6 +169,12 @@ export const settingsApi = {
 };
 
 export const scanApi = {
+  importDirectory(path: string): Promise<{ ok: boolean; path: string }> {
+    return http("/api/directories/import", { method: "POST", body: JSON.stringify({ path }) });
+  },
+  validateDirectory(path: string): Promise<{ path: string }> {
+    return http("/api/directories/validate", { method: "POST", body: JSON.stringify({ path }) });
+  },
   start(path?: string): Promise<{ ok: boolean; target: string }> {
     return http("/api/scan", {
       method: "POST",

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tauri::Manager;
 
 mod commands;
+mod folders;
 mod sidecar;
 mod updates;
 
@@ -24,6 +25,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             app.manage(updates::Updates::new(app.handle())?);
             let cfg = SidecarConfig::from_app(app.handle())?;
@@ -48,6 +50,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_sidecar_status,
+            folders::select_import_directory,
             commands::restart_sidecar,
             updates::get_update_status,
             updates::set_update_automatic,

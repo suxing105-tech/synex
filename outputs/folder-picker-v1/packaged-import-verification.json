@@ -1,0 +1,12 @@
+{
+  "version": "0.2.1",
+  "chinese_path": true,
+  "recursive_import": true,
+  "existing_directories_preserved": true,
+  "deduplicated": true,
+  "new_and_existing_live_watch": true,
+  "validation_without_writes": true,
+  "invalid_path_rejected": true,
+  "update_freeze_compatible": true,
+  "shutdown_and_port_release": true
+}

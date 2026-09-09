@@ -1,0 +1,11 @@
+{
+  "version": "0.2.1",
+  "notes": "苏醒图库 v0.2.1\n\n- 导入窗口新增「选择文件夹」，使用 Windows 系统目录选择窗口；仍可手动输入路径。\n- 选择取消时保留原路径，选择完成后点击「开始导入」才保存和扫描。\n- 导入前检查目录；新增监听目录会保留已有目录，并按规范化路径去重。\n- 新增目录立即接入 Live 监听，无需重启图库。\n- 导入错误直接显示在窗口内；空目录及部分内容无法读取时给出明确提示。\n- 导入期间防止重复提交，兼容更新前的数据保护。\n",
+  "pub_date": "2026-09-09T09:22:11.827206+00:00",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUUWorKy9HbWRFSlVGekVuNWEwL3dadkxWVXBzRHg5WjJzWE10Uk5EbWVsZFVRL3lTUG8vOTFzTGdNdm5tSTE5VTRVZWM0SWNkdUUvWmJsOVpJVldhN2tocFJHeTlZOVE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4OTQ1NzMxCWZpbGU66IuP6YaS5Zu+5bqTXzAuMi4xX3g2NC1zZXR1cC5leGUKTVl2RFR1R0lLQnJnWUlrTHprVEc1bDByWUxCb2RIcHU5N0l6bmFxNTRIQi9TU0F2dkdyTmtYVVFWWGI5V0dXT1N2Q0FiZUFUOGxOcnJtT2xDWUxiQ3c9PQo=",
+      "url": "https://github.com/suxing105-tech/synex/releases/download/v0.2.1/%E8%8B%8F%E9%86%92%E5%9B%BE%E5%BA%93_0.2.1_x64-setup.exe"
+    }
+  }
+}

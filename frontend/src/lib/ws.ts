@@ -1,12 +1,13 @@
 import { feedItems, feedTotal, markNew, refreshFolders, refreshFeed, refreshScanProgress, refreshStats } from "./stores";
 
+import { eventsUrl } from "./backend-url";
+
 let socket: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function connectEvents() {
   if (socket && socket.readyState <= 1) return;
-  const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const url = `${proto}//${location.host}/ws/events`;
+  const url = eventsUrl();
   const ws = new WebSocket(url);
   socket = ws;
   ws.onmessage = async (ev) => {

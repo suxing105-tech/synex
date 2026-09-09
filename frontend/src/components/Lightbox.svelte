@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { backendUrl } from "../lib/backend-url";
   import { feedItems, refreshFeed, refreshStats } from "../lib/stores";
   import { imagesApi } from "../lib/api";
   import { copyText, formatDate, formatSize } from "../lib/ws";
@@ -247,7 +248,7 @@
   });
 
   async function fetchBlob(it: any): Promise<Blob | null> {
-    const url = it.original_url ?? `/api/images/${it.id}/file`;
+    const url = backendUrl(it.original_url ?? `/api/images/${it.id}/file`);
     try {
       const r = await fetch(url, { cache: "no-cache" });
       if (!r.ok) return null;
@@ -259,7 +260,7 @@
 
   async function copyImage(it: any) {
     if (!navigator.clipboard || typeof ClipboardItem === "undefined") {
-      const ok = await copyText(it.original_url ?? `/api/images/${it.id}/file`);
+      const ok = await copyText(backendUrl(it.original_url ?? `/api/images/${it.id}/file`));
       notify(ok ? "已复制图片地址（剪贴板不支持图片）" : "复制失败");
       return;
     }
@@ -269,7 +270,7 @@
       await navigator.clipboard.write([new ClipboardItem({ [blob.type || "image/png"]: blob })]);
       notify("已复制图片到剪贴板");
     } catch {
-      const ok = await copyText(it.original_url ?? `/api/images/${it.id}/file`);
+      const ok = await copyText(backendUrl(it.original_url ?? `/api/images/${it.id}/file`));
       notify(ok ? "已复制图片地址" : "复制失败");
     }
   }
@@ -316,7 +317,7 @@
     if (open) {
       const it = $feedItems[index];
       if (it) {
-        originalUrl = `/api/images/${it.id}/file`;
+        originalUrl = backendUrl(`/api/images/${it.id}/file`);
         selectedId = it.id;
       }
     }

@@ -10,12 +10,9 @@ describe("comfyuiApi", () => {
   });
 
   function jsonResponse(body: unknown, status = 200) {
-    return {
-      ok: true,
-      status,
-      text: async () => JSON.stringify(body),
-      json: async () => body,
-    } as unknown as Response;
+    return new Response(JSON.stringify(body), {
+      status, headers: { "Content-Type": "application/json" },
+    });
   }
 
   it("status() → GET /api/integrations/comfyui/status", async () => {

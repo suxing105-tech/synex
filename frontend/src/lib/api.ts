@@ -1,3 +1,4 @@
+import { backendUrl } from "./backend-url";
 import type {
   ComfyuiConfigUpdate,
   ComfyuiStatus,
@@ -19,9 +20,9 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = isFormData
     ? { ...(init?.headers || {}) }
     : { "Content-Type": "application/json", ...(init?.headers || {}) };
-  const res = await fetch(path, {
-    headers,
+  const res = await fetch(backendUrl(path), {
     ...init,
+    headers,
   });
   if (!res.ok) {
     let body = "";
@@ -32,6 +33,9 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
     }
     const url = (init && (init as any).method) ? `${(init as any).method} ${path}` : path;
     throw new Error(`${url} → ${res.status}${body ? `: ${body}` : ""}`);
+  }
+  if (res.headers.get("content-type")?.includes("text/html")) {
+    throw new Error("接口返回了网页，未连接到图库后端。请更新桌面版后重试。");
   }
   return res.json() as Promise<T>;
 }

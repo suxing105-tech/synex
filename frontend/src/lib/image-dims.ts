@@ -1,3 +1,4 @@
+import { backendUrl } from "./backend-url";
 // 拿到图片「视觉」尺寸（已应用 EXIF 旋转）。
 //
 // 为什么需要这个：
@@ -26,7 +27,7 @@ export async function getOrientedImageSize(
     return fallback ?? { w: 0, h: 0 };
   }
   try {
-    const resp = await fetch(url, { cache: "force-cache" });
+    const resp = await fetch(backendUrl(url), { cache: "force-cache" });
     if (!resp.ok) return fallback ?? { w: 0, h: 0 };
     const blob = await resp.blob();
     // imageOrientation: "from-image" 让 createImageBitmap 按 EXIF 旋转，返回的 bitmap

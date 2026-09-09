@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { backendUrl } from "../lib/backend-url";
   import { folders, folderId, view, stats } from "../lib/stores";
   import Icon from "./Icon.svelte";
   import type { FolderNode } from "../lib/types";
@@ -82,7 +83,7 @@
   async function revealSystemFolder(_path: string | null | undefined, folderId: number) {
     // 后端 /api/folders/{id}/reveal 会调 explorer / xdg-open / open 打开目录
     try {
-      await fetch(`/api/folders/${folderId}/reveal`, { method: "POST" });
+      await fetch(backendUrl(`/api/folders/${folderId}/reveal`), { method: "POST" });
     } catch {
       /* ignore */
     }

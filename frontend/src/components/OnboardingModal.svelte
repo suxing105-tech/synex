@@ -19,7 +19,7 @@
       await settingsApi.update({ watch_dirs: [path.trim()] });
     } catch (e) {
       console.error("[import] PUT /api/settings failed:", e);
-      alert(`保存监听目录失败（${(e as Error).message}）\n请检查 uvicorn 是否在 8000 端口运行。`);
+      alert(`保存监听目录失败（${(e as Error).message}）\n请确认图库已正常启动后重试。`);
       submitting = false;
       return;
     }

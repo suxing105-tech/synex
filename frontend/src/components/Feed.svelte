@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { backendUrl } from "../lib/backend-url";
   import {
     feedItems, feedTotal, feedLoading, refreshFeed, refreshStats,
     targetColumns, activeFolderName, newIds,
@@ -262,7 +263,7 @@
   });
 
   async function fetchImageBlob(it: ImageSummary): Promise<Blob | null> {
-    const url = it.original_url ?? `/api/images/${it.id}/file`;
+    const url = backendUrl(it.original_url ?? `/api/images/${it.id}/file`);
     try {
       const resp = await fetch(url, { cache: "no-cache" });
       if (!resp.ok) return null;
@@ -275,7 +276,7 @@
   async function copyImageToClipboard(it: ImageSummary) {
     if (!navigator.clipboard || typeof ClipboardItem === "undefined") {
       // 退化方案：复制原图 URL
-      const ok = await copyText(it.original_url ?? `/api/images/${it.id}/file`);
+      const ok = await copyText(backendUrl(it.original_url ?? `/api/images/${it.id}/file`));
       notify(ok ? "已复制图片地址（剪贴板不支持图片）" : "复制失败");
       return;
     }
@@ -288,7 +289,7 @@
       await navigator.clipboard.write([new ClipboardItem({ [blob.type || "image/png"]: blob })]);
       notify("已复制图片到剪贴板");
     } catch (e) {
-      const ok = await copyText(it.original_url ?? `/api/images/${it.id}/file`);
+      const ok = await copyText(backendUrl(it.original_url ?? `/api/images/${it.id}/file`));
       notify(ok ? "已复制图片地址" : "复制失败");
     }
   }
@@ -367,7 +368,7 @@
   // 批量复制图片地址（多张时降级为 URL 文本）。
   // 浏览器 Clipboard 一次只能写一张 ClipboardItem（图片），多张只能合并成 text。
   async function copyImageUrls(items: ImageSummary[]) {
-    const urls = items.map((it) => it.original_url ?? `/api/images/${it.id}/file`);
+    const urls = items.map((it) => backendUrl(it.original_url ?? `/api/images/${it.id}/file`));
     const text = urls.join("\n");
     const ok = await copyText(text);
     notify(ok ? `已复制 ${items.length} 个图片地址` : "复制失败");
@@ -625,7 +626,7 @@
                 onmouseleave={() => { if (hoveredId === it.id) hoveredId = null; }}
               >
                 <img
-                  src={it.original_url}
+                  src={it.original_url ? backendUrl(it.original_url) : undefined}
                   alt={it.filename}
                   loading="lazy"
                   decoding="async"

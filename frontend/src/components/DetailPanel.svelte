@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { backendUrl } from "../lib/backend-url";
   /**
    * 详情面板（重写版）。
    *
@@ -162,7 +163,7 @@
   function thumbUrl(d: ImageDetail): string | null {
     if (!d.original_url) return null;
     const sep = d.original_url.includes("?") ? "&" : "?";
-    return `${d.original_url}${sep}max=256`;
+    return backendUrl(`${d.original_url}${sep}max=256`);
   }
 
   function openLightbox(d: ImageDetail) {

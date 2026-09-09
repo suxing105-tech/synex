@@ -11,6 +11,7 @@
   import OnboardingModal from "./components/OnboardingModal.svelte";
   import SettingsModal from "./components/SettingsModal.svelte";
   import ScanProgressBar from "./components/ScanProgressBar.svelte";
+  import SplashOverlay from "./components/SplashOverlay.svelte";
   import Toast from "./components/Toast.svelte";
   import { statsApi, settingsApi, comfyuiApi } from "./lib/api";
 
@@ -251,20 +252,7 @@
 <SettingsModal bind:open={settingsOpen} />
 <Toast />
 
-{#if !backendReady}
-  <div class="splash-overlay" role="alert" aria-live="polite">
-    <div class="splash-card">
-      <div class="splash-logo">苏醒图库</div>
-      {#if backendError}
-        <div class="splash-err">后端进程异常：{backendError}</div>
-        <div class="splash-hint">请关闭应用并重试；若反复失败，运行 <code>build-sidecar.ps1</code> 重建 sidecar 后再启。</div>
-      {:else}
-        <div class="splash-spinner"></div>
-        <div class="splash-hint">正在启动后端进程…</div>
-      {/if}
-    </div>
-  </div>
-{/if}
+<SplashOverlay ready={backendReady} error={backendError} />
 
 <style>
   .splitter {
@@ -315,65 +303,6 @@
     .app-grid {
       grid-template-columns: 220px 1fr 6px 320px !important;
     }
-  }
-  .splash-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 80;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #18181b;
-    color: #fafafa;
-  }
-  .splash-card {
-    background: #2e2e33;
-    border: 1px solid #27272a;
-    border-radius: 12px;
-    padding: 32px 40px;
-    min-width: 320px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 16px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  }
-  .splash-logo {
-    font-size: 22px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    color: #f24e4e;
-  }
-  .splash-spinner {
-    width: 28px;
-    height: 28px;
-    border: 3px solid #27272a;
-    border-top-color: #f24e4e;
-    border-radius: 50%;
-    animation: splash-spin 0.9s linear infinite;
-  }
-  .splash-hint {
-    font-size: 12px;
-    color: #8a8a8e;
-    text-align: center;
-    line-height: 1.5;
-  }
-  .splash-hint code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 11px;
-    background: #18181b;
-    padding: 1px 6px;
-    border-radius: 4px;
-    color: #fb7185;
-  }
-  .splash-err {
-    font-size: 13px;
-    color: #fb7185;
-    text-align: center;
-    font-weight: 500;
-  }
-  @keyframes splash-spin {
-    to { transform: rotate(360deg); }
   }
 
 </style>

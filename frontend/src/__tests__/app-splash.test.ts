@@ -1,17 +1,21 @@
-import { describe, it, expect } from "vitest";
+﻿import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve, dirname } from "node:path";
 
-// 回归测试：Tauri M0-f 黑屏修复。
+// 回归测试：Tauri M0-f 黑屏修复（App.svelte 端 + SplashOverlay 组件拆分）。
 //
 // 根因：dist/assets/index-*.js 含 splash overlay（splash-overlay / splash-spinner
 // / splash-err / splash-hint / @keyframes splash-spin），但 frontend/src/App.svelte
 // 源码没有这些代码。下次 cargo tauri build 会重新打包，导致 prod 一直 #app 空
 // div 黑屏。详见 materials/29-tauri-m0-delivery.md §7.1 + 30。
 //
-// 本测试用静态扫描锁住以下关键标识符必须在 App.svelte 里存在，防止后续 PR
-// 不小心把这些代码删掉 / 漏合并。
+// 本测试覆盖：
+// - App.svelte 端：sidecar 生命周期（backendReady / backendError / doInit / mark*
+//   / onMount 订阅 / 30s 超时 / onDestroy cleanup），并验证 splash 视觉已抽出
+//   到独立组件（不再内联模板 / 不再含 splash CSS），由 <SplashOverlay ready=... error=.../>
+//   替代。
+// - SplashOverlay.svelte 端：组件 Props 接口 + 模板 + CSS（见 splash-overlay.test.ts）。
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appPath = resolve(here, "..", "App.svelte");
@@ -73,11 +77,10 @@ describe("App.svelte Tauri splash 防黑屏（M0-f）", () => {
         "App.svelte 必须有 `function markBackendFailed(reason: string)`"
       ).toBe(true);
     });
-});
+  });
 
   describe("onMount 必须订阅 sidecar 事件 + 30s 超时", () => {
     it("onMount 内调用 onSidecarReady(...) 订阅 ready", () => {
-      // 匹配 onSidecarReady( 的调用（不论参数）
       expect(
         /\bonSidecarReady\s*\(/.test(scriptSrc),
         "App.svelte onMount 必须调用 onSidecarReady(...) 等待后端就绪"
@@ -122,69 +125,35 @@ describe("App.svelte Tauri splash 防黑屏（M0-f）", () => {
     });
   });
 
-  describe("模板必须含 splash overlay", () => {
-    it("模板 `{#if !backendReady}` 守卫", () => {
+  describe("splash 视觉层已抽到 SplashOverlay 组件（不再内联）", () => {
+    it("App.svelte import SplashOverlay from ./components/SplashOverlay.svelte", () => {
       expect(
-        /\{\s*#if\s+!\s*backendReady\s*\}/.test(templateSrc),
-        "App.svelte 模板必须有 {#if !backendReady} 守卫，后端未就绪时显示 splash"
+        /import\s+SplashOverlay\s+from\s+"\.\/components\/SplashOverlay\.svelte"/.test(scriptSrc),
+        "App.svelte 必须 import SplashOverlay from ./components/SplashOverlay.svelte"
       ).toBe(true);
     });
 
-    it("模板含 splash-overlay / splash-card / splash-logo", () => {
-      expect(/class="splash-overlay"/.test(templateSrc)).toBe(true);
-      expect(/class="splash-card"/.test(templateSrc)).toBe(true);
-      expect(/class="splash-logo"/.test(templateSrc)).toBe(true);
-    });
-
-    it("模板含 splash-spinner / splash-hint / splash-err", () => {
-      expect(/class="splash-spinner"/.test(templateSrc)).toBe(true);
-      expect(/class="splash-hint"/.test(templateSrc)).toBe(true);
-      expect(/class="splash-err"/.test(templateSrc)).toBe(true);
-    });
-
-    it("splash-err 提示包含 build-sidecar.ps1 关键字", () => {
-      // 用户提示：反复失败时建议运行 build-sidecar.ps1 重建
-      expect(/build-sidecar\.ps1/.test(templateSrc)).toBe(true);
-    });
-  });
-
-  describe("<style> 必须含 splash CSS + keyframes", () => {
-    const styleSrc = extractBlock(raw, "<style>", "</style>");
-
-    it(".splash-overlay / .splash-card / .splash-logo / .splash-spinner / .splash-hint / .splash-err CSS", () => {
-      for (const cls of [
-        ".splash-overlay",
-        ".splash-card",
-        ".splash-logo",
-        ".splash-spinner",
-        ".splash-hint",
-        ".splash-err",
-      ]) {
-        expect(
-          styleSrc.includes(cls),
-          "App.svelte <style> 缺 " + cls + " CSS"
-        ).toBe(true);
-      }
-    });
-
-    it("@keyframes splash-spin 旋转动画", () => {
+    it("App.svelte 模板用 <SplashOverlay ready={backendReady} error={backendError} />", () => {
       expect(
-        /@keyframes\s+splash-spin\b/.test(styleSrc),
-        "App.svelte <style> 必须有 @keyframes splash-spin 旋转动画"
+        /<SplashOverlay\s+ready=\{backendReady\}\s+error=\{backendError\}\s*\/>/.test(templateSrc),
+        "App.svelte 模板必须调 <SplashOverlay ready={backendReady} error={backendError} />"
       ).toBe(true);
     });
-  });
 
-  describe("反例：splash 不要混进模板根节点（应独立 {#if}）", () => {
-    it("splash-overlay 不应该被 bind / 直接挂在 <div class=\"h-screen\"> 根上", () => {
-      // splash-overlay 必须出现在顶层 {#if !backendReady} 守卫中，单独渲染
-      // 不应嵌入在主 grid 容器内（避免覆盖 z-index 计算错误）
-      const splashIdx = raw.indexOf('class="splash-overlay"');
-      const rootIdx = raw.indexOf('class="h-screen w-screen');
-      expect(splashIdx).toBeGreaterThan(-1);
-      expect(rootIdx).toBeGreaterThan(-1);
-      // splash-overlay 必须出现在 root 之后（顶层 append 而非嵌入）
-      expect(splashIdx > rootIdx, "splash-overlay 应追加在根 <div> 之后顶层渲染").toBe(true);
+    it("App.svelte 不再内联 splash overlay 模板（防止重复渲染）", () => {
+      // 反例：模板不应再含 class="splash-overlay" 内联 div，否则会双重渲染
+      expect(
+        /class="splash-overlay"/.test(templateSrc),
+        "App.svelte 模板不应再内联 splash-overlay div（已抽到 SplashOverlay 组件）"
+      ).toBe(false);
+    });
+
+    it("App.svelte 不再含 splash CSS（防止样式散落两处）", () => {
+      // 反例：<style> 内不应再含 splash-* 规则
+      expect(
+        /@keyframes\s+splash-spin/.test(raw),
+        "App.svelte 不应再含 @keyframes splash-spin（已抽到 SplashOverlay 组件）"
+      ).toBe(false);
     });
   });
 });

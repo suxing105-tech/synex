@@ -54,7 +54,8 @@ async def _serve(server, port: int) -> None:
 
 
 def _emit_ready(port: int) -> None:
-    sys.stdout.write(f"READY {json.dumps({'port': port})}\n")
+    from app.version import VERSION, DESKTOP_PROTOCOL
+    sys.stdout.write(f"READY {json.dumps({'port': port, 'version': VERSION, 'protocol': DESKTOP_PROTOCOL})}\n")
     sys.stdout.flush()
 
 
@@ -86,6 +87,7 @@ def main() -> int:
         loop="asyncio",
     )
     server = uvicorn.Server(config)
+    app.state.desktop_shutdown = lambda: setattr(server, "should_exit", True)
 
     import asyncio
     try:

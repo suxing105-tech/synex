@@ -73,6 +73,7 @@ class Indexer:
         }
         self._loop: asyncio.AbstractEventLoop | None = None
         self._stopping = False
+        self._live_lock = threading.RLock()
         self._pending: set[str] = set()
         self._pending_lock = threading.Lock()
         self._flush_timer: threading.Timer | None = None
@@ -350,6 +351,8 @@ class Indexer:
         if self._observer is not None:
             self._observer.stop()
             self._observer.join(timeout=3)
+            if self._observer.is_alive():
+                raise RuntimeError("文件监听尚未停止，请稍后重试")
             self._observer = None
         self._watched_dirs.clear()
 
@@ -368,7 +371,23 @@ class Indexer:
 
     # ----- 事件入队 -----
 
+    async def pause_for_update(self) -> None:
+        await self.stop_watching()
+        with self._pending_lock:
+            timer = self._flush_timer
+            if timer:
+                timer.cancel()
+        # 在后台等待所有已接收的文件事件写入完成。
+        await asyncio.to_thread(self._flush_pending, "modify")
+        self._stopping = True
+
+    async def resume_after_update(self) -> None:
+        self._stopping = False
+        await self.start_watching(asyncio.get_running_loop())
+
     def enqueue(self, kind: str, path: Path | str) -> None:
+        if self._stopping:
+            return
         path = Path(path)
         with self._pending_lock:
             self._pending.add(self._normalize(path))
@@ -380,6 +399,11 @@ class Indexer:
             self._flush_timer.start()
 
     def _flush_pending(self, kind: str) -> None:
+        with self._live_lock:
+            if not self._stopping:
+                self._flush_pending_impl(kind)
+
+    def _flush_pending_impl(self, kind: str) -> None:
         with self._pending_lock:
             paths = list(self._pending)
             self._pending.clear()

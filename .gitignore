@@ -59,3 +59,11 @@ uvicorn.log
 *.egg-info/
 
 %SystemDrive%/
+
+# Update signing secrets and generated packages
+outputs/auto-update-v1/private/
+outputs/auto-update-v1/build/
+outputs/auto-update-v1/sidecar/
+outputs/auto-update-v1/app/
+outputs/auto-update-v1/*.exe
+outputs/auto-update-v1/*.sig

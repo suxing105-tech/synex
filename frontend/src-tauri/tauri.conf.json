@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2.0.0",
   "productName": "苏醒图库",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.suxing.gallery",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -64,6 +64,18 @@
       },
       "webviewInstallMode": {
         "type": "embedBootstrapper"
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI1NDQ2NzFBQkZFRjhGRDAKUldUUWorKy9HbWRFSlJ2ZWdlSmtaRDFtd0NEMk5taUNnMVBkWjdaZDQrZmxUK2Vha09XbjE0YUUK",
+      "endpoints": [
+        "https://github.com/suxing105-tech/synex/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }

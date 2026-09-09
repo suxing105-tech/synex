@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { startUpdates, updateStatus } from "./lib/updates";
   import { onMount, onDestroy } from "svelte";
   import { connectEvents, disconnectEvents } from "./lib/ws";
   import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, comfyuiEnabled, feedItems, tag, folderId, query, view, selectedDetail } from "./lib/stores";
@@ -75,10 +76,12 @@
   // App.svelte 只剩 init 业务逻辑（doInit）+ browser-only 副作用。
   const gate = createSplashGate();
 
+  let stopUpdates: (() => void) | undefined;
   let initStarted = false;
   async function doInit() {
     if (initStarted) return;
     initStarted = true;
+    stopUpdates = startUpdates();
     try {
       await Promise.all([refreshFolders(), refreshStats(), refreshFeed()]);
       const cfg = await settingsApi.get();
@@ -110,6 +113,7 @@
   });
 
   onDestroy(() => {
+    stopUpdates?.();
     gate.dispose();
     disconnectEvents();
     if (comfyuiTimer) clearInterval(comfyuiTimer);
@@ -164,6 +168,11 @@
 <div class="h-screen w-screen flex flex-col bg-bg text-zinc-200" ondragover={swallowDrag} ondrop={swallowDrag} role="application">
   <HeaderBar onOpenSettings={() => (settingsOpen = true)} onOpenOnboarding={() => (onboardingOpen = true)} />
   <ScanProgressBar />
+  {#if $updateStatus?.version && ["available", "ready"].includes($updateStatus.phase)}
+    <button class="bg-surface-2 border-b border-border text-xs py-2 text-accent" onclick={() => (settingsOpen = true)}>
+      新版本 v{$updateStatus.version} {$updateStatus.phase === "ready" ? "已下载，点击选择安装时间" : "可用，点击查看更新"}
+    </button>
+  {/if}
   <div
     class="flex-1 min-h-0 grid app-grid"
     class:drawer-mode={narrowMode}

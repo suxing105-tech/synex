@@ -2,6 +2,7 @@
   import { settingsApi, comfyuiApi } from "../lib/api";
   import { comfyuiStatus } from "../lib/stores";
   import type { ConfigOut } from "../lib/types";
+  import UpdatePanel from "./UpdatePanel.svelte";
   import { onMount } from "svelte";
 
   interface Props {
@@ -14,12 +15,12 @@
   let newDir = $state<string>("");
 
   onMount(async () => {
-    cfg = await settingsApi.get();
+    try { cfg = await settingsApi.get(); } catch { /* 更新入口不依赖后台 */ }
   });
 
   $effect(() => {
     if (open && !cfg) {
-      settingsApi.get().then((c) => (cfg = c));
+      settingsApi.get().then((c) => (cfg = c)).catch(() => {});
     }
   });
 
@@ -87,7 +88,7 @@
   }
 </script>
 
-{#if open && cfg}
+{#if open}
   <div class="fixed inset-0 z-[60] bg-black/75 flex items-center justify-center" role="dialog">
     <div class="bg-surface-2 border border-border rounded-[12px] p-7 w-[560px] max-w-[92vw] max-h-[80vh] overflow-y-auto">
       <div class="flex items-center justify-between mb-5">
@@ -95,6 +96,8 @@
         <button class="w-8 h-8 rounded bg-surface border border-border hover:border-accent" onclick={() => (open = false)}>×</button>
       </div>
 
+      <UpdatePanel />
+      {#if cfg}
       <section class="space-y-2 mb-5">
         <h3 class="text-[11px] uppercase text-muted tracking-wider">监听目录</h3>
         {#each cfg.watch_dirs as d}
@@ -161,9 +164,10 @@
         </div>
       </section>
 
+      {/if}
       <div class="flex justify-end gap-2 pt-3 border-t border-border">
         <button class="text-[12px] px-3 py-1.5 rounded border border-border hover:border-accent" onclick={() => (open = false)}>取消</button>
-        <button class="text-[13px] px-4 py-1.5 rounded bg-accent text-bg font-medium disabled:opacity-50" disabled={saving} onclick={save}>保存</button>
+        <button class="text-[13px] px-4 py-1.5 rounded bg-accent text-bg font-medium disabled:opacity-50" disabled={saving || !cfg} onclick={save}>保存</button>
       </div>
     </div>
   </div>

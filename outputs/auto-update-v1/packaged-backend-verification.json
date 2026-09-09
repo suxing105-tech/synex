@@ -1,0 +1,10 @@
+{
+  "version": "0.2.0",
+  "backup_verified": true,
+  "write_freeze_verified": true,
+  "cancel_restores_writes": true,
+  "graceful_shutdown": true,
+  "port_released": true,
+  "data": "C:\\Users\\Administrator\\Documents\\ChatGPT\\苏醒图库\\outputs\\auto-update-v1\\smoke-data\\e5b915f64176499795a40e53fe5e66bb",
+  "backup": "C:\\Users\\Administrator\\Documents\\ChatGPT\\苏醒图库\\outputs\\auto-update-v1\\smoke-data\\update-backups\\20260909T085319-46e8c81e"
+}

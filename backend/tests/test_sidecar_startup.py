@@ -29,7 +29,9 @@ async def test_ready_only_after_successful_startup(failure, capsys):
         assert "READY" not in capsys.readouterr().out
     else:
         await _serve(Server(), 8765)
-        assert capsys.readouterr().out == 'READY {"port": 8765}\n'
+        import json
+        from app.version import VERSION, DESKTOP_PROTOCOL
+        assert json.loads(capsys.readouterr().out.removeprefix("READY ")) == {"port": 8765, "version": VERSION, "protocol": DESKTOP_PROTOCOL}
 
 
 @pytest.mark.asyncio

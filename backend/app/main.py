@@ -110,7 +110,12 @@ async def lifespan(app: FastAPI):
     indexer.shutdown()
 
 
-app = FastAPI(title="苏醒图库", version="0.1.0", lifespan=lifespan)
+from .version import VERSION
+from .maintenance import WriteGateMiddleware, router as desktop_router
+
+app = FastAPI(title="苏醒图库", version=VERSION, lifespan=lifespan)
+app.add_middleware(WriteGateMiddleware)
+app.include_router(desktop_router)
 
 app.add_middleware(
     CORSMiddleware,

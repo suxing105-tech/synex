@@ -73,3 +73,19 @@ outputs/folder-picker-v1/app/
 outputs/folder-picker-v1/test-data/
 outputs/folder-picker-v1/*.exe
 outputs/folder-picker-v1/*.sig
+
+# Local credentials, packages and runtime diagnostics
+.env
+.env.*
+!.env.example
+*.stderr
+*.stdout
+outputs/**/*.exe
+outputs/**/app/
+outputs/**/app-final/
+outputs/**/sidecar/
+outputs/**/pyinstaller-build/
+outputs/**/smoke-data/
+outputs/**/test-data/
+outputs/tauri-m0f-e2e/run/
+outputs/tauri-m0f-e2e/run-nosidecar/

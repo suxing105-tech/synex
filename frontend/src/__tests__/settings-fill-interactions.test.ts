@@ -15,18 +15,26 @@ describe("设置与反推使用底色交互", () => {
     expect(source).toContain('max-w-[960px] mx-auto');
     expect(source).not.toMatch(/max-w-\[94vw\]|88vh|bg-black\/75/);
   });
-  it("侧栏入口为居中靠左的独立齿轮，保留无障碍名称", () => {
-    const source = read("App.svelte");
-    expect(source).toContain('sidebar-settings flex items-center justify-start');
-    expect(source).toContain('aria-label="全局设置" title="设置"');
-    expect(source).toContain('svg width="14" height="14"');
-    expect(source).not.toContain('>⚙ 设置</button>');
-    const entry = source.slice(source.indexOf('sidebar-settings'), source.indexOf('</aside>', source.indexOf('sidebar-settings')));
-    expect(entry).toContain('hover:text-accent');
-    expect(entry).not.toContain('hover:bg-');
-    expect(entry).toContain('<circle cx="12" cy="12" r="4"');
+  it("移除左下设置入口，标题与分类统一底色且分类有线性图标", () => {
+    expect(read("App.svelte")).not.toContain('sidebar-settings');
+    expect(read("components/HeaderBar.svelte")).toContain('title="设置"');
+    const source = read("components/SettingsModal.svelte");
+    expect(source).toContain('settings-title w-[240px] shrink-0 bg-surface');
+    expect(source).toContain('overflow-y-auto bg-surface');
+    expect(source).toContain('width="18" height="18"');
+    expect(source).toContain('aria-label="返回图库"');
+    expect(source).not.toContain('>×</button>');
     expect(read('components/FolderTree.svelte')).not.toContain('本地缓存');
-    expect(read('components/FolderTree.svelte')).not.toContain(' 张图片</span>');
+  });
+  it("返回图标悬停与键盘焦点使用品牌底色", () => {
+    const states: string[] = [];
+    css.walkRules(rule => {
+      if (!rule.selector.includes('button.settings-return')) return;
+      states.push(rule.selector);
+      expect(rule.nodes.some(n => n.type === 'decl' && n.prop === 'background-color' && n.value === '#f24e4e')).toBe(true);
+    });
+    expect(states.join()).toContain(':enabled:hover');
+    expect(states.join()).toContain(':enabled:focus-visible');
   });
   it.each(["SettingsModal", "ModelSettings", "ReversePromptPanel", "UpdatePanel", "HeaderBar"])(
     "%s 不引入悬停或选中的高亮边框", (name) => {

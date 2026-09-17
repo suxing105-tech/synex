@@ -150,3 +150,10 @@ body,
     transition: none;
   }
 }
+
+/* 设置返回入口使用醒目的品牌底色。 */
+.fill-interactions button.settings-return:enabled:hover,
+.fill-interactions button.settings-return:enabled:focus-visible {
+  background-color: #f24e4e;
+  color: #0e0e10;
+}

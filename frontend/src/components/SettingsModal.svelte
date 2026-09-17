@@ -97,15 +97,30 @@
 {#if open}
   <div class="fixed inset-0 z-[60] bg-surface-2" role="dialog" aria-modal="true" aria-label="设置" data-settings-dialog>
     <div class="fill-interactions settings-shell w-full h-full overflow-hidden flex flex-col">
-      <div class="flex items-center justify-between px-8 py-6 shrink-0">
-        <h2 class="text-2xl font-semibold tracking-tight">设置</h2>
-        <button class="w-10 h-10 rounded-xl text-2xl text-muted" aria-label="关闭设置" onclick={() => (open = false)}>×</button>
+      <div class="flex items-stretch shrink-0 h-[88px]">
+        <div class="settings-title w-[240px] shrink-0 bg-surface flex items-center px-8">
+          <h2 class="text-2xl font-semibold tracking-tight">设置</h2>
+        </div>
+        <div class="flex flex-1 items-center justify-end px-8">
+          <button class="settings-return flex items-center justify-center w-10 h-10 rounded-xl text-muted" aria-label="返回图库" title="返回图库" onclick={() => (open = false)}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 5-7 7 7 7M3 12h18" /></svg>
+          </button>
+        </div>
       </div>
 
       <div class="settings-body flex flex-1 min-h-0">
       <nav class="settings-nav flex flex-col gap-2 px-5 py-6 w-[240px] shrink-0 overflow-y-auto bg-surface" aria-label="设置分类">
         {#each ["通用", "模型与反推", "快捷键", "ComfyUI", "关于与更新"] as item}
-          <button class="text-sm text-left px-4 py-3 rounded-xl" aria-pressed={tab === item} onclick={() => tab = item}>{item}</button>
+          <button class="flex items-center gap-3 text-sm text-left px-4 py-3 rounded-xl" aria-pressed={tab === item} onclick={() => tab = item}>
+            <svg class="shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              {#if item === "通用"}<path d="M4 7h8m4 0h4M4 17h3m4 0h9" /><circle cx="14" cy="7" r="2" /><circle cx="9" cy="17" r="2" />
+              {:else if item === "模型与反推"}<rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8" cy="8" r="1.5" /><path d="m3 17 5-5 4 4 4-6 5 7" />
+              {:else if item === "快捷键"}<rect x="2" y="5" width="20" height="14" rx="3" /><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 15h10" />
+              {:else if item === "ComfyUI"}<rect x="3" y="3" width="6" height="6" rx="1.5" /><rect x="15" y="15" width="6" height="6" rx="1.5" /><path d="M9 6h6a3 3 0 0 1 3 3v6M6 9v9h9" />
+              {:else}<circle cx="12" cy="12" r="9" /><path d="M12 11v6M12 7h.01" />{/if}
+            </svg>
+            <span>{item}</span>
+          </button>
         {/each}
       </nav>
       <div class="settings-content flex-1 min-w-0 overflow-y-auto">
@@ -197,7 +212,8 @@
 
 <style>
   @media (max-width: 600px) {
-    .settings-nav { width: 112px; padding: 8px; }
+    .settings-nav { width: 144px; padding: 8px; }
+    .settings-title { width: 144px; padding: 0 24px; }
     .settings-page { padding: 24px 16px; }
   }
 </style>

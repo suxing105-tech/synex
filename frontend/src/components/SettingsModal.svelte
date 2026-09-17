@@ -3,12 +3,15 @@
   import { comfyuiStatus } from "../lib/stores";
   import type { ConfigOut } from "../lib/types";
   import UpdatePanel from "./UpdatePanel.svelte";
+  import ModelSettings from "./ModelSettings.svelte";
+  import { pushToast } from "../lib/toast";
   import { onMount } from "svelte";
 
   interface Props {
     open: boolean;
+    tab?: string;
   }
-  let { open = $bindable() }: Props = $props();
+  let { open = $bindable(), tab = $bindable("通用") }: Props = $props();
 
   let cfg = $state<ConfigOut | null>(null);
   let saving = $state<boolean>(false);
@@ -25,6 +28,7 @@
   });
 
   let comfyuiUrlInput = $state<string>("http://127.0.0.1:8188");
+  $effect(() => { if (open && tab === "ComfyUI") void refreshComfyui(); });
   let comfyuiEnabledLocal = $state<boolean>(true);
   let probing = $state<boolean>(false);
   let comfyuiStatusLocal = $state<{ running: boolean; url: string } | null>(null);
@@ -53,7 +57,7 @@
       comfyuiStatusLocal = { running: s.running, url: s.url };
       comfyuiStatus.set(s);
     } catch (e) {
-      console.error(e);
+      pushToast("ComfyUI 设置保存失败", { kind: "error" });
     }
   }
 
@@ -65,10 +69,11 @@
       // 后端 thumb_size / thumb_quality 字段保留但只在 API 层面维护，不会再有 UI 入口。
       cfg = await settingsApi.update({
         watch_dirs: cfg.watch_dirs,
-        thumb_size: cfg.thumb_size,
-        thumb_quality: cfg.thumb_quality,
         live_enabled: cfg.live_enabled,
       });
+      pushToast("通用设置已保存", { kind: "success" });
+    } catch {
+      pushToast("通用设置保存失败", { kind: "error" });
     } finally {
       saving = false;
     }
@@ -90,14 +95,20 @@
 
 {#if open}
   <div class="fixed inset-0 z-[60] bg-black/75 flex items-center justify-center" role="dialog">
-    <div class="bg-surface-2 border border-border rounded-[12px] p-7 w-[560px] max-w-[92vw] max-h-[80vh] overflow-y-auto">
+    <div class="bg-surface-2 border border-border rounded-[12px] p-7 w-[640px] max-w-[92vw] max-h-[85vh] overflow-y-auto">
       <div class="flex items-center justify-between mb-5">
         <h2 class="text-lg font-semibold">设置</h2>
         <button class="w-8 h-8 rounded bg-surface border border-border hover:border-accent" onclick={() => (open = false)}>×</button>
       </div>
 
-      <UpdatePanel />
-      {#if cfg}
+      <nav class="flex gap-2 mb-5 flex-wrap" aria-label="设置分类">
+        {#each ["通用", "模型与反推", "ComfyUI", "关于与更新"] as item}
+          <button class="text-xs px-3 py-2 rounded border border-border" class:!border-accent={tab === item} aria-pressed={tab === item} onclick={() => tab = item}>{item}</button>
+        {/each}
+      </nav>
+      {#if tab === "关于与更新"}<UpdatePanel />{/if}
+      {#if tab === "模型与反推"}<ModelSettings />{/if}
+      {#if cfg && tab === "通用"}
       <section class="space-y-2 mb-5">
         <h3 class="text-[11px] uppercase text-muted tracking-wider">监听目录</h3>
         {#each cfg.watch_dirs as d}
@@ -127,6 +138,8 @@
       </section>
 
       
+      {/if}
+      {#if tab === "ComfyUI"}
       <section class="space-y-2 mb-5">
         <h3 class="text-[11px] uppercase text-muted tracking-wider">ComfyUI 集成</h3>
         <div class="flex items-center gap-2">
@@ -166,8 +179,8 @@
 
       {/if}
       <div class="flex justify-end gap-2 pt-3 border-t border-border">
-        <button class="text-[12px] px-3 py-1.5 rounded border border-border hover:border-accent" onclick={() => (open = false)}>取消</button>
-        <button class="text-[13px] px-4 py-1.5 rounded bg-accent text-bg font-medium disabled:opacity-50" disabled={saving || !cfg} onclick={save}>保存</button>
+        <button class="text-[12px] px-3 py-1.5 rounded border border-border hover:border-accent" onclick={() => (open = false)}>关闭</button>
+        {#if tab === "通用"}<button class="text-[13px] px-4 py-1.5 rounded bg-accent text-bg font-medium disabled:opacity-50" disabled={saving || !cfg} onclick={save}>保存</button>{/if}
       </div>
     </div>
   </div>

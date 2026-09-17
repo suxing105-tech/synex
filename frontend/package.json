@@ -14,6 +14,7 @@
     "@sveltejs/vite-plugin-svelte": "^4.0.4",
     "@testing-library/svelte": "^5.2.4",
     "@tsconfig/svelte": "^5.0.4",
+    "@types/node": "^22.20.3",
     "autoprefixer": "^10.4.20",
     "happy-dom": "^15.11.7",
     "postcss": "^8.4.49",

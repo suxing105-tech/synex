@@ -36,7 +36,7 @@ export const feedTotal = writable<number>(0);
 export const feedLoading = writable<boolean>(false);
 
 export const folders = writable<FolderNode[]>([]);
-export const stats = writable<Stats>({ total_images: 0, thumbs_ready: 0, favorites: 0, folders: 0 });
+export const stats = writable<Stats>({ total_images: 0, favorites: 0, folders: 0 });
 
 export const scanProgress = writable<ScanProgress>({
   running: false,

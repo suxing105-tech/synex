@@ -26,6 +26,12 @@
 
   let onboardingOpen = $state(false);
   let settingsOpen = $state(false);
+  let settingsTab = $state("通用");
+  onMount(() => {
+    const openModels = () => { settingsTab = "模型与反推"; settingsOpen = true; };
+    window.addEventListener("open-model-settings", openModels);
+    return () => window.removeEventListener("open-model-settings", openModels);
+  });
 
   let selectedIdValue = $state<number | null>(null);
   let lightboxOpen = $state(false);
@@ -180,6 +186,7 @@
   >
     <aside class="border-r border-border bg-surface flex flex-col min-h-0">
       <FolderTree />
+      <button class="shrink-0 border-t border-border px-4 py-3 text-left text-[13px] hover:bg-surface-3" onclick={() => (settingsOpen = true)} aria-label="全局设置">⚙ 设置</button>
     </aside>
     <main class="min-w-0">
       <Feed
@@ -219,7 +226,7 @@
 <Lightbox bind:open={lightboxOpen} bind:index={lightboxIndex} bind:selectedId={selectedIdValue} />
 
 <OnboardingModal bind:open={onboardingOpen} />
-<SettingsModal bind:open={settingsOpen} />
+<SettingsModal bind:open={settingsOpen} bind:tab={settingsTab} />
 <Toast />
 
 <SplashOverlay ready={gate.ready} error={gate.error} />

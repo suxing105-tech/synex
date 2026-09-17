@@ -30,6 +30,7 @@
   import type { ImageDetail, FolderNode } from "../lib/types";
   import Icon from "./Icon.svelte";
   import PromptCard from "./PromptCard.svelte";
+  import ReversePromptPanel from "./ReversePromptPanel.svelte";
   import ParamsCard from "./ParamsCard.svelte";
   import MetadataCard from "./MetadataCard.svelte";
   import FolderPickerModal from "./FolderPickerModal.svelte";
@@ -400,6 +401,7 @@
 
     <!-- ============== Body ============== -->
     <div class="flex-1 overflow-y-auto p-4 space-y-4 detail-body">
+      {#key d.id}<ReversePromptPanel imageId={d.id} />{/key}
       <!-- Prompt 卡片（正向 / 反向） -->
       <PromptCard
         title="正向 Prompt"

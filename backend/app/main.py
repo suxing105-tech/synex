@@ -33,6 +33,7 @@ from .routes import folders as folders_route
 from .routes import images as images_route
 from .routes import settings as settings_route
 from .routes import tags as tags_route
+from .routes import reverse_prompts as reverse_prompts_route
 
 log = logging.getLogger("suxing_gallery")
 logging.basicConfig(
@@ -134,6 +135,7 @@ app.include_router(images_route.router)
 app.include_router(folders_route.router)
 app.include_router(tags_route.router)
 app.include_router(settings_route.router)
+app.include_router(reverse_prompts_route.router)
 
 
 # ---------- 静态资源 ----------

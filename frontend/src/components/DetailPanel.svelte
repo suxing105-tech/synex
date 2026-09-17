@@ -179,7 +179,7 @@
   onMount(() => {
     shortcutOff = registerShortcuts([
       {
-        key: "p",
+        key: "p", action: "positive",
         handler: () => {
           const d = $selectedDetail;
           if (!d) return;
@@ -187,7 +187,7 @@
         },
       },
       {
-        key: "n",
+        key: "n", action: "negative",
         handler: () => {
           const d = $selectedDetail;
           if (!d) return;
@@ -195,7 +195,7 @@
         },
       },
       {
-        key: "s",
+        key: "s", action: "seed",
         handler: () => {
           const d = $selectedDetail;
           if (!d || d.seed == null) return;
@@ -203,19 +203,19 @@
         },
       },
       {
-        key: "shift+c",
+        key: "shift+c", action: "comfy",
         handler: () => {
           if ($selectedDetail) openInComfyui();
         },
       },
       {
-        key: "f",
+        key: "f", action: "favorite",
         handler: () => {
           if ($selectedDetail) toggleFav();
         },
       },
       {
-        key: "t",
+        key: "t", action: "tags",
         handler: () => {
           if ($selectedDetail) showTagInput = !showTagInput;
         },

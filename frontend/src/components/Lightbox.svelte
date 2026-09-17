@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { matchesAction, shortcutBlocked } from "../lib/shortcut-settings";
   import { backendUrl } from "../lib/backend-url";
   import { feedItems, refreshFeed, refreshStats } from "../lib/stores";
   import { imagesApi } from "../lib/api";
@@ -197,6 +198,7 @@
   }
 
   function handleKey(e: KeyboardEvent) {
+    if (shortcutBlocked(e)) return;
     if (!open) return;
     if (e.key === "Escape") {
       if (zoomMode === "zoom") {
@@ -206,13 +208,13 @@
       }
       e.preventDefault();
       close();
-    } else if (e.key === "ArrowLeft") {
+    } else if (matchesAction(e, "previous")) {
       e.preventDefault();
       prev();
-    } else if (e.key === "ArrowRight") {
+    } else if (matchesAction(e, "next")) {
       e.preventDefault();
       next();
-    } else if (e.key === " ") {
+    } else if (matchesAction(e, "preview")) {
       e.preventDefault();
       next();
     }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { matchesAction, shortcutBlocked } from "../lib/shortcut-settings";
   import { backendUrl } from "../lib/backend-url";
   import {
     feedItems, feedTotal, feedLoading, refreshFeed, refreshStats,
@@ -409,6 +410,7 @@
   }
 
   function handleKey(e: KeyboardEvent) {
+    if (shortcutBlocked(e)) return;
     if (isTypingTarget(e.target)) return;
     if (e.key === "Escape") {
       if (selectedCount > 0) {
@@ -417,7 +419,7 @@
       }
       return;
     }
-    if (e.key === " " || e.code === "Space") {
+    if (matchesAction(e, "preview")) {
       // Lightbox 已开时让位给 Lightbox 自己的 handler（按空格翻下一张）。
       // 否则两个 svelte:window handler 都触发：Feed 先把 lightboxOpen 改成 true，
       // Lightbox 的 handler 看到 open=true 紧接着调 next()，结果展示的是选中图的下一张。

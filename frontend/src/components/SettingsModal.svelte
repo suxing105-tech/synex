@@ -2,6 +2,7 @@
   import { settingsApi, comfyuiApi } from "../lib/api";
   import { comfyuiStatus } from "../lib/stores";
   import type { ConfigOut } from "../lib/types";
+  import ShortcutSettings from "./ShortcutSettings.svelte";
   import UpdatePanel from "./UpdatePanel.svelte";
   import ModelSettings from "./ModelSettings.svelte";
   import { pushToast } from "../lib/toast";
@@ -94,18 +95,22 @@
 </script>
 
 {#if open}
-  <div class="fixed inset-0 z-[60] bg-black/75 flex items-center justify-center" role="dialog">
-    <div class="fill-interactions bg-surface-2 border border-border rounded-[12px] p-7 w-[640px] max-w-[92vw] max-h-[85vh] overflow-y-auto">
-      <div class="flex items-center justify-between mb-5">
+  <div class="fixed inset-0 z-[60] bg-black/75 flex items-center justify-center" role="dialog" aria-modal="true" aria-label="设置" data-settings-dialog>
+    <div class="fill-interactions bg-surface-2 border border-border rounded-[12px] settings-shell w-[900px] max-w-[94vw] h-[min(760px,88vh)] overflow-hidden flex flex-col">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-border">
         <h2 class="text-lg font-semibold">设置</h2>
         <button class="w-8 h-8 rounded bg-surface border border-border" aria-label="关闭设置" onclick={() => (open = false)}>×</button>
       </div>
 
-      <nav class="flex gap-2 mb-5 flex-wrap" aria-label="设置分类">
-        {#each ["通用", "模型与反推", "ComfyUI", "关于与更新"] as item}
-          <button class="text-xs px-3 py-2 rounded border border-border" aria-pressed={tab === item} onclick={() => tab = item}>{item}</button>
+      <div class="settings-body flex flex-1 min-h-0">
+      <nav class="settings-nav flex flex-col gap-2 p-4 w-[170px] shrink-0 border-r border-border overflow-y-auto" aria-label="设置分类">
+        {#each ["通用", "模型与反推", "快捷键", "ComfyUI", "关于与更新"] as item}
+          <button class="text-sm text-left px-3 py-3 rounded" aria-pressed={tab === item} onclick={() => tab = item}>{item}</button>
         {/each}
       </nav>
+      <div class="settings-content flex-1 min-w-0 overflow-y-auto p-6">
+      <h3 class="text-base font-semibold mb-5">{tab}</h3>
+      {#if tab === "快捷键"}<ShortcutSettings />{/if}
       {#if tab === "关于与更新"}<UpdatePanel />{/if}
       {#if tab === "模型与反推"}<ModelSettings />{/if}
       {#if cfg && tab === "通用"}
@@ -178,10 +183,19 @@
       </section>
 
       {/if}
-      <div class="flex justify-end gap-2 pt-3 border-t border-border">
+      </div>
+      </div>
+      <div class="flex justify-end gap-2 px-6 py-3 border-t border-border">
         <button class="text-[12px] px-3 py-1.5 rounded border border-border" onclick={() => (open = false)}>关闭</button>
         {#if tab === "通用"}<button class="text-[13px] px-4 py-1.5 rounded bg-accent text-bg font-medium disabled:opacity-50" disabled={saving || !cfg} onclick={save}>保存</button>{/if}
       </div>
     </div>
   </div>
 {/if}
+
+<style>
+  @media (max-width: 600px) {
+    .settings-nav { width: 112px; padding: 8px; }
+    .settings-content { padding: 12px; }
+  }
+</style>

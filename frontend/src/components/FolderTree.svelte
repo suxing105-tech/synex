@@ -202,10 +202,6 @@
     {@render userFolderItem(f, 0)}
   {/each}
 </div>
-<div class="border-t border-border px-4 py-[10px] text-[11px] text-muted flex justify-between">
-  <span>{$stats.total_images} 张图片</span>
-  <span>本地缓存</span>
-</div>
 
 {#if newFolderFor !== null}
   <div

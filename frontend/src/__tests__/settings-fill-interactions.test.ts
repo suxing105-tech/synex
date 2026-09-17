@@ -19,8 +19,14 @@ describe("设置与反推使用底色交互", () => {
     const source = read("App.svelte");
     expect(source).toContain('sidebar-settings flex items-center justify-start');
     expect(source).toContain('aria-label="全局设置" title="设置"');
-    expect(source).toContain('svg width="28" height="28"');
+    expect(source).toContain('svg width="14" height="14"');
     expect(source).not.toContain('>⚙ 设置</button>');
+    const entry = source.slice(source.indexOf('sidebar-settings'), source.indexOf('</aside>', source.indexOf('sidebar-settings')));
+    expect(entry).toContain('hover:text-accent');
+    expect(entry).not.toContain('hover:bg-');
+    expect(entry).toContain('<circle cx="12" cy="12" r="4"');
+    expect(read('components/FolderTree.svelte')).not.toContain('本地缓存');
+    expect(read('components/FolderTree.svelte')).not.toContain(' 张图片</span>');
   });
   it.each(["SettingsModal", "ModelSettings", "ReversePromptPanel", "UpdatePanel", "HeaderBar"])(
     "%s 不引入悬停或选中的高亮边框", (name) => {

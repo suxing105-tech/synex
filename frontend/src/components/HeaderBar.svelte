@@ -148,12 +148,12 @@
     {/if}
 
     <button
-      class="bg-surface-2 border border-border text-zinc-200 w-8 h-8 rounded-[7px] hover:border-accent"
+        class="bg-surface-2 border border-border text-zinc-200 w-8 h-8 rounded-[7px] hover:bg-surface-3 focus-visible:bg-surface-3 focus-visible:underline focus-visible:outline-none"
       onclick={onOpenSettings}
       title="设置"
     >⚙</button>
     <button
-      class="bg-surface-2 border border-border text-zinc-200 w-8 h-8 rounded-[7px] hover:border-accent"
+        class="bg-surface-2 border border-border text-zinc-200 w-8 h-8 rounded-[7px] hover:bg-surface-3 focus-visible:bg-surface-3 focus-visible:underline focus-visible:outline-none"
       onclick={onOpenOnboarding}
       title="导入目录"
     >＋</button>

@@ -47,12 +47,12 @@
   }
 </script>
 
-<section class="model-settings space-y-4" aria-label="模型与反推">
+<section class="fill-interactions model-settings space-y-4" aria-label="模型与反推">
   <div class="flex gap-2 flex-wrap">
     {#each $modelConfigs as model}
-      <button class:chosen={editingId === model.id} disabled={busy} onclick={() => choose(model)}>{model.name}</button>
+      <button aria-pressed={editingId === model.id} disabled={busy} onclick={() => choose(model)}>{model.name}</button>
     {/each}
-    <button disabled={busy} onclick={() => choose()}>＋ 添加模型</button>
+    <button aria-pressed={editingId === undefined} disabled={busy} onclick={() => choose()}>＋ 添加模型</button>
   </div>
   <fieldset disabled={busy} class="space-y-3">
     <legend class="text-sm mb-2">{editingId ? "编辑模型配置" : "添加模型配置"}</legend>
@@ -103,6 +103,5 @@
   label { display: block; font-size: 12px; color: #b8b8c3; }
   input:not([type=checkbox]), textarea, select { display: block; width: 100%; margin-top: 6px; padding: 8px 10px; color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 6px; }
   button { font-size: 12px; padding: 6px 10px; border: 1px solid #3f3f46; border-radius: 6px; }
-  button:hover, button.chosen { border-color: #f24e4e; }
   button:disabled { opacity: .5; }
 </style>

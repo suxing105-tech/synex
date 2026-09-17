@@ -95,15 +95,15 @@
 
 {#if open}
   <div class="fixed inset-0 z-[60] bg-black/75 flex items-center justify-center" role="dialog">
-    <div class="bg-surface-2 border border-border rounded-[12px] p-7 w-[640px] max-w-[92vw] max-h-[85vh] overflow-y-auto">
+    <div class="fill-interactions bg-surface-2 border border-border rounded-[12px] p-7 w-[640px] max-w-[92vw] max-h-[85vh] overflow-y-auto">
       <div class="flex items-center justify-between mb-5">
         <h2 class="text-lg font-semibold">设置</h2>
-        <button class="w-8 h-8 rounded bg-surface border border-border hover:border-accent" onclick={() => (open = false)}>×</button>
+        <button class="w-8 h-8 rounded bg-surface border border-border" aria-label="关闭设置" onclick={() => (open = false)}>×</button>
       </div>
 
       <nav class="flex gap-2 mb-5 flex-wrap" aria-label="设置分类">
         {#each ["通用", "模型与反推", "ComfyUI", "关于与更新"] as item}
-          <button class="text-xs px-3 py-2 rounded border border-border" class:!border-accent={tab === item} aria-pressed={tab === item} onclick={() => tab = item}>{item}</button>
+          <button class="text-xs px-3 py-2 rounded border border-border" aria-pressed={tab === item} onclick={() => tab = item}>{item}</button>
         {/each}
       </nav>
       {#if tab === "关于与更新"}<UpdatePanel />{/if}
@@ -114,7 +114,7 @@
         {#each cfg.watch_dirs as d}
           <div class="flex items-center gap-2 bg-surface border border-border rounded px-3 py-1.5">
             <span class="flex-1 font-mono text-[12px] truncate">{d}</span>
-            <button class="text-muted hover:text-danger text-[12px]" onclick={() => removeDir(d)}>移除</button>
+            <button class="text-muted rounded px-2 py-1 text-[12px]" onclick={() => removeDir(d)}>移除</button>
           </div>
         {/each}
         <div class="flex items-center gap-2">
@@ -122,10 +122,10 @@
             type="text"
             bind:value={newDir}
             placeholder="新增目录路径…"
-            class="flex-1 bg-bg border border-border rounded px-2 py-1 text-[12px] outline-none focus:border-accent font-mono"
+            class="flex-1 bg-bg border border-border rounded px-2 py-1 text-[12px] font-mono"
             onkeydown={(e) => { if (e.key === 'Enter') addDir(); }}
           />
-          <button class="text-[12px] px-3 py-1 rounded border border-border hover:border-accent" onclick={addDir}>添加</button>
+          <button class="text-[12px] px-3 py-1 rounded border border-border" onclick={addDir}>添加</button>
         </div>
       </section>
 
@@ -147,10 +147,10 @@
             type="text"
             bind:value={comfyuiUrlInput}
             placeholder="http://127.0.0.1:8188"
-            class="flex-1 bg-bg border border-border rounded px-2 py-1 text-[12px] outline-none focus:border-accent font-mono"
+            class="flex-1 bg-bg border border-border rounded px-2 py-1 text-[12px] font-mono"
           />
           <button
-            class="text-[12px] px-3 py-1 rounded border border-border hover:border-accent disabled:opacity-50"
+            class="text-[12px] px-3 py-1 rounded border border-border disabled:opacity-50"
             disabled={probing}
             onclick={refreshComfyui}
             title="重新探测本机 ComfyUI"
@@ -171,7 +171,7 @@
         </label>
         <div class="flex justify-end">
           <button
-            class="text-[11px] px-2 py-1 rounded border border-border hover:border-accent"
+            class="text-[11px] px-2 py-1 rounded border border-border"
             onclick={saveComfyui}
           >保存 ComfyUI 设置</button>
         </div>
@@ -179,7 +179,7 @@
 
       {/if}
       <div class="flex justify-end gap-2 pt-3 border-t border-border">
-        <button class="text-[12px] px-3 py-1.5 rounded border border-border hover:border-accent" onclick={() => (open = false)}>关闭</button>
+        <button class="text-[12px] px-3 py-1.5 rounded border border-border" onclick={() => (open = false)}>关闭</button>
         {#if tab === "通用"}<button class="text-[13px] px-4 py-1.5 rounded bg-accent text-bg font-medium disabled:opacity-50" disabled={saving || !cfg} onclick={save}>保存</button>{/if}
       </div>
     </div>

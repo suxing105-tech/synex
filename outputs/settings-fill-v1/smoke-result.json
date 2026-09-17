@@ -1,0 +1,11 @@
+{
+  "packaged_backend": "passed",
+  "encrypted_key_restart": "passed",
+  "model_test": "passed",
+  "image_import": "passed",
+  "generation_and_edit": "passed",
+  "history_restart": "passed",
+  "backend_port": 49428,
+  "image_id": 2,
+  "model_id": 2
+}

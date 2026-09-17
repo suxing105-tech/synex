@@ -68,7 +68,7 @@
   }
 </script>
 
-<section class="reverse-panel rounded-lg border border-border bg-surface-2 p-3 space-y-3" aria-label="AI 反推提示词">
+<section class="fill-interactions reverse-panel rounded-lg border border-border bg-surface-2 p-3 space-y-3" aria-label="AI 反推提示词">
   <div class="flex justify-between items-center"><h4 class="text-[13px] font-semibold">AI 反推提示词</h4><span class="text-[10px] text-muted">中英双语</span></div>
   {#if !$modelConfigs.length}
     <button onclick={() => window.dispatchEvent(new CustomEvent("open-model-settings"))}>配置模型</button>
@@ -94,7 +94,7 @@
     {:else}
       <div class="space-y-3">
       {#if current.status === "complete"}
-        <div class="flex gap-2"><button class:active={tab === "zh"} onclick={() => tab = "zh"}>中文</button><button class:active={tab === "en"} onclick={() => tab = "en"}>English</button></div>
+        <div class="flex gap-2"><button aria-pressed={tab === "zh"} onclick={() => tab = "zh"}>中文</button><button aria-pressed={tab === "en"} onclick={() => tab = "en"}>English</button></div>
         <div class="text-xs leading-6 whitespace-pre-wrap break-words max-h-80 overflow-auto">{tab === "zh" ? current.prompt_zh : current.prompt_en}</div>
         <div class="flex gap-2"><button onclick={() => copy(tab === "zh" ? current.prompt_zh : current.prompt_en)}>复制{tab === "zh" ? "中文" : "英文"}</button><button onclick={() => copy(`中文\n${current.prompt_zh}\n\nEnglish\n${current.prompt_en}`)}>复制双语</button></div>
       {:else}
@@ -110,7 +110,7 @@
     {#if historyOpen && !editing}
       <div class="space-y-1 max-h-48 overflow-auto" aria-label="历史版本">
         {#each records as record}
-          <button class="block w-full text-left" class:active={current.id === record.id} onclick={() => selectedVersion = record.id}>
+          <button class="block w-full text-left" aria-pressed={current.id === record.id} onclick={() => selectedVersion = record.id}>
             {new Date(record.created_at).toLocaleString()} · {record.source === "edited" ? "手动编辑" : "模型生成"} · {record.model_name}
           </button>
         {/each}
@@ -123,7 +123,6 @@
 
 <style>
   button, select { font-size: 11px; padding: 5px 8px; border: 1px solid #3f3f46; border-radius: 5px; background: #202024; }
-  button:hover, button.active { border-color: #f24e4e; }
   button:disabled { opacity: .5; cursor: default; }
   textarea { display: block; width: 100%; margin-top: 6px; padding: 8px; font-size: 12px; color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 5px; }
 </style>

@@ -76,6 +76,8 @@ describe("reverse prompts", () => {
     await fireEvent.click(panel.getByText("复制中文"));
     expect(copyText).toHaveBeenLastCalledWith("红色花朵");
     await fireEvent.click(panel.getByText("English"));
+    expect(panel.getByText("English").getAttribute("aria-pressed")).toBe("true");
+    expect(panel.getByText("中文").getAttribute("aria-pressed")).toBe("false");
     await fireEvent.click(panel.getByText("复制英文"));
     expect(copyText).toHaveBeenLastCalledWith("red flower");
     await fireEvent.click(panel.getByText("复制双语"));
@@ -106,6 +108,8 @@ describe("reverse prompts", () => {
     const panel = render(ModelSettings);
     await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
     await fireEvent.click(panel.getByText("测试视觉"));
+    expect(panel.getByText("测试视觉").getAttribute("aria-pressed")).toBe("true");
+    expect(panel.getByText("＋ 添加模型").getAttribute("aria-pressed")).toBe("false");
     expect((panel.getByLabelText("API Key") as HTMLInputElement).value).toBe("");
     await fireEvent.click(panel.getByText("保存模型"));
     await waitFor(() => expect(save).toHaveBeenCalled());

@@ -186,7 +186,14 @@
   >
     <aside class="border-r border-border bg-surface flex flex-col min-h-0">
       <FolderTree />
-      <button class="shrink-0 border-t border-border px-4 py-3 text-left text-[13px] hover:bg-surface-3" onclick={() => (settingsOpen = true)} aria-label="全局设置">⚙ 设置</button>
+      <div class="sidebar-settings flex items-center justify-start shrink-0 h-24 px-5">
+        <button class="flex items-center justify-center w-12 h-12 rounded-xl text-zinc-400 hover:bg-surface-3 hover:text-zinc-100 focus-visible:bg-surface-3 focus-visible:text-zinc-100 focus-visible:outline-none transition-colors" onclick={() => (settingsOpen = true)} aria-label="全局设置" title="设置">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m9.5 3-.6 2.1-1.5.9-2.1-.5-2.5 4.3 1.5 1.6v1.8l-1.5 1.6 2.5 4.3 2.1-.5 1.5.9.6 2.1h5l.6-2.1 1.5-.9 2.1.5 2.5-4.3-1.5-1.6v-1.8l1.5-1.6-2.5-4.3-2.1.5-1.5-.9L14.5 3z" />
+            <circle cx="12" cy="12.3" r="3.2" />
+          </svg>
+        </button>
+      </div>
     </aside>
     <main class="min-w-0">
       <Feed

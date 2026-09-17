@@ -95,21 +95,22 @@
 </script>
 
 {#if open}
-  <div class="fixed inset-0 z-[60] bg-black/75 flex items-center justify-center" role="dialog" aria-modal="true" aria-label="设置" data-settings-dialog>
-    <div class="fill-interactions bg-surface-2 border border-border rounded-[12px] settings-shell w-[900px] max-w-[94vw] h-[min(760px,88vh)] overflow-hidden flex flex-col">
-      <div class="flex items-center justify-between px-6 py-4 border-b border-border">
-        <h2 class="text-lg font-semibold">设置</h2>
-        <button class="w-8 h-8 rounded bg-surface border border-border" aria-label="关闭设置" onclick={() => (open = false)}>×</button>
+  <div class="fixed inset-0 z-[60] bg-surface-2" role="dialog" aria-modal="true" aria-label="设置" data-settings-dialog>
+    <div class="fill-interactions settings-shell w-full h-full overflow-hidden flex flex-col">
+      <div class="flex items-center justify-between px-8 py-6 shrink-0">
+        <h2 class="text-2xl font-semibold tracking-tight">设置</h2>
+        <button class="w-10 h-10 rounded-xl text-2xl text-muted" aria-label="关闭设置" onclick={() => (open = false)}>×</button>
       </div>
 
       <div class="settings-body flex flex-1 min-h-0">
-      <nav class="settings-nav flex flex-col gap-2 p-4 w-[170px] shrink-0 border-r border-border overflow-y-auto" aria-label="设置分类">
+      <nav class="settings-nav flex flex-col gap-2 px-5 py-6 w-[240px] shrink-0 overflow-y-auto bg-surface" aria-label="设置分类">
         {#each ["通用", "模型与反推", "快捷键", "ComfyUI", "关于与更新"] as item}
-          <button class="text-sm text-left px-3 py-3 rounded" aria-pressed={tab === item} onclick={() => tab = item}>{item}</button>
+          <button class="text-sm text-left px-4 py-3 rounded-xl" aria-pressed={tab === item} onclick={() => tab = item}>{item}</button>
         {/each}
       </nav>
-      <div class="settings-content flex-1 min-w-0 overflow-y-auto p-6">
-      <h3 class="text-base font-semibold mb-5">{tab}</h3>
+      <div class="settings-content flex-1 min-w-0 overflow-y-auto">
+      <div class="settings-page w-full max-w-[960px] mx-auto px-12 py-10">
+      <h3 class="text-2xl font-semibold tracking-tight mb-8">{tab}</h3>
       {#if tab === "快捷键"}<ShortcutSettings />{/if}
       {#if tab === "关于与更新"}<UpdatePanel />{/if}
       {#if tab === "模型与反推"}<ModelSettings />{/if}
@@ -183,11 +184,12 @@
       </section>
 
       {/if}
-      </div>
-      </div>
-      <div class="flex justify-end gap-2 px-6 py-3 border-t border-border">
-        <button class="text-[12px] px-3 py-1.5 rounded border border-border" onclick={() => (open = false)}>关闭</button>
+      <div class="flex justify-end gap-2 pt-8 mt-6 border-t border-border">
+        <button class="text-[12px] px-3 py-1.5 rounded border border-border" onclick={() => (open = false)}>返回图库</button>
         {#if tab === "通用"}<button class="text-[13px] px-4 py-1.5 rounded bg-accent text-bg font-medium disabled:opacity-50" disabled={saving || !cfg} onclick={save}>保存</button>{/if}
+      </div>
+      </div>
+      </div>
       </div>
     </div>
   </div>
@@ -196,6 +198,6 @@
 <style>
   @media (max-width: 600px) {
     .settings-nav { width: 112px; padding: 8px; }
-    .settings-content { padding: 12px; }
+    .settings-page { padding: 24px 16px; }
   }
 </style>

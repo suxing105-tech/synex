@@ -7,6 +7,21 @@ const read = (path: string) => readFileSync(resolve(process.cwd(), "src", path),
 const css = postcss.parse(read("app.css"));
 
 describe("设置与反推使用底色交互", () => {
+  it("设置占满窗口，正文限宽并独立滚动", () => {
+    const source = read("components/SettingsModal.svelte");
+    expect(source).toContain('fixed inset-0 z-[60] bg-surface-2');
+    expect(source).toContain('settings-shell w-full h-full');
+    expect(source).toContain('settings-content flex-1 min-w-0 overflow-y-auto');
+    expect(source).toContain('max-w-[960px] mx-auto');
+    expect(source).not.toMatch(/max-w-\[94vw\]|88vh|bg-black\/75/);
+  });
+  it("侧栏入口为居中靠左的独立齿轮，保留无障碍名称", () => {
+    const source = read("App.svelte");
+    expect(source).toContain('sidebar-settings flex items-center justify-start');
+    expect(source).toContain('aria-label="全局设置" title="设置"');
+    expect(source).toContain('svg width="28" height="28"');
+    expect(source).not.toContain('>⚙ 设置</button>');
+  });
   it.each(["SettingsModal", "ModelSettings", "ReversePromptPanel", "UpdatePanel", "HeaderBar"])(
     "%s 不引入悬停或选中的高亮边框", (name) => {
       const source = read(`components/${name}.svelte`);

@@ -574,6 +574,7 @@
 <svelte:window onkeydown={handleKey} />
 
 <div class="gallery-toolbar px-4 py-3 grid items-center gap-3 border-b border-border bg-surface shrink-0">
+  <div class="toolbar-info flex items-center gap-3 min-w-0">
   <div>
     <div class="text-base font-medium">{$activeFolderName}</div>
     <div class="text-xs text-muted mt-0">
@@ -592,8 +593,9 @@
     </div>
   </div>
   {#if selectedCount === 2}
-    <button class="rounded-lg px-3 py-2 text-xs" onclick={() => { const i = $feedItems.findIndex(it => $multiSelectedIds.has(it.id)); if (i >= 0) openLightbox($feedItems[i], i); }}>对比图片</button>
+    <button class="compare-trigger shrink-0 rounded-lg px-2 py-2 text-xs" onclick={() => { const i = $feedItems.findIndex(it => $multiSelectedIds.has(it.id)); if (i >= 0) openLightbox($feedItems[i], i); }}>对比图片</button>
   {/if}
+  </div>
   <GallerySearch />
   <div class="ml-auto flex items-center gap-2 text-[12.5px] text-muted">
     <span>列数</span>
@@ -705,7 +707,7 @@
                   onclick={(e) => { if (renamingId === it.id) e.stopPropagation(); }}
                   ondblclick={(e) => { e.stopPropagation(); e.preventDefault(); if (renamingId !== it.id) void renameImage(it); }}>
                   {#if renamingId === it.id}
-                    <input bind:this={renameInput} bind:value={renameValue} aria-label="编辑图片名称" class="image-rename"
+                    <input bind:this={renameInput} bind:value={renameValue} aria-label="编辑图片名称" class="image-rename" style="width: 180px; max-width: 100%;"
                       readonly={renameSaving}
                       onkeydown={(e) => { e.stopPropagation(); if (e.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); void saveRename(it); } else if (e.key === 'Escape') { e.preventDefault(); renamingId = null; } }}
                       onblur={() => saveRename(it)} />
@@ -749,7 +751,7 @@
 {/if}
 
 <style>
-  .image-rename { width: 100%; min-width: 0; border: 1px solid #888; border-radius: 3px; background: #222; color: #eee; padding: 1px 3px; outline: none; font: inherit; }
+  .image-rename { min-width: 0; border: 1px solid #888; border-radius: 3px; background: #222; color: #eee; padding: 1px 3px; outline: none; font: inherit; }
   .import-progress { position: sticky; top: 0; z-index: 25; width: fit-content; margin: 0 auto 8px; padding: 6px 12px; background: #292929; border-radius: 16px; font-size: 12px; color: #ddd; }
   .gallery-toolbar { grid-template-columns: minmax(0, 1fr) minmax(120px, 2fr) minmax(0, 1fr); }
   @media (max-width: 760px) { .gallery-toolbar { grid-template-columns: minmax(0, 1fr); } }

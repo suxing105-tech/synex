@@ -10,7 +10,7 @@ from .db import fts_sync, get_pool, transaction
 
 
 
-def original_url_for(image_id: int, file_mtime: float | None, *, max_size: int | None = 1024) -> str | None:
+def original_url_for(image_id: int, file_mtime: float | None, *, max_size: int | None = 1024, identity: str = "") -> str | None:
     """返回带 cache-bust 的原图 URL（feed 直接拿原图让浏览器缩放）。
 
     原图文件被覆盖时 mtime 变 → URL 变 → 浏览器重新下载。
@@ -26,7 +26,9 @@ def original_url_for(image_id: int, file_mtime: float | None, *, max_size: int |
     qs = []
     if max_size is not None:
         qs.append(f"max={int(max_size)}")
-    qs.append(f"v={int(file_mtime)}")
+    import hashlib
+    key = hashlib.sha256(identity.encode()).hexdigest()[:16]
+    qs.append(f"v=2-{file_mtime:.9f}-{key}")
     return f"/api/images/{image_id}/file?{"&".join(qs)}"
 
 
@@ -344,7 +346,7 @@ def _row_to_summary(row: sqlite3.Row) -> dict:
         "id": row["id"],
         "filename": row["filename"],
         "path": row["path"],
-        "original_url": original_url_for(row["id"], row["mtime"]),
+        "original_url": original_url_for(row["id"], row["mtime"], identity=f"{row['path']}|{row['size_bytes']}|{row['indexed_at']}"),
         "width": row["width"],
         "height": row["height"],
         "mtime": row["mtime"],

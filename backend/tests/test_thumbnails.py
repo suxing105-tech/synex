@@ -22,7 +22,7 @@ def test_generate_preview_caches_to_disk(tmp_data_dir):
         assert out1 is not None
         assert out1.exists()
         assert out1.parent == previews_dir()
-        assert out1.name == "42_max512.webp"
+        assert out1.name.startswith("42_max512_q85_")
 
         from PIL import Image
         with Image.open(out1) as im:

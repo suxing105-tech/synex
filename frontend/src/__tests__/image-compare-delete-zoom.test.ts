@@ -27,8 +27,8 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.mocked(imagesApi.list).moc
 it('两张选中图片预览自动进入对比，并可切换单图', async () => {
   multiSelectedIds.set(new Set([1, 2]));
   const screen = render(Lightbox, { open: true, index: 0, selectedId: 1 });
-  expect(screen.getByAltText('A：1.jpg').getAttribute('src')).toMatch(/\/1\/file$/);
-  expect(screen.getByAltText('B：2.jpg').getAttribute('src')).toMatch(/\/2\/file$/);
+  expect(screen.getByAltText('A：1.jpg').getAttribute('src')).toMatch(/\/1\/file\?cache=2$/);
+  expect(screen.getByAltText('B：2.jpg').getAttribute('src')).toMatch(/\/2\/file\?cache=2$/);
   await fireEvent.click(screen.getByText('查看单图'));
   expect(screen.queryByLabelText('图片对比分割线')).toBeNull();
   expect(screen.getByAltText('1.jpg')).toBeTruthy();

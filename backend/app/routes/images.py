@@ -66,11 +66,8 @@ def get_original(image_id: int, request: Request, max: int | None = Query(defaul
       例如 max=1024 把图缩到最长边 1024 像素再返回（WebP 编码，落盘缓存到 previews/）。
       feed 用 ?max=1024 拿 ~200KB 预览代替 2-5MB 原图。
 
-    缓存策略：
-    - 原图 / 预览一旦落盘基本不变，按 mtime 给 1 年 Cache-Control + ETag/Last-Modified
-    - 浏览器再请求时直接 304 不传 body，省流量
-    - 文件被覆盖后 mtime 变 → URL ?v= 变 + ETag 变 → 浏览器重新拉
-    - 预览缓存命中（同 max_size + 缓存 mtime >= 源 mtime）→ 直接返回，不解码原图
+    缓存策略：预览按原文件内容摘要隔离；浏览器每次用内容 ETag 校验。
+    不按时间新旧判断内容一致，防止导入保留旧时间的文件时错用历史预览。
     """
     import email.utils
     from pathlib import Path
@@ -106,18 +103,19 @@ def get_original(image_id: int, request: Request, max: int | None = Query(defaul
         etag = f'"{int(mtime)}-{stat.st_size}"'
         last_modified_dt = email.utils.formatdate(mtime, usegmt=True)
 
-    # 304 Not Modified: client 带 If-None-Match 或 If-Modified-Since 来就回 304
+    # Only a byte-level validator can distinguish replacements with preserved timestamps.
+    import hashlib
+    with serve_path.open("rb") as content:
+        digest = hashlib.file_digest(content, "sha256").hexdigest()
+    etag = f'"{digest}-max{max}"'
     if_none_match = request.headers.get("if-none-match")
-    if_modified_since = request.headers.get("if-modified-since")
-    if if_none_match == etag or (
-        if_modified_since and if_modified_since == last_modified_dt
-    ):
+    if if_none_match == etag:
         return Response(
             status_code=304,
             headers={
                 "ETag": etag,
                 "Last-Modified": last_modified_dt,
-                "Cache-Control": "public, max-age=31536000, immutable",
+                "Cache-Control": "private, no-cache",
             },
         )
 
@@ -127,7 +125,7 @@ def get_original(image_id: int, request: Request, max: int | None = Query(defaul
         headers={
             "ETag": etag,
             "Last-Modified": last_modified_dt,
-            "Cache-Control": "public, max-age=31536000, immutable",
+            "Cache-Control": "private, no-cache",
         },
     )
 

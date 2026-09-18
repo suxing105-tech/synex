@@ -12,9 +12,9 @@
 </script>
 
 <div class="compare-stage" bind:this={stage}>
-  <img src={backendUrl(`/api/images/${images[1].id}/file`)} alt={`B：${images[1].filename}`} draggable="false" />
+  <img src={backendUrl(`/api/images/${images[1].id}/file?cache=2`)} alt={`B：${images[1].filename}`} draggable="false" />
   <div class="compare-overlay" style:clip-path={`inset(0 ${100 - split}% 0 0)`}>
-    <img src={backendUrl(`/api/images/${images[0].id}/file`)} alt={`A：${images[0].filename}`} draggable="false" />
+    <img src={backendUrl(`/api/images/${images[0].id}/file?cache=2`)} alt={`A：${images[0].filename}`} draggable="false" />
   </div>
   <span class="label left">A · {images[0].filename}</span>
   <span class="label right">B · {images[1].filename}</span>

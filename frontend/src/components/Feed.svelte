@@ -679,7 +679,7 @@
             {#each col.items as it (it.id)}
               <button
                 type="button"
-                class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 text-left {$multiSelectedIds.has(it.id) ? 'outline outline-[6px] outline-accent outline-offset-[-6px]' : ''} {$newIds.has(it.id) ? 'new-badge' : ''}"
+                class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 text-left {$multiSelectedIds.has(it.id) ? 'is-selected' : ''} {$newIds.has(it.id) ? 'new-badge' : ''}"
                 style="aspect-ratio: {aspectFor(it)}; width: 100%;"
                 title={it.filename}
                 onclick={(e) => { if (draggedOriginal) { draggedOriginal = false; return; } onThumbClick(e, it); }}
@@ -751,6 +751,7 @@
 {/if}
 
 <style>
+  .thumb.is-selected::after { content: ""; position: absolute; inset: 0; border: 1px solid #f24e4e; border-radius: inherit; pointer-events: none; z-index: 2; }
   .image-rename { min-width: 0; border: 1px solid #888; border-radius: 3px; background: #222; color: #eee; padding: 1px 3px; outline: none; font: inherit; }
   .import-progress { position: sticky; top: 0; z-index: 25; width: fit-content; margin: 0 auto 8px; padding: 6px 12px; background: #292929; border-radius: 16px; font-size: 12px; color: #ddd; }
   .gallery-toolbar { grid-template-columns: minmax(0, 1fr) minmax(120px, 2fr) minmax(0, 1fr); }

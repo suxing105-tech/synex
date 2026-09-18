@@ -328,7 +328,7 @@
     if (open) {
       const it = $feedItems[index];
       if (it) {
-        originalUrl = backendUrl(`/api/images/${it.id}/file`);
+        originalUrl = backendUrl(`/api/images/${it.id}/file?cache=2`);
         selectedId = it.id;
       }
     }

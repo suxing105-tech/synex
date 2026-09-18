@@ -17,7 +17,10 @@ describe("设置与反推使用底色交互", () => {
   });
   it("移除左下设置入口，标题与分类统一底色且分类有线性图标", () => {
     expect(read("App.svelte")).not.toContain('sidebar-settings');
-    expect(read("components/HeaderBar.svelte")).toContain('title="设置"');
+    expect(read("App.svelte")).not.toContain('<HeaderBar');
+    expect(read("App.svelte")).toContain('sidebar-actions');
+    expect(read("App.svelte")).toContain('aria-label="导入目录"');
+    expect(read("components/Feed.svelte")).toContain('<GallerySearch />');
     const source = read("components/SettingsModal.svelte");
     expect(source).toContain('settings-title w-[240px] shrink-0 bg-surface');
     expect(source).toContain('overflow-y-auto bg-surface');

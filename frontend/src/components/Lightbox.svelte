@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { copyOriginalImage } from "../lib/image-clipboard";
   import { matchesAction, shortcutBlocked } from "../lib/shortcut-settings";
   import { backendUrl } from "../lib/backend-url";
   import { feedItems, refreshFeed, refreshStats } from "../lib/stores";
@@ -237,32 +238,9 @@
     ];
   });
 
-  async function fetchBlob(it: any): Promise<Blob | null> {
-    const url = backendUrl(it.original_url ?? `/api/images/${it.id}/file`);
-    try {
-      const r = await fetch(url, { cache: "no-cache" });
-      if (!r.ok) return null;
-      return await r.blob();
-    } catch {
-      return null;
-    }
-  }
-
-  async function copyImage(it: any) {
-    if (!navigator.clipboard || typeof ClipboardItem === "undefined") {
-      const ok = await copyText(backendUrl(it.original_url ?? `/api/images/${it.id}/file`));
-      notify(ok ? "已复制图片地址（剪贴板不支持图片）" : "复制失败");
-      return;
-    }
-    const blob = await fetchBlob(it);
-    if (!blob) return notify("获取图片失败");
-    try {
-      await navigator.clipboard.write([new ClipboardItem({ [blob.type || "image/png"]: blob })]);
-      notify("已复制图片到剪贴板");
-    } catch {
-      const ok = await copyText(backendUrl(it.original_url ?? `/api/images/${it.id}/file`));
-      notify(ok ? "已复制图片地址" : "复制失败");
-    }
+  async function copyImage(it: { id: number }) {
+    try { await copyOriginalImage(it.id); notify("已复制原图到剪贴板"); }
+    catch (e) { notify(`复制原图失败：${(e as Error).message}`); }
   }
 
   async function renameImage(it: any) {
@@ -371,7 +349,7 @@
       <button class="rounded-lg px-3 py-2 text-xs" aria-pressed={zoomMode === "zoom"} onclick={() => { if (zoomMode !== "zoom") toggleZoom(); }}>100%</button>
     </header>
     <div class="viewer-canvas relative flex-1 min-h-0 overflow-hidden" bind:clientWidth={viewportW} bind:clientHeight={viewportH} oncontextmenu={openMenu}>
-      <div class="absolute inset-0 flex items-center justify-center overflow-hidden">
+      <div class="absolute inset-0 flex items-center justify-center overflow-hidden" ondblclick={(e) => { if (e.button === 0 && e.target === e.currentTarget) close(); }}>
     <img
       bind:this={imgEl}
       src={originalUrl ?? ""}
@@ -402,7 +380,7 @@
         <button class="rounded-lg px-3 py-2" onclick={next} title="下一张">›</button>
       </div>
       <span class="text-muted">{#if it.width && it.height}{it.width} × {it.height} · {/if}{formatSize(it.size_bytes)}</span>
-      <span class="text-muted">{zoomMode === "zoom" ? "拖动查看细节 · 双击适应窗口" : "双击图片查看 100% 细节"}</span>
+      <span class="text-muted">{zoomMode === "zoom" ? "拖动查看细节 · 双击适应窗口" : "双击图片查看 100% · 双击空白返回"}</span>
     </footer>
   </section>
 {/if}

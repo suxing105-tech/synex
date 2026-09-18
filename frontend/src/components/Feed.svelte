@@ -1,4 +1,6 @@
 <script lang="ts">
+  import GallerySearch from "./GallerySearch.svelte";
+  import { copyOriginalImage } from "../lib/image-clipboard";
   import { matchesAction, shortcutBlocked } from "../lib/shortcut-settings";
   import { backendUrl } from "../lib/backend-url";
   import {
@@ -263,36 +265,9 @@
     ];
   });
 
-  async function fetchImageBlob(it: ImageSummary): Promise<Blob | null> {
-    const url = backendUrl(it.original_url ?? `/api/images/${it.id}/file`);
-    try {
-      const resp = await fetch(url, { cache: "no-cache" });
-      if (!resp.ok) return null;
-      return await resp.blob();
-    } catch {
-      return null;
-    }
-  }
-
   async function copyImageToClipboard(it: ImageSummary) {
-    if (!navigator.clipboard || typeof ClipboardItem === "undefined") {
-      // 退化方案：复制原图 URL
-      const ok = await copyText(backendUrl(it.original_url ?? `/api/images/${it.id}/file`));
-      notify(ok ? "已复制图片地址（剪贴板不支持图片）" : "复制失败");
-      return;
-    }
-    const blob = await fetchImageBlob(it);
-    if (!blob) {
-      notify("获取图片失败");
-      return;
-    }
-    try {
-      await navigator.clipboard.write([new ClipboardItem({ [blob.type || "image/png"]: blob })]);
-      notify("已复制图片到剪贴板");
-    } catch (e) {
-      const ok = await copyText(backendUrl(it.original_url ?? `/api/images/${it.id}/file`));
-      notify(ok ? "已复制图片地址" : "复制失败");
-    }
+    try { await copyOriginalImage(it.id); notify("已复制原图到剪贴板"); }
+    catch (e) { notify(`复制原图失败：${(e as Error).message}`); }
   }
 
   async function renameImage(it: ImageSummary) {
@@ -514,7 +489,7 @@
 
 <svelte:window onkeydown={handleKey} />
 
-<div class="px-5 pt-4 pb-3 flex items-center gap-4 border-b border-border bg-surface">
+<div class="gallery-toolbar px-4 py-3 grid items-center gap-3 border-b border-border bg-surface shrink-0">
   <div>
     <div class="text-base font-medium">{$activeFolderName}</div>
     <div class="text-xs text-muted mt-0">
@@ -532,6 +507,7 @@
       {/if}
     </div>
   </div>
+  <GallerySearch />
   <div class="ml-auto flex items-center gap-2 text-[12.5px] text-muted">
     <span>列数</span>
     <input
@@ -541,7 +517,7 @@
       step="1"
       value={$targetColumns}
       oninput={(e) => targetColumns.set(Number((e.target as HTMLInputElement).value))}
-      class="columns-slider w-32"
+      class="columns-slider w-20"
       style="--value: {$targetColumns}"
     />
     <span class="text-zinc-200">{$targetColumns} 列</span>
@@ -550,8 +526,7 @@
 
 <div
   bind:this={scrollerEl}
-  class="overflow-y-auto p-3 feed-body relative"
-  style="height: calc(100vh - 110px)"
+  class="overflow-y-auto p-3 feed-body relative flex-1 min-h-0"
   ondragenter={onDragEnter}
   ondragover={onDragOver}
   ondragleave={onDragLeave}
@@ -682,6 +657,8 @@
 {/if}
 
 <style>
+  .gallery-toolbar { grid-template-columns: minmax(0, 1fr) minmax(120px, 2fr) minmax(0, 1fr); }
+  @media (max-width: 760px) { .gallery-toolbar { grid-template-columns: minmax(0, 1fr); } }
   .masonry-scroller {
     /* 容器宽变化时整排可能溢出，横向滚动兜底；
        纵向交给父级 overflow-y-auto 处理 */

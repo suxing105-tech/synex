@@ -19,6 +19,14 @@ describe("中间区域图片预览", () => {
     await fireEvent.click(ui.getByTitle('返回缩略图（Esc）'));
     expect(ui.queryByRole('region')).toBeNull();
   });
+  it("图片双击只切换缩放，空白左键双击返回", async () => {
+    const ui = render(Lightbox, {open:true,index:0,selectedId:1});
+    await fireEvent.dblClick(ui.getByRole('img'), {button:0});
+    expect(ui.getByRole('region')).toBeTruthy();
+    expect(ui.getByRole('button',{name:'100%'}).getAttribute('aria-pressed')).toBe('true');
+    await fireEvent.dblClick(ui.container.querySelector('.viewer-canvas > div')!, {button:0});
+    expect(ui.queryByRole('region')).toBeNull();
+  });
   it("大图拖动可查看边缘，画布略小于图片时不产生反向偏移", () => {
     expect(clampPan({x:9999,y:-9999},{w:1200,h:800},{w:600,h:500},0)).toEqual({x:300,y:-150});
     expect(clampPan({x:0,y:0},{w:620,h:510},{w:600,h:500},0)).toEqual({x:0,y:0});

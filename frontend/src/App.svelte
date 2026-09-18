@@ -4,7 +4,6 @@
   import { connectEvents, disconnectEvents } from "./lib/ws";
   import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, comfyuiEnabled, feedItems, tag, folderId, query, view, selectedDetail } from "./lib/stores";
   import { createSplashGate } from "./lib/splash-gate.svelte";
-  import HeaderBar from "./components/HeaderBar.svelte";
   import FolderTree from "./components/FolderTree.svelte";
   import Feed from "./components/Feed.svelte";
   import DetailPanel from "./components/DetailPanel.svelte";
@@ -172,7 +171,6 @@
 </script>
 
 <div class="h-screen w-screen flex flex-col bg-bg text-zinc-200" ondragover={swallowDrag} ondrop={swallowDrag} role="application">
-  <HeaderBar onOpenSettings={() => (settingsOpen = true)} onOpenOnboarding={() => (onboardingOpen = true)} />
   <ScanProgressBar />
   {#if $updateStatus?.version && ["available", "ready"].includes($updateStatus.phase)}
     <button class="bg-surface-2 border-b border-border text-xs py-2 text-accent" onclick={() => (settingsOpen = true)}>
@@ -186,9 +184,17 @@
   >
     <aside class="border-r border-border bg-surface flex flex-col min-h-0">
       <FolderTree />
+      <div class="sidebar-actions fill-interactions flex items-center gap-2 px-4 py-4 shrink-0">
+        <button class="w-10 h-10 flex items-center justify-center rounded-lg text-muted" aria-label="设置" title="设置" onclick={() => settingsOpen = true}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="m12 2 9 5v10l-9 5-9-5V7z" /><circle cx="12" cy="12" r="4" /></svg>
+        </button>
+        <button class="w-10 h-10 flex items-center justify-center rounded-lg text-muted" aria-label="导入目录" title="导入目录" onclick={() => onboardingOpen = true}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 19V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM12 10v7m-3-3 3 3 3-3" /></svg>
+        </button>
+      </div>
     </aside>
     <main class="relative min-w-0 min-h-0 overflow-hidden isolate">
-      <div class="h-full" inert={lightboxOpen}>
+      <div class="h-full flex flex-col" inert={lightboxOpen}>
       <Feed
         bind:selectedId={selectedIdValue}
         bind:lightboxOpen

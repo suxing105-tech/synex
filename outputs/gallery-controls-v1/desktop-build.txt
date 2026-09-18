@@ -1,0 +1,228 @@
+        Info Looking up installed tauri packages to check mismatched versions...
+     Running beforeBuildCommand `pnpm build`
+$ vite build
+vite v5.4.21 building for production...
+transforming...
+14:59:36 [vite-plugin-svelte] src/App.svelte:206:4 noninteractive element cannot have nonnegative tabIndex value
+https://svelte.dev/e/a11y_no_noninteractive_tabindex
+204:       <Lightbox bind:open={lightboxOpen} bind:index={lightboxIndex} bind:selectedId={selectedIdValue} />
+205:     </main>
+206:     <div
+              ^
+207:       class="splitter"
+208:       role="separator"
+14:59:36 [vite-plugin-svelte] src/components/FolderTree.svelte:141:2 Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+139:     系统
+140:   </div>
+141:   <div
+            ^
+142:     class="folder-item {$view === 'all' && $folderId === null ? 'active' : ''}"
+143:     onclick={() => {
+14:59:36 [vite-plugin-svelte] src/components/FolderTree.svelte:141:2 `<div>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+139:     系统
+140:   </div>
+141:   <div
+            ^
+142:     class="folder-item {$view === 'all' && $folderId === null ? 'active' : ''}"
+143:     onclick={() => {
+14:59:36 [vite-plugin-svelte] src/components/FolderTree.svelte:153:2 Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+151:     <span class="count">{$stats.total_images}</span>
+152:   </div>
+153:   <div
+            ^
+154:     class="folder-item {$view === 'favorite' ? 'active' : ''}"
+155:     onclick={() => setView('favorite')}
+14:59:36 [vite-plugin-svelte] src/components/FolderTree.svelte:153:2 `<div>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+151:     <span class="count">{$stats.total_images}</span>
+152:   </div>
+153:   <div
+            ^
+154:     class="folder-item {$view === 'favorite' ? 'active' : ''}"
+155:     onclick={() => setView('favorite')}
+14:59:36 [vite-plugin-svelte] src/components/FolderTree.svelte:162:2 Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+160:     <span class="count">{$stats.favorites}</span>
+161:   </div>
+162:   <div
+            ^
+163:     class="folder-item {$view === 'recent' ? 'active' : ''}"
+164:     onclick={() => setView('recent')}
+14:59:36 [vite-plugin-svelte] src/components/FolderTree.svelte:162:2 `<div>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+160:     <span class="count">{$stats.favorites}</span>
+161:   </div>
+162:   <div
+            ^
+163:     class="folder-item {$view === 'recent' ? 'active' : ''}"
+164:     onclick={() => setView('recent')}
+14:59:36 [vite-plugin-svelte] src/components/FolderTree.svelte:212:4 Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+210:     onclick={closeAll}
+211:   >
+212:     <div
+              ^
+213:       class="bg-surface-2 border border-border rounded-[10px] p-5 w-[360px]"
+214:       onclick={(e) => e.stopPropagation()}
+14:59:36 [vite-plugin-svelte] src/components/FolderTree.svelte:212:4 `<div>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+210:     onclick={closeAll}
+211:   >
+212:     <div
+              ^
+213:       class="bg-surface-2 border border-border rounded-[10px] p-5 w-[360px]"
+214:       onclick={(e) => e.stopPropagation()}
+14:59:36 [vite-plugin-svelte] src/components/FolderTree.svelte:226:8 Avoid using autofocus
+https://svelte.dev/e/a11y_autofocus
+224:           if (e.key === 'Escape') closeAll();
+225:         }}
+226:         autofocus
+                      ^
+227:       />
+228:       <div class="flex justify-end gap-2 mt-3">
+14:59:36 [vite-plugin-svelte] src/components/FolderTree.svelte:252:4 Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+250:     onclick={closeAll}
+251:   >
+252:     <div
+              ^
+253:       class="bg-surface-2 border border-border rounded-[10px] p-5 w-[360px]"
+254:       onclick={(e) => e.stopPropagation()}
+14:59:36 [vite-plugin-svelte] src/components/FolderTree.svelte:252:4 `<div>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+250:     onclick={closeAll}
+251:   >
+252:     <div
+              ^
+253:       class="bg-surface-2 border border-border rounded-[10px] p-5 w-[360px]"
+254:       onclick={(e) => e.stopPropagation()}
+14:59:36 [vite-plugin-svelte] src/components/FolderTree.svelte:265:8 Avoid using autofocus
+https://svelte.dev/e/a11y_autofocus
+263:           if (e.key === 'Escape') closeAll();
+264:         }}
+265:         autofocus
+                      ^
+266:       />
+267:       <div class="flex justify-end gap-2 mt-3">
+14:59:36 [vite-plugin-svelte] src/components/FolderTree.svelte:288:2 Elements with the 'menu' interactive role must have a tabindex value
+https://svelte.dev/e/a11y_interactive_supports_focus
+286:   {@const menuNode = findNode($folders, menuFor)}
+287:   {@const isSys = !!menuNode?.is_system}
+288:   <div
+            ^
+289:     class="folder-menu fixed bg-surface-2 border border-border rounded-[8px] py-1 min-w-[160px] z-40 text-[13px] shadow-xl"
+290:     style="left: {menuPos.x}px; top: {menuPos.y}px;"
+14:59:36 [vite-plugin-svelte] src/components/FolderTree.svelte:288:2 Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+286:   {@const menuNode = findNode($folders, menuFor)}
+287:   {@const isSys = !!menuNode?.is_system}
+288:   <div
+            ^
+289:     class="folder-menu fixed bg-surface-2 border border-border rounded-[8px] py-1 min-w-[160px] z-40 text-[13px] shadow-xl"
+290:     style="left: {menuPos.x}px; top: {menuPos.y}px;"
+14:59:36 [vite-plugin-svelte] src/components/FolderTree.svelte:342:2 Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+340:
+341: {#snippet userFolderItem(folder: FolderNode, depth: number)}
+342:   <div
+            ^
+343:     class="folder-item {$folderId === folder.id ? 'active' : ''}"
+344:     onclick={() => pickFolder(folder)}
+14:59:36 [vite-plugin-svelte] src/components/FolderTree.svelte:342:2 `<div>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+340:
+341: {#snippet userFolderItem(folder: FolderNode, depth: number)}
+342:   <div
+            ^
+343:     class="folder-item {$folderId === folder.id ? 'active' : ''}"
+344:     onclick={() => pickFolder(folder)}
+14:59:36 [vite-plugin-svelte] src/components/FolderTree.svelte:364:2 Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+362:
+363: {#snippet systemFolderItem(folder: FolderNode, depth: number)}
+364:   <div
+            ^
+365:     class="folder-item system {$folderId === folder.id ? 'active' : ''}"
+366:     onclick={() => pickFolder(folder)}
+14:59:36 [vite-plugin-svelte] src/components/FolderTree.svelte:364:2 `<div>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+362:
+363: {#snippet systemFolderItem(folder: FolderNode, depth: number)}
+364:   <div
+            ^
+365:     class="folder-item system {$folderId === folder.id ? 'active' : ''}"
+366:     onclick={() => pickFolder(folder)}
+14:59:36 [vite-plugin-svelte] src/components/DetailPanel.svelte:462:14 Avoid using autofocus
+https://svelte.dev/e/a11y_autofocus
+460:                 if (e.key === "Escape") { showTagInput = false; tagInput = ""; }
+461:               }}
+462:               autofocus
+                            ^
+463:             />
+464:             <div class="flex justify-end gap-2 mt-2">
+14:59:36 [vite-plugin-svelte] src/components/Lightbox.svelte:351:4 `<div>` with a contextmenu handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+349:       <button class="rounded-lg px-3 py-2 text-xs" aria-pressed={zoomMode === "zoom"} onclick={() => { if (zoomMode !== "zoom") toggleZoom(); }}>100%</button>
+350:     </header>
+351:     <div class="viewer-canvas relative flex-1 min-h-0 overflow-hidden" bind:clientWidth={viewportW} bind:clientHeight={viewportH} oncontextmenu={openMenu}>
+               ^
+352:       <div class="absolute inset-0 flex items-center justify-center overflow-hidden" ondblclick={(e) => { if (e.button === 0 && e.target === e.currentTarget) close(); }}>
+353:     <img
+14:59:36 [vite-plugin-svelte] src/components/Lightbox.svelte:352:6 `<div>` with a dblclick handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+350:     </header>
+351:     <div class="viewer-canvas relative flex-1 min-h-0 overflow-hidden" bind:clientWidth={viewportW} bind:clientHeight={viewportH} oncontextmenu={openMenu}>
+352:       <div class="absolute inset-0 flex items-center justify-center overflow-hidden" ondblclick={(e) => { if (e.button === 0 && e.target === e.currentTarget) close(); }}>
+                 ^
+353:     <img
+354:       bind:this={imgEl}
+14:59:36 [vite-plugin-svelte] src/components/Feed.svelte:582:4 Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+580:         - onScrollerClick: 点击空白区域时清空选区
+581:     -->
+582:     <div
+              ^
+583:       class="masonry-scroller"
+584:       bind:clientWidth={containerWidth}
+14:59:36 [vite-plugin-svelte] src/components/Feed.svelte:582:4 `<div>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+580:         - onScrollerClick: 点击空白区域时清空选区
+581:     -->
+582:     <div
+              ^
+583:       class="masonry-scroller"
+584:       bind:clientWidth={containerWidth}
+14:59:36 [vite-plugin-svelte] src/components/Feed.svelte:620:18 Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+618:
+619:                 {#if $comfyuiStatus.running && it.has_workflow && (hoveredId === it.id || $selectedIdStore === it.id || $multiSelectedIds.has(it.id))}
+620:                   <div
+                            ^
+621:                     role="button"
+622:                     tabindex="-1"
+14:59:36 [vite-plugin-svelte] src/components/PromptCard.svelte:32:28 This reference only captures the initial value of `initiallyExpanded`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally
+30:   }: Props = $props();
+31:
+32:   let expanded = $state.raw(initiallyExpanded);
+                                                 ^
+33:
+34:   const chars = $derived(text ? text.length : 0);
+✓ 161 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.48 kB │ gzip:  0.34 kB
+dist/assets/index-DBvmnNq1.css   35.23 kB │ gzip:  7.75 kB
+dist/assets/index-4shlIT2e.js   167.38 kB │ gzip: 61.84 kB
+✓ built in 1.23s
+   Compiling suxing-gallery v0.2.1 (C:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src-tauri)
+warning: linker stdout: 正在创建库 C:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src-tauri\target\release\deps\suxing_gallery_lib.dll.lib 和对象 C:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src-tauri\target\release\deps\suxing_gallery_lib.dll.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `suxing-gallery` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 1m 33s
+       Built application at: C:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src-tauri\target\release\suxing-gallery.exe

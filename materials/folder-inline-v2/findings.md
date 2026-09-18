@@ -7,4 +7,4 @@
 - 原 reveal 接口误将 ConnectionPool 当 SQLite connection，改为 get_pool().main()，并验证路径为目录；前端显示接口错误。
 - 新增真实组件测试与模拟 Explorer 调用的后端测试。
 
-桌面实测：新版进程来自 outputs/folder-inline-v2/app/；双击 krea2 后在原名称处出现输入框，Escape 取消；右键“所在位置”成功打开“krea2 - 文件资源管理器”。未更改用户的文件夹名称。新版已留在前台。
+桌面实测：新版进程来自 outputs/folder-inline-v2/app/；双击 krea2 后在原名称处出现输入框，Escape 取消；右键“所在位置”成功打开“krea2 - 文件资源管理器”。未更改用户的文件夹名称。新版保持运行。

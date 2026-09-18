@@ -187,12 +187,15 @@
     <aside class="border-r border-border bg-surface flex flex-col min-h-0">
       <FolderTree />
     </aside>
-    <main class="min-w-0">
+    <main class="relative min-w-0 min-h-0 overflow-hidden isolate">
+      <div class="h-full" inert={lightboxOpen}>
       <Feed
         bind:selectedId={selectedIdValue}
         bind:lightboxOpen
         bind:lightboxIndex
       />
+      </div>
+      <Lightbox bind:open={lightboxOpen} bind:index={lightboxIndex} bind:selectedId={selectedIdValue} />
     </main>
     <div
       class="splitter"
@@ -222,7 +225,6 @@
   {/if}
 </div>
 
-<Lightbox bind:open={lightboxOpen} bind:index={lightboxIndex} bind:selectedId={selectedIdValue} />
 
 <OnboardingModal bind:open={onboardingOpen} />
 <SettingsModal bind:open={settingsOpen} bind:tab={settingsTab} />

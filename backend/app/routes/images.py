@@ -172,7 +172,11 @@ def delete_image(image_id: int, remove_file: bool = True):
 
 
 @router.post("/{image_id}/favorite")
-def toggle_favorite(image_id: int, favorite: bool = True):
+def toggle_favorite(image_id: int, favorite: bool = True, payload: dict | None = None):
+    if payload is not None:
+        favorite = payload.get("favorite", favorite)
+        if not isinstance(favorite, bool):
+            raise HTTPException(400, "favorite 必须是布尔值")
     repository.set_favorite(image_id, favorite)
     return {"id": image_id, "favorite": favorite}
 

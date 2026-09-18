@@ -85,3 +85,57 @@ def rename_folder(folder_id: int, name: str) -> dict:
                 conn.execute(f'UPDATE {table} SET path=? || substr(path, ?) WHERE path=? OR substr(path,1,?)=?',
                              (old_text, len(new_text) + 1, new_text, len(new_text) + 1, new_text + '/'))
         raise
+
+def relocate_folder(folder_id: int, target_id: int | None, position: str) -> None:
+    """Move a directory and its indexed subtree together; refuse merges and cycles."""
+    conn = get_pool().main()
+    source = conn.execute('SELECT * FROM folders WHERE id=?', (folder_id,)).fetchone()
+    target = conn.execute('SELECT * FROM folders WHERE id=?', (target_id,)).fetchone() if target_id is not None else None
+    if not source or (position != 'root' and not target):
+        raise ValueError('文件夹不存在')
+    if position not in ('before', 'after', 'inside', 'root'):
+        raise ValueError('移动位置无效')
+    if target and source['is_system'] != target['is_system']:
+        raise ValueError('请在来源目录或我的文件夹各自区域内移动')
+    parent_id = None if position == 'root' else target['id'] if position == 'inside' else target['parent_id']
+    descendants = repository.get_folder_descendants(folder_id)
+    if parent_id in descendants or target_id == folder_id:
+        raise ValueError('不能把文件夹移到自身或其后代')
+    if conn.execute('SELECT id FROM folders WHERE parent_id IS ? AND name=? AND id<>?', (parent_id, source['name'], folder_id)).fetchone():
+        raise ValueError('目标层级已有同名文件夹，不会合并或覆盖')
+    old = Path(source['path']).resolve() if source['path'] else None
+    new = old
+    if parent_id != source['parent_id'] and old:
+        if parent_id is not None:
+            parent = target_directory(parent_id).resolve()
+        elif source['is_system']:
+            top = source
+            while top['parent_id'] is not None:
+                top = conn.execute('SELECT * FROM folders WHERE id=?', (top['parent_id'],)).fetchone()
+            parent = Path(top['path']).resolve().parent
+        else:
+            parent = (data_dir() / 'folders').resolve()
+        new = parent / old.name
+        if new == old or new.is_relative_to(old):
+            raise ValueError('目标位置无效')
+        if new.exists():
+            raise ValueError('目标位置已有同名目录，不会合并或覆盖')
+        parent.mkdir(parents=True, exist_ok=True)
+        old.rename(new)
+    try:
+        with transaction() as c:
+            if old and new != old:
+                old_text, new_text = map(repository._normalize_path, (old, new))
+                for table in ('folders', 'images'):
+                    c.execute(f'UPDATE {table} SET path=? || substr(path, ?) WHERE path=? OR substr(path,1,?)=?',
+                              (new_text, len(old_text)+1, old_text, len(old_text)+1, old_text+'/'))
+            c.execute('UPDATE folders SET parent_id=? WHERE id=?', (parent_id, folder_id))
+            ids = [r['id'] for r in c.execute('SELECT id FROM folders WHERE parent_id IS ? AND is_system=? AND id<>? ORDER BY "order",name,id',
+                                            (parent_id, source['is_system'], folder_id))]
+            idx = ids.index(target_id) + (position == 'after') if position in ('before', 'after') else len(ids)
+            ids.insert(idx, folder_id)
+            c.executemany('UPDATE folders SET "order"=? WHERE id=?', enumerate(ids))
+    except Exception:
+        if old and new != old:
+            new.rename(old)
+        raise

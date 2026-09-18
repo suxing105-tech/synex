@@ -18,7 +18,7 @@
   import { imagesApi, comfyuiApi } from "../lib/api";
   import Icon from "./Icon.svelte";
   import { copyText } from "../lib/ws";
-  import { openOrReuseComfyuiTab } from "../lib/comfyui-window";
+  import { loadComfyWorkflow, openOrReuseComfyuiTab } from "../lib/comfyui-window";
   import type { ImageSummary, FolderNode } from "../lib/types";
   import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
   import { folderId } from "../lib/stores";
@@ -47,13 +47,10 @@
     setTimeout(() => (toast = null), 1800);
   }
   async function openInComfyui(it: ImageSummary) {
-    // 1. 同步打开 / 复用 ComfyUI 标签页（必须在 await 之前，否则被弹窗拦截器拦掉）
-    const url = $comfyuiStatus.url || "http://127.0.0.1:8188";
-    openOrReuseComfyuiTab(url);
-    // 2. 后端落盘 workflow JSON（异步，与窗口复用解耦）
     try {
-      const r = await comfyuiApi.openWorkflow(it.id);
-      notify(`${r.workflow_name}.json 已写入 ${r.file_path}`);
+      notify("正在打开工作流…");
+      await loadComfyWorkflow(it.id, it.filename);
+      notify("已在 ComfyUI 中打开工作流");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       // 403 / 400 / 404 都从 detail 拿
@@ -314,6 +311,7 @@
       return [
         { label: "复制图片", onClick: () => copyImageToClipboard(t) },
         { label: "重命名", onClick: () => renameImage(t) },
+        { label: t.favorite ? "取消收藏" : "收藏", onClick: () => favoriteImage(t) },
         { label: "图片所在位置", onClick: () => revealImage(t) },
         { label: "移动到…", children: moveMenu(items) },
         { kind: "sep" },
@@ -359,6 +357,14 @@
       notify(`重命名失败: ${(e as Error).message}`);
       await tick(); renameInput?.focus();
     } finally { renameSaving = false; }
+  }
+
+  async function favoriteImage(it: ImageSummary) {
+    try {
+      const result = await imagesApi.toggleFavorite(it.id, !it.favorite);
+      feedItems.update(items => items.map(item => item.id === it.id ? { ...item, favorite: result.favorite } : item));
+      await refreshStats();
+    } catch (e) { notify(`收藏失败：${(e as Error).message}`); }
   }
 
   async function revealImage(it: ImageSummary) {
@@ -714,7 +720,7 @@
                   {:else}{it.filename}{/if}
                 </div>
                 {#if it.favorite}
-                  <div class="absolute top-1 right-1 text-danger text-[14px] drop-shadow">♥</div>
+                  <div class="favorite-badge absolute top-1 right-10 w-6 h-7 flex items-center justify-center text-danger text-[14px] drop-shadow" aria-label="已收藏">♥</div>
                 {/if}
 
                 {#if $comfyuiStatus.running && it.has_workflow && (hoveredId === it.id || $selectedIdStore === it.id || $multiSelectedIds.has(it.id))}

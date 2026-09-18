@@ -160,6 +160,10 @@ class Indexer:
 
 
     def _ensure_system_folder_for_dir(self, dir_path: Path) -> None:
+        with self._live_lock:
+            self._ensure_system_folder_for_dir_locked(dir_path)
+
+    def _ensure_system_folder_for_dir_locked(self, dir_path: Path) -> None:
         """让 watch root 下新建的空目录也立刻出现在 system folder 树上。
 
         ``ensure_system_folder_chain`` 是为文件设计的（会丢掉最后一段当文件名），

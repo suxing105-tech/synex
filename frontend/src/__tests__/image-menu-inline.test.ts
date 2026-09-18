@@ -6,7 +6,7 @@ import ContextMenu from '../components/ContextMenu.svelte';
 import { feedItems, feedLoading, folders, multiSelectedIds } from '../lib/stores';
 import { imagesApi } from '../lib/api';
 vi.mock('../lib/api', () => ({
-  imagesApi: { list: vi.fn(async () => ({ items: get(feedItems), total: get(feedItems).length })), detail: vi.fn(), rename: vi.fn(), bulkAssignFolder: vi.fn() },
+  imagesApi: { list: vi.fn(async () => ({ items: get(feedItems), total: get(feedItems).length })), detail: vi.fn(), rename: vi.fn(), bulkAssignFolder: vi.fn(), toggleFavorite: vi.fn() },
   foldersApi: { tree: vi.fn(async () => get(folders)) }, statsApi: { get: vi.fn() }, scanApi: { progress: vi.fn() }, comfyuiApi: {},
 }));
 const item = { id: 1, filename: 'original.jpg', path: 'D:/original.jpg', width: 1600, height: 900 };
@@ -80,4 +80,18 @@ it('切换父项清理旧分支，键盘可以展开，菜单位置限制在窗�
   expect(screen.getByText('一级').closest('button')?.getAttribute('aria-expanded')).toBe('true');
   await fireEvent.pointerEnter(screen.getByText('普通').closest('button')!);
   expect(screen.queryByText('二级')).toBeNull();
+});
+
+it('收藏紧跟重命名，标记位于 ComfyUI 按钮左侧，支持取消', async () => {
+  vi.mocked(imagesApi.toggleFavorite).mockResolvedValueOnce({ id: 1, favorite: true }).mockResolvedValueOnce({ id: 1, favorite: false });
+  const screen = feed(); await fireEvent.contextMenu(screen.getByAltText('original.jpg'));
+  const labels = screen.getAllByRole('menuitem').map(it => it.textContent?.trim());
+  expect(labels.indexOf('收藏')).toBe(labels.indexOf('重命名') + 1);
+  await fireEvent.click(screen.getByText('收藏'));
+  const badge = screen.getByLabelText('已收藏');
+  expect(badge.classList.contains('right-10')).toBe(true);
+  await fireEvent.contextMenu(screen.getByAltText('original.jpg'));
+  await fireEvent.click(screen.getByText('取消收藏'));
+  expect(screen.queryByLabelText('已收藏')).toBeNull();
+  expect(imagesApi.toggleFavorite).toHaveBeenLastCalledWith(1, false);
 });

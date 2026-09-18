@@ -65,8 +65,8 @@ class FolderCreate(BaseModel):
 
 
 class FolderReorder(BaseModel):
-    target_id: int
-    position: str = Field(pattern="^(before|after)$")
+    target_id: int | None = None
+    position: str = Field(pattern="^(before|after|inside|root)$")
 
 
 class FolderUpdate(BaseModel):
@@ -180,3 +180,4 @@ class OpenWorkflowResult(BaseModel):
     comfyui_url: str
     browser_opened: bool  # 后端不再弹窗，恒为 False；保留字段以兼容前端
     message: str = ""
+    workflow: dict | None = None

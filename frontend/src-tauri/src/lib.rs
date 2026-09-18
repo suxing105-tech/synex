@@ -10,6 +10,7 @@ mod sidecar;
 mod updates;
 mod window_style;
 mod image_drag;
+mod comfyui;
 
 use sidecar::{SidecarConfig, SidecarState};
 
@@ -55,6 +56,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             image_drag::drag_original_images,
+            comfyui::open_comfy_workflow,
             commands::get_sidecar_status,
             folders::select_import_directory,
             commands::restart_sidecar,
@@ -65,6 +67,9 @@ pub fn run() {
             updates::install_update,
         ])
         .on_window_event(|window, event| {
+            if window.label() != "main" {
+                return;
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.app_handle().state::<updates::Updates>().installing() {
                     api.prevent_close();

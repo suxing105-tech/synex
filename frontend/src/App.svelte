@@ -97,16 +97,16 @@
       console.error("init failed", e);
     }
     connectEvents();
+    await refreshComfyuiStatus();
+    comfyuiTimer = setInterval(refreshComfyuiStatus, 10000);
   }
 
   onMount(async () => {
     // gate.start()：浏览器模式立即 await doInit() 返回 true；
     // Tauri 模式订阅 sidecar-ready / sidecar-died + 30s 超时返回 false。
-    const isBrowser = await gate.start(doInit);
-    if (!isBrowser) return;
+    await gate.start(doInit);
     // 浏览器 / 静态托管专用：comfyui 轮询 + window 事件
-    await refreshComfyuiStatus();
-    comfyuiTimer = setInterval(refreshComfyuiStatus, 30000);
+
     const onVis = () => {
       if (document.visibilityState === "visible") refreshComfyuiStatus();
     };

@@ -36,7 +36,7 @@
   let holdTimer: ReturnType<typeof setTimeout> | undefined;
   let pressed: { folder: FolderNode; x: number; y: number } | null = null;
   let dragging = $state<FolderNode | null>(null);
-  let drop = $state<{ id: number; position: "before" | "after" } | null>(null);
+  let drop = $state<{ id: number | null; position: "before" | "after" | "inside" | "root" } | null>(null);
   let suppressClick = false;
   let saving = $state(false);
 
@@ -84,14 +84,18 @@
       return;
     }
     e.preventDefault();
-    const row = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-folder-id]');
+    const hit = document.elementFromPoint(e.clientX, e.clientY);
+    const row = hit?.closest<HTMLElement>('[data-folder-id]');
     const target = row ? findNode($folders, Number(row.dataset.folderId)) : null;
     drop = null;
-    if (row && target && target.id !== dragging.id && target.parent_id === dragging.parent_id
+    if (row && target && target.id !== dragging.id && !findNode(dragging.children, target.id)
         && !!target.is_system === !!dragging.is_system) {
       const rect = row.getBoundingClientRect();
-      drop = { id: target.id, position: e.clientY < rect.top + rect.height / 2 ? "before" : "after" };
+      const ratio = (e.clientY - rect.top) / rect.height;
+      drop = { id: target.id, position: ratio < .25 ? "before" : ratio >= .75 ? "after" : "inside" };
     }
+    const root = hit?.closest<HTMLElement>('[data-folder-root]');
+    if (root && (root.dataset.folderRoot === 'system') === !!dragging.is_system) drop = { id: null, position: 'root' };
     const scroller = row?.closest('.folder-scroll');
     if (scroller) {
       const rect = scroller.getBoundingClientRect();
@@ -115,9 +119,10 @@
     saving = true;
     try {
       await foldersApi.reorder(source.id, target.id, target.position);
+      if (target.position === "inside" && target.id !== null) { const next = new Set(collapsed); next.delete(target.id); collapsed = next; }
       await refreshFolders();
     } catch (error) {
-      pushToast(`排序失败：${error instanceof Error ? error.message : error}`, { kind: "error" });
+      pushToast(`移动失败：${error instanceof Error ? error.message : error}`, { kind: "error" });
     } finally { saving = false; }
   }
 
@@ -270,7 +275,7 @@
 
   {#if systemFolders.length > 0}
     <div class="flex items-center justify-between px-[10px] pt-[14px] pb-[4px]">
-      <div class="text-[10px] uppercase text-muted tracking-wider opacity-70">
+      <div data-folder-root="system" class:root-drop={drop?.position === "root" && !!dragging?.is_system} class="text-[10px] uppercase text-muted tracking-wider opacity-70">
         来源目录
       </div>
     </div>
@@ -280,7 +285,7 @@
   {/if}
 
   <div class="flex items-center justify-between px-[10px] pt-[14px] pb-[4px]">
-    <div class="text-[10px] uppercase text-muted tracking-wider opacity-70">我的文件夹</div>
+    <div data-folder-root="user" class:root-drop={drop?.position === "root" && !dragging?.is_system} class="text-[10px] uppercase text-muted tracking-wider opacity-70">我的文件夹</div>
     <button
       class="bg-transparent border-0 text-muted text-[12px] hover:text-zinc-200"
       onclick={(e) => {
@@ -293,7 +298,7 @@
     </button>
   </div>
 
-  <p class="folder-hint">单击展开 · 双击改名 · 长按拖动排序</p>
+  <p class="folder-hint">单击展开 · 双击改名 · 长按拖动移动</p>
 
   {#if newFolderFor?.parent === null}{@render newFolderInput(0)}{/if}
   {#if userFolders.length === 0 && !newFolderFor}
@@ -376,6 +381,7 @@
   <div
     class="folder-item {folder.is_system ? 'system' : ''} {$folderId === folder.id ? 'active' : ''}"
     class:dragging={dragging?.id === folder.id}
+    class:drop-inside={drop?.id === folder.id && drop.position === "inside"}
     class:drop-before={drop?.id === folder.id && drop.position === 'before'}
     class:drop-after={drop?.id === folder.id && drop.position === 'after'}
     data-folder-id={folder.id}
@@ -444,10 +450,11 @@
 {/snippet}
 
 {#if dragging}
-  <div class="drag-hint" role="status">正在移动「{dragging.name}」· 拖到同级文件夹之间，松开完成</div>
+  <div class="drag-hint" role="status">正在移动「{dragging.name}」· 中部移入 · 边缘排序 · 分区标题移回根层级</div>
 {/if}
 
 <style>
+  :global(.folder-item.drop-inside), .root-drop { background: #f24e4e33; outline: 1px solid #f24e4e; }
   :global(.folder-item) {
     display: flex;
     align-items: center;

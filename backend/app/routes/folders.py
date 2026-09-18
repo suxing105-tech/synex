@@ -60,7 +60,9 @@ def move_folder(folder_id: int, direction: str):
 @router.post("/{folder_id}/reorder")
 def reorder_folder(folder_id: int, payload: FolderReorder):
     try:
-        repository.folder_reorder(folder_id, payload.target_id, payload.position)
+        from ..indexer import get_indexer
+        with get_indexer()._live_lock:
+            folder_storage.relocate_folder(folder_id, payload.target_id, payload.position)
     except (ValueError, OSError) as e:
         raise HTTPException(400, str(e)) from e
     return {"ok": True}

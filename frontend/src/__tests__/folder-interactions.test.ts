@@ -180,3 +180,17 @@ it('取消新建不创建目录，顶部按钮只收起侧栏', async () => {
   await fireEvent.click(screen.getByRole('button', { name: '收起左侧栏' }));
   expect(collapse).toHaveBeenCalledOnce();
 });
+
+ it('子文件夹长按可拖进另一层父目录', async () => {
+  const screen = render(FolderTree);
+  const child = screen.getByRole('button', { name: '子目录' });
+  const target = screen.getByRole('button', { name: '另一个目录' });
+  vi.spyOn(document, 'elementFromPoint').mockReturnValue(target);
+  vi.spyOn(target, 'getBoundingClientRect').mockReturnValue({ top: 100, height: 40 } as DOMRect);
+  await fireEvent.pointerDown(child, { button: 0, clientX: 20, clientY: 20 });
+  await vi.advanceTimersByTimeAsync(450);
+  await fireEvent.pointerMove(window, { clientX: 20, clientY: 120 });
+  expect(target.classList.contains('drop-inside')).toBe(true);
+  await fireEvent.pointerUp(window);
+  expect(foldersApi.reorder).toHaveBeenCalledWith(2, 3, 'inside');
+ });

@@ -1,0 +1,2 @@
+   Compiling suxing-gallery v0.2.1 (C:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src-tauri)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.79s

@@ -45,3 +45,16 @@ export function openOrReuseComfyuiTab(url: string): Window | null {
 export function _resetComfyuiWindow(): void {
   comfyuiWindow = null;
 }
+
+export async function loadComfyWorkflow(id: number, filename: string): Promise<void> {
+  const { isTauri } = await import('./tauri');
+  const { comfyuiApi } = await import('./api');
+  if (!isTauri()) throw new Error('自动加载工作流请使用桌面版');
+  const result = await comfyuiApi.openWorkflow(id);
+  if (!result.workflow) throw new Error('图片没有可加载的工作流');
+  await (window as any).__TAURI__.core.invoke('open_comfy_workflow', {
+    url: result.comfyui_url,
+    name: filename.replace(/\.[^.]+$/, ''),
+    workflow: result.workflow,
+  });
+}

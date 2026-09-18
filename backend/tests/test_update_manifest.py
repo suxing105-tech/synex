@@ -22,6 +22,16 @@ def test_feed_rejects_unsigned_installer(tmp_path):
     installer.write_bytes(b"fixture")
     with pytest.raises(FileNotFoundError): module.manifest("0.2.0", "owner/repo", installer, "")
 
+
+def test_ascii_release_asset_url_matches_uploaded_filename(tmp_path):
+    installer = tmp_path / "suxing-gallery_0.2.2_x64-setup.exe"
+    installer.write_bytes(b"fixture")
+    Path(str(installer) + ".sig").write_text("signature\n")
+    feed = module.manifest("0.2.2", "suxing105-tech/synex", installer, "更新说明")
+    assert feed["platforms"]["windows-x86_64"]["url"] == (
+        "https://github.com/suxing105-tech/synex/releases/download/v0.2.2/" + installer.name
+    )
+
 @pytest.mark.parametrize("version,repo", [("0.2.0-beta", "owner/repo"), ("garbage", "owner/repo"), ("0.2.0", "../bad/path")])
 def test_feed_rejects_invalid_release_metadata(tmp_path, version, repo):
     with pytest.raises(ValueError): module.manifest(version, repo, tmp_path / "setup.exe", "")

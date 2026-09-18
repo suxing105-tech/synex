@@ -85,6 +85,7 @@ def main() -> int:
         log_level=os.environ.get("SUXING_LOG_LEVEL", "info"),
         access_log=False,
         loop="asyncio",
+        timeout_graceful_shutdown=5,
     )
     server = uvicorn.Server(config)
     app.state.desktop_shutdown = lambda: setattr(server, "should_exit", True)

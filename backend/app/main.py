@@ -167,15 +167,29 @@ async def ws_events(ws: WebSocket):
     await ws.accept()
     queue = await get_bus().subscribe()
     log.info("ws connected: %s", ws.client)
-    try:
+    async def send_events():
         while True:
             payload = await queue.get()
             await ws.send_json(payload)
+
+    async def wait_for_disconnect():
+        while True:
+            if (await ws.receive())["type"] == "websocket.disconnect":
+                return
+
+    tasks = [asyncio.create_task(send_events()), asyncio.create_task(wait_for_disconnect())]
+    try:
+        done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for task in done:
+            task.result()
     except WebSocketDisconnect:
         pass
     except Exception as e:  # noqa: BLE001
         log.warning("ws error: %s", e)
     finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
         await get_bus().unsubscribe(queue)
 
 

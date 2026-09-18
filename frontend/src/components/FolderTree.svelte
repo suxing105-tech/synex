@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onDestroy, tick } from "svelte";
   import { pushToast } from "../lib/toast";
   import { backendUrl } from "../lib/backend-url";
   import { folders, folderId, view, stats } from "../lib/stores";
@@ -63,7 +63,7 @@
   }
 
   function pressFolder(f: FolderNode, e: PointerEvent) {
-    if (e.button !== 0 || saving || (e.target as HTMLElement).closest('button')) return;
+    if (e.button !== 0 || saving || (e.target as HTMLElement).closest('button, input')) return;
     cancelDrag();
     suppressClick = false;
     pressed = { folder: f, x: e.clientX, y: e.clientY };
@@ -122,25 +122,27 @@
   onDestroy(() => { clearTimeout(clickTimer); cancelDrag(); });
 
   function openMenu(id: number, e: MouseEvent) {
+    e.preventDefault();
     e.stopPropagation();
-    const node = findNode($folders, id);
-    // system folder 的右键菜单里只有"在文件管理器中打开"，改用专门分支
-    if (node?.is_system) {
-      menuFor = id;
-      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      menuPos = { x: rect.right, y: rect.bottom };
-      return;
-    }
-    if (menuFor === id) {
-      menuFor = null;
-      return;
-    }
+    clearTimeout(clickTimer);
+    cancelDrag();
+    if (e.type !== "contextmenu" && menuFor === id) { menuFor = null; return; }
     menuFor = id;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    menuPos = { x: rect.right, y: rect.bottom };
+    const x = e.type === "contextmenu" ? e.clientX : rect.right;
+    const y = e.type === "contextmenu" ? e.clientY : rect.bottom;
+    menuPos = { x: Math.max(8, Math.min(x, window.innerWidth - 208)),
+      y: Math.max(8, Math.min(y, window.innerHeight - 260)) };
+  }
+
+  function focusRename(input: HTMLInputElement) {
+    void tick().then(() => { if (input.isConnected) { input.focus(); input.select(); } });
   }
 
   function startRename(id: number, name: string) {
+    if (saving) return;
+    clearTimeout(clickTimer);
+    cancelDrag();
     renameFor = id;
     renameValue = name;
     menuFor = null;
@@ -148,13 +150,13 @@
 
   async function submitRename() {
     if (renameFor === null || saving) return;
+    const id = renameFor;
     const name = renameValue.trim();
     if (!name) { pushToast("请输入文件夹名称", { kind: "error" }); return; }
     saving = true;
     try {
-      await foldersApi.rename(renameFor, name);
-      renameFor = null;
-      renameValue = "";
+      await foldersApi.rename(id, name);
+      if (renameFor === id) { renameFor = null; renameValue = ""; }
       await refreshFolders();
     } catch (error) {
       pushToast(`改名失败：${error instanceof Error ? error.message : error}`, { kind: "error" });
@@ -175,14 +177,17 @@
     await refreshFolders();
   }
 
-  async function revealSystemFolder(_path: string | null | undefined, folderId: number) {
-    // 后端 /api/folders/{id}/reveal 会调 explorer / xdg-open / open 打开目录
-    try {
-      await fetch(backendUrl(`/api/folders/${folderId}/reveal`), { method: "POST" });
-    } catch {
-      /* ignore */
-    }
+  async function revealSystemFolder(id: number) {
     menuFor = null;
+    try {
+      const response = await fetch(backendUrl(`/api/folders/${id}/reveal`), { method: "POST" });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.detail || "打开文件夹失败");
+      }
+    } catch (error) {
+      pushToast(`无法打开所在位置：${error instanceof Error ? error.message : error}`, { kind: "error" });
+    }
   }
 
   function startNew(parent: number | null) {
@@ -205,7 +210,6 @@
   function closeAll() {
     menuFor = null;
     newFolderFor = null;
-    renameFor = null;
   }
 
   // 把 folder 树按 is_system 拆成两份：user / system。
@@ -216,7 +220,7 @@
 
 <svelte:window onclick={closeAll} onpointermove={pointerMove} onpointerup={releaseFolder}
   onpointercancel={cancelDrag} onblur={cancelDrag}
-  onkeydown={(e) => { if (e.key === 'Escape') { cancelDrag(); closeAll(); } }} />
+  onkeydown={(e) => { if (e.key === 'Escape') { renameFor = null; cancelDrag(); closeAll(); } }} />
 
 <div class="px-[14px] pt-[14px] pb-[8px] flex items-center justify-between">
   <h3 class="text-[11px] uppercase text-muted tracking-wider">文件夹</h3>
@@ -342,70 +346,26 @@
   </div>
 {/if}
 
-{#if renameFor !== null}
-  <div
-    class="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-    role="presentation"
-    onclick={closeAll}
-  >
-    <div
-      class="bg-surface-2 border border-border rounded-[10px] p-5 w-[360px]"
-      onclick={(e) => e.stopPropagation()}
-    >
-      <h3 class="text-sm font-medium mb-3">重命名文件夹</h3>
-      {#if findNode($folders, renameFor)?.is_system}
-        <p class="text-xs text-muted mb-3">修改图库中的显示名称，磁盘路径保持不变。</p>
-      {/if}
-      <input
-        type="text"
-        bind:value={renameValue}
-        maxlength={64}
-        aria-label="文件夹名称"
-        class="w-full bg-bg border border-border rounded px-2 py-1 text-[13px] outline-none focus:border-accent"
-        onkeydown={(e) => {
-          if (e.key === 'Enter') submitRename();
-          if (e.key === 'Escape') closeAll();
-        }}
-        autofocus
-      />
-      <div class="flex justify-end gap-2 mt-3">
-        <button
-          class="text-[12px] px-3 py-1 rounded border border-border hover:border-accent"
-          onclick={closeAll}
-        >
-          取消
-        </button>
-        <button
-          class="text-[12px] px-3 py-1 rounded bg-accent text-bg font-medium"
-          onclick={submitRename}
-          disabled={saving}
-        >
-          保存
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
-
 {#if menuFor !== null}
   {@const menuNode = findNode($folders, menuFor)}
   {@const isSys = !!menuNode?.is_system}
   <div
     class="folder-menu fixed bg-surface-2 border border-border rounded-[8px] py-1 min-w-[160px] z-40 text-[13px] shadow-xl"
     style="left: {menuPos.x}px; top: {menuPos.y}px;"
-    role="menu"
+    role="menu" tabindex="-1"
+    oncontextmenu={(e) => e.preventDefault()}
     onclick={(e) => e.stopPropagation()}
   >
+    <button role="menuitem" class="block w-full text-left px-3 py-2 hover:bg-surface-3 disabled:opacity-40"
+      disabled={!menuNode?.path} title={menuNode?.path || '此文件夹是图库分类，没有对应的磁盘位置'}
+      onclick={() => menuFor !== null && revealSystemFolder(menuFor)}>所在位置</button>
+    {#if !menuNode?.path}
+      <div class="px-3 pb-1 text-muted text-[11px]">图库分类，无磁盘位置</div>
+    {/if}
+    <div class="border-t border-border my-1"></div>
     {#if isSys}
       <button class="block w-full text-left px-3 py-1 hover:bg-surface-3"
-        onclick={() => menuNode && startRename(menuNode.id, menuNode.name)}>重命名显示名称</button>
-      <div class="px-3 py-1 text-muted text-[11px]">来源目录（显示名称可修改）</div>
-      <button
-        class="block w-full text-left px-3 py-1 hover:bg-surface-3"
-        onclick={() => menuFor !== null && revealSystemFolder(menuNode?.path, menuFor)}
-      >
-        在文件管理器中打开
-      </button>
+        onclick={() => menuNode && startRename(menuNode.id, menuNode.name)}>重命名</button>
     {:else}
       <button
         class="block w-full text-left px-3 py-1 hover:bg-surface-3"
@@ -467,6 +427,7 @@
     onclick={(e) => clickFolder(folder, e)}
     ondblclick={(e) => doubleClickFolder(folder, e)}
     onpointerdown={(e) => pressFolder(folder, e)}
+    oncontextmenu={(e) => openMenu(folder.id, e)}
     onkeydown={(e) => {
       if (e.target !== e.currentTarget) return;
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickFolder(folder); }
@@ -479,7 +440,21 @@
       {/if}
     </span>
     <span class="icon"><Icon name="folder" size={15} /></span>
-    <span class="label" title={folder.path ?? folder.name}>{folder.name}</span>
+    {#if renameFor === folder.id}
+      <input class="folder-name-input" aria-label="文件夹名称" bind:value={renameValue}
+        maxlength={64} readonly={saving} use:focusRename
+        title={folder.is_system ? '修改图库显示名称；Enter 保存，Esc 取消' : 'Enter 保存，Esc 取消'}
+        onclick={(e) => e.stopPropagation()} ondblclick={(e) => e.stopPropagation()}
+        onpointerdown={(e) => e.stopPropagation()} oncontextmenu={(e) => e.stopPropagation()}
+        onblur={() => submitRename()}
+        onkeydown={(e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void submitRename(); }
+          if (e.key === 'Escape') { e.preventDefault(); renameFor = null; }
+        }} />
+    {:else}
+      <span class="label" title={folder.path ?? folder.name}>{folder.name}</span>
+    {/if}
     <span class="count">{folder.recursive_count}</span>
     <button class="menu-btn" onclick={(e) => openMenu(folder.id, e)}
       ondblclick={(e) => e.stopPropagation()} aria-label="文件夹操作">
@@ -595,4 +570,5 @@
   :global(.folder-item.drop-before) { box-shadow: 0 -2px #f24e4e; }
   :global(.folder-item.drop-after) { box-shadow: 0 2px #f24e4e; }
   .drag-hint { position: fixed; bottom: 24px; left: 20px; z-index: 80; pointer-events: none; padding: 10px 14px; border-radius: 8px; background: #333338; color: #eee; font-size: 12px; box-shadow: 0 6px 24px #0005; }
+  .folder-name-input { flex: 1; min-width: 0; width: 0; padding: 1px 4px; border: 1px solid #777; border-radius: 3px; background: #151518; color: #eee; font: inherit; outline: none; user-select: text; }
 </style>

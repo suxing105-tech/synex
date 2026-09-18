@@ -5,6 +5,8 @@ import { tick } from "svelte";
 import FolderTree from "../components/FolderTree.svelte";
 import { foldersApi } from "../lib/api";
 import { folders } from "../lib/stores";
+import { get } from "svelte/store";
+import { clearToasts, toasts } from "../lib/toast";
 
 vi.mock("../lib/api", () => ({ foldersApi: { rename: vi.fn(), reorder: vi.fn(), tree: vi.fn() } }));
 vi.mock("../lib/stores", () => ({
@@ -17,6 +19,7 @@ const node = (id: number, name: string, children: any[] = [], parent_id: number 
 
 beforeEach(() => {
   vi.useFakeTimers(); vi.clearAllMocks();
+  clearToasts();
   folders.set([node(1, '父目录', [node(2, '子目录', [], 1)]), node(3, '另一个目录')]);
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -44,7 +47,11 @@ describe('真实文件夹组件交互', () => {
     await vi.advanceTimersByTimeAsync(300);
     expect(screen.getByText('子目录')).toBeTruthy();
     await fireEvent.input(screen.getByRole('textbox', { name: '文件夹名称' }), { target: { value: '新名字' } });
-    await fireEvent.click(screen.getByText('保存'));
+    const input = screen.getByRole('textbox', { name: '文件夹名称' });
+    expect(row.contains(input)).toBe(true);
+    expect(document.activeElement).toBe(input);
+    expect(screen.queryByText('重命名文件夹')).toBeNull();
+    await fireEvent.keyDown(input, { key: 'Enter' });
     expect(foldersApi.rename).toHaveBeenCalledWith(1, '新名字');
   });
 
@@ -75,7 +82,7 @@ describe('真实文件夹组件交互', () => {
     const screen = render(FolderTree);
     const row = screen.getByRole('button', { name: '来源' });
     await fireEvent.doubleClick(row);
-    expect(screen.getByText('修改图库中的显示名称，磁盘路径保持不变。')).toBeTruthy();
+    expect(row.contains(screen.getByRole('textbox', { name: '文件夹名称' }))).toBe(true);
     await fireEvent.keyDown(window, { key: 'Escape' });
     await fireEvent.pointerDown(row, { button: 0 });
     await vi.advanceTimersByTimeAsync(450);
@@ -85,3 +92,65 @@ describe('真实文件夹组件交互', () => {
     expect(screen.queryByRole('status')).toBeNull();
   });
 });
+
+ it('行内 Escape 取消；失焦保存；中文输入法 Enter 不提前提交', async () => {
+    const screen = render(FolderTree);
+    const row = screen.getByRole('button', { name: '父目录' });
+    await fireEvent.doubleClick(row);
+    let input = screen.getByRole('textbox', { name: '文件夹名称' });
+    await fireEvent.input(input, { target: { value: '取消的名字' } });
+    await fireEvent.keyDown(input, { key: 'Escape' });
+    expect(foldersApi.rename).not.toHaveBeenCalled();
+    expect(screen.queryByRole('textbox')).toBeNull();
+    await fireEvent.doubleClick(row);
+    input = screen.getByRole('textbox', { name: '文件夹名称' });
+    await fireEvent.input(input, { target: { value: '完成的名字' } });
+    await fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    expect(foldersApi.rename).not.toHaveBeenCalled();
+    await fireEvent.blur(input);
+    expect(foldersApi.rename).toHaveBeenCalledWith(1, '完成的名字');
+  });
+
+  it('右键来源目录显示所在位置并调用打开接口；不折叠目录', async () => {
+    folders.set([{ ...node(5, '来源', [node(6, '子项', [], 5)]), is_system: true, path: 'D:/watch/source' }]);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true } as Response);
+    const screen = render(FolderTree);
+    const row = screen.getByRole('button', { name: '来源' });
+    await fireEvent.contextMenu(row, { clientX: 80, clientY: 120 });
+    expect(screen.getByRole('menu')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('menuitem', { name: '所在位置' }));
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/folders/5/reveal'), { method: 'POST' });
+    expect(screen.getByText('子项')).toBeTruthy();
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('虚拟分类不伪造磁盘位置', async () => {
+    const screen = render(FolderTree);
+    await fireEvent.contextMenu(screen.getByRole('button', { name: '父目录' }));
+    expect((screen.getByRole('menuitem', { name: '所在位置' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('图库分类，无磁盘位置')).toBeTruthy();
+  });
+
+  it('改名失败保留行内输入；空白名称不提交', async () => {
+    const screen = render(FolderTree);
+    await fireEvent.doubleClick(screen.getByRole('button', { name: '父目录' }));
+    const input = screen.getByRole('textbox', { name: '文件夹名称' }) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: '   ' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(foldersApi.rename).not.toHaveBeenCalled();
+    vi.mocked(foldersApi.rename).mockRejectedValueOnce(new Error('同名文件夹'));
+    await fireEvent.input(input, { target: { value: '重复名称' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(screen.getByRole('textbox', { name: '文件夹名称' })).toBe(input);
+    expect(input.value).toBe('重复名称');
+    expect(get(toasts).some(t => t.message.includes('同名文件夹'))).toBe(true);
+  });
+
+  it('所在位置接口失败时显示原因', async () => {
+    folders.set([{ ...node(5, '来源'), is_system: true, path: 'D:/missing' }]);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, json: async () => ({ detail: '路径不存在' }) } as Response);
+    const screen = render(FolderTree);
+    await fireEvent.contextMenu(screen.getByRole('button', { name: '来源' }));
+    await fireEvent.click(screen.getByRole('menuitem', { name: '所在位置' }));
+    expect(get(toasts).some(t => t.message.includes('路径不存在'))).toBe(true);
+  });

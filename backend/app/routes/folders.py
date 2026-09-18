@@ -80,14 +80,14 @@ def reveal_folder(folder_id: int):
     import subprocess
     from pathlib import Path
 
-    conn = repository.get_pool()  # uses the imported get_pool from ..db
+    conn = repository.get_pool().main()
     row = conn.execute(
         "SELECT path, is_system FROM folders WHERE id = ?", (folder_id,)
     ).fetchone()
     if not row or not row["is_system"] or not row["path"]:
         raise HTTPException(404, "system folder 不存在或缺少 path")
     p = Path(row["path"])
-    if not p.exists():
+    if not p.is_dir():
         raise HTTPException(404, f"路径不存在: {p}")
     system = platform.system()
     try:

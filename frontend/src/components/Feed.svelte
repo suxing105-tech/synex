@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, tick } from "svelte";
   import { subscribeFileDrop } from "../lib/native-drop";
   import { beginOriginalDrag } from "../lib/original-drag";
   import GallerySearch from "./GallerySearch.svelte";
@@ -19,9 +19,8 @@
   import Icon from "./Icon.svelte";
   import { copyText } from "../lib/ws";
   import { openOrReuseComfyuiTab } from "../lib/comfyui-window";
-  import type { ImageSummary } from "../lib/types";
+  import type { ImageSummary, FolderNode } from "../lib/types";
   import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
-  import FolderPickerModal from "./FolderPickerModal.svelte";
   import { folderId } from "../lib/stores";
 
   interface Props {
@@ -40,7 +39,6 @@
   let menuTick = $state(0);
 
   // 移动到文件夹选择器
-  let movePickerOpen = $state(false);
   let movePickerIds = $state<number[]>([]);
   let movePickerCount = $state(0);
   let toast = $state<string | null>(null);
@@ -316,15 +314,15 @@
       return [
         { label: "复制图片", onClick: () => copyImageToClipboard(t) },
         { label: "重命名", onClick: () => renameImage(t) },
-        { label: "打开图片所在位置", onClick: () => revealImage(t) },
-        { label: "移动到...", onClick: () => openMovePicker(items) },
+        { label: "图片所在位置", onClick: () => revealImage(t) },
+        { label: "移动到…", children: moveMenu(items) },
         { kind: "sep" },
-        { label: "删除图片（含缩略图）", danger: true, onClick: () => deleteImages(items) },
+        { label: "删除图片", danger: true, onClick: () => deleteImages(items) },
       ];
     }
     return [
       { label: `复制 ${items.length} 个图片地址`, onClick: () => copyImageUrls(items) },
-      { label: `移动到...`, onClick: () => openMovePicker(items) },
+      { label: "移动到…", children: moveMenu(items) },
       { kind: "sep" },
       { label: `批量删除 ${items.length} 张图片`, danger: true, onClick: () => deleteImages(items) },
     ];
@@ -335,23 +333,32 @@
     catch (e) { notify(`复制原图失败：${(e as Error).message}`); }
   }
 
+  let renamingId = $state<number | null>(null);
+  let renameValue = $state("");
+  let renameSaving = $state(false);
+  let renameInput: HTMLInputElement | undefined = $state();
   async function renameImage(it: ImageSummary) {
-    const stem = it.filename.replace(/\.[^.]+$/, "");
-    const def = stem;
-    const next = window.prompt("新文件名（保留扩展名）:", def);
-    if (next === null) return;
-    const trimmed = next.trim();
-    if (!trimmed) {
-      notify("文件名不能为空");
-      return;
-    }
+    if (renameSaving) return;
+    renamingId = it.id;
+    renameValue = it.filename.replace(/\.[^.]+$/, "");
+    await tick();
+    renameInput?.focus(); renameInput?.select();
+  }
+  async function saveRename(it: ImageSummary) {
+    if (renamingId !== it.id || renameSaving) return;
+    const value = renameValue.trim();
+    if (!value) { notify("文件名不能为空"); renameInput?.focus(); return; }
+    if (value === it.filename.replace(/\.[^.]+$/, "")) { renamingId = null; return; }
+    renameSaving = true;
     try {
-      await imagesApi.rename(it.id, trimmed);
+      const updated = await imagesApi.rename(it.id, value);
+      feedItems.update(items => items.map(item => item.id === it.id ? { ...item, ...updated } : item));
+      renamingId = null;
       notify("已重命名");
-      await Promise.all([refreshFeed(), refreshStats(), refreshFolders()]);
     } catch (e) {
       notify(`重命名失败: ${(e as Error).message}`);
-    }
+      await tick(); renameInput?.focus();
+    } finally { renameSaving = false; }
   }
 
   async function revealImage(it: ImageSummary) {
@@ -414,12 +421,18 @@
     notify(ok ? `已复制 ${items.length} 个图片地址` : "复制失败");
   }
 
-  // 打开「移动到...」选择器（单/多图共用）
-  function openMovePicker(items: ImageSummary[]) {
-    if (items.length === 0) return;
-    movePickerIds = items.map((it) => it.id);
-    movePickerCount = items.length;
-    movePickerOpen = true;
+  function moveMenu(items: ImageSummary[]): ContextMenuItem[] {
+    const choose = (folder: { id: number; name: string } | null) => {
+      movePickerIds = items.map(it => it.id);
+      movePickerCount = items.length;
+      return moveToFolder(folder);
+    };
+    const walk = (nodes: FolderNode[]): ContextMenuItem[] => nodes.filter(node => !node.is_system).map(node => ({
+      label: node.name,
+      onClick: () => choose(node),
+      children: node.children?.some(child => !child.is_system) ? walk(node.children) : undefined,
+    }));
+    return [...walk($folders), { kind: "sep" }, { label: "从文件夹移出", onClick: () => choose(null) }];
   }
 
   // 实际执行批量移动：folder=null 表示从 user folder 移出（保留 system folder 自动挂的）
@@ -685,8 +698,18 @@
                   onerror={(e) => checkMissing(it.id, e.currentTarget as HTMLImageElement)}
                   class="thumb-img absolute inset-0 w-full h-full object-contain"
                 />
-                <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] truncate">
-                  {it.filename}
+                <div class="image-name absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] truncate"
+                  role="button" tabindex="0" aria-label="图片名称"
+                  onkeydown={(e) => { if (renamingId !== it.id && (e.key === "Enter" || e.key === "F2")) { e.stopPropagation(); e.preventDefault(); void renameImage(it); } }}
+                  onpointerdown={(e) => e.stopPropagation()}
+                  onclick={(e) => { if (renamingId === it.id) e.stopPropagation(); }}
+                  ondblclick={(e) => { e.stopPropagation(); e.preventDefault(); if (renamingId !== it.id) void renameImage(it); }}>
+                  {#if renamingId === it.id}
+                    <input bind:this={renameInput} bind:value={renameValue} aria-label="编辑图片名称" class="image-rename"
+                      readonly={renameSaving}
+                      onkeydown={(e) => { e.stopPropagation(); if (e.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); void saveRename(it); } else if (e.key === 'Escape') { e.preventDefault(); renamingId = null; } }}
+                      onblur={() => saveRename(it)} />
+                  {:else}{it.filename}{/if}
                 </div>
                 {#if it.favorite}
                   <div class="absolute top-1 right-1 text-danger text-[14px] drop-shadow">♥</div>
@@ -719,20 +742,14 @@
 
 <ContextMenu bind:open={menuOpen} x={menuX} y={menuY} items={menuItems} />
 
-<FolderPickerModal
-  open={movePickerOpen}
-  folders={$folders}
-  title={movePickerCount > 1 ? `移动 ${movePickerCount} 张图片` : "移动到文件夹"}
-  subtitle="system folder 不会列出（物理镜像，不可作为整理目的地）"
-  onPick={moveToFolder}
-  onClose={() => (movePickerOpen = false)}
-/>
+
 
 {#if toast}
   <div class="toast">{toast}</div>
 {/if}
 
 <style>
+  .image-rename { width: 100%; min-width: 0; border: 1px solid #888; border-radius: 3px; background: #222; color: #eee; padding: 1px 3px; outline: none; font: inherit; }
   .import-progress { position: sticky; top: 0; z-index: 25; width: fit-content; margin: 0 auto 8px; padding: 6px 12px; background: #292929; border-radius: 16px; font-size: 12px; color: #ddd; }
   .gallery-toolbar { grid-template-columns: minmax(0, 1fr) minmax(120px, 2fr) minmax(0, 1fr); }
   @media (max-width: 760px) { .gallery-toolbar { grid-template-columns: minmax(0, 1fr); } }

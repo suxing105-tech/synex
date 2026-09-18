@@ -266,9 +266,9 @@
     return [
       { label: "复制图片", onClick: () => copyImage(it) },
       { label: "重命名", onClick: () => renameImage(it) },
-      { label: "打开图片所在位置", onClick: () => revealImage(it) },
+      { label: "图片所在位置", onClick: () => revealImage(it) },
       { kind: "sep" },
-      { label: "删除图片（含缩略图）", danger: true, onClick: () => deleteImage(it) },
+      { label: "删除图片", danger: true, onClick: () => deleteImage(it) },
     ];
   });
 

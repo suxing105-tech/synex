@@ -75,12 +75,15 @@
           if (active !== session || !open) return;
           scanProgress.set(progress);
           if (progress.running) { poll = setTimeout(tick, 600); return; }
-          submitting = false;
           completed = true;
           if (progress.error) { error = progress.error; message = "导入未全部完成，已收录的图片保留，可重试。"; }
           else message = progress.total === 0 ? "暂无可导入图片，目录已保存；开启 Live 监听后，新图片会自动收录。" : `导入完成，已收录 ${progress.indexed} 张图片。`;
           try { await Promise.all([refreshFolders(), refreshStats(), refreshFeed()]); }
           catch { error ||= "导入已结束，但图库刷新失败，请稍后重试"; }
+          if (active === session && open) {
+            submitting = false;
+            if (!error) close();
+          }
         } catch (e) {
           console.error("scan progress failed", e);
           if (active === session) { submitting = false; error = "暂时无法获取进度，后台可能仍在导入，请稍后重试"; message = ""; }
@@ -117,7 +120,7 @@
           aria-describedby="directory-help directory-feedback" placeholder="例如：D:\ComfyUI\output"
           class="flex-1 min-w-[200px] bg-bg border border-border rounded px-3 py-2 text-[13px] outline-none focus:border-accent font-mono disabled:opacity-60" />
         {#if desktop}
-          <button class="px-3 py-2 rounded border border-border text-[13px] hover:border-accent disabled:opacity-50" disabled={busy} onclick={chooseFolder}>
+          <button class="px-3 py-2 rounded border border-border text-[13px] enabled:hover:bg-white/10 enabled:focus-visible:bg-white/10 transition-colors disabled:opacity-50" disabled={busy} onclick={chooseFolder}>
             {picking ? "选择中…" : checking ? "检查中…" : "选择文件夹"}
           </button>
         {/if}
@@ -138,7 +141,7 @@
         </div>
       {/if}
       <div class="flex justify-between gap-2 mt-5">
-        <button class="text-[12px] px-3 py-1.5 rounded border border-border hover:border-accent disabled:opacity-50" disabled={submitting} onclick={close}>{completed ? "完成" : "暂不导入"}</button>
+        <button class="text-[12px] px-3 py-1.5 rounded border border-border enabled:hover:bg-white/10 enabled:focus-visible:bg-white/10 transition-colors disabled:opacity-50" disabled={submitting} onclick={close}>{completed ? "完成" : "暂不导入"}</button>
         <button class="text-[13px] px-4 py-1.5 rounded bg-accent text-bg font-medium disabled:opacity-50" disabled={busy || !path.trim()} onclick={startImport}>{submitting ? "导入中…" : "开始导入"}</button>
       </div>
     </div>

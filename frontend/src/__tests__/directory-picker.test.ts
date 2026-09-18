@@ -1,7 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { render, fireEvent, cleanup, waitFor } from "@testing-library/svelte";
 import { tick } from "svelte";
-import { scanProgress } from "../lib/stores";
+import { scanProgress, refreshFeed } from "../lib/stores";
 import { scanApi, settingsApi } from "../lib/api";
 import { selectImportDirectory, isTauri } from "../lib/tauri";
 import Modal from "../components/OnboardingModal.svelte";
@@ -56,14 +56,38 @@ describe("目录选择与导入窗口", () => {
     await ui.rerender({ open: true });
     expect((ui.getByLabelText("目录路径") as HTMLInputElement).value).toBe("");
   });
-  it("imports manually entered paths and shows an empty-directory result", async () => {
+  it("closes after successfully importing an empty directory", async () => {
     vi.mocked(scanApi.importDirectory).mockResolvedValue({ ok: true, path: "D:\\empty" });
     vi.mocked(scanApi.progress).mockResolvedValue({ running: false, total: 0, indexed: 0, scanned: 0, current_path: "", error: null });
     const ui = render(Modal, { open: true });
     await fireEvent.input(ui.getByLabelText("目录路径"), { target: { value: "D:\\empty" } });
     await fireEvent.click(ui.getByRole("button", { name: "开始导入" }));
-    await waitFor(() => expect(ui.getByRole("status").textContent).toContain("暂无可导入图片"));
+    await waitFor(() => expect(ui.queryByRole("dialog")).toBeNull());
     expect(scanApi.importDirectory).toHaveBeenCalledWith("D:\\empty");
+  });
+  it("keeps the dialog busy until the imported gallery has refreshed", async () => {
+    vi.mocked(scanApi.importDirectory).mockResolvedValue({ ok: true, path: "D:/images" });
+    vi.mocked(scanApi.progress).mockResolvedValue({ running: false, total: 3, indexed: 3, scanned: 3, current_path: "", error: null });
+    let finish!: () => void;
+    vi.mocked(refreshFeed).mockReturnValue(new Promise<void>(resolve => { finish = resolve; }));
+    const ui = render(Modal, { open: true });
+    await fireEvent.input(ui.getByLabelText("目录路径"), { target: { value: "D:/images" } });
+    await fireEvent.click(ui.getByRole("button", { name: "开始导入" }));
+    await waitFor(() => expect(refreshFeed).toHaveBeenCalled());
+    expect(ui.getByRole("dialog")).toBeTruthy();
+    expect((ui.getByRole("button", { name: "导入中…" }) as HTMLButtonElement).disabled).toBe(true);
+    finish();
+    await waitFor(() => expect(ui.queryByRole("dialog")).toBeNull());
+  });
+  it.each(["scan", "refresh"])("keeps the dialog open after a %s failure", async (failure) => {
+    vi.mocked(scanApi.importDirectory).mockResolvedValue({ ok: true, path: "D:/images" });
+    vi.mocked(scanApi.progress).mockResolvedValue({ running: false, total: 3, indexed: 2, scanned: 3, current_path: "", error: failure === "scan" ? "扫描失败" : null });
+    if (failure === "refresh") vi.mocked(refreshFeed).mockRejectedValue(new Error("offline"));
+    const ui = render(Modal, { open: true });
+    await fireEvent.input(ui.getByLabelText("目录路径"), { target: { value: "D:/images" } });
+    await fireEvent.click(ui.getByRole("button", { name: "开始导入" }));
+    await waitFor(() => expect(ui.getByRole("alert").textContent).toContain(failure === "scan" ? "扫描失败" : "刷新失败"));
+    expect(ui.getByRole("dialog")).toBeTruthy();
   });
   it("shows server validation errors and preserves the path for retry", async () => {
     vi.mocked(scanApi.importDirectory).mockRejectedValue({ detail: "文件夹不存在，请重新选择" });

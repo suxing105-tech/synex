@@ -1,0 +1,427 @@
+Loading svelte-check in workspace: c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend
+Getting Svelte diagnostics...
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\FolderTree.svelte:245:3
+Warn: Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events (svelte)
+  </div>
+  <div
+    class="folder-item {$view === 'all' && $folderId === null ? 'active' : ''}"
+    onclick={() => {
+      view.set('all');
+      folderId.set(null);
+    }}
+  >
+    <span class="caret-spacer"></span>
+    <span class="icon"><Icon name="image" size={13} /></span>
+    <span class="label">全部图片</span>
+    <span class="count">{$stats.total_images}</span>
+  </div>
+  <div
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\FolderTree.svelte:245:3
+Warn: `<div>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions (svelte)
+  </div>
+  <div
+    class="folder-item {$view === 'all' && $folderId === null ? 'active' : ''}"
+    onclick={() => {
+      view.set('all');
+      folderId.set(null);
+    }}
+  >
+    <span class="caret-spacer"></span>
+    <span class="icon"><Icon name="image" size={13} /></span>
+    <span class="label">全部图片</span>
+    <span class="count">{$stats.total_images}</span>
+  </div>
+  <div
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\FolderTree.svelte:257:3
+Warn: Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events (svelte)
+  </div>
+  <div
+    class="folder-item {$view === 'favorite' ? 'active' : ''}"
+    onclick={() => setView('favorite')}
+  >
+    <span class="caret-spacer"></span>
+    <span class="icon"><Icon name="star" size={13} /></span>
+    <span class="label">收藏</span>
+    <span class="count">{$stats.favorites}</span>
+  </div>
+  <div
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\FolderTree.svelte:257:3
+Warn: `<div>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions (svelte)
+  </div>
+  <div
+    class="folder-item {$view === 'favorite' ? 'active' : ''}"
+    onclick={() => setView('favorite')}
+  >
+    <span class="caret-spacer"></span>
+    <span class="icon"><Icon name="star" size={13} /></span>
+    <span class="label">收藏</span>
+    <span class="count">{$stats.favorites}</span>
+  </div>
+  <div
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\FolderTree.svelte:266:3
+Warn: Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events (svelte)
+  </div>
+  <div
+    class="folder-item {$view === 'recent' ? 'active' : ''}"
+    onclick={() => setView('recent')}
+  >
+    <span class="caret-spacer"></span>
+    <span class="icon"><Icon name="clock" size={13} /></span>
+    <span class="label">最近生成</span>
+    <span class="count"></span>
+  </div>
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\FolderTree.svelte:266:3
+Warn: `<div>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions (svelte)
+  </div>
+  <div
+    class="folder-item {$view === 'recent' ? 'active' : ''}"
+    onclick={() => setView('recent')}
+  >
+    <span class="caret-spacer"></span>
+    <span class="icon"><Icon name="clock" size={13} /></span>
+    <span class="label">最近生成</span>
+    <span class="count"></span>
+  </div>
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\FolderTree.svelte:316:3
+Warn: Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events (svelte)
+  {@const isSys = !!menuNode?.is_system}
+  <div
+    class="folder-menu fixed bg-surface-2 border border-border rounded-[8px] py-1 min-w-[160px] z-40 text-[13px] shadow-xl"
+    style="left: {menuPos.x}px; top: {menuPos.y}px;"
+    role="menu" tabindex="-1"
+    oncontextmenu={(e) => e.preventDefault()}
+    onclick={(e) => e.stopPropagation()}
+  >
+    <button role="menuitem" class="block w-full text-left px-3 py-2 hover:bg-surface-3 disabled:opacity-40"
+      disabled={!menuNode?.path} title={menuNode?.path || '此文件夹是图库分类，没有对应的磁盘位置'}
+      onclick={() => menuFor !== null && revealSystemFolder(menuFor)}>所在位置</button>
+    {#if !menuNode?.path}
+      <div class="px-3 pb-1 text-muted text-[11px]">图库分类，无磁盘位置</div>
+    {/if}
+    <div class="border-t border-border my-1"></div>
+    {#if isSys}
+      <button class="block w-full text-left px-3 py-1 hover:bg-surface-3"
+        onclick={() => menuNode && startRename(menuNode.id, menuNode.name)}>重命名</button>
+    {:else}
+      <button
+        class="block w-full text-left px-3 py-1 hover:bg-surface-3"
+        onclick={() => {
+          const node = findNode($folders, menuFor!);
+          if (node) startRename(menuFor!, node.name);
+        }}
+      >
+        重命名
+      </button>
+      <button
+        class="block w-full text-left px-3 py-1 hover:bg-surface-3"
+        onclick={() => menuFor !== null && move(menuFor, 'up')}
+      >
+        上移
+      </button>
+      <button
+        class="block w-full text-left px-3 py-1 hover:bg-surface-3"
+        onclick={() => menuFor !== null && move(menuFor, 'down')}
+      >
+        下移
+      </button>
+      <button
+        class="block w-full text-left px-3 py-1 hover:bg-surface-3"
+        onclick={() => menuFor !== null && startNew(menuFor)}
+      >
+        新建子文件夹
+      </button>
+      <div class="border-t border-border my-1"></div>
+      <button
+        class="block w-full text-left px-3 py-1 hover:bg-danger/30 text-danger"
+        onclick={() => menuFor !== null && remove(menuFor)}
+      >
+        删除
+      </button>
+    {/if}
+  </div>
+{/if}
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\Feed.svelte:674:5
+Warn: Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events (svelte)
+    -->
+    <div
+      class="masonry-scroller"
+      bind:clientWidth={containerWidth}
+      onclick={onScrollerClick}
+    >
+      <div
+        class="masonry-grid"
+        style="grid-template-columns: repeat({columnCount}, minmax(0, 1fr)); gap: {COL_GAP}px;"
+      >
+        {#each columns as col}
+          <div class="masonry-col" style="gap: {COL_GAP}px;">
+            {#each col.items as it (it.id)}
+              <button
+                type="button"
+                class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 text-left {$multiSelectedIds.has(it.id) ? 'is-selected' : ''} {$newIds.has(it.id) ? 'new-badge' : ''}"
+                style="aspect-ratio: {aspectFor(it)}; width: 100%;"
+                title={it.filename}
+                onclick={(e) => { if (draggedOriginal) { draggedOriginal = false; return; } onThumbClick(e, it); }}
+                onpointerdown={(e) => pointerOnImage(e, it)}
+                ondragstart={(e) => e.preventDefault()}
+                ondblclick={() => openLightbox(it, $feedItems.findIndex((x) => x.id === it.id))}
+                oncontextmenu={(e) => openContextMenu(e, it)}
+                onmouseenter={() => (hoveredId = it.id)}
+                onmouseleave={() => { if (hoveredId === it.id) hoveredId = null; }}
+              >
+                <img
+                  src={it.original_url ? backendUrl(it.original_url) : undefined}
+                  alt={it.filename}
+                  draggable="false"
+                  onload={(e) => imageLoaded(it, e.currentTarget as HTMLImageElement)}
+                  loading="lazy"
+                  decoding="async"
+                  onerror={(e) => checkMissing(it.id, e.currentTarget as HTMLImageElement)}
+                  class="thumb-img absolute inset-0 w-full h-full object-contain"
+                />
+                <div class="image-name absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] truncate"
+                  role="button" tabindex="0" aria-label="图片名称"
+                  onkeydown={(e) => { if (renamingId !== it.id && (e.key === "Enter" || e.key === "F2")) { e.stopPropagation(); e.preventDefault(); void renameImage(it); } }}
+                  onpointerdown={(e) => e.stopPropagation()}
+                  onclick={(e) => { if (renamingId === it.id) e.stopPropagation(); }}
+                  ondblclick={(e) => { e.stopPropagation(); e.preventDefault(); if (renamingId !== it.id) void renameImage(it); }}>
+                  {#if renamingId === it.id}
+                    <input bind:this={renameInput} bind:value={renameValue} aria-label="编辑图片名称" class="image-rename" style="width: 180px; max-width: 100%;"
+                      readonly={renameSaving}
+                      onkeydown={(e) => { e.stopPropagation(); if (e.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); void saveRename(it); } else if (e.key === 'Escape') { e.preventDefault(); renamingId = null; } }}
+                      onblur={() => saveRename(it)} />
+                  {:else}{it.filename}{/if}
+                </div>
+                {#if it.favorite}
+                  <div class="favorite-badge absolute top-1 right-10 w-6 h-7 flex items-center justify-center text-danger text-[14px] drop-shadow" aria-label="已收藏">♥</div>
+                {/if}
+
+                {#if $comfyuiStatus.running && it.has_workflow && (hoveredId === it.id || $selectedIdStore === it.id || $multiSelectedIds.has(it.id))}
+                  <div
+                    role="button"
+                    tabindex="-1"
+                    class="comfyui-open-btn absolute top-1 right-1 w-7 h-7 rounded-[6px] flex items-center justify-center bg-black/70 hover:bg-accent text-white backdrop-blur-sm transition-colors cursor-pointer"
+                    title="在 ComfyUI 中打开工作流"
+                    aria-label="在 ComfyUI 中打开工作流"
+                    onclick={(e) => { e.stopPropagation(); e.preventDefault(); openInComfyui(it); }}
+                    onmousedown={(e) => e.stopPropagation()}
+                  >
+                    <Icon name="comfyui" size={15} />
+                  </div>
+                {/if}
+                {#if $newIds.has(it.id)}
+                  <div class="absolute bottom-8 left-1 bg-success text-bg text-[10px] font-bold px-1.5 rounded shadow">NEW</div>
+                {/if}
+              </button>
+            {/each}
+          </div>
+        {/each}
+      </div>
+    </div>
+  {/if}
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\Feed.svelte:674:5
+Warn: `<div>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions (svelte)
+    -->
+    <div
+      class="masonry-scroller"
+      bind:clientWidth={containerWidth}
+      onclick={onScrollerClick}
+    >
+      <div
+        class="masonry-grid"
+        style="grid-template-columns: repeat({columnCount}, minmax(0, 1fr)); gap: {COL_GAP}px;"
+      >
+        {#each columns as col}
+          <div class="masonry-col" style="gap: {COL_GAP}px;">
+            {#each col.items as it (it.id)}
+              <button
+                type="button"
+                class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 text-left {$multiSelectedIds.has(it.id) ? 'is-selected' : ''} {$newIds.has(it.id) ? 'new-badge' : ''}"
+                style="aspect-ratio: {aspectFor(it)}; width: 100%;"
+                title={it.filename}
+                onclick={(e) => { if (draggedOriginal) { draggedOriginal = false; return; } onThumbClick(e, it); }}
+                onpointerdown={(e) => pointerOnImage(e, it)}
+                ondragstart={(e) => e.preventDefault()}
+                ondblclick={() => openLightbox(it, $feedItems.findIndex((x) => x.id === it.id))}
+                oncontextmenu={(e) => openContextMenu(e, it)}
+                onmouseenter={() => (hoveredId = it.id)}
+                onmouseleave={() => { if (hoveredId === it.id) hoveredId = null; }}
+              >
+                <img
+                  src={it.original_url ? backendUrl(it.original_url) : undefined}
+                  alt={it.filename}
+                  draggable="false"
+                  onload={(e) => imageLoaded(it, e.currentTarget as HTMLImageElement)}
+                  loading="lazy"
+                  decoding="async"
+                  onerror={(e) => checkMissing(it.id, e.currentTarget as HTMLImageElement)}
+                  class="thumb-img absolute inset-0 w-full h-full object-contain"
+                />
+                <div class="image-name absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] truncate"
+                  role="button" tabindex="0" aria-label="图片名称"
+                  onkeydown={(e) => { if (renamingId !== it.id && (e.key === "Enter" || e.key === "F2")) { e.stopPropagation(); e.preventDefault(); void renameImage(it); } }}
+                  onpointerdown={(e) => e.stopPropagation()}
+                  onclick={(e) => { if (renamingId === it.id) e.stopPropagation(); }}
+                  ondblclick={(e) => { e.stopPropagation(); e.preventDefault(); if (renamingId !== it.id) void renameImage(it); }}>
+                  {#if renamingId === it.id}
+                    <input bind:this={renameInput} bind:value={renameValue} aria-label="编辑图片名称" class="image-rename" style="width: 180px; max-width: 100%;"
+                      readonly={renameSaving}
+                      onkeydown={(e) => { e.stopPropagation(); if (e.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); void saveRename(it); } else if (e.key === 'Escape') { e.preventDefault(); renamingId = null; } }}
+                      onblur={() => saveRename(it)} />
+                  {:else}{it.filename}{/if}
+                </div>
+                {#if it.favorite}
+                  <div class="favorite-badge absolute top-1 right-10 w-6 h-7 flex items-center justify-center text-danger text-[14px] drop-shadow" aria-label="已收藏">♥</div>
+                {/if}
+
+                {#if $comfyuiStatus.running && it.has_workflow && (hoveredId === it.id || $selectedIdStore === it.id || $multiSelectedIds.has(it.id))}
+                  <div
+                    role="button"
+                    tabindex="-1"
+                    class="comfyui-open-btn absolute top-1 right-1 w-7 h-7 rounded-[6px] flex items-center justify-center bg-black/70 hover:bg-accent text-white backdrop-blur-sm transition-colors cursor-pointer"
+                    title="在 ComfyUI 中打开工作流"
+                    aria-label="在 ComfyUI 中打开工作流"
+                    onclick={(e) => { e.stopPropagation(); e.preventDefault(); openInComfyui(it); }}
+                    onmousedown={(e) => e.stopPropagation()}
+                  >
+                    <Icon name="comfyui" size={15} />
+                  </div>
+                {/if}
+                {#if $newIds.has(it.id)}
+                  <div class="absolute bottom-8 left-1 bg-success text-bg text-[10px] font-bold px-1.5 rounded shadow">NEW</div>
+                {/if}
+              </button>
+            {/each}
+          </div>
+        {/each}
+      </div>
+    </div>
+  {/if}
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\Feed.svelte:727:19
+Warn: Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events (svelte)
+                {#if $comfyuiStatus.running && it.has_workflow && (hoveredId === it.id || $selectedIdStore === it.id || $multiSelectedIds.has(it.id))}
+                  <div
+                    role="button"
+                    tabindex="-1"
+                    class="comfyui-open-btn absolute top-1 right-1 w-7 h-7 rounded-[6px] flex items-center justify-center bg-black/70 hover:bg-accent text-white backdrop-blur-sm transition-colors cursor-pointer"
+                    title="在 ComfyUI 中打开工作流"
+                    aria-label="在 ComfyUI 中打开工作流"
+                    onclick={(e) => { e.stopPropagation(); e.preventDefault(); openInComfyui(it); }}
+                    onmousedown={(e) => e.stopPropagation()}
+                  >
+                    <Icon name="comfyui" size={15} />
+                  </div>
+                {/if}
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\PromptCard.svelte:32:29
+Warn: This reference only captures the initial value of `initiallyExpanded`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally (svelte)
+
+  let expanded = $state.raw(initiallyExpanded);
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\DetailPanel.svelte:462:15
+Warn: Avoid using autofocus
+https://svelte.dev/e/a11y_autofocus (svelte)
+              }}
+              autofocus
+            />
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\Lightbox.svelte:398:5
+Warn: `<div>` with a contextmenu handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions (svelte)
+    </header>
+    <div class="viewer-canvas relative flex-1 min-h-0 overflow-hidden" bind:clientWidth={viewportW} bind:clientHeight={viewportH} oncontextmenu={openMenu} use:wheelZoom>
+      {#if comparing}
+        <ImageCompare images={compareImages} />
+      {:else}
+      <div class="absolute inset-0 flex items-center justify-center overflow-hidden" ondblclick={(e) => { if (e.button === 0 && e.target === e.currentTarget) close(); }}>
+    <img
+      bind:this={imgEl}
+      src={originalUrl ?? ""}
+      alt={it.filename}
+      bind:naturalWidth={imgNaturalW}
+      bind:naturalHeight={imgNaturalH}
+      class="shrink-0 select-none lightbox-img"
+      style:width={displayW > 0 ? `${displayW}px` : null}
+      style:height={displayH > 0 ? `${displayH}px` : null}
+      style:transform={zoomMode === "zoom" ? `translate(${pan.x}px, ${pan.y}px)` : "none"}
+      style:transition={imgTransition}
+      style:cursor={imgCursor}
+      style:touch-action="none"
+      draggable="false"
+      onpointerdown={onImgPointerDown}
+      onpointermove={onImgPointerMove}
+      onpointerup={onImgPointerUp}
+      onpointercancel={onImgPointerUp}
+      ondblclick={onImgDblClick}
+    />
+
+      </div>
+      {/if}
+    </div>
+    <footer class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 shrink-0 border-t border-border bg-surface text-xs">
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\Lightbox.svelte:402:7
+Warn: `<div>` with a dblclick handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions (svelte)
+      {:else}
+      <div class="absolute inset-0 flex items-center justify-center overflow-hidden" ondblclick={(e) => { if (e.button === 0 && e.target === e.currentTarget) close(); }}>
+    <img
+      bind:this={imgEl}
+      src={originalUrl ?? ""}
+      alt={it.filename}
+      bind:naturalWidth={imgNaturalW}
+      bind:naturalHeight={imgNaturalH}
+      class="shrink-0 select-none lightbox-img"
+      style:width={displayW > 0 ? `${displayW}px` : null}
+      style:height={displayH > 0 ? `${displayH}px` : null}
+      style:transform={zoomMode === "zoom" ? `translate(${pan.x}px, ${pan.y}px)` : "none"}
+      style:transition={imgTransition}
+      style:cursor={imgCursor}
+      style:touch-action="none"
+      draggable="false"
+      onpointerdown={onImgPointerDown}
+      onpointermove={onImgPointerMove}
+      onpointerup={onImgPointerUp}
+      onpointercancel={onImgPointerUp}
+      ondblclick={onImgDblClick}
+    />
+
+      </div>
+      {/if}
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\App.svelte:214:5
+Warn: noninteractive element cannot have nonnegative tabIndex value
+https://svelte.dev/e/a11y_no_noninteractive_tabindex (svelte)
+    </main>
+    <div
+      class="splitter"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="调整详情面板宽度"
+      tabindex="0"
+      onpointerdown={startDetailDrag}
+    ></div>
+    <aside
+
+====================================
+svelte-check found 0 errors and 15 warnings in 6 files

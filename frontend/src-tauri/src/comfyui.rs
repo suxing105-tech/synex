@@ -17,8 +17,10 @@ pub async fn open_comfy_workflow(app: tauri::AppHandle, url: String, name: Strin
     let (sender, receiver) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let sender = Arc::new(Mutex::new(Some(sender)));
     let label = format!("comfy-workflow-{}", NEXT_WINDOW.fetch_add(1, Ordering::Relaxed));
-    WebviewWindowBuilder::new(&app, label, WebviewUrl::External(target))
+    let window = WebviewWindowBuilder::new(&app, label, WebviewUrl::External(target))
         .title(format!("ComfyUI · {}", name))
+        .theme(Some(tauri::Theme::Dark))
+        .visible(false)
         .inner_size(1280.0, 900.0)
         .initialization_script(&script)
         .on_navigation(move |location| {
@@ -31,6 +33,8 @@ pub async fn open_comfy_workflow(app: tauri::AppHandle, url: String, name: Strin
             } else { true }
         })
         .build().map_err(|e| e.to_string())?;
+    crate::window_style::apply(&window);
+    window.show().map_err(|e| e.to_string())?;
     tokio::time::timeout(std::time::Duration::from_secs(90), receiver).await
         .map_err(|_| "ComfyUI 加载超时，请确认服务已启动".to_string())?
         .map_err(|_| "ComfyUI 窗口已关闭".to_string())?

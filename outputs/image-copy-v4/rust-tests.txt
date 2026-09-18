@@ -1,0 +1,15 @@
+   Compiling windows-result v0.2.0
+   Compiling windows-core v0.52.0
+   Compiling windows-strings v0.1.0
+   Compiling suxing-gallery v0.2.1 (C:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src-tauri)
+   Compiling windows v0.52.0
+   Compiling windows-core v0.58.0
+   Compiling drag v2.1.1
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 23.71s
+     Running unittests src\lib.rs (target\debug\deps\suxing_gallery_lib-cffca77114d8f215.exe)
+
+running 2 tests
+test image_drag::tests::rejects_urls_missing_files_and_empty_selection ... ok
+test image_drag::tests::preserves_exact_original_file_path ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s

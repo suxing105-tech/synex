@@ -57,8 +57,8 @@ function qs(obj: Record<string, unknown>): string {
 
 
 export const imagesApi = {
-  moveFiles(paths: string[], folder_id: number | null): Promise<ImportResponse> {
-    return http('/api/images/move-files', { method: 'POST', body: JSON.stringify({ paths, folder_id }) });
+  copyFiles(paths: string[], folder_id: number | null): Promise<ImportResponse> {
+    return http('/api/images/copy-files', { method: 'POST', body: JSON.stringify({ paths, folder_id }) });
   },
   presence(id: number): Promise<{ exists: boolean }> { return http(`/api/images/${id}/presence`); },
   list(query: FeedQuery = {}): Promise<FeedResponse> {

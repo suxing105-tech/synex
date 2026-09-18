@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import folder_storage, repository
-from app.file_transfer import move_files
+from app.file_transfer import copy_files
 from app.indexer import Indexer
 from app.main import app
 from .conftest import make_png
@@ -34,7 +34,7 @@ def test_create_real_nested_folder_inline_api_and_reveal(indexer, tmp_path):
         assert client.post('/api/folders', json={'name': name}).status_code == 400
 
 
-def test_move_preserves_metadata_handles_collisions_and_same_directory(indexer, tmp_path):
+def test_copy_preserves_metadata_handles_collisions_and_same_directory(indexer, tmp_path):
     folder = folder_storage.create_folder('destination', None)
     destination = Path(folder['path'])
     source = make_png(tmp_path / 'a.png')
@@ -44,19 +44,20 @@ def test_move_preserves_metadata_handles_collisions_and_same_directory(indexer, 
     image_id = indexer._process_path_sync(source)['id']
     repository.set_favorite(image_id, True)
     repository.set_tags(image_id, ['保留'])
-    result = move_files([str(source)], folder['id'])
+    result = copy_files([str(source)], folder['id'])
     assert not result['skipped']
     saved = result['saved'][0]
-    assert saved['id'] == image_id
+    assert saved['id'] != image_id
+    copied_id = saved['id']
     assert Path(saved['path']).name == 'a_1.png'
     assert Path(saved['path']).read_bytes() == original
-    assert not source.exists()
+    assert source.read_bytes() == original
     assert existing.read_bytes() == existing_bytes
     assert repository.image_detail(image_id)['favorite']
     assert repository.image_detail(image_id)['tags'] == ['保留']
     assert repository.feed(folder_id=folder['id'])[1] == 1
-    again = move_files([saved['path']], folder['id'])
-    assert again['saved'][0]['id'] == image_id
+    again = copy_files([saved['path']], folder['id'])
+    assert again['saved'][0]['id'] == copied_id
     assert sorted(p.name for p in destination.iterdir()) == ['a.png', 'a_1.png']
 
 
@@ -94,19 +95,14 @@ def test_rename_real_parent_keeps_child_image_paths(indexer, tmp_path):
     assert not indexer.reconcile_missing()
 
 
-def test_move_failure_keeps_original_and_memberships(indexer, tmp_path):
+def test_copy_failure_keeps_original_and_memberships(indexer, tmp_path):
     old = folder_storage.create_folder('old', None)
     target = folder_storage.create_folder('target', None)
     source = make_png(Path(old['path']) / 'a.png')
     image_id = indexer._process_path_sync(source)['id']
     repository.assign_folder(image_id, old['id'])
-    unlink = Path.unlink
-    def fail_original(path, *args, **kwargs):
-        if path == source:
-            raise PermissionError('locked')
-        return unlink(path, *args, **kwargs)
-    with patch.object(Path, 'unlink', fail_original):
-        result = move_files([str(source)], target['id'])
+    with patch('app.file_transfer.shutil.copyfileobj', side_effect=OSError('disk full')):
+        result = copy_files([str(source)], target['id'])
     assert result['skipped']
     assert source.is_file()
     assert list(Path(target['path']).iterdir()) == []
@@ -114,17 +110,17 @@ def test_move_failure_keeps_original_and_memberships(indexer, tmp_path):
     assert repository.feed(folder_id=target['id'])[1] == 0
 
 
-def test_move_to_source_folder_and_legacy_classification(indexer, tmp_path):
+def test_copy_to_source_folder_and_legacy_classification(indexer, tmp_path):
     source_dir = tmp_path / 'watched' / 'source'
     source_dir.mkdir(parents=True)
     fid = repository.ensure_system_folder_chain(source_dir / 'x.png', tmp_path / 'watched')
     first = make_png(tmp_path / 'first.png')
-    result = TestClient(app).post('/api/images/move-files', json={'paths': [str(first)], 'folder_id': fid})
+    result = TestClient(app).post('/api/images/copy-files', json={'paths': [str(first)], 'folder_id': fid})
     assert result.status_code == 200
-    assert (source_dir / 'first.png').is_file() and not first.exists()
+    assert (source_dir / 'first.png').is_file() and first.exists()
     legacy = repository.folder_create('old virtual', None)
     second = make_png(tmp_path / 'second.png')
-    assert move_files([str(second)], legacy['id'])['saved']
+    assert copy_files([str(second)], legacy['id'])['saved']
     assert repository.feed(folder_id=legacy['id'])[1] == 1
 
 

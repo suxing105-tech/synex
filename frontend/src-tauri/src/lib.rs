@@ -9,6 +9,7 @@ mod folders;
 mod sidecar;
 mod updates;
 mod window_style;
+mod image_drag;
 
 use sidecar::{SidecarConfig, SidecarState};
 
@@ -53,6 +54,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            image_drag::drag_original_images,
             commands::get_sidecar_status,
             folders::select_import_directory,
             commands::restart_sidecar,

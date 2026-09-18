@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import { subscribeFileDrop } from "../lib/native-drop";
+  import { beginOriginalDrag } from "../lib/original-drag";
   import GallerySearch from "./GallerySearch.svelte";
   import { copyOriginalImage } from "../lib/image-clipboard";
   import { matchesAction, shortcutBlocked } from "../lib/shortcut-settings";
@@ -94,7 +95,7 @@
     } else if (dt.files) {
       for (let i = 0; i < dt.files.length; i++) {
         const f = dt.files[i];
-        if (f.type.startsWith("image/") || /\.(png|webp)$/i.test(f.name)) {
+        if (f.type.startsWith("image/") || /\.(png|webp|jpe?g)$/i.test(f.name)) {
           out.push(f);
         }
       }
@@ -133,7 +134,7 @@
     dragFileCount = 0;
     const files = pickImageFiles(e.dataTransfer);
     if (files.length === 0) {
-      notify("未检测到 PNG / WebP 图片");
+      notify("未检测到 PNG / WebP / JPG / JPEG 图片");
       return;
     }
     await importFiles(files);
@@ -189,15 +190,15 @@
         let failed = 0;
         // Each completed file appears immediately, without waiting for the batch.
         for (const path of paths) {
-          const result = await imagesApi.moveFiles([path], targetId);
+          const result = await imagesApi.copyFiles([path], targetId);
           done += result.saved.length;
           failed += result.skipped.length;
           importingProgress = { done: done + failed, total: paths.length };
           await refreshFeed();
         }
         await Promise.all([refreshStats(), refreshFolders()]);
-        notify(`已移动 ${done} 张到「${label}」${failed ? `，${failed} 张未能移动，原文件已保留` : ''}`);
-      } catch (error) { notify(`移动失败：${error instanceof Error ? error.message : error}`); }
+        notify(`已复制 ${done} 张到「${label}」${failed ? `，${failed} 张未能复制，原文件已保留` : ''}`);
+      } catch (error) { notify(`复制失败：${error instanceof Error ? error.message : error}`); }
       finally { importing = false; dragCounter = 0; dragFileCount = 0; }
     },
   ));
@@ -224,6 +225,28 @@
     }
 
 
+  }
+
+  let stopOriginalDrag: (() => void) | undefined;
+  let draggedOriginal = false;
+  onDestroy(() => stopOriginalDrag?.());
+
+  function pointerOnImage(e: PointerEvent, item: ImageSummary) {
+    if ((e.target as HTMLElement).closest('.comfyui-open-btn')) return;
+    stopOriginalDrag?.();
+    draggedOriginal = false;
+    const images = $multiSelectedIds.has(item.id)
+      ? $feedItems.filter(image => $multiSelectedIds.has(image.id)) : [item];
+    stopOriginalDrag = beginOriginalDrag(e, images.map(image => image.path),
+      () => { draggedOriginal = true; },
+      error => notify(`拖出失败：${error instanceof Error ? error.message : error}`));
+  }
+
+  function imageLoaded(item: ImageSummary, image: HTMLImageElement) {
+    const width = image.naturalWidth, height = image.naturalHeight;
+    if (width > 0 && height > 0 && (!item.width || !item.height || Math.abs(item.width / item.height - width / height) > .01)) {
+      feedItems.update(items => items.map(row => row.id === item.id ? { ...row, width, height } : row));
+    }
   }
 
   function aspectFor(it: ImageSummary): string {
@@ -597,7 +620,7 @@
               </span>
             {/if}
           </div>
-          <div class="text-[11px] text-muted/80 mt-2">支持 PNG / WebP</div>
+          <div class="text-[11px] text-muted/80 mt-2">支持 PNG / WebP / JPG / JPEG</div>
         {/if}
       </div>
     </div>
@@ -634,7 +657,9 @@
                 class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 text-left {$multiSelectedIds.has(it.id) ? 'outline outline-[6px] outline-accent outline-offset-[-6px]' : ''} {$newIds.has(it.id) ? 'new-badge' : ''}"
                 style="aspect-ratio: {aspectFor(it)}; width: 100%;"
                 title={it.filename}
-                onclick={(e) => onThumbClick(e, it)}
+                onclick={(e) => { if (draggedOriginal) { draggedOriginal = false; return; } onThumbClick(e, it); }}
+                onpointerdown={(e) => pointerOnImage(e, it)}
+                ondragstart={(e) => e.preventDefault()}
                 ondblclick={() => openLightbox(it, $feedItems.findIndex((x) => x.id === it.id))}
                 oncontextmenu={(e) => openContextMenu(e, it)}
                 onmouseenter={() => (hoveredId = it.id)}
@@ -643,10 +668,12 @@
                 <img
                   src={it.original_url ? backendUrl(it.original_url) : undefined}
                   alt={it.filename}
+                  draggable="false"
+                  onload={(e) => imageLoaded(it, e.currentTarget as HTMLImageElement)}
                   loading="lazy"
                   decoding="async"
                   onerror={(e) => checkMissing(it.id, e.currentTarget as HTMLImageElement)}
-                  class="thumb-img w-full h-full object-cover"
+                  class="thumb-img absolute inset-0 w-full h-full object-contain"
                 />
                 <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] truncate">
                   {it.filename}
@@ -721,6 +748,7 @@
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
     z-index: 2;
   }
+  .thumb { user-select: none; touch-action: none; flex: none; min-height: 0; padding: 0; }
   .thumb-img {
     transition: transform 0.35s cubic-bezier(0.2, 0.6, 0.2, 1); will-change: transform;
   }

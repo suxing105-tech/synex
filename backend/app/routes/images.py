@@ -319,7 +319,8 @@ def reveal_image(image_id: int):
     }
 
 
-_ALLOWED_EXTS = {".png", ".webp"}
+from ..parser import SUPPORTED_EXTS
+_ALLOWED_EXTS = SUPPORTED_EXTS
 _MAX_FILE_BYTES = 100 * 1024 * 1024  # 100 MB 单文件上限
 _FILENAME_BAD = re.compile(r"[\\/\x00-\x1f\x7f]+")
 _FILENAME_TRAILING_DOTS = re.compile(r"^[.]+|[.]+$")
@@ -468,9 +469,10 @@ def import_images(
     )
 
 
-@router.post("/move-files")
-def move_dropped_files(payload: dict):
-    from ..file_transfer import move_files
+@router.post("/copy-files")
+@router.post("/move-files", include_in_schema=False)
+def copy_dropped_files(payload: dict):
+    from ..file_transfer import copy_files
     paths = payload.get('paths')
     if not isinstance(paths, list) or not paths or len(paths) > 2000 or any(not isinstance(p, str) or not Path(p).is_absolute() for p in paths):
         raise HTTPException(400, '请提供有效的本地图片路径')
@@ -478,7 +480,7 @@ def move_dropped_files(payload: dict):
     if folder_id is not None and (not isinstance(folder_id, int) or isinstance(folder_id, bool)):
         raise HTTPException(400, '文件夹无效')
     try:
-        return move_files(paths, folder_id)
+        return copy_files(paths, folder_id)
     except (ValueError, OSError) as error:
         raise HTTPException(400, str(error)) from error
 

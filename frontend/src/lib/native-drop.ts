@@ -1,8 +1,9 @@
+import { isDraggingOriginal } from './original-drag';
 import { isTauri } from './tauri';
 
 type Payload = { paths?: string[]; position?: { x: number; y: number } };
 
-/** Native WebView drops contain the disk paths needed for an actual move. */
+/** Native WebView drops contain the disk paths needed for copying the original file. */
 export function subscribeFileDrop(
   region: () => HTMLElement | null | undefined,
   hover: (count: number) => void,
@@ -21,7 +22,7 @@ export function subscribeFileDrop(
   };
   const listen = async (name: string, callback: (p: Payload) => void) => {
     const unlisten = await (window as any).__TAURI__.event.listen(name,
-      (event: { payload: Payload }) => { if (!disposed) callback(event.payload); });
+      (event: { payload: Payload }) => { if (!disposed && !isDraggingOriginal()) callback(event.payload); });
     if (disposed) unlisten(); else unlisteners.push(unlisten);
   };
   void Promise.all([

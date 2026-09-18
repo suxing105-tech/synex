@@ -645,7 +645,10 @@ def _extract_dimensions(path):
         return None, None
     try:
         with Image.open(path) as img:
-            return img.width, img.height
+            width, height = img.size
+            if img.getexif().get(274) in (5, 6, 7, 8):
+                width, height = height, width
+            return width, height
     except Exception:
         return None, None
 
@@ -653,7 +656,7 @@ def _extract_dimensions(path):
 # ---------- 统一入口 ----------
 
 
-SUPPORTED_EXTS = {".png", ".webp"}
+SUPPORTED_EXTS = {".png", ".webp", ".jpg", ".jpeg"}
 
 
 def parse_metadata(path: Path) -> dict[str, Any]:

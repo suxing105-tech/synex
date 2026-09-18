@@ -1,0 +1,26 @@
+{
+  "id": 391416417,
+  "tag": "v0.2.2",
+  "draft": false,
+  "url": "https://github.com/suxing105-tech/synex/releases/tag/v0.2.2",
+  "assets": [
+    {
+      "name": "latest.json",
+      "size": 1686,
+      "digest": "sha256:1baba1b7ccf9fcc327534e4f6e7bde72774c3670980c3f3b31c66c3d69583f23",
+      "url": "https://github.com/suxing105-tech/synex/releases/download/v0.2.2/latest.json"
+    },
+    {
+      "name": "suxing-gallery_0.2.2_x64-setup.exe",
+      "size": 33098920,
+      "digest": "sha256:7cb9b4737f42dcfe175fb8dd3dba733f0f4d251d49ff03e6c9b0839467459383",
+      "url": "https://github.com/suxing105-tech/synex/releases/download/v0.2.2/suxing-gallery_0.2.2_x64-setup.exe"
+    },
+    {
+      "name": "suxing-gallery_0.2.2_x64-setup.exe.sig",
+      "size": 428,
+      "digest": "sha256:232b8240cfc4a1d886b554a016ed4186ca4f8140bdcb3e783cc6788730a068c2",
+      "url": "https://github.com/suxing105-tech/synex/releases/download/v0.2.2/suxing-gallery_0.2.2_x64-setup.exe.sig"
+    }
+  ]
+}

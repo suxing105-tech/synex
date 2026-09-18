@@ -1,0 +1,13 @@
+warning: linker stdout: 正在创建库 C:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src-tauri\target\debug\deps\suxing_gallery_lib.dll.lib 和对象 C:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src-tauri\target\debug\deps\suxing_gallery_lib.dll.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `suxing-gallery` (lib) generated 1 warning
+   Compiling suxing-gallery v0.2.2 (C:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.43s
+     Running tests\updater_transport.rs (src-tauri\target\debug\deps\updater_transport-d944b1d9bd4d2d3a.exe)
+
+running 1 test
+test signed_download_rejects_tampering_and_ignores_older_releases ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s

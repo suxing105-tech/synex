@@ -1,0 +1,11 @@
+{
+  "version": "0.2.2",
+  "notes": "# 苏醒图库 0.2.2\n\n- 修复导入图片与缩略图错配、删除后残留、选中边框过粗的问题。\n- 图片拖入复制原图，支持 JPEG、原始比例缩略图及拖出原图。\n- 文件夹支持行内改名、实际目录创建、打开所在位置和跨层级移动。\n- 增加双图滑动对比、Delete 删除图片与缩略图、单图滚轮缩放。\n- 优化缩略图右键菜单、行内改名、多级移动菜单和收藏显示。\n- ComfyUI 按钮加载图片携带的工作流，并以图片名命名；窗口采用深色标题栏。\n- 修复两张图片选中时的工具栏错位，缩短改名输入框。\n- 导入成功并刷新图库后自动关闭弹窗，按钮悬停使用底色高亮。\n\n安装版可通过设置中的检查更新下载、校验并安装已发布的签名更新。免安装版请使用新包升级。\n上传源码本身不会发布软件更新；正式更新还需安装包、签名和 latest.json。\n",
+  "pub_date": "2026-09-18T11:19:20.028837+00:00",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUUWorKy9HbWRFSmZ3ejNTZEdTVldMMnV1Z2JmNTlJYzNoRTJiMEgwUUNJRTRkYnd3YzU2d0xHSFJPZ00wcDNnQmcyOEVBZEJEYkt2RVREU05DZmxKMzVMZVgvTFprREE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzMwMzU5CWZpbGU6c3V4aW5nLWdhbGxlcnlfMC4yLjJfeDY0LXNldHVwLmV4ZQovR3BnZDdqamR5THFQTkJqeGxUc1NXb1lWWUtIUnZXcXJ1YTJqNE9ZOTV3aHE0SjMxeGxhNVR0NCtqR09seWdCOEdCSUVyd0JmWWthVkFuUkg2cEtBdz09Cg==",
+      "url": "https://github.com/suxing105-tech/synex/releases/download/v0.2.2/suxing-gallery_0.2.2_x64-setup.exe"
+    }
+  }
+}

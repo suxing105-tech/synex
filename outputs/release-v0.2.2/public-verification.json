@@ -1,0 +1,9 @@
+{
+  "feed": "https://github.com/suxing105-tech/synex/releases/latest/download/latest.json",
+  "version": "0.2.2",
+  "installer_url": "https://github.com/suxing105-tech/synex/releases/download/v0.2.2/suxing-gallery_0.2.2_x64-setup.exe",
+  "bytes": 33098920,
+  "sha256": "7cb9b4737f42dcfe175fb8dd3dba733f0f4d251d49ff03e6c9b0839467459383",
+  "signature_matches_feed": true,
+  "download_without_authentication": true
+}

@@ -3,6 +3,6 @@
   "file": "suxing-gallery_0.2.2_x64-setup.exe",
   "bytes": 33098920,
   "sha256": "7CB9B4737F42DCFE175FB8DD3DBA733F0F4D251D49FF03E6C9B0839467459383",
-  "status": "Built; updater signature and GitHub Release pending",
+  "status": "Signed, published and verified through the public updater feed",
   "sourceCommit": "8e0778d86e5baca3b48426949ead06ec093e2531"
 }

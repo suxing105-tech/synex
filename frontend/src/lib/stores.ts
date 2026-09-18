@@ -143,7 +143,20 @@ export async function refreshStats() {
   stats.set(await statsApi.get());
 }
 
+const pendingFeedRemovals = new Set<Set<number>>();
+export function removeImageFromFeed(id: number) {
+  for (const pending of pendingFeedRemovals) pending.add(id);
+  feedItems.update((items) => {
+    const next = items.filter((item) => item.id !== id);
+    if (next.length !== items.length) feedTotal.update((n) => Math.max(0, n - 1));
+    return next;
+  });
+  removeIdsFromSelection([id]);
+}
+
 export async function refreshFeed() {
+  const removed = new Set<number>();
+  pendingFeedRemovals.add(removed);
   feedLoading.set(true);
   try {
     let folder: number | null | undefined;
@@ -161,9 +174,11 @@ export async function refreshFeed() {
       tag: tg ?? undefined,
       limit: 1000,
     });
-    feedItems.set(resp.items);
-    feedTotal.set(resp.total);
+    const items = resp.items.filter((item) => !removed.has(item.id));
+    feedItems.set(items);
+    feedTotal.set(Math.max(0, resp.total - (resp.items.length - items.length)));
   } finally {
+    pendingFeedRemovals.delete(removed);
     feedLoading.set(false);
   }
 }
@@ -207,9 +222,10 @@ selectedId.subscribe(async (id) => {
     return;
   }
   try {
-    selectedDetail.set(await imagesApi.detail(id));
+    const detail = await imagesApi.detail(id);
+    if (getSelectedId() === id) selectedDetail.set(detail);
   } catch {
-    selectedDetail.set(null);
+    if (getSelectedId() === id) selectedDetail.set(null);
   }
 });
 

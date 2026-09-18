@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
+  import { pushToast } from "../lib/toast";
   import { backendUrl } from "../lib/backend-url";
   import { folders, folderId, view, stats } from "../lib/stores";
   import Icon from "./Icon.svelte";
@@ -27,10 +29,97 @@
     folderId.set(null);
   }
 
+  let collapsed = $state<Set<number>>(new Set());
+  let clickTimer: ReturnType<typeof setTimeout> | undefined;
+  let holdTimer: ReturnType<typeof setTimeout> | undefined;
+  let pressed: { folder: FolderNode; x: number; y: number } | null = null;
+  let dragging = $state<FolderNode | null>(null);
+  let drop = $state<{ id: number; position: "before" | "after" } | null>(null);
+  let suppressClick = false;
+  let saving = $state(false);
+
   function pickFolder(f: FolderNode) {
     view.set("all");
     folderId.set(f.id);
+    const next = new Set(collapsed);
+    if (next.has(f.id)) next.delete(f.id);
+    else next.add(f.id);
+    collapsed = next;
   }
+
+  function clickFolder(f: FolderNode, e: MouseEvent) {
+    e.stopPropagation();
+    if (suppressClick) { suppressClick = false; return; }
+    clearTimeout(clickTimer);
+    if (e.detail > 1) return;
+    clickTimer = setTimeout(() => pickFolder(f), 280);
+  }
+
+  function doubleClickFolder(f: FolderNode, e: MouseEvent) {
+    e.stopPropagation();
+    clearTimeout(clickTimer);
+    cancelDrag();
+    startRename(f.id, f.name);
+  }
+
+  function pressFolder(f: FolderNode, e: PointerEvent) {
+    if (e.button !== 0 || saving || (e.target as HTMLElement).closest('button')) return;
+    cancelDrag();
+    suppressClick = false;
+    pressed = { folder: f, x: e.clientX, y: e.clientY };
+    holdTimer = setTimeout(() => {
+      clearTimeout(clickTimer);
+      dragging = f;
+      suppressClick = true;
+      menuFor = null;
+    }, 450);
+  }
+
+  function pointerMove(e: PointerEvent) {
+    if (!pressed) return;
+    if (!dragging) {
+      if (Math.hypot(e.clientX - pressed.x, e.clientY - pressed.y) > 8) cancelDrag();
+      return;
+    }
+    e.preventDefault();
+    const row = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-folder-id]');
+    const target = row ? findNode($folders, Number(row.dataset.folderId)) : null;
+    drop = null;
+    if (row && target && target.id !== dragging.id && target.parent_id === dragging.parent_id
+        && !!target.is_system === !!dragging.is_system) {
+      const rect = row.getBoundingClientRect();
+      drop = { id: target.id, position: e.clientY < rect.top + rect.height / 2 ? "before" : "after" };
+    }
+    const scroller = row?.closest('.folder-scroll');
+    if (scroller) {
+      const rect = scroller.getBoundingClientRect();
+      if (e.clientY < rect.top + 32) scroller.scrollTop -= 12;
+      if (e.clientY > rect.bottom - 32) scroller.scrollTop += 12;
+    }
+  }
+
+  function cancelDrag() {
+    clearTimeout(holdTimer);
+    pressed = null;
+    dragging = null;
+    drop = null;
+  }
+
+  async function releaseFolder() {
+    const source = dragging;
+    const target = drop;
+    cancelDrag();
+    if (!source || !target) return;
+    saving = true;
+    try {
+      await foldersApi.reorder(source.id, target.id, target.position);
+      await refreshFolders();
+    } catch (error) {
+      pushToast(`排序失败：${error instanceof Error ? error.message : error}`, { kind: "error" });
+    } finally { saving = false; }
+  }
+
+  onDestroy(() => { clearTimeout(clickTimer); cancelDrag(); });
 
   function openMenu(id: number, e: MouseEvent) {
     e.stopPropagation();
@@ -58,12 +147,18 @@
   }
 
   async function submitRename() {
-    if (!renameFor) return;
+    if (renameFor === null || saving) return;
     const name = renameValue.trim();
-    if (name) await foldersApi.rename(renameFor, name);
-    renameFor = null;
-    renameValue = "";
-    await refreshFolders();
+    if (!name) { pushToast("请输入文件夹名称", { kind: "error" }); return; }
+    saving = true;
+    try {
+      await foldersApi.rename(renameFor, name);
+      renameFor = null;
+      renameValue = "";
+      await refreshFolders();
+    } catch (error) {
+      pushToast(`改名失败：${error instanceof Error ? error.message : error}`, { kind: "error" });
+    } finally { saving = false; }
   }
 
   async function move(id: number, direction: "up" | "down") {
@@ -119,7 +214,9 @@
   let systemFolders = $derived($folders.filter((f) => !!f.is_system));
 </script>
 
-<svelte:window onclick={closeAll} />
+<svelte:window onclick={closeAll} onpointermove={pointerMove} onpointerup={releaseFolder}
+  onpointercancel={cancelDrag} onblur={cancelDrag}
+  onkeydown={(e) => { if (e.key === 'Escape') { cancelDrag(); closeAll(); } }} />
 
 <div class="px-[14px] pt-[14px] pb-[8px] flex items-center justify-between">
   <h3 class="text-[11px] uppercase text-muted tracking-wider">文件夹</h3>
@@ -134,7 +231,7 @@
     <Icon name="plus" size={12} />
   </button>
 </div>
-<div class="flex-1 overflow-y-auto px-2 pb-3">
+<div class="folder-scroll flex-1 overflow-y-auto px-2 pb-3">
   <div class="text-[10px] uppercase text-muted tracking-wider px-[10px] py-[10px] opacity-70">
     系统
   </div>
@@ -172,7 +269,7 @@
   {#if systemFolders.length > 0}
     <div class="flex items-center justify-between px-[10px] pt-[14px] pb-[4px]">
       <div class="text-[10px] uppercase text-muted tracking-wider opacity-70">
-        来源（监听目录子目录）
+        来源目录
       </div>
     </div>
     {#each systemFolders as f (f.id)}
@@ -193,6 +290,8 @@
       <Icon name="plus" size={12} />
     </button>
   </div>
+
+  <p class="folder-hint">单击展开 · 双击改名 · 长按拖动排序</p>
 
   {#if userFolders.length === 0}
     <div class="text-[12px] text-muted px-3 py-2">还没有文件夹</div>
@@ -254,9 +353,14 @@
       onclick={(e) => e.stopPropagation()}
     >
       <h3 class="text-sm font-medium mb-3">重命名文件夹</h3>
+      {#if findNode($folders, renameFor)?.is_system}
+        <p class="text-xs text-muted mb-3">修改图库中的显示名称，磁盘路径保持不变。</p>
+      {/if}
       <input
         type="text"
         bind:value={renameValue}
+        maxlength={64}
+        aria-label="文件夹名称"
         class="w-full bg-bg border border-border rounded px-2 py-1 text-[13px] outline-none focus:border-accent"
         onkeydown={(e) => {
           if (e.key === 'Enter') submitRename();
@@ -274,6 +378,7 @@
         <button
           class="text-[12px] px-3 py-1 rounded bg-accent text-bg font-medium"
           onclick={submitRename}
+          disabled={saving}
         >
           保存
         </button>
@@ -292,7 +397,9 @@
     onclick={(e) => e.stopPropagation()}
   >
     {#if isSys}
-      <div class="px-3 py-1 text-muted text-[11px]">系统文件夹（只读）</div>
+      <button class="block w-full text-left px-3 py-1 hover:bg-surface-3"
+        onclick={() => menuNode && startRename(menuNode.id, menuNode.name)}>重命名显示名称</button>
+      <div class="px-3 py-1 text-muted text-[11px]">来源目录（显示名称可修改）</div>
       <button
         class="block w-full text-left px-3 py-1 hover:bg-surface-3"
         onclick={() => menuFor !== null && revealSystemFolder(menuNode?.path, menuFor)}
@@ -339,55 +446,68 @@
 {/if}
 
 {#snippet userFolderItem(folder: FolderNode, depth: number)}
-  <div
-    class="folder-item {$folderId === folder.id ? 'active' : ''}"
-    onclick={() => pickFolder(folder)}
-  >
-    <span class="caret-spacer" style="width: {depth * 14 + 12}px"></span>
-    <span class="icon"><Icon name="folder" size={13} /></span>
-    <span class="label">{folder.name}</span>
-    <span class="count">{folder.recursive_count}</span>
-    <button
-      class="menu-btn"
-      onclick={(e) => openMenu(folder.id, e)}
-      aria-label="文件夹操作"
-    >
-      <Icon name="more-vertical" size={14} />
-    </button>
-  </div>
-  {#each folder.children as child (child.id)}
-    {@render userFolderItem(child, depth + 1)}
-  {/each}
+  {@render folderItem(folder, depth)}
 {/snippet}
 
 {#snippet systemFolderItem(folder: FolderNode, depth: number)}
+  {@render folderItem(folder, depth)}
+{/snippet}
+
+{#snippet folderItem(folder: FolderNode, depth: number)}
   <div
-    class="folder-item system {$folderId === folder.id ? 'active' : ''}"
-    onclick={() => pickFolder(folder)}
+    class="folder-item {folder.is_system ? 'system' : ''} {$folderId === folder.id ? 'active' : ''}"
+    class:dragging={dragging?.id === folder.id}
+    class:drop-before={drop?.id === folder.id && drop.position === 'before'}
+    class:drop-after={drop?.id === folder.id && drop.position === 'after'}
+    data-folder-id={folder.id}
+    style="margin-left: {depth * 14}px"
+    role="button" tabindex="0"
+    aria-label={folder.name}
+    aria-expanded={folder.children.length ? !collapsed.has(folder.id) : undefined}
+    onclick={(e) => clickFolder(folder, e)}
+    ondblclick={(e) => doubleClickFolder(folder, e)}
+    onpointerdown={(e) => pressFolder(folder, e)}
+    onkeydown={(e) => {
+      if (e.target !== e.currentTarget) return;
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickFolder(folder); }
+      if (e.key === 'F2') { e.preventDefault(); startRename(folder.id, folder.name); }
+    }}
   >
-    <span class="caret-spacer" style="width: {depth * 14 + 12}px"></span>
-    <span class="icon"><Icon name="folder" size={13} /></span>
+    <span class="folder-caret">
+      {#if folder.children.length}
+        <Icon name={collapsed.has(folder.id) ? 'chevron-right' : 'chevron-down'} size={12} />
+      {/if}
+    </span>
+    <span class="icon"><Icon name="folder" size={15} /></span>
     <span class="label" title={folder.path ?? folder.name}>{folder.name}</span>
     <span class="count">{folder.recursive_count}</span>
-    <button
-      class="menu-btn"
-      onclick={(e) => openMenu(folder.id, e)}
-      aria-label="来源操作"
-    >
+    <button class="menu-btn" onclick={(e) => openMenu(folder.id, e)}
+      ondblclick={(e) => e.stopPropagation()} aria-label="文件夹操作">
       <Icon name="more-vertical" size={14} />
     </button>
   </div>
-  {#each folder.children as child (child.id)}
-    {@render systemFolderItem(child, depth + 1)}
-  {/each}
+  {#if !collapsed.has(folder.id)}
+    <div class="folder-children">
+    {#each folder.children as child (child.id)}
+      {@render folderItem(child, depth + 1)}
+    {/each}
+    </div>
+  {/if}
 {/snippet}
+
+{#if dragging}
+  <div class="drag-hint" role="status">正在移动「{dragging.name}」· 拖到同级文件夹之间，松开完成</div>
+{/if}
 
 <style>
   :global(.folder-item) {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 6px 10px;
+    padding: 8px 10px;
+    margin-bottom: 3px;
+    min-height: 36px;
+    transition: background 120ms, color 120ms;
     border-radius: 6px;
     cursor: pointer;
     font-size: 13px;
@@ -398,8 +518,8 @@
     background: #27272a;
   }
   :global(.folder-item.active) {
-    background: #27272a;
-    color: #f24e4e;
+    background: #f24e4e1a;
+    color: #ff7777;
   }
   :global(.folder-item.active::before) {
     content: "";
@@ -440,7 +560,8 @@
     border-radius: 4px;
     font-size: 13px;
   }
-  :global(.folder-item:hover .menu-btn) {
+  :global(.folder-item:hover .menu-btn),
+  :global(.folder-item:focus-within .menu-btn) {
     opacity: 1;
   }
   :global(.folder-item .menu-btn:hover) {
@@ -466,4 +587,12 @@
   :global(.folder-item.system.active) {
     color: #f24e4e;
   }
+  .folder-hint { font-size: 10px; color: #85858e; padding: 4px 10px 10px; line-height: 1.7; }
+  .folder-caret { width: 12px; height: 14px; display: flex; align-items: center; flex-shrink: 0; color: #92929c; }
+  :global(.folder-item .count) { font-variant-numeric: tabular-nums; border-radius: 5px; padding: 1px 5px; background: #ffffff06; }
+  :global(.folder-item:focus-visible) { outline: none; background: #ffffff12; }
+  :global(.folder-item.dragging) { opacity: .45; cursor: grabbing; }
+  :global(.folder-item.drop-before) { box-shadow: 0 -2px #f24e4e; }
+  :global(.folder-item.drop-after) { box-shadow: 0 2px #f24e4e; }
+  .drag-hint { position: fixed; bottom: 24px; left: 20px; z-index: 80; pointer-events: none; padding: 10px 14px; border-radius: 8px; background: #333338; color: #eee; font-size: 12px; box-shadow: 0 6px 24px #0005; }
 </style>

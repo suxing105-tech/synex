@@ -194,11 +194,12 @@ class Indexer:
         """同步处理单张图；返回事件 payload 或 ``None``。"""
         path_str = self._normalize(path)
         if remove:
-            conn = get_pool().main()
-            row = conn.execute("SELECT id FROM images WHERE path = ?", (path_str,)).fetchone()
-            if row:
-                image_id = row["id"]
-                with self._write_lock:
+            with self._write_lock:
+                with transaction() as conn:
+                    row = conn.execute("SELECT id FROM images WHERE path = ?", (path_str,)).fetchone()
+                    if not row:
+                        return None
+                    image_id = row["id"]
                     conn.execute("DELETE FROM images WHERE id = ?", (image_id,))
                     fts_sync(conn, image_id, "delete")
                 return {"type": "image_removed", "id": image_id, "path": path_str}
@@ -438,7 +439,15 @@ class Indexer:
             self._flush_timer = None
         for p in paths:
             try:
-                payload = self._process_path_sync(Path(p), remove=(kind == "delete"))
+                # 合并的是路径，不是事件类型；以每个路径最终状态处理，避免
+                # 删除 A / 新建 B 的批次被最后一个事件统一误判。
+                path = Path(p)
+                try:
+                    path.stat()
+                    missing = False
+                except FileNotFoundError:
+                    missing = True
+                payload = self._process_path_sync(path, remove=missing)
             except Exception as e:
                 log.warning("event handler failed: %s (%s)", p, e)
                 continue
@@ -482,9 +491,13 @@ class _Handler(FileSystemEventHandler):
 
     def on_moved(self, event):
         if event.is_directory:
+            self._enqueue_directory_removal(event.src_path)
             # 目录重命名：把新路径预先挂上 system folder 链（空目录也能看见）
             try:
                 self.indexer._ensure_system_folder_for_dir(Path(event.dest_path))
+                for path in Path(event.dest_path).rglob("*"):
+                    if path.is_file() and path.suffix.lower() in SUPPORTED_EXTS:
+                        self.indexer.enqueue("create", path)
             except Exception as e:  # noqa: BLE001
                 log.warning("ensure moved dir failed: %s (%s)", event.dest_path, e)
             return
@@ -498,8 +511,16 @@ class _Handler(FileSystemEventHandler):
         if event.is_directory:
             # 目录删除属于"被文件系统同步"事件；不动 system folder 表
             # （用户如果在子目录里删了所有图，目录还会留在树上，递归计数 = 0）。
+            self._enqueue_directory_removal(event.src_path)
             return
         self.indexer.enqueue("delete", event.src_path)
+
+    def _enqueue_directory_removal(self, directory):
+        # Windows 的目录删除/移出可能只有目录事件，逐个清理其图片索引。
+        root = Path(directory).resolve()
+        for row in get_pool().main().execute("SELECT path FROM images").fetchall():
+            if Path(row["path"]).is_relative_to(root):
+                self.indexer.enqueue("delete", row["path"])
 
 
 # ---------- 单例 ----------

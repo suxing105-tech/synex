@@ -1,10 +1,12 @@
 """/api/folders 路由。"""
 from __future__ import annotations
 
+import sqlite3
+
 from fastapi import APIRouter, HTTPException
 
 from .. import repository
-from ..models import FolderCreate, FolderUpdate
+from ..models import FolderCreate, FolderUpdate, FolderReorder
 
 router = APIRouter(prefix="/api/folders", tags=["folders"])
 
@@ -24,8 +26,8 @@ def create_folder(payload: FolderCreate):
 
 @router.patch("/{folder_id}")
 def update_folder(folder_id: int, payload: FolderUpdate):
-    if repository.is_system_folder(folder_id):
-        raise HTTPException(400, "系统文件夹不可重命名")
+    if repository.is_system_folder(folder_id) and "parent_id" in payload.model_fields_set:
+        raise HTTPException(400, "来源文件夹不可改变层级；可修改显示名称和排序")
     try:
         parent_id = payload.parent_id if "parent_id" in payload.model_fields_set else ...
         return repository.folder_update(
@@ -34,6 +36,8 @@ def update_folder(folder_id: int, payload: FolderUpdate):
             order=payload.order,
             parent_id=parent_id,
         )
+    except sqlite3.IntegrityError as e:
+        raise HTTPException(400, "同级文件夹已存在此名称") from e
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
@@ -45,6 +49,15 @@ def move_folder(folder_id: int, direction: str):
     if repository.is_system_folder(folder_id):
         raise HTTPException(400, "系统文件夹不可移动")
     repository.folder_move_order(folder_id, direction)
+    return {"ok": True}
+
+
+@router.post("/{folder_id}/reorder")
+def reorder_folder(folder_id: int, payload: FolderReorder):
+    try:
+        repository.folder_reorder(folder_id, payload.target_id, payload.position)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
     return {"ok": True}
 
 

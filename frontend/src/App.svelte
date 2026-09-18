@@ -4,7 +4,6 @@
   import { connectEvents, disconnectEvents } from "./lib/ws";
   import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, comfyuiEnabled, feedItems, tag, folderId, query, view, selectedDetail } from "./lib/stores";
   import { createSplashGate } from "./lib/splash-gate.svelte";
-  import HeaderBar from "./components/HeaderBar.svelte";
   import FolderTree from "./components/FolderTree.svelte";
   import Feed from "./components/Feed.svelte";
   import DetailPanel from "./components/DetailPanel.svelte";
@@ -26,6 +25,12 @@
 
   let onboardingOpen = $state(false);
   let settingsOpen = $state(false);
+  let settingsTab = $state("通用");
+  onMount(() => {
+    const openModels = () => { settingsTab = "模型与反推"; settingsOpen = true; };
+    window.addEventListener("open-model-settings", openModels);
+    return () => window.removeEventListener("open-model-settings", openModels);
+  });
 
   let selectedIdValue = $state<number | null>(null);
   let lightboxOpen = $state(false);
@@ -92,16 +97,16 @@
       console.error("init failed", e);
     }
     connectEvents();
+    await refreshComfyuiStatus();
+    comfyuiTimer = setInterval(refreshComfyuiStatus, 10000);
   }
 
   onMount(async () => {
     // gate.start()：浏览器模式立即 await doInit() 返回 true；
     // Tauri 模式订阅 sidecar-ready / sidecar-died + 30s 超时返回 false。
-    const isBrowser = await gate.start(doInit);
-    if (!isBrowser) return;
+    await gate.start(doInit);
     // 浏览器 / 静态托管专用：comfyui 轮询 + window 事件
-    await refreshComfyuiStatus();
-    comfyuiTimer = setInterval(refreshComfyuiStatus, 30000);
+
     const onVis = () => {
       if (document.visibilityState === "visible") refreshComfyuiStatus();
     };
@@ -123,6 +128,7 @@
   });
 
   // ============ 列宽可拖拽 + 窄屏抽屉 ============
+  let sidebarCollapsed = $state(false);
   let detailWidth = $state(360);
   const DETAIL_MIN = 320;
   const DETAIL_MAX = 560;
@@ -166,7 +172,6 @@
 </script>
 
 <div class="h-screen w-screen flex flex-col bg-bg text-zinc-200" ondragover={swallowDrag} ondrop={swallowDrag} role="application">
-  <HeaderBar onOpenSettings={() => (settingsOpen = true)} onOpenOnboarding={() => (onboardingOpen = true)} />
   <ScanProgressBar />
   {#if $updateStatus?.version && ["available", "ready"].includes($updateStatus.phase)}
     <button class="bg-surface-2 border-b border-border text-xs py-2 text-accent" onclick={() => (settingsOpen = true)}>
@@ -176,17 +181,35 @@
   <div
     class="flex-1 min-h-0 grid app-grid"
     class:drawer-mode={narrowMode}
-    style="grid-template-columns: 260px 1fr 6px {detailWidth}px;"
+    class:sidebar-collapsed={sidebarCollapsed}
+    style="--sidebar-width: {sidebarCollapsed ? 44 : 260}px; grid-template-columns: var(--sidebar-width) 1fr 6px {detailWidth}px;"
   >
     <aside class="border-r border-border bg-surface flex flex-col min-h-0">
-      <FolderTree />
+      {#if sidebarCollapsed}
+        <button class="sidebar-expand" title="展开左侧栏" aria-label="展开左侧栏" onclick={() => sidebarCollapsed = false}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16m4-11 3 3-3 3"/></svg>
+        </button>
+      {:else}
+      <FolderTree oncollapse={() => sidebarCollapsed = true} />
+      <div class="sidebar-actions fill-interactions flex items-center gap-2 px-4 py-4 shrink-0">
+        <button class="w-10 h-10 flex items-center justify-center rounded-lg text-muted" aria-label="设置" title="设置" onclick={() => settingsOpen = true}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="m12 2 9 5v10l-9 5-9-5V7z" /><circle cx="12" cy="12" r="4" /></svg>
+        </button>
+        <button class="w-10 h-10 flex items-center justify-center rounded-lg text-muted" aria-label="导入目录" title="导入目录" onclick={() => onboardingOpen = true}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 19V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM12 10v7m-3-3 3 3 3-3" /></svg>
+        </button>
+      </div>
+      {/if}
     </aside>
-    <main class="min-w-0">
+    <main class="relative min-w-0 min-h-0 overflow-hidden isolate">
+      <div class="h-full flex flex-col" inert={lightboxOpen}>
       <Feed
         bind:selectedId={selectedIdValue}
         bind:lightboxOpen
         bind:lightboxIndex
       />
+      </div>
+      <Lightbox bind:open={lightboxOpen} bind:index={lightboxIndex} bind:selectedId={selectedIdValue} />
     </main>
     <div
       class="splitter"
@@ -216,15 +239,16 @@
   {/if}
 </div>
 
-<Lightbox bind:open={lightboxOpen} bind:index={lightboxIndex} bind:selectedId={selectedIdValue} />
 
 <OnboardingModal bind:open={onboardingOpen} />
-<SettingsModal bind:open={settingsOpen} />
+<SettingsModal bind:open={settingsOpen} bind:tab={settingsTab} />
 <Toast />
 
 <SplashOverlay ready={gate.ready} error={gate.error} />
 
 <style>
+  .sidebar-expand { margin: 13px auto; padding: 4px; border: 0; background: transparent; color: #888; box-shadow: none; outline: none; }
+  .sidebar-expand:hover, .sidebar-expand:focus-visible { color: #eee; border: 0; background: transparent; box-shadow: none; outline: none; }
   .splitter {
     cursor: col-resize;
     background: transparent;
@@ -271,7 +295,7 @@
   }
   @media (max-width: 1100px) {
     .app-grid {
-      grid-template-columns: 220px 1fr 6px 320px !important;
+      grid-template-columns: var(--sidebar-width) 1fr 6px 320px !important;
     }
   }
 

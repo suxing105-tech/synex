@@ -1,3 +1,4 @@
+import { matchesAction, type ShortcutId } from "./shortcut-settings";
 // 全局快捷键 hook。
 //
 // 设计：
@@ -8,6 +9,7 @@
 // - 多个 binding 共存：按注册顺序匹配；先匹配先生效。
 
 export interface ShortcutBinding {
+  action?: ShortcutId;
   key: string; // 不区分大小写；可写 "p" "shift+c" "ctrl+f" "escape"
   description?: string;
   handler: (e: KeyboardEvent) => void;
@@ -68,8 +70,9 @@ export function registerShortcuts(
   const parsed = bindings.map((b) => ({ ...b, parsed: parseKey(b.key) }));
   const handler = (e: Event) => {
     if (!(e instanceof KeyboardEvent)) return;
+    if (e.isComposing || e.repeat || document.querySelector("[data-settings-dialog]")) return;
     for (const b of parsed) {
-      if (!matches(e, b.parsed)) continue;
+      if (b.action ? !matchesAction(e, b.action) : !matches(e, b.parsed)) continue;
       if (!b.allowInInput && isInEditableTarget(e.target)) continue;
       if (b.preventDefault !== false) e.preventDefault();
       b.handler(e);

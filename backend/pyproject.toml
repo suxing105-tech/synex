@@ -4,10 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "suxing-gallery-backend"
-version = "0.2.1"
+version = "0.2.2"
 description = "苏醒图库 FastAPI 后端"
 requires-python = ">=3.11"
 dependencies = [
+  "httpx>=0.27",
   "fastapi>=0.115",
   "uvicorn[standard]>=0.32",
   "watchdog>=4.0",

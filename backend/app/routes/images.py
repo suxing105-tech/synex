@@ -11,6 +11,9 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Upload
 
 from .. import repository
 from ..config import inbox_dir
+from ..folder_storage import target_directory
+
+log = logging.getLogger(__name__)
 from ..db import get_pool
 from ..indexer import get_indexer
 from ..events import get_bus
@@ -63,11 +66,8 @@ def get_original(image_id: int, request: Request, max: int | None = Query(defaul
       例如 max=1024 把图缩到最长边 1024 像素再返回（WebP 编码，落盘缓存到 previews/）。
       feed 用 ?max=1024 拿 ~200KB 预览代替 2-5MB 原图。
 
-    缓存策略：
-    - 原图 / 预览一旦落盘基本不变，按 mtime 给 1 年 Cache-Control + ETag/Last-Modified
-    - 浏览器再请求时直接 304 不传 body，省流量
-    - 文件被覆盖后 mtime 变 → URL ?v= 变 + ETag 变 → 浏览器重新拉
-    - 预览缓存命中（同 max_size + 缓存 mtime >= 源 mtime）→ 直接返回，不解码原图
+    缓存策略：预览按原文件内容摘要隔离；浏览器每次用内容 ETag 校验。
+    不按时间新旧判断内容一致，防止导入保留旧时间的文件时错用历史预览。
     """
     import email.utils
     from pathlib import Path
@@ -103,18 +103,19 @@ def get_original(image_id: int, request: Request, max: int | None = Query(defaul
         etag = f'"{int(mtime)}-{stat.st_size}"'
         last_modified_dt = email.utils.formatdate(mtime, usegmt=True)
 
-    # 304 Not Modified: client 带 If-None-Match 或 If-Modified-Since 来就回 304
+    # Only a byte-level validator can distinguish replacements with preserved timestamps.
+    import hashlib
+    with serve_path.open("rb") as content:
+        digest = hashlib.file_digest(content, "sha256").hexdigest()
+    etag = f'"{digest}-max{max}"'
     if_none_match = request.headers.get("if-none-match")
-    if_modified_since = request.headers.get("if-modified-since")
-    if if_none_match == etag or (
-        if_modified_since and if_modified_since == last_modified_dt
-    ):
+    if if_none_match == etag:
         return Response(
             status_code=304,
             headers={
                 "ETag": etag,
                 "Last-Modified": last_modified_dt,
-                "Cache-Control": "public, max-age=31536000, immutable",
+                "Cache-Control": "private, no-cache",
             },
         )
 
@@ -124,7 +125,7 @@ def get_original(image_id: int, request: Request, max: int | None = Query(defaul
         headers={
             "ETag": etag,
             "Last-Modified": last_modified_dt,
-            "Cache-Control": "public, max-age=31536000, immutable",
+            "Cache-Control": "private, no-cache",
         },
     )
 
@@ -171,7 +172,11 @@ def delete_image(image_id: int, remove_file: bool = True):
 
 
 @router.post("/{image_id}/favorite")
-def toggle_favorite(image_id: int, favorite: bool = True):
+def toggle_favorite(image_id: int, favorite: bool = True, payload: dict | None = None):
+    if payload is not None:
+        favorite = payload.get("favorite", favorite)
+        if not isinstance(favorite, bool):
+            raise HTTPException(400, "favorite 必须是布尔值")
     repository.set_favorite(image_id, favorite)
     return {"id": image_id, "favorite": favorite}
 
@@ -316,7 +321,8 @@ def reveal_image(image_id: int):
     }
 
 
-_ALLOWED_EXTS = {".png", ".webp"}
+from ..parser import SUPPORTED_EXTS
+_ALLOWED_EXTS = SUPPORTED_EXTS
 _MAX_FILE_BYTES = 100 * 1024 * 1024  # 100 MB 单文件上限
 _FILENAME_BAD = re.compile(r"[\\/\x00-\x1f\x7f]+")
 _FILENAME_TRAILING_DOTS = re.compile(r"^[.]+|[.]+$")
@@ -383,7 +389,10 @@ def import_images(
         if not row:
             raise HTTPException(400, f"文件夹 {folder_id} 不存在")
 
-    inbox = inbox_dir()
+    try:
+        inbox = target_directory(folder_id)
+    except (ValueError, OSError) as error:
+        raise HTTPException(400, str(error)) from error
     indexer = get_indexer()
     saved: list[ImportResultItem] = []
     skipped: list[ImportSkippedItem] = []
@@ -431,6 +440,10 @@ def import_images(
             )
             continue
 
+        image_id = payload["id"]
+        if folder_id is not None:
+            repository.assign_folder(image_id, folder_id)
+
         # 拖入的图入库后必须像 watchdog 一样广播 image_indexed，
         # 否则前端 WS 不会刷新 feed，缩略图要等手动刷新才出现。
         # 走 indexer 自带的 emit 路径：与 watchdog `_flush_pending` 同源，
@@ -441,10 +454,6 @@ def import_images(
                 asyncio.run(get_bus().publish(payload))
             except RuntimeError:
                 pass
-
-        image_id = payload["id"]
-        if folder_id is not None:
-            repository.assign_folder(image_id, folder_id)
 
         saved.append(
             ImportResultItem(
@@ -460,3 +469,36 @@ def import_images(
         folder_id=folder_id,
         inbox_dir=str(inbox),
     )
+
+
+@router.post("/copy-files")
+@router.post("/move-files", include_in_schema=False)
+def copy_dropped_files(payload: dict):
+    from ..file_transfer import copy_files
+    paths = payload.get('paths')
+    if not isinstance(paths, list) or not paths or len(paths) > 2000 or any(not isinstance(p, str) or not Path(p).is_absolute() for p in paths):
+        raise HTTPException(400, '请提供有效的本地图片路径')
+    folder_id = payload.get('folder_id')
+    if folder_id is not None and (not isinstance(folder_id, int) or isinstance(folder_id, bool)):
+        raise HTTPException(400, '文件夹无效')
+    try:
+        return copy_files(paths, folder_id)
+    except (ValueError, OSError) as error:
+        raise HTTPException(400, str(error)) from error
+
+
+@router.get("/{image_id}/presence")
+def image_presence(image_id: int):
+    row = repository.image_detail(image_id)
+    if not row:
+        return {"exists": False}
+    try:
+        Path(row['path']).stat()
+    except FileNotFoundError:
+        payload = get_indexer()._process_path_sync(Path(row['path']), remove=True)
+        if payload:
+            get_indexer().emit_event_sync(payload)
+        return {"exists": False}
+    except OSError:
+        return {"exists": True}
+    return {"exists": True}

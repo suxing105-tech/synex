@@ -113,7 +113,7 @@ def test_file_endpoint_serves_original_bytes(client):
     # 缓存头
     assert "etag" in r.headers
     assert "last-modified" in r.headers
-    assert r.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert r.headers["cache-control"] == "private, no-cache"
 
 
 def test_file_endpoint_returns_304_on_matching_etag(client):
@@ -126,10 +126,10 @@ def test_file_endpoint_returns_304_on_matching_etag(client):
     assert r2.content == b""
     # 304 仍然带缓存头
     assert r2.headers["etag"] == etag
-    assert r2.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert r2.headers["cache-control"] == "private, no-cache"
 
 
-def test_file_endpoint_returns_304_on_matching_last_modified(client):
+def test_file_endpoint_revalidates_when_only_last_modified_matches(client):
     """带 If-Modified-Since（=当前 Last-Modified）→ 304 不带 body。"""
     import email.utils as _eu
     img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
@@ -140,8 +140,8 @@ def test_file_endpoint_returns_304_on_matching_last_modified(client):
     assert parsed is not None
     # 用原值回送
     r2 = client.get(f"/api/images/{img_id}/file", headers={"If-Modified-Since": lm})
-    assert r2.status_code == 304
-    assert r2.content == b""
+    assert r2.status_code == 200
+    assert r2.content == r1.content
 
 
 def test_file_endpoint_404_when_missing(client):
@@ -187,7 +187,7 @@ def test_file_endpoint_with_max_returns_webp_preview(client):
     assert len(r.content) < orig_size, f"preview should be smaller: {len(r.content)} vs {orig_size}"
 
     # 缓存落盘了
-    cache = previews_dir() / f"{img_id}_max1024.webp"
+    cache = next(previews_dir().glob(f"{img_id}_max1024_*.webp"))
     assert cache.exists(), f"preview cache missing: {cache}"
     with Image.open(cache) as im:
         # Pillow.thumbnail 只缩小不放大；test 夹具图是 8x8 不会到 1024，但一定 <= 1024
@@ -218,8 +218,8 @@ def test_file_endpoint_with_different_max_uses_different_cache(client):
     r1024 = client.get(f"/api/images/{img_id}/file", params={"max": 1024})
     assert r256.status_code == 200
     assert r1024.status_code == 200
-    assert (previews_dir() / f"{img_id}_max256.webp").exists()
-    assert (previews_dir() / f"{img_id}_max1024.webp").exists()
+    assert list(previews_dir().glob(f"{img_id}_max256_*.webp"))
+    assert list(previews_dir().glob(f"{img_id}_max1024_*.webp"))
     # ETag 必须不同
     assert r256.headers["etag"] != r1024.headers["etag"]
 
@@ -372,7 +372,7 @@ def test_delete_image_default_removes_file_and_previews(client):
     # 先请求一次 file?max=512，触发预览落盘
     r1 = client.get(f"/api/images/{img_id}/file", params={"max": 512})
     assert r1.status_code == 200
-    cache_p512 = previews_dir() / f"{img_id}_max512.webp"
+    cache_p512 = next(previews_dir().glob(f"{img_id}_max512_*.webp"))
     assert cache_p512.exists(), "preview cache should be created"
 
     # 删
@@ -407,7 +407,7 @@ def test_delete_image_remove_file_false_keeps_orig_clears_preview(client):
 
     # 触发预览
     client.get(f"/api/images/{img_id}/file", params={"max": 256})
-    cache = previews_dir() / f"{img_id}_max256.webp"
+    cache = next(previews_dir().glob(f"{img_id}_max256_*.webp"))
     assert cache.exists()
 
     r = client.delete(f"/api/images/{img_id}", params={"remove_file": "false"})

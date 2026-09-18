@@ -8,6 +8,9 @@ mod commands;
 mod folders;
 mod sidecar;
 mod updates;
+mod window_style;
+mod image_drag;
+mod comfyui;
 
 use sidecar::{SidecarConfig, SidecarState};
 
@@ -27,6 +30,9 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                window_style::apply(&window);
+            }
             app.manage(updates::Updates::new(app.handle())?);
             let cfg = SidecarConfig::from_app(app.handle())?;
             let state = Arc::new(SidecarState::new(cfg.clone()));
@@ -49,6 +55,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            image_drag::drag_original_images,
+            comfyui::open_comfy_workflow,
             commands::get_sidecar_status,
             folders::select_import_directory,
             commands::restart_sidecar,
@@ -59,6 +67,9 @@ pub fn run() {
             updates::install_update,
         ])
         .on_window_event(|window, event| {
+            if window.label() != "main" {
+                return;
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.app_handle().state::<updates::Updates>().installing() {
                     api.prevent_close();

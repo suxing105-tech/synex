@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 import time
 
@@ -93,6 +94,12 @@ def open_workflow(image_id: int) -> OpenWorkflowResult:
     if not workflow_json.strip():
         raise HTTPException(400, "no_workflow")
 
+    try:
+        workflow = json.loads(workflow_json)
+        if not isinstance(workflow, dict):
+            raise ValueError("工作流格式无效")
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, "图片工作流 JSON 无效") from e
     target = write_workflow_temp(image_filename, workflow_json)
     if not target:
         # 二次保险：上面已经判过空，这里只是兜底
@@ -111,6 +118,7 @@ def open_workflow(image_id: int) -> OpenWorkflowResult:
         comfyui_url=comfyui_url,
         browser_opened=False,  # 由前端管窗口复用，后端不负责弹窗
         message=message,
+        workflow=workflow,
     )
 
 

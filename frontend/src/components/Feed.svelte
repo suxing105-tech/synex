@@ -1,7 +1,13 @@
 <script lang="ts">
+  import { onMount, onDestroy, tick } from "svelte";
+  import { subscribeFileDrop } from "../lib/native-drop";
+  import { beginOriginalDrag } from "../lib/original-drag";
+  import GallerySearch from "./GallerySearch.svelte";
+  import { copyOriginalImage } from "../lib/image-clipboard";
+  import { matchesAction, shortcutBlocked } from "../lib/shortcut-settings";
   import { backendUrl } from "../lib/backend-url";
   import {
-    feedItems, feedTotal, feedLoading, refreshFeed, refreshStats,
+    removeImageFromFeed, feedItems, feedTotal, feedLoading, refreshFeed, refreshStats,
     targetColumns, activeFolderName, newIds,
     multiSelectedIds, folders, refreshFolders,
     selectedId as selectedIdStore,
@@ -12,10 +18,9 @@
   import { imagesApi, comfyuiApi } from "../lib/api";
   import Icon from "./Icon.svelte";
   import { copyText } from "../lib/ws";
-  import { openOrReuseComfyuiTab } from "../lib/comfyui-window";
-  import type { ImageSummary } from "../lib/types";
+  import { loadComfyWorkflow, openOrReuseComfyuiTab } from "../lib/comfyui-window";
+  import type { ImageSummary, FolderNode } from "../lib/types";
   import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
-  import FolderPickerModal from "./FolderPickerModal.svelte";
   import { folderId } from "../lib/stores";
 
   interface Props {
@@ -34,7 +39,6 @@
   let menuTick = $state(0);
 
   // 移动到文件夹选择器
-  let movePickerOpen = $state(false);
   let movePickerIds = $state<number[]>([]);
   let movePickerCount = $state(0);
   let toast = $state<string | null>(null);
@@ -43,13 +47,10 @@
     setTimeout(() => (toast = null), 1800);
   }
   async function openInComfyui(it: ImageSummary) {
-    // 1. 同步打开 / 复用 ComfyUI 标签页（必须在 await 之前，否则被弹窗拦截器拦掉）
-    const url = $comfyuiStatus.url || "http://127.0.0.1:8188";
-    openOrReuseComfyuiTab(url);
-    // 2. 后端落盘 workflow JSON（异步，与窗口复用解耦）
     try {
-      const r = await comfyuiApi.openWorkflow(it.id);
-      notify(`${r.workflow_name}.json 已写入 ${r.file_path}`);
+      notify("正在打开工作流…");
+      await loadComfyWorkflow(it.id, it.filename);
+      notify("已在 ComfyUI 中打开工作流");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       // 403 / 400 / 404 都从 detail 拿
@@ -89,7 +90,7 @@
     } else if (dt.files) {
       for (let i = 0; i < dt.files.length; i++) {
         const f = dt.files[i];
-        if (f.type.startsWith("image/") || /\.(png|webp)$/i.test(f.name)) {
+        if (f.type.startsWith("image/") || /\.(png|webp|jpe?g)$/i.test(f.name)) {
           out.push(f);
         }
       }
@@ -128,13 +129,14 @@
     dragFileCount = 0;
     const files = pickImageFiles(e.dataTransfer);
     if (files.length === 0) {
-      notify("未检测到 PNG / WebP 图片");
+      notify("未检测到 PNG / WebP / JPG / JPEG 图片");
       return;
     }
     await importFiles(files);
   }
 
   async function importFiles(files: File[]) {
+    if (importing) return;
     importing = true;
     importingProgress = { done: 0, total: files.length };
     notify(`导入中… 0/${files.length}`);
@@ -146,10 +148,10 @@
       if (saved > 0 && skipped.length === 0) {
         // 兜底刷新：后端 import 已经入库并广播 image_indexed，
         // 但 WS 偶发丢事件时也能立刻让缩略图出现（不依赖 WS）。
-        await Promise.all([refreshFeed(), refreshStats()]);
+        await Promise.all([refreshFeed(), refreshStats(), refreshFolders()]);
         notify(`已导入 ${saved} 张到 ${folderTag}`);
       } else if (saved > 0 && skipped.length > 0) {
-        await Promise.all([refreshFeed(), refreshStats()]);
+        await Promise.all([refreshFeed(), refreshStats(), refreshFolders()]);
         const reasons = new Map<string, number>();
         for (const s of skipped) reasons.set(s.reason, (reasons.get(s.reason) ?? 0) + 1);
         const reasonText = Array.from(reasons.entries())
@@ -169,6 +171,44 @@
     }
   }
 
+  onMount(() => subscribeFileDrop(
+    () => scrollerEl,
+    (count) => { dragCounter = count ? 1 : 0; dragFileCount = count; },
+    async (paths) => {
+      if (importing) return;
+      const targetId = $folderId;
+      const label = dropTargetLabel;
+      importing = true;
+      importingProgress = { done: 0, total: paths.length };
+      try {
+        let done = 0;
+        let failed = 0;
+        // Each completed file appears immediately, without waiting for the batch.
+        for (const path of paths) {
+          const result = await imagesApi.copyFiles([path], targetId);
+          done += result.saved.length;
+          failed += result.skipped.length;
+          importingProgress = { done: done + failed, total: paths.length };
+          await refreshFeed();
+        }
+        await Promise.all([refreshStats(), refreshFolders()]);
+        notify(`已复制 ${done} 张到「${label}」${failed ? `，${failed} 张未能复制，原文件已保留` : ''}`);
+      } catch (error) { notify(`复制失败：${error instanceof Error ? error.message : error}`); }
+      finally { importing = false; dragCounter = 0; dragFileCount = 0; }
+    },
+  ));
+
+  async function checkMissing(id: number, image: HTMLImageElement) {
+    image.style.visibility = 'hidden';
+    try {
+      const result = await imagesApi.presence(id);
+      if (!result.exists) {
+        removeImageFromFeed(id);
+        await Promise.all([refreshStats(), refreshFolders()]);
+      }
+    } catch { /* Reconciliation retries after a temporary connection failure. */ }
+  }
+
   function reasonTextOf(reason: string): string {
     switch (reason) {
       case "unsupported_format": return "格式不支持";
@@ -180,6 +220,28 @@
     }
 
 
+  }
+
+  let stopOriginalDrag: (() => void) | undefined;
+  let draggedOriginal = false;
+  onDestroy(() => stopOriginalDrag?.());
+
+  function pointerOnImage(e: PointerEvent, item: ImageSummary) {
+    if ((e.target as HTMLElement).closest('.comfyui-open-btn')) return;
+    stopOriginalDrag?.();
+    draggedOriginal = false;
+    const images = $multiSelectedIds.has(item.id)
+      ? $feedItems.filter(image => $multiSelectedIds.has(image.id)) : [item];
+    stopOriginalDrag = beginOriginalDrag(e, images.map(image => image.path),
+      () => { draggedOriginal = true; },
+      error => notify(`拖出失败：${error instanceof Error ? error.message : error}`));
+  }
+
+  function imageLoaded(item: ImageSummary, image: HTMLImageElement) {
+    const width = image.naturalWidth, height = image.naturalHeight;
+    if (width > 0 && height > 0 && (!item.width || !item.height || Math.abs(item.width / item.height - width / height) > .01)) {
+      feedItems.update(items => items.map(row => row.id === item.id ? { ...row, width, height } : row));
+    }
   }
 
   function aspectFor(it: ImageSummary): string {
@@ -211,6 +273,7 @@
   // 缩略图点击：根据修饰键走单选 / Ctrl 多选切换 / Shift 区间
   function onThumbClick(e: MouseEvent, it: ImageSummary) {
     const modifier = e.shiftKey ? "shift" : e.ctrlKey || e.metaKey ? "ctrl" : "none";
+    if (modifier === "none" && selectedCount === 2 && $multiSelectedIds.has(it.id)) { selectedId = it.id; return; }
     applySelection($feedItems, it.id, modifier);
   }
 
@@ -248,69 +311,60 @@
       return [
         { label: "复制图片", onClick: () => copyImageToClipboard(t) },
         { label: "重命名", onClick: () => renameImage(t) },
-        { label: "打开图片所在位置", onClick: () => revealImage(t) },
-        { label: "移动到...", onClick: () => openMovePicker(items) },
+        { label: t.favorite ? "取消收藏" : "收藏", onClick: () => favoriteImage(t) },
+        { label: "图片所在位置", onClick: () => revealImage(t) },
+        { label: "移动到…", children: moveMenu(items) },
         { kind: "sep" },
-        { label: "删除图片（含缩略图）", danger: true, onClick: () => deleteImages(items) },
+        { label: "删除图片", danger: true, onClick: () => deleteImages(items) },
       ];
     }
     return [
       { label: `复制 ${items.length} 个图片地址`, onClick: () => copyImageUrls(items) },
-      { label: `移动到...`, onClick: () => openMovePicker(items) },
+      { label: "移动到…", children: moveMenu(items) },
       { kind: "sep" },
       { label: `批量删除 ${items.length} 张图片`, danger: true, onClick: () => deleteImages(items) },
     ];
   });
 
-  async function fetchImageBlob(it: ImageSummary): Promise<Blob | null> {
-    const url = backendUrl(it.original_url ?? `/api/images/${it.id}/file`);
-    try {
-      const resp = await fetch(url, { cache: "no-cache" });
-      if (!resp.ok) return null;
-      return await resp.blob();
-    } catch {
-      return null;
-    }
-  }
-
   async function copyImageToClipboard(it: ImageSummary) {
-    if (!navigator.clipboard || typeof ClipboardItem === "undefined") {
-      // 退化方案：复制原图 URL
-      const ok = await copyText(backendUrl(it.original_url ?? `/api/images/${it.id}/file`));
-      notify(ok ? "已复制图片地址（剪贴板不支持图片）" : "复制失败");
-      return;
-    }
-    const blob = await fetchImageBlob(it);
-    if (!blob) {
-      notify("获取图片失败");
-      return;
-    }
-    try {
-      await navigator.clipboard.write([new ClipboardItem({ [blob.type || "image/png"]: blob })]);
-      notify("已复制图片到剪贴板");
-    } catch (e) {
-      const ok = await copyText(backendUrl(it.original_url ?? `/api/images/${it.id}/file`));
-      notify(ok ? "已复制图片地址" : "复制失败");
-    }
+    try { await copyOriginalImage(it.id); notify("已复制原图到剪贴板"); }
+    catch (e) { notify(`复制原图失败：${(e as Error).message}`); }
   }
 
+  let renamingId = $state<number | null>(null);
+  let renameValue = $state("");
+  let renameSaving = $state(false);
+  let renameInput: HTMLInputElement | undefined = $state();
   async function renameImage(it: ImageSummary) {
-    const stem = it.filename.replace(/\.[^.]+$/, "");
-    const def = stem;
-    const next = window.prompt("新文件名（保留扩展名）:", def);
-    if (next === null) return;
-    const trimmed = next.trim();
-    if (!trimmed) {
-      notify("文件名不能为空");
-      return;
-    }
+    if (renameSaving) return;
+    renamingId = it.id;
+    renameValue = it.filename.replace(/\.[^.]+$/, "");
+    await tick();
+    renameInput?.focus(); renameInput?.select();
+  }
+  async function saveRename(it: ImageSummary) {
+    if (renamingId !== it.id || renameSaving) return;
+    const value = renameValue.trim();
+    if (!value) { notify("文件名不能为空"); renameInput?.focus(); return; }
+    if (value === it.filename.replace(/\.[^.]+$/, "")) { renamingId = null; return; }
+    renameSaving = true;
     try {
-      await imagesApi.rename(it.id, trimmed);
+      const updated = await imagesApi.rename(it.id, value);
+      feedItems.update(items => items.map(item => item.id === it.id ? { ...item, ...updated } : item));
+      renamingId = null;
       notify("已重命名");
-      await Promise.all([refreshFeed(), refreshStats()]);
     } catch (e) {
       notify(`重命名失败: ${(e as Error).message}`);
-    }
+      await tick(); renameInput?.focus();
+    } finally { renameSaving = false; }
+  }
+
+  async function favoriteImage(it: ImageSummary) {
+    try {
+      const result = await imagesApi.toggleFavorite(it.id, !it.favorite);
+      feedItems.update(items => items.map(item => item.id === it.id ? { ...item, favorite: result.favorite } : item));
+      await refreshStats();
+    } catch (e) { notify(`收藏失败：${(e as Error).message}`); }
   }
 
   async function revealImage(it: ImageSummary) {
@@ -328,8 +382,10 @@
 
   // 批量删除：单图也走这条，传 length=1 的数组即可。
   // 失败的项不会从多选集合里剔除，保留以便用户重试。
+  let deleting = false;
   async function deleteImages(items: ImageSummary[]) {
-    if (items.length === 0) return;
+    if (items.length === 0 || deleting) return;
+    deleting = true;
     const succeeded: number[] = [];
     const failed: number[] = [];
     let cleaned = 0;
@@ -337,6 +393,7 @@
       try {
         const resp = await imagesApi.remove(it.id, true);
         succeeded.push(it.id);
+        removeImageFromFeed(it.id);
         cleaned += resp.cleaned_previews ?? 0;
       } catch (e) {
         failed.push(it.id);
@@ -357,12 +414,8 @@
     // 乐观更新本地 feedItems：直接从数组里过滤掉已删 id。
     // 不调 refreshFeed() —— 整个数组替换会让 masonry 贪心分组重算，滚动条跳回顶部。
     // feedItems 用 (it.id) keyed each，Svelte 会复用 DOM，scroll 位置自然保持。
-    if (okCount > 0) {
-      const removed = new Set(succeeded);
-      feedItems.update((items) => items.filter((it) => !removed.has(it.id)));
-      feedTotal.update((n) => Math.max(0, n - okCount));
-    }
-    await refreshStats();
+    await Promise.allSettled([refreshStats(), refreshFolders()]);
+    deleting = false;
   }
 
   // 批量复制图片地址（多张时降级为 URL 文本）。
@@ -374,12 +427,18 @@
     notify(ok ? `已复制 ${items.length} 个图片地址` : "复制失败");
   }
 
-  // 打开「移动到...」选择器（单/多图共用）
-  function openMovePicker(items: ImageSummary[]) {
-    if (items.length === 0) return;
-    movePickerIds = items.map((it) => it.id);
-    movePickerCount = items.length;
-    movePickerOpen = true;
+  function moveMenu(items: ImageSummary[]): ContextMenuItem[] {
+    const choose = (folder: { id: number; name: string } | null) => {
+      movePickerIds = items.map(it => it.id);
+      movePickerCount = items.length;
+      return moveToFolder(folder);
+    };
+    const walk = (nodes: FolderNode[]): ContextMenuItem[] => nodes.filter(node => !node.is_system).map(node => ({
+      label: node.name,
+      onClick: () => choose(node),
+      children: node.children?.some(child => !child.is_system) ? walk(node.children) : undefined,
+    }));
+    return [...walk($folders), { kind: "sep" }, { label: "从文件夹移出", onClick: () => choose(null) }];
   }
 
   // 实际执行批量移动：folder=null 表示从 user folder 移出（保留 system folder 自动挂的）
@@ -409,7 +468,14 @@
   }
 
   function handleKey(e: KeyboardEvent) {
-    if (isTypingTarget(e.target)) return;
+    if (shortcutBlocked(e)) return;
+    if (isTypingTarget(e.target) || lightboxOpen) return;
+    if (e.key === "Delete" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+      e.preventDefault();
+      const ids = $multiSelectedIds.size ? $multiSelectedIds : new Set(selectedId === null ? [] : [selectedId]);
+      void deleteImages($feedItems.filter(item => ids.has(item.id)));
+      return;
+    }
     if (e.key === "Escape") {
       if (selectedCount > 0) {
         e.preventDefault();
@@ -417,18 +483,19 @@
       }
       return;
     }
-    if (e.key === " " || e.code === "Space") {
+    if (matchesAction(e, "preview")) {
       // Lightbox 已开时让位给 Lightbox 自己的 handler（按空格翻下一张）。
       // 否则两个 svelte:window handler 都触发：Feed 先把 lightboxOpen 改成 true，
       // Lightbox 的 handler 看到 open=true 紧接着调 next()，结果展示的是选中图的下一张。
       if (lightboxOpen) return;
       // 空格放大：当前鼠标滑过的那张，不再依赖 selectedId。
       // 鼠标没在任何缩略图上 → 不响应（避免误触发）。
-      if (hoveredId !== null) {
+      const previewId = $multiSelectedIds.size === 2 ? [...$multiSelectedIds][0] : hoveredId ?? selectedId;
+      if (previewId !== null) {
         e.preventDefault();
         // 阻止 Lightbox 的 window keydown 也响应本次空格。
         e.stopImmediatePropagation();
-        const idx = $feedItems.findIndex((it) => it.id === hoveredId);
+        const idx = $feedItems.findIndex((it) => it.id === previewId);
         if (idx >= 0) {
           lightboxIndex = idx;
           lightboxOpen = true;
@@ -512,7 +579,8 @@
 
 <svelte:window onkeydown={handleKey} />
 
-<div class="px-5 pt-4 pb-3 flex items-center gap-4 border-b border-border bg-surface">
+<div class="gallery-toolbar px-4 py-3 grid items-center gap-3 border-b border-border bg-surface shrink-0">
+  <div class="toolbar-info flex items-center gap-3 min-w-0">
   <div>
     <div class="text-base font-medium">{$activeFolderName}</div>
     <div class="text-xs text-muted mt-0">
@@ -530,6 +598,11 @@
       {/if}
     </div>
   </div>
+  {#if selectedCount === 2}
+    <button class="compare-trigger shrink-0 rounded-lg px-2 py-2 text-xs" onclick={() => { const i = $feedItems.findIndex(it => $multiSelectedIds.has(it.id)); if (i >= 0) openLightbox($feedItems[i], i); }}>对比图片</button>
+  {/if}
+  </div>
+  <GallerySearch />
   <div class="ml-auto flex items-center gap-2 text-[12.5px] text-muted">
     <span>列数</span>
     <input
@@ -539,7 +612,7 @@
       step="1"
       value={$targetColumns}
       oninput={(e) => targetColumns.set(Number((e.target as HTMLInputElement).value))}
-      class="columns-slider w-32"
+      class="columns-slider w-20"
       style="--value: {$targetColumns}"
     />
     <span class="text-zinc-200">{$targetColumns} 列</span>
@@ -548,8 +621,7 @@
 
 <div
   bind:this={scrollerEl}
-  class="overflow-y-auto p-3 feed-body relative"
-  style="height: calc(100vh - 110px)"
+  class="overflow-y-auto p-3 feed-body relative flex-1 min-h-0"
   ondragenter={onDragEnter}
   ondragover={onDragOver}
   ondragleave={onDragLeave}
@@ -557,7 +629,7 @@
   role="region"
   aria-label="图片流；可拖拽文件到此处导入"
 >
-  {#if dragHover || importing}
+  {#if dragHover}
     <div
       class="absolute inset-2 rounded-lg border-2 border-dashed border-accent bg-accent/10 backdrop-blur-sm flex items-center justify-center pointer-events-none z-20"
       role="presentation"
@@ -571,7 +643,7 @@
           </div>
         {:else}
           <div class="text-3xl mb-2">📥</div>
-          <div class="text-[15px] font-medium">释放以导入到{dropTargetLabel}</div>
+          <div class="text-[15px] font-medium">释放以保存到{dropTargetLabel}</div>
           <div class="text-[12px] text-muted mt-1">
             {#if dragFileCount > 0}
               <span class="inline-block px-2 py-0.5 rounded bg-accent/20 text-accent font-mono">
@@ -579,20 +651,17 @@
               </span>
             {/if}
           </div>
-          <div class="text-[11px] text-muted/80 mt-2">支持 PNG / WebP</div>
+          <div class="text-[11px] text-muted/80 mt-2">支持 PNG / WebP / JPG / JPEG</div>
         {/if}
       </div>
     </div>
   {/if}
 
-  {#if $feedLoading}
+  {#if importing}<div class="import-progress" role="status">正在保存 {importingProgress.done}/{importingProgress.total}</div>{/if}
+  {#if $feedLoading && $feedItems.length === 0}
     <div class="text-center text-muted py-12">加载中…</div>
   {:else if $feedItems.length === 0}
-    <div class="text-center text-muted py-16">
-      <div class="text-4xl mb-2 opacity-60">📂</div>
-      <div>此视图下没有图片</div>
-      <div class="text-[11px] mt-1">从左侧选择其他文件夹，或导入目录</div>
-    </div>
+    <div class="empty-feed" aria-label="空文件夹"></div>
   {:else}
     <!--
       贪心 masonry：
@@ -616,10 +685,12 @@
             {#each col.items as it (it.id)}
               <button
                 type="button"
-                class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 text-left {$multiSelectedIds.has(it.id) ? 'outline outline-[6px] outline-accent outline-offset-[-6px]' : ''} {$newIds.has(it.id) ? 'new-badge' : ''}"
+                class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 text-left {$multiSelectedIds.has(it.id) ? 'is-selected' : ''} {$newIds.has(it.id) ? 'new-badge' : ''}"
                 style="aspect-ratio: {aspectFor(it)}; width: 100%;"
                 title={it.filename}
-                onclick={(e) => onThumbClick(e, it)}
+                onclick={(e) => { if (draggedOriginal) { draggedOriginal = false; return; } onThumbClick(e, it); }}
+                onpointerdown={(e) => pointerOnImage(e, it)}
+                ondragstart={(e) => e.preventDefault()}
                 ondblclick={() => openLightbox(it, $feedItems.findIndex((x) => x.id === it.id))}
                 oncontextmenu={(e) => openContextMenu(e, it)}
                 onmouseenter={() => (hoveredId = it.id)}
@@ -628,15 +699,28 @@
                 <img
                   src={it.original_url ? backendUrl(it.original_url) : undefined}
                   alt={it.filename}
+                  draggable="false"
+                  onload={(e) => imageLoaded(it, e.currentTarget as HTMLImageElement)}
                   loading="lazy"
                   decoding="async"
-                  class="thumb-img w-full h-full object-cover"
+                  onerror={(e) => checkMissing(it.id, e.currentTarget as HTMLImageElement)}
+                  class="thumb-img absolute inset-0 w-full h-full object-contain"
                 />
-                <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] truncate">
-                  {it.filename}
+                <div class="image-name absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] truncate"
+                  role="button" tabindex="0" aria-label="图片名称"
+                  onkeydown={(e) => { if (renamingId !== it.id && (e.key === "Enter" || e.key === "F2")) { e.stopPropagation(); e.preventDefault(); void renameImage(it); } }}
+                  onpointerdown={(e) => e.stopPropagation()}
+                  onclick={(e) => { if (renamingId === it.id) e.stopPropagation(); }}
+                  ondblclick={(e) => { e.stopPropagation(); e.preventDefault(); if (renamingId !== it.id) void renameImage(it); }}>
+                  {#if renamingId === it.id}
+                    <input bind:this={renameInput} bind:value={renameValue} aria-label="编辑图片名称" class="image-rename" style="width: 180px; max-width: 100%;"
+                      readonly={renameSaving}
+                      onkeydown={(e) => { e.stopPropagation(); if (e.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); void saveRename(it); } else if (e.key === 'Escape') { e.preventDefault(); renamingId = null; } }}
+                      onblur={() => saveRename(it)} />
+                  {:else}{it.filename}{/if}
                 </div>
                 {#if it.favorite}
-                  <div class="absolute top-1 right-1 text-danger text-[14px] drop-shadow">♥</div>
+                  <div class="favorite-badge absolute top-1 right-10 w-6 h-7 flex items-center justify-center text-danger text-[14px] drop-shadow" aria-label="已收藏">♥</div>
                 {/if}
 
                 {#if $comfyuiStatus.running && it.has_workflow && (hoveredId === it.id || $selectedIdStore === it.id || $multiSelectedIds.has(it.id))}
@@ -666,20 +750,18 @@
 
 <ContextMenu bind:open={menuOpen} x={menuX} y={menuY} items={menuItems} />
 
-<FolderPickerModal
-  open={movePickerOpen}
-  folders={$folders}
-  title={movePickerCount > 1 ? `移动 ${movePickerCount} 张图片` : "移动到文件夹"}
-  subtitle="system folder 不会列出（物理镜像，不可作为整理目的地）"
-  onPick={moveToFolder}
-  onClose={() => (movePickerOpen = false)}
-/>
+
 
 {#if toast}
   <div class="toast">{toast}</div>
 {/if}
 
 <style>
+  .thumb.is-selected::after { content: ""; position: absolute; inset: 0; border: 1px solid #f24e4e; border-radius: inherit; pointer-events: none; z-index: 2; }
+  .image-rename { min-width: 0; border: 1px solid #888; border-radius: 3px; background: #222; color: #eee; padding: 1px 3px; outline: none; font: inherit; }
+  .import-progress { position: sticky; top: 0; z-index: 25; width: fit-content; margin: 0 auto 8px; padding: 6px 12px; background: #292929; border-radius: 16px; font-size: 12px; color: #ddd; }
+  .gallery-toolbar { grid-template-columns: minmax(0, 1fr) minmax(120px, 2fr) minmax(0, 1fr); }
+  @media (max-width: 760px) { .gallery-toolbar { grid-template-columns: minmax(0, 1fr); } }
   .masonry-scroller {
     /* 容器宽变化时整排可能溢出，横向滚动兜底；
        纵向交给父级 overflow-y-auto 处理 */
@@ -702,6 +784,7 @@
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
     z-index: 2;
   }
+  .thumb { user-select: none; touch-action: none; flex: none; min-height: 0; padding: 0; }
   .thumb-img {
     transition: transform 0.35s cubic-bezier(0.2, 0.6, 0.2, 1); will-change: transform;
   }

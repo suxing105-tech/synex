@@ -118,6 +118,7 @@ export interface ComfyuiConfigUpdate {
 }
 
 export interface OpenWorkflowResult {
+  workflow?: Record<string, unknown>;
   ok: boolean;
   image_id: number;
   file_path: string;

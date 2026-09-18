@@ -33,6 +33,7 @@ from .routes import folders as folders_route
 from .routes import images as images_route
 from .routes import settings as settings_route
 from .routes import tags as tags_route
+from .routes import reverse_prompts as reverse_prompts_route
 
 log = logging.getLogger("suxing_gallery")
 logging.basicConfig(
@@ -105,9 +106,24 @@ async def lifespan(app: FastAPI):
     indexer.on_event = _on_event
     await indexer.start_watching(asyncio.get_running_loop())
     log.info("watching dirs: %s", cfg.watch_dirs)
-    yield
-    # 关闭
-    indexer.shutdown()
+    async def reconcile_loop():
+        while True:
+            try:
+                await asyncio.to_thread(indexer.reconcile_missing)
+            except Exception:
+                log.exception("reconcile missing images failed")
+            await asyncio.sleep(2)
+
+    await asyncio.to_thread(indexer.reconcile_missing)
+    reconcile_task = asyncio.create_task(reconcile_loop())
+    try:
+        yield
+    finally:
+        reconcile_task.cancel()
+        from contextlib import suppress
+        with suppress(asyncio.CancelledError):
+            await reconcile_task
+        indexer.shutdown()
 
 
 from .version import VERSION
@@ -134,6 +150,7 @@ app.include_router(images_route.router)
 app.include_router(folders_route.router)
 app.include_router(tags_route.router)
 app.include_router(settings_route.router)
+app.include_router(reverse_prompts_route.router)
 
 
 # ---------- 静态资源 ----------

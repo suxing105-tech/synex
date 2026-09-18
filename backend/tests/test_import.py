@@ -69,17 +69,17 @@ def test_import_png_success(client, tmp_path):
     assert feed["items"][0]["filename"] == body["saved"][0]["filename"]
 
 
-def test_import_jpg_skipped(client):
+def test_import_unsupported_file_skipped(client):
     r = client.post(
         "/api/images/import",
-        files=[("files", ("photo.jpg", io.BytesIO(b"fake-jpg"), "image/jpeg"))],
+        files=[("files", ("document.txt", io.BytesIO(b"not-an-image"), "text/plain"))],
     )
     assert r.status_code == 200
     body = r.json()
     assert body["saved"] == []
     assert len(body["skipped"]) == 1
     assert body["skipped"][0]["reason"] == "unsupported_format"
-    assert body["skipped"][0]["filename"] == "photo.jpg"
+    assert body["skipped"][0]["filename"] == "document.txt"
 
 
 def test_import_with_folder_assignment(client, tmp_path):

@@ -51,7 +51,7 @@ class FolderNode(BaseModel):
     order: int
     image_count: int = 0
     recursive_count: int = 0
-    is_system: bool = False  # True = 监听目录的文件系统子目录（不可重命名/删除）
+    is_system: bool = False  # True = 监听目录的文件系统子目录（可改显示名称，不可删除）
     path: str | None = None  # system folder 时存绝对路径（前端可显示完整来源）
     children: list["FolderNode"] = Field(default_factory=list)
 
@@ -62,6 +62,11 @@ FolderNode.model_rebuild()
 class FolderCreate(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     parent_id: int | None = None
+
+
+class FolderReorder(BaseModel):
+    target_id: int | None = None
+    position: str = Field(pattern="^(before|after|inside|root)$")
 
 
 class FolderUpdate(BaseModel):
@@ -175,4 +180,4 @@ class OpenWorkflowResult(BaseModel):
     comfyui_url: str
     browser_opened: bool  # 后端不再弹窗，恒为 False；保留字段以兼容前端
     message: str = ""
-
+    workflow: dict | None = None

@@ -1,4 +1,4 @@
-import { feedItems, feedTotal, markNew, refreshFolders, refreshFeed, refreshScanProgress, refreshStats } from "./stores";
+import { removeImageFromFeed, markNew, refreshFolders, refreshFeed, refreshScanProgress, refreshStats } from "./stores";
 
 import { eventsUrl } from "./backend-url";
 
@@ -10,25 +10,19 @@ export function connectEvents() {
   const url = eventsUrl();
   const ws = new WebSocket(url);
   socket = ws;
+  ws.onopen = () => { void Promise.all([refreshFeed(), refreshFolders(), refreshStats()]).catch(console.warn); };
   ws.onmessage = async (ev) => {
     try {
       const payload = JSON.parse(ev.data);
       if (payload.type === "image_indexed") {
         // 拉一次最新 feed（保持倒序）
         await refreshFeed();
-        await refreshStats();
+        await Promise.all([refreshStats(), refreshFolders()]);
         markNew([payload.id]);
       } else if (payload.type === "image_removed") {
         // 乐观更新本地 feedItems（filter 掉该 id），避免 refreshFeed 重排导致滚动条跳顶。
-        const id = payload.id;
-        let removed = false;
-        feedItems.update((items) => {
-          const next = items.filter((it) => it.id !== id);
-          removed = next.length !== items.length;
-          return next;
-        });
-        if (removed) feedTotal.update((n) => Math.max(0, n - 1));
-        await refreshStats();
+        removeImageFromFeed(payload.id);
+        await Promise.all([refreshStats(), refreshFolders()]);
       } else if (payload.type === "scan_progress") {
         // 后端会发 scan 进度；用单独轮询补上
         await refreshScanProgress();

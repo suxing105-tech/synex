@@ -35,7 +35,7 @@ export async function selectImportDirectory(current = "", previous = ""): Promis
 export async function getSidecarStatus(): Promise<SidecarStatus | null> {
   if (!isTauri()) return null;
   const t = (window as any).__TAURI__;
-  return await t.core.invoke<SidecarStatus>("get_sidecar_status");
+  return await t.core.invoke("get_sidecar_status") as SidecarStatus;
 }
 
 /**
@@ -73,5 +73,5 @@ export async function onSidecarDied(
 export async function restartSidecar(): Promise<SidecarStatus | null> {
   if (!isTauri()) return null;
   const t = (window as any).__TAURI__;
-  return await t.core.invoke<SidecarStatus>("restart_sidecar");
+  return await t.core.invoke("restart_sidecar") as SidecarStatus;
 }

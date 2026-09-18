@@ -31,9 +31,10 @@ try {
         cargo tauri build --ci *> "$OutputDir/desktop-build.log"
         if ($LASTEXITCODE) { throw "桌面版打包失败，查看 desktop-build.log" }
     } finally { Pop-Location }
-    $Installer = "苏醒图库_${Version}_x64-setup.exe"
-    foreach ($Name in @($Installer, "$Installer.sig")) {
-        Copy-Item -LiteralPath "$RepoRoot/frontend/src-tauri/target/release/bundle/nsis/$Name" -Destination "$OutputDir/$Name" -Force
+    $BuiltInstaller = "苏醒图库_${Version}_x64-setup.exe"
+    $Installer = "suxing-gallery_${Version}_x64-setup.exe"
+    foreach ($Suffix in @("", ".sig")) {
+        Copy-Item -LiteralPath "$RepoRoot/frontend/src-tauri/target/release/bundle/nsis/$BuiltInstaller$Suffix" -Destination "$OutputDir/$Installer$Suffix" -Force
     }
     & $Python "$PSScriptRoot/make-update-manifest.py" --version $Version --installer "$OutputDir/$Installer" --notes $ReleaseNotes --output "$OutputDir/latest.json"
     if ($LASTEXITCODE) { throw "更新清单生成失败" }

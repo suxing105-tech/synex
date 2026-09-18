@@ -36,7 +36,7 @@ export const feedTotal = writable<number>(0);
 export const feedLoading = writable<boolean>(false);
 
 export const folders = writable<FolderNode[]>([]);
-export const stats = writable<Stats>({ total_images: 0, thumbs_ready: 0, favorites: 0, folders: 0 });
+export const stats = writable<Stats>({ total_images: 0, favorites: 0, folders: 0 });
 
 export const scanProgress = writable<ScanProgress>({
   running: false,
@@ -143,7 +143,22 @@ export async function refreshStats() {
   stats.set(await statsApi.get());
 }
 
+const pendingFeedRemovals = new Set<Set<number>>();
+export function removeImageFromFeed(id: number) {
+  for (const pending of pendingFeedRemovals) pending.add(id);
+  feedItems.update((items) => {
+    const next = items.filter((item) => item.id !== id);
+    if (next.length !== items.length) feedTotal.update((n) => Math.max(0, n - 1));
+    return next;
+  });
+  removeIdsFromSelection([id]);
+}
+
+let feedRequest = 0;
 export async function refreshFeed() {
+  const request = ++feedRequest;
+  const removed = new Set<number>();
+  pendingFeedRemovals.add(removed);
   feedLoading.set(true);
   try {
     let folder: number | null | undefined;
@@ -161,10 +176,13 @@ export async function refreshFeed() {
       tag: tg ?? undefined,
       limit: 1000,
     });
-    feedItems.set(resp.items);
-    feedTotal.set(resp.total);
+    if (request !== feedRequest) return;
+    const items = resp.items.filter((item) => !removed.has(item.id));
+    feedItems.set(items);
+    feedTotal.set(Math.max(0, resp.total - (resp.items.length - items.length)));
   } finally {
-    feedLoading.set(false);
+    pendingFeedRemovals.delete(removed);
+    if (request === feedRequest) feedLoading.set(false);
   }
 }
 
@@ -207,9 +225,10 @@ selectedId.subscribe(async (id) => {
     return;
   }
   try {
-    selectedDetail.set(await imagesApi.detail(id));
+    const detail = await imagesApi.detail(id);
+    if (getSelectedId() === id) selectedDetail.set(detail);
   } catch {
-    selectedDetail.set(null);
+    if (getSelectedId() === id) selectedDetail.set(null);
   }
 });
 

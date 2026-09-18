@@ -310,8 +310,8 @@ def test_indexer_auto_assign_preserves_user_assignment(tmp_data_dir):
 # ---------- API 校验 ----------
 
 
-def test_api_patch_system_folder_returns_400(tmp_data_dir):
-    """PATCH system folder 应返回 400。"""
+def test_api_patch_system_folder_updates_display_name(tmp_data_dir):
+    """PATCH system folder 只修改显示名称，保留磁盘路径。"""
     from fastapi.testclient import TestClient
 
     from app.main import app
@@ -328,8 +328,9 @@ def test_api_patch_system_folder_returns_400(tmp_data_dir):
     fid = cur.lastrowid
 
     r = client.patch(f"/api/folders/{fid}", json={"name": "新名字"})
-    assert r.status_code == 400
-    assert "系统" in r.text or "system" in r.text.lower()
+    assert r.status_code == 200
+    assert r.json()["name"] == "新名字"
+    assert conn.execute("SELECT path FROM folders WHERE id = ?", (fid,)).fetchone()["path"] == "D:/watch/krea2"
 
 
 def test_api_delete_system_folder_returns_400(tmp_data_dir):

@@ -30,6 +30,7 @@
   import type { ImageDetail, FolderNode } from "../lib/types";
   import Icon from "./Icon.svelte";
   import PromptCard from "./PromptCard.svelte";
+  import ReversePromptPanel from "./ReversePromptPanel.svelte";
   import ParamsCard from "./ParamsCard.svelte";
   import MetadataCard from "./MetadataCard.svelte";
   import FolderPickerModal from "./FolderPickerModal.svelte";
@@ -178,7 +179,7 @@
   onMount(() => {
     shortcutOff = registerShortcuts([
       {
-        key: "p",
+        key: "p", action: "positive",
         handler: () => {
           const d = $selectedDetail;
           if (!d) return;
@@ -186,7 +187,7 @@
         },
       },
       {
-        key: "n",
+        key: "n", action: "negative",
         handler: () => {
           const d = $selectedDetail;
           if (!d) return;
@@ -194,7 +195,7 @@
         },
       },
       {
-        key: "s",
+        key: "s", action: "seed",
         handler: () => {
           const d = $selectedDetail;
           if (!d || d.seed == null) return;
@@ -202,19 +203,19 @@
         },
       },
       {
-        key: "shift+c",
+        key: "shift+c", action: "comfy",
         handler: () => {
           if ($selectedDetail) openInComfyui();
         },
       },
       {
-        key: "f",
+        key: "f", action: "favorite",
         handler: () => {
           if ($selectedDetail) toggleFav();
         },
       },
       {
-        key: "t",
+        key: "t", action: "tags",
         handler: () => {
           if ($selectedDetail) showTagInput = !showTagInput;
         },
@@ -400,6 +401,7 @@
 
     <!-- ============== Body ============== -->
     <div class="flex-1 overflow-y-auto p-4 space-y-4 detail-body">
+      {#key d.id}<ReversePromptPanel imageId={d.id} />{/key}
       <!-- Prompt 卡片（正向 / 反向） -->
       <PromptCard
         title="正向 Prompt"

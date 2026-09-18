@@ -160,6 +160,10 @@ class Indexer:
 
 
     def _ensure_system_folder_for_dir(self, dir_path: Path) -> None:
+        with self._live_lock:
+            self._ensure_system_folder_for_dir_locked(dir_path)
+
+    def _ensure_system_folder_for_dir_locked(self, dir_path: Path) -> None:
         """让 watch root 下新建的空目录也立刻出现在 system folder 树上。
 
         ``ensure_system_folder_chain`` 是为文件设计的（会丢掉最后一段当文件名），
@@ -194,11 +198,12 @@ class Indexer:
         """同步处理单张图；返回事件 payload 或 ``None``。"""
         path_str = self._normalize(path)
         if remove:
-            conn = get_pool().main()
-            row = conn.execute("SELECT id FROM images WHERE path = ?", (path_str,)).fetchone()
-            if row:
-                image_id = row["id"]
-                with self._write_lock:
+            with self._write_lock:
+                with transaction() as conn:
+                    row = conn.execute("SELECT id FROM images WHERE path = ?", (path_str,)).fetchone()
+                    if not row:
+                        return None
+                    image_id = row["id"]
                     conn.execute("DELETE FROM images WHERE id = ?", (image_id,))
                     fts_sync(conn, image_id, "delete")
                 return {"type": "image_removed", "id": image_id, "path": path_str}
@@ -438,7 +443,15 @@ class Indexer:
             self._flush_timer = None
         for p in paths:
             try:
-                payload = self._process_path_sync(Path(p), remove=(kind == "delete"))
+                # 合并的是路径，不是事件类型；以每个路径最终状态处理，避免
+                # 删除 A / 新建 B 的批次被最后一个事件统一误判。
+                path = Path(p)
+                try:
+                    path.stat()
+                    missing = False
+                except FileNotFoundError:
+                    missing = True
+                payload = self._process_path_sync(path, remove=missing)
             except Exception as e:
                 log.warning("event handler failed: %s (%s)", p, e)
                 continue
@@ -447,6 +460,30 @@ class Indexer:
                     asyncio.run_coroutine_threadsafe(self._emit(payload), self._loop)
                 except RuntimeError:
                     pass
+
+    def reconcile_missing(self) -> list[int]:
+        """Recover missed deletes, including files removed while the app was closed."""
+        removed = []
+        with self._live_lock:
+            if self._stopping:
+                return removed
+            rows = get_pool().main().execute('SELECT id, path FROM images').fetchall()
+            for row in rows:
+                path = Path(row['path'])
+                try:
+                    path.stat()
+                except FileNotFoundError:
+                    # Offline drives/network shares are not evidence of deletion.
+                    anchor = Path(path.anchor)
+                    if not anchor.exists():
+                        continue
+                    payload = self._process_path_sync(path, remove=True)
+                    if payload:
+                        removed.append(payload['id'])
+                        self.emit_event_sync(payload)
+                except OSError:
+                    continue
+        return removed
 
     async def _emit(self, payload: dict) -> None:
         try:
@@ -482,9 +519,13 @@ class _Handler(FileSystemEventHandler):
 
     def on_moved(self, event):
         if event.is_directory:
+            self._enqueue_directory_removal(event.src_path)
             # 目录重命名：把新路径预先挂上 system folder 链（空目录也能看见）
             try:
                 self.indexer._ensure_system_folder_for_dir(Path(event.dest_path))
+                for path in Path(event.dest_path).rglob("*"):
+                    if path.is_file() and path.suffix.lower() in SUPPORTED_EXTS:
+                        self.indexer.enqueue("create", path)
             except Exception as e:  # noqa: BLE001
                 log.warning("ensure moved dir failed: %s (%s)", event.dest_path, e)
             return
@@ -495,11 +536,25 @@ class _Handler(FileSystemEventHandler):
             self.indexer.enqueue("delete", event.src_path)
 
     def on_deleted(self, event):
+        # Windows watchdog 把 FILE_ACTION_REMOVED 一律包装成 FileDeletedEvent，
+        # 因而不能仅凭 is_directory 判断是否需要清理目录后代。
+        self._enqueue_directory_removal(event.src_path)
         if event.is_directory:
             # 目录删除属于"被文件系统同步"事件；不动 system folder 表
             # （用户如果在子目录里删了所有图，目录还会留在树上，递归计数 = 0）。
             return
         self.indexer.enqueue("delete", event.src_path)
+
+    def _enqueue_directory_removal(self, directory):
+        # Windows 的目录删除/移出可能只有目录事件，逐个清理其图片索引。
+        prefix = self.indexer._normalize(directory).rstrip("/") + "/"
+        collation = " COLLATE NOCASE" if os.name == "nt" else ""
+        rows = get_pool().main().execute(
+            "SELECT path FROM images WHERE substr(path, 1, ?) = ?" + collation,
+            (len(prefix), prefix),
+        ).fetchall()
+        for row in rows:
+            self.indexer.enqueue("delete", row["path"])
 
 
 # ---------- 单例 ----------

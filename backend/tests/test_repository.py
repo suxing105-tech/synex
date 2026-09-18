@@ -9,7 +9,7 @@ from app.repository import original_url_for
 def test_original_url_includes_max_by_default():
     """original_url 默认带 max=1024，feed 拿 webp 预览，~200KB 替代 2-5MB 原图。"""
     url = original_url_for(240, 1788329145.7)
-    assert url == "/api/images/240/file?max=1024&v=1788329145"
+    assert url.startswith("/api/images/240/file?max=1024&v=2-1788329145.700")
 
 
 def test_original_url_none_when_mtime_missing():
@@ -28,11 +28,11 @@ def test_original_url_with_custom_max():
     """调用方显式传 max=2048 → URL 带上 max=2048。"""
     url = original_url_for(240, 1788329145.7, max_size=2048)
     assert "max=2048" in url
-    assert "v=1788329145" in url
+    assert "v=2-1788329145.700" in url
 
 
 def test_original_url_with_max_none_omits_max():
     """显式 max_size=None → 不带 max 参数，Lightbox 用，拿到完整原图。"""
     url = original_url_for(240, 1788329145.7, max_size=None)
-    assert url == "/api/images/240/file?v=1788329145"
+    assert url.startswith("/api/images/240/file?v=2-1788329145.700")
     assert "max" not in url

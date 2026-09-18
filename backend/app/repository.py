@@ -10,7 +10,7 @@ from .db import fts_sync, get_pool, transaction
 
 
 
-def original_url_for(image_id: int, file_mtime: float | None, *, max_size: int | None = 1024) -> str | None:
+def original_url_for(image_id: int, file_mtime: float | None, *, max_size: int | None = 1024, identity: str = "") -> str | None:
     """返回带 cache-bust 的原图 URL（feed 直接拿原图让浏览器缩放）。
 
     原图文件被覆盖时 mtime 变 → URL 变 → 浏览器重新下载。
@@ -26,7 +26,9 @@ def original_url_for(image_id: int, file_mtime: float | None, *, max_size: int |
     qs = []
     if max_size is not None:
         qs.append(f"max={int(max_size)}")
-    qs.append(f"v={int(file_mtime)}")
+    import hashlib
+    key = hashlib.sha256(identity.encode()).hexdigest()[:16]
+    qs.append(f"v=2-{file_mtime:.9f}-{key}")
     return f"/api/images/{image_id}/file?{"&".join(qs)}"
 
 
@@ -112,6 +114,11 @@ def folder_update(folder_id: int, *, name: str | None = None, order: int | None 
     fields: list[str] = []
     values: list[object] = []
     if name is not None:
+        name = name.strip()
+        if not name:
+            raise ValueError("名称不能为空")
+        if conn.execute("SELECT id FROM folders WHERE id = ?", (folder_id,)).fetchone() is None:
+            raise ValueError("文件夹不存在")
         fields.append("name = ?")
         values.append(name)
     if order is not None:
@@ -139,6 +146,15 @@ def folder_update(folder_id: int, *, name: str | None = None, order: int | None 
         return dict(row) if row else {}
     values.append(folder_id)
     with transaction() as c:
+        if name is not None and order is None:
+            # 来源目录初始 order 可能相同，改名之前固定现有顺序，避免改名跳位。
+            row = c.execute("SELECT parent_id, is_system FROM folders WHERE id = ?", (folder_id,)).fetchone()
+            siblings = c.execute(
+                'SELECT id FROM folders WHERE parent_id IS ? AND is_system = ? ORDER BY "order", name, id',
+                (row["parent_id"], row["is_system"]),
+            ).fetchall()
+            c.executemany('UPDATE folders SET "order" = ? WHERE id = ?',
+                          [(i, r["id"]) for i, r in enumerate(siblings)])
         c.execute(f"UPDATE folders SET {', '.join(fields)} WHERE id = ?", values)
     row = conn.execute(
         "SELECT id, parent_id, name, \"order\" FROM folders WHERE id = ?", (folder_id,)
@@ -169,6 +185,28 @@ def folder_delete(folder_id: int) -> None:
         c.execute(
             "DELETE FROM image_folders WHERE folder_id IN (SELECT id FROM folders WHERE 1=0)"  # noop（已删）
         )
+
+
+def folder_reorder(folder_id: int, target_id: int, position: str) -> None:
+    """同层同类型节点按相对位置原子排序，也支持初始 order 相同的来源目录。"""
+    if position not in ("before", "after"):
+        raise ValueError("无效的排序位置")
+    with transaction() as c:
+        source = c.execute("SELECT * FROM folders WHERE id = ?", (folder_id,)).fetchone()
+        target = c.execute("SELECT * FROM folders WHERE id = ?", (target_id,)).fetchone()
+        if not source or not target:
+            raise ValueError("文件夹不存在")
+        if source["parent_id"] != target["parent_id"] or source["is_system"] != target["is_system"]:
+            raise ValueError("请拖到同一层级的文件夹之间")
+        if folder_id == target_id:
+            return
+        ids = [r["id"] for r in c.execute(
+            'SELECT id FROM folders WHERE parent_id IS ? AND is_system = ? ORDER BY "order", name, id',
+            (source["parent_id"], source["is_system"]),
+        ) if r["id"] != folder_id]
+        index = ids.index(target_id) + (position == "after")
+        ids.insert(index, folder_id)
+        c.executemany('UPDATE folders SET "order" = ? WHERE id = ?', enumerate(ids))
 
 
 def folder_move_order(folder_id: int, direction: str) -> None:
@@ -308,7 +346,7 @@ def _row_to_summary(row: sqlite3.Row) -> dict:
         "id": row["id"],
         "filename": row["filename"],
         "path": row["path"],
-        "original_url": original_url_for(row["id"], row["mtime"]),
+        "original_url": original_url_for(row["id"], row["mtime"], identity=f"{row['path']}|{row['size_bytes']}|{row['indexed_at']}"),
         "width": row["width"],
         "height": row["height"],
         "mtime": row["mtime"],

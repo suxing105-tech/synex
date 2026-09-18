@@ -1,8 +1,12 @@
 <script lang="ts">
+  import ImageCompare from "./ImageCompare.svelte";
+  import { multiSelectedIds, removeImageFromFeed, refreshFolders } from "../lib/stores";
+  import { copyOriginalImage } from "../lib/image-clipboard";
+  import { matchesAction, shortcutBlocked } from "../lib/shortcut-settings";
   import { backendUrl } from "../lib/backend-url";
   import { feedItems, refreshFeed, refreshStats } from "../lib/stores";
   import { imagesApi } from "../lib/api";
-  import { copyText, formatDate, formatSize } from "../lib/ws";
+  import { copyText, formatSize } from "../lib/ws";
   import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
   import {
     clampPan,
@@ -18,6 +22,11 @@
     selectedId: number | null;
   }
   let { open = $bindable(), index = $bindable(), selectedId = $bindable() }: Props = $props();
+
+  let compareEnabled = $state(true);
+  let compareImages = $derived($feedItems.filter(it => $multiSelectedIds.has(it.id)));
+  let comparing = $derived(compareEnabled && compareImages.length === 2);
+  $effect(() => { if (open) compareEnabled = true; });
 
   // 右键菜单
   let menuOpen = $state(false);
@@ -38,6 +47,7 @@
   // 即使光标移出图片元素（甚至移出视口），所有 pointermove 还是会送到同一元素，
   // 不会因为 img 在 zoom 模式下溢出视口而丢事件。
   let zoomMode = $state<"fit" | "zoom">("fit");
+  let zoomScale = $state(1);
   let pan = $state<PanOffset>({ x: 0, y: 0 });
   let isDragging = $state(false);
   let dragStartMouseX = 0;
@@ -69,35 +79,23 @@
 
   function viewportSize(): { w: number; h: number } {
     if (viewportW > 0 && viewportH > 0) return { w: viewportW, h: viewportH };
-    if (typeof window !== "undefined") return { w: window.innerWidth, h: window.innerHeight };
     return { w: 0, h: 0 };
   }
 
-  $effect(() => {
-    if (typeof window === "undefined") return;
-    const sync = () => {
-      viewportW = window.innerWidth;
-      viewportH = window.innerHeight;
-    };
-    sync();
-    window.addEventListener("resize", sync);
-    return () => window.removeEventListener("resize", sync);
-  });
-
-  // fit 模式下保持宽高比缩到 92vw × 84vh 内 — 用 safeVisual 防旧 visualW/H 跨图污染
+  // 以中间预览画布的实际尺寸为准，调整侧栏宽度时自动重新适配。
   let fitRatio = $derived.by(() => {
     if (safeVisualW <= 0 || safeVisualH <= 0 || viewportW <= 0 || viewportH <= 0) return 1;
-    return Math.min((viewportW * 0.92) / safeVisualW, (viewportH * 0.84) / safeVisualH);
+    return Math.min(1, Math.max(1, viewportW - 48) / safeVisualW, Math.max(1, viewportH - 48) / safeVisualH);
   });
 
   let displayW = $derived(
     safeVisualW <= 0 ? 0 :
-    zoomMode === "zoom" ? safeVisualW :
+    zoomMode === "zoom" ? safeVisualW * zoomScale :
     Math.max(1, Math.round(safeVisualW * fitRatio))
   );
   let displayH = $derived(
     safeVisualH <= 0 ? 0 :
-    zoomMode === "zoom" ? safeVisualH :
+    zoomMode === "zoom" ? safeVisualH * zoomScale :
     Math.max(1, Math.round(safeVisualH * fitRatio))
   );
 
@@ -109,19 +107,39 @@
 
   function resetZoom() {
     zoomMode = "fit";
+    zoomScale = 1;
     pan = { x: 0, y: 0 };
     isDragging = false;
-    dragPointerId = -1;
     if (dragEl && dragPointerId >= 0) {
       try { dragEl.releasePointerCapture(dragPointerId); } catch {}
     }
+    dragPointerId = -1;
     dragEl = null;
   }
 
   function toggleZoom() {
     const r = nextZoomMode(zoomMode);
+    zoomScale = 1;
     zoomMode = r.mode;
     pan = r.pan;
+  }
+
+  function wheelZoom(node: HTMLElement) {
+    node.addEventListener("wheel", onWheel, { passive: false });
+    return { destroy: () => node.removeEventListener("wheel", onWheel) };
+  }
+
+  function onWheel(e: WheelEvent) {
+    if (comparing || !safeVisualW || !e.deltaY) return;
+    e.preventDefault();
+    const previous = zoomMode === "fit" ? fitRatio : zoomScale;
+    const next = Math.max(Math.min(0.05, fitRatio), Math.min(8, previous * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = Number.isFinite(e.clientX) ? e.clientX - rect.left - rect.width / 2 : 0;
+    const y = Number.isFinite(e.clientY) ? e.clientY - rect.top - rect.height / 2 : 0;
+    pan = { x: x - (x - pan.x) * next / previous, y: y - (y - pan.y) * next / previous };
+    zoomScale = next;
+    zoomMode = "zoom";
   }
 
   function onImgDblClick(e: MouseEvent) {
@@ -165,7 +183,7 @@
       { x: dragStartPanX, y: dragStartPanY },
     );
     // 内联 clampPan，并 guard 写入：避免和后续 effect 形成死循环
-    const clamped = clampPan(next, { w: safeVisualW, h: safeVisualH }, viewportSize());
+    const clamped = clampPan(next, { w: displayW, h: displayH }, viewportSize(), 0);
     if (clamped.x !== pan.x || clamped.y !== pan.y) {
       pan = clamped;
     }
@@ -197,7 +215,14 @@
   }
 
   function handleKey(e: KeyboardEvent) {
+    if (shortcutBlocked(e)) return;
     if (!open) return;
+    if (e.key === "Delete" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+      e.preventDefault();
+      void deleteCurrent();
+      return;
+    }
+    if (comparing && e.key !== "Escape") return;
     if (e.key === "Escape") {
       if (zoomMode === "zoom") {
         e.preventDefault();
@@ -206,13 +231,13 @@
       }
       e.preventDefault();
       close();
-    } else if (e.key === "ArrowLeft") {
+    } else if (matchesAction(e, "previous")) {
       e.preventDefault();
       prev();
-    } else if (e.key === "ArrowRight") {
+    } else if (matchesAction(e, "next")) {
       e.preventDefault();
       next();
-    } else if (e.key === " ") {
+    } else if (matchesAction(e, "preview")) {
       e.preventDefault();
       next();
     }
@@ -241,38 +266,15 @@
     return [
       { label: "复制图片", onClick: () => copyImage(it) },
       { label: "重命名", onClick: () => renameImage(it) },
-      { label: "打开图片所在位置", onClick: () => revealImage(it) },
+      { label: "图片所在位置", onClick: () => revealImage(it) },
       { kind: "sep" },
-      { label: "删除图片（含缩略图）", danger: true, onClick: () => deleteImage(it) },
+      { label: "删除图片", danger: true, onClick: () => deleteImage(it) },
     ];
   });
 
-  async function fetchBlob(it: any): Promise<Blob | null> {
-    const url = backendUrl(it.original_url ?? `/api/images/${it.id}/file`);
-    try {
-      const r = await fetch(url, { cache: "no-cache" });
-      if (!r.ok) return null;
-      return await r.blob();
-    } catch {
-      return null;
-    }
-  }
-
-  async function copyImage(it: any) {
-    if (!navigator.clipboard || typeof ClipboardItem === "undefined") {
-      const ok = await copyText(backendUrl(it.original_url ?? `/api/images/${it.id}/file`));
-      notify(ok ? "已复制图片地址（剪贴板不支持图片）" : "复制失败");
-      return;
-    }
-    const blob = await fetchBlob(it);
-    if (!blob) return notify("获取图片失败");
-    try {
-      await navigator.clipboard.write([new ClipboardItem({ [blob.type || "image/png"]: blob })]);
-      notify("已复制图片到剪贴板");
-    } catch {
-      const ok = await copyText(backendUrl(it.original_url ?? `/api/images/${it.id}/file`));
-      notify(ok ? "已复制图片地址" : "复制失败");
-    }
+  async function copyImage(it: { id: number }) {
+    try { await copyOriginalImage(it.id); notify("已复制原图到剪贴板"); }
+    catch (e) { notify(`复制原图失败：${(e as Error).message}`); }
   }
 
   async function renameImage(it: any) {
@@ -300,13 +302,22 @@
     }
   }
 
+  let deleting = false;
+  async function deleteCurrent() {
+    if (deleting) return;
+    deleting = true;
+    const targets = comparing ? [...compareImages] : [$feedItems[index]].filter(Boolean);
+    for (const it of targets) await deleteImage(it);
+    deleting = false;
+  }
   async function deleteImage(it: any) {
     try {
       const resp = await imagesApi.remove(it.id, true);
+      removeImageFromFeed(it.id);
       notify(`已删除图片（清理缩略图 ${resp.cleaned_previews ?? 0} 个）`);
       if (selectedId === it.id) selectedId = null;
       open = false;
-      await Promise.all([refreshFeed(), refreshStats()]);
+      await Promise.allSettled([refreshStats(), refreshFolders()]);
     } catch (e) {
       notify(`删除失败: ${(e as Error).message}`);
     }
@@ -317,7 +328,7 @@
     if (open) {
       const it = $feedItems[index];
       if (it) {
-        originalUrl = backendUrl(`/api/images/${it.id}/file`);
+        originalUrl = backendUrl(`/api/images/${it.id}/file?cache=2`);
         selectedId = it.id;
       }
     }
@@ -354,6 +365,12 @@
 
 
 
+  $effect(() => {
+    if (zoomMode !== "zoom") return;
+    const bounded = clampPan(pan, { w: displayW, h: displayH }, { w: viewportW, h: viewportH }, 0);
+    if (bounded.x !== pan.x || bounded.y !== pan.y) pan = bounded;
+  });
+
   let imgCursor = $derived(
     zoomMode === "fit"
       ? "default"
@@ -367,39 +384,29 @@
 
 {#if open && $feedItems.length > 0 && $feedItems[index]}
   {@const it = $feedItems[index]}
-  <div
-    class="fixed inset-0 z-[80] bg-black/94 flex items-center justify-center backdrop-blur-md overflow-hidden"
-    role="dialog"
-    ondblclick={close}
-    oncontextmenu={openMenu}
-  >
-    <button class="absolute top-5 right-5 w-[42px] h-[42px] rounded-full bg-white/10 border border-white/20 text-white text-[22px] hover:bg-white/22" onclick={close} title="关闭">×</button>
-    <button class="absolute left-5 top-1/2 -translate-y-1/2 w-[54px] h-[86px] rounded-[10px] bg-white/8 border border-white/15 text-white text-[34px] hover:bg-white/20 flex items-center justify-center" onclick={prev} title="上一张">‹</button>
-    <button class="absolute right-5 top-1/2 -translate-y-1/2 w-[54px] h-[86px] rounded-[10px] bg-white/8 border border-white/15 text-white text-[34px] hover:bg-white/20 flex items-center justify-center" onclick={next} title="下一张">›</button>
-
-    <!--
-      zoom 模式额外给一个明显的"返回"按钮，避免 dblclick 没生效时用户卡住。
-      pointer events 全绑在 img 上：pointerdown 起 + setPointerCapture，
-      pointermove/up 自动送到同元素，跟手稳定不丢事件。
-    -->
-    {#if zoomMode === "zoom"}
-      <button
-        type="button"
-        class="absolute top-5 left-5 px-3 py-1.5 rounded-full bg-white/10 border border-white/20 text-white text-[12.5px] hover:bg-white/22"
-        onclick={(e) => { e.stopPropagation(); toggleZoom(); }}
-        title="退出 100%（Esc）"
-      >
-        ↩ 退出 100%
-      </button>
-    {/if}
-
+  <section class="inline-viewer absolute inset-0 z-20 flex flex-col bg-bg overflow-hidden fill-interactions" aria-label="图片细节预览">
+    <header class="flex items-center gap-2 px-4 py-3 shrink-0 border-b border-border bg-surface">
+      <button class="rounded-lg px-3 py-2 text-xs" onclick={close} title="返回缩略图（Esc）">← 返回</button>
+      <span class="flex-1 min-w-0 truncate text-xs text-muted" title={it.filename}>{it.filename}</span>
+      {#if compareImages.length === 2}<button class="rounded-lg px-3 py-2 text-xs" aria-pressed={comparing} onclick={() => compareEnabled = !compareEnabled}>{comparing ? "查看单图" : "对比图片"}</button>{/if}
+      {#if !comparing}
+      <button class="rounded-lg px-3 py-2 text-xs" aria-pressed={zoomMode === "fit"} onclick={resetZoom}>适应窗口</button>
+      <button class="rounded-lg px-3 py-2 text-xs" aria-pressed={zoomMode === "zoom"} onclick={() => { zoomMode = "zoom"; zoomScale = 1; pan = { x: 0, y: 0 }; }}>100%</button>
+      <span class="text-xs text-muted">{Math.round((zoomMode === "fit" ? fitRatio : zoomScale) * 100)}%</span>
+      {/if}
+    </header>
+    <div class="viewer-canvas relative flex-1 min-h-0 overflow-hidden" bind:clientWidth={viewportW} bind:clientHeight={viewportH} oncontextmenu={openMenu} use:wheelZoom>
+      {#if comparing}
+        <ImageCompare images={compareImages} />
+      {:else}
+      <div class="absolute inset-0 flex items-center justify-center overflow-hidden" ondblclick={(e) => { if (e.button === 0 && e.target === e.currentTarget) close(); }}>
     <img
       bind:this={imgEl}
       src={originalUrl ?? ""}
       alt={it.filename}
       bind:naturalWidth={imgNaturalW}
       bind:naturalHeight={imgNaturalH}
-      class="rounded-md shadow-2xl select-none lightbox-img"
+      class="shrink-0 select-none lightbox-img"
       style:width={displayW > 0 ? `${displayW}px` : null}
       style:height={displayH > 0 ? `${displayH}px` : null}
       style:transform={zoomMode === "zoom" ? `translate(${pan.x}px, ${pan.y}px)` : "none"}
@@ -414,24 +421,20 @@
       ondblclick={onImgDblClick}
     />
 
-    <div class="absolute bottom-5 left-1/2 -translate-x-1/2 bg-black/65 border border-white/12 text-white px-[18px] py-[9px] rounded-[10px] text-[12.5px] text-center backdrop-blur-md min-w-[240px]">
-      <div class="font-mono font-semibold mb-[3px] truncate">{it.filename}</div>
-      <div class="text-[11.5px] text-white/70">
-        {#if it.width && it.height}{it.width}×{it.height} · {/if}
-        {#if it.model}{it.model} · {/if}
-        {#if it.seed !== null}seed {it.seed} · {/if}
-        {formatSize(it.size_bytes)} · {formatDate(it.mtime)}
       </div>
-      <div class="text-[11px] text-white/55 mt-1">
-        {index + 1} / {$feedItems.length} ·
-        {#if zoomMode === "zoom"}
-          双击图片返回 · 拖动查看细节
-        {:else}
-          双击图片 100% 放大 · 双击空白关闭
-        {/if}
-      </div>
+      {/if}
     </div>
-  </div>
+    <footer class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 shrink-0 border-t border-border bg-surface text-xs">
+      {#if !comparing}<div class="flex items-center gap-2">
+        <button class="rounded-lg px-3 py-2" onclick={prev} title="上一张">‹</button>
+        <span class="text-muted">{index + 1} / {$feedItems.length}</span>
+        <button class="rounded-lg px-3 py-2" onclick={next} title="下一张">›</button>
+      </div>
+      <span class="text-muted">{#if it.width && it.height}{it.width} × {it.height} · {/if}{formatSize(it.size_bytes)}</span>
+      {/if}
+      <span class="text-muted">{comparing ? "拖动分割线对比 · Delete 删除两张图片" : zoomMode === "zoom" ? "滚轮缩放 · 拖动查看细节 · 双击适应窗口" : "滚轮缩放 · 双击图片查看 100%"}</span>
+    </footer>
+  </section>
 {/if}
 
 <ContextMenu bind:open={menuOpen} x={menuX} y={menuY} items={menuItems} />
@@ -442,6 +445,7 @@
 
 <style>
   .lightbox-img {
+    max-width: none;
     -webkit-user-drag: none;
     user-select: none;
     -webkit-user-select: none;

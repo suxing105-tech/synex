@@ -7,6 +7,7 @@ import type {
   FeedResponse,
   FolderNode,
   ImageDetail,
+  ImageSummary,
   ImportResponse,
   OpenWorkflowResult,
   ScanProgress,
@@ -14,7 +15,7 @@ import type {
   TagInfo,
 } from "./types";
 
-async function http<T>(path: string, init?: RequestInit): Promise<T> {
+export async function http<T>(path: string, init?: RequestInit): Promise<T> {
   // FormData 时让浏览器自动设置 multipart 边界，绝不能手动覆盖 Content-Type。
   const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const headers = isFormData
@@ -56,6 +57,10 @@ function qs(obj: Record<string, unknown>): string {
 
 
 export const imagesApi = {
+  copyFiles(paths: string[], folder_id: number | null): Promise<ImportResponse> {
+    return http('/api/images/copy-files', { method: 'POST', body: JSON.stringify({ paths, folder_id }) });
+  },
+  presence(id: number): Promise<{ exists: boolean }> { return http(`/api/images/${id}/presence`); },
   list(query: FeedQuery = {}): Promise<FeedResponse> {
     return http<FeedResponse>(`/api/images${qs(query as Record<string, unknown>)}`);
   },
@@ -90,7 +95,7 @@ export const imagesApi = {
       body: JSON.stringify({ image_ids, folder_id }),
     });
   },
-  remove(id: number, removeFile = false): Promise<{ ok: boolean }> {
+  remove(id: number, removeFile = false): Promise<{ ok: boolean; cleaned_previews: number }> {
     return http(`/api/images/${id}?remove_file=${removeFile}`, { method: "DELETE" });
   },
   rename(id: number, filename: string): Promise<ImageSummary> {
@@ -99,7 +104,7 @@ export const imagesApi = {
       body: JSON.stringify({ filename }),
     });
   },
-  reveal(id: number): Promise<{ ok: boolean; id: number; path: string }> {
+  reveal(id: number): Promise<{ ok: boolean; id: number; path: string; method: string }> {
     return http(`/api/images/${id}/reveal`, { method: "POST" });
   },
   /**
@@ -121,6 +126,11 @@ export const imagesApi = {
 
 
 export const foldersApi = {
+  reorder(id: number, target_id: number | null, position: "before" | "after" | "inside" | "root"): Promise<{ ok: boolean }> {
+    return http(`/api/folders/${id}/reorder`, {
+      method: "POST", body: JSON.stringify({ target_id, position }),
+    });
+  },
   tree(): Promise<FolderNode[]> {
     return http<FolderNode[]>("/api/folders");
   },

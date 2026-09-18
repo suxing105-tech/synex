@@ -172,7 +172,7 @@ https://svelte.dev/e/a11y_no_static_element_interactions
 584:       bind:clientWidth={containerWidth}
 15:21:32 [vite-plugin-svelte] src/components/Feed.svelte:620:18 Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
 https://svelte.dev/e/a11y_click_events_have_key_events
-618: 
+618:
 619:                 {#if $comfyuiStatus.running && it.has_workflow && (hoveredId === it.id || $selectedIdStore === it.id || $multiSelectedIds.has(it.id))}
 620:                   <div
                             ^
@@ -181,10 +181,10 @@ https://svelte.dev/e/a11y_click_events_have_key_events
 15:21:32 [vite-plugin-svelte] src/components/PromptCard.svelte:32:28 This reference only captures the initial value of `initiallyExpanded`. Did you mean to reference it inside a closure instead?
 https://svelte.dev/e/state_referenced_locally
 30:   }: Props = $props();
-31: 
+31:
 32:   let expanded = $state.raw(initiallyExpanded);
                                                  ^
-33: 
+33:
 34:   const chars = $derived(text ? text.length : 0);
 ✓ 161 modules transformed.
 rendering chunks...

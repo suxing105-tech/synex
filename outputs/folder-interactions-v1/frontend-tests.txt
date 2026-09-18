@@ -21,7 +21,7 @@ npm warn Unknown project config "enable-pre-post-scripts". This will stop workin
  ✓ src/__tests__/shortcuts.test.ts (12 tests) 8ms
  ✓ src/__tests__/stores.test.ts (19 tests) 30ms
 stderr | Fetch.onError (file:\C:\Users\Administrator\Documents\ChatGPT\%E8%8B%8F%E9%86%92%E5%9B%BE%E5%BA%93\frontend\node_modules\.pnpm\happy-dom@15.11.7\node_modules\happy-dom\lib\fetch\Fetch.js:383:30)
-AggregateError: 
+AggregateError:
     at internalConnectMultiple (node:net:1194:18)
     at afterConnectMultiple (node:net:1784:7) {
   code: 'ECONNREFUSED',
@@ -46,7 +46,7 @@ AggregateError:
     }
   ]
 }
-AggregateError: 
+AggregateError:
     at internalConnectMultiple (node:net:1194:18)
     at afterConnectMultiple (node:net:1784:7) {
   code: 'ECONNREFUSED',
@@ -71,7 +71,7 @@ AggregateError:
     }
   ]
 }
-AggregateError: 
+AggregateError:
     at internalConnectMultiple (node:net:1194:18)
     at afterConnectMultiple (node:net:1784:7) {
   code: 'ECONNREFUSED',
@@ -96,7 +96,7 @@ AggregateError:
     }
   ]
 }
-AggregateError: 
+AggregateError:
     at internalConnectMultiple (node:net:1194:18)
     at afterConnectMultiple (node:net:1784:7) {
   code: 'ECONNREFUSED',
@@ -121,7 +121,7 @@ AggregateError:
     }
   ]
 }
-AggregateError: 
+AggregateError:
     at internalConnectMultiple (node:net:1194:18)
     at afterConnectMultiple (node:net:1784:7) {
   code: 'ECONNREFUSED',
@@ -146,7 +146,7 @@ AggregateError:
     }
   ]
 }
-AggregateError: 
+AggregateError:
     at internalConnectMultiple (node:net:1194:18)
     at afterConnectMultiple (node:net:1784:7) {
   code: 'ECONNREFUSED',
@@ -171,7 +171,7 @@ AggregateError:
     }
   ]
 }
-AggregateError: 
+AggregateError:
     at internalConnectMultiple (node:net:1194:18)
     at afterConnectMultiple (node:net:1784:7) {
   code: 'ECONNREFUSED',
@@ -196,7 +196,7 @@ AggregateError:
     }
   ]
 }
-AggregateError: 
+AggregateError:
     at internalConnectMultiple (node:net:1194:18)
     at afterConnectMultiple (node:net:1784:7) {
   code: 'ECONNREFUSED',
@@ -221,7 +221,7 @@ AggregateError:
     }
   ]
 }
-AggregateError: 
+AggregateError:
     at internalConnectMultiple (node:net:1194:18)
     at afterConnectMultiple (node:net:1784:7) {
   code: 'ECONNREFUSED',
@@ -246,7 +246,7 @@ AggregateError:
     }
   ]
 }
-AggregateError: 
+AggregateError:
     at internalConnectMultiple (node:net:1194:18)
     at afterConnectMultiple (node:net:1784:7) {
   code: 'ECONNREFUSED',
@@ -271,7 +271,7 @@ AggregateError:
     }
   ]
 }
-AggregateError: 
+AggregateError:
     at internalConnectMultiple (node:net:1194:18)
     at afterConnectMultiple (node:net:1784:7) {
   code: 'ECONNREFUSED',
@@ -296,7 +296,7 @@ AggregateError:
     }
   ]
 }
-AggregateError: 
+AggregateError:
     at internalConnectMultiple (node:net:1194:18)
     at afterConnectMultiple (node:net:1784:7) {
   code: 'ECONNREFUSED',
@@ -321,7 +321,7 @@ AggregateError:
     }
   ]
 }
-AggregateError: 
+AggregateError:
     at internalConnectMultiple (node:net:1194:18)
     at afterConnectMultiple (node:net:1784:7) {
   code: 'ECONNREFUSED',
@@ -346,7 +346,7 @@ AggregateError:
     }
   ]
 }
-AggregateError: 
+AggregateError:
     at internalConnectMultiple (node:net:1194:18)
     at afterConnectMultiple (node:net:1784:7) {
   code: 'ECONNREFUSED',
@@ -371,7 +371,7 @@ AggregateError:
     }
   ]
 }
-AggregateError: 
+AggregateError:
     at internalConnectMultiple (node:net:1194:18)
     at afterConnectMultiple (node:net:1784:7) {
   code: 'ECONNREFUSED',
@@ -396,7 +396,7 @@ AggregateError:
     }
   ]
 }
-AggregateError: 
+AggregateError:
     at internalConnectMultiple (node:net:1194:18)
     at afterConnectMultiple (node:net:1784:7) {
   code: 'ECONNREFUSED',
@@ -421,7 +421,7 @@ AggregateError:
     }
   ]
 }
-AggregateError: 
+AggregateError:
     at internalConnectMultiple (node:net:1194:18)
     at afterConnectMultiple (node:net:1784:7) {
   code: 'ECONNREFUSED',
@@ -485,7 +485,7 @@ https://svelte.dev/e/a11y_click_events_have_key_events
  ✓ src/__tests__/store-template-usage.test.ts (21 tests) 8ms
  ✓ src/__tests__/api-comfyui.test.ts (4 tests) 4ms
 stderr | src/__tests__/feed-comfyui-button.test.ts
-AggregateError: 
+AggregateError:
     at internalConnectMultiple (node:net:1194:18)
     at afterConnectMultiple (node:net:1784:7) {
   code: 'ECONNREFUSED',
@@ -510,7 +510,7 @@ AggregateError:
     }
   ]
 }
-AggregateError: 
+AggregateError:
     at internalConnectMultiple (node:net:1194:18)
     at afterConnectMultiple (node:net:1784:7) {
   code: 'ECONNREFUSED',
@@ -535,7 +535,7 @@ AggregateError:
     }
   ]
 }
-AggregateError: 
+AggregateError:
     at internalConnectMultiple (node:net:1194:18)
     at afterConnectMultiple (node:net:1784:7) {
   code: 'ECONNREFUSED',
@@ -560,7 +560,7 @@ AggregateError:
     }
   ]
 }
-AggregateError: 
+AggregateError:
     at internalConnectMultiple (node:net:1194:18)
     at afterConnectMultiple (node:net:1784:7) {
   code: 'ECONNREFUSED',
@@ -618,4 +618,3 @@ https://svelte.dev/e/a11y_no_static_element_interactions
       Tests  337 passed (337)
    Start at  15:21:30
    Duration  2.86s (transform 3.41s, setup 0ms, collect 12.22s, tests 797ms, environment 17.54s, prepare 4.85s)
-

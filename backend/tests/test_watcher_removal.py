@@ -40,7 +40,8 @@ def test_delete_then_recreate_same_path_is_kept(indexer, init_db, tmp_path):
     assert init_db.main().execute('SELECT width FROM images').fetchone()['width'] == 16
 
 
-def test_directory_event_cleans_descendants_only(indexer, init_db, tmp_path):
+@pytest.mark.parametrize('is_directory', [True, False])
+def test_directory_event_cleans_descendants_only(indexer, init_db, tmp_path, is_directory):
     directory = tmp_path / 'group'
     sibling = tmp_path / 'group-other'
     directory.mkdir()
@@ -52,7 +53,7 @@ def test_directory_event_cleans_descendants_only(indexer, init_db, tmp_path):
     image.unlink()
     directory.rmdir()
     with patch('app.indexer.threading.Timer'):
-        _Handler(indexer).on_deleted(SimpleNamespace(is_directory=True, src_path=str(directory)))
+        _Handler(indexer).on_deleted(SimpleNamespace(is_directory=is_directory, src_path=str(directory)))
         indexer._flush_pending('delete')
     assert [r['filename'] for r in init_db.main().execute('SELECT filename FROM images')] == ['b.png']
 

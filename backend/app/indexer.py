@@ -508,19 +508,25 @@ class _Handler(FileSystemEventHandler):
             self.indexer.enqueue("delete", event.src_path)
 
     def on_deleted(self, event):
+        # Windows watchdog 把 FILE_ACTION_REMOVED 一律包装成 FileDeletedEvent，
+        # 因而不能仅凭 is_directory 判断是否需要清理目录后代。
+        self._enqueue_directory_removal(event.src_path)
         if event.is_directory:
             # 目录删除属于"被文件系统同步"事件；不动 system folder 表
             # （用户如果在子目录里删了所有图，目录还会留在树上，递归计数 = 0）。
-            self._enqueue_directory_removal(event.src_path)
             return
         self.indexer.enqueue("delete", event.src_path)
 
     def _enqueue_directory_removal(self, directory):
         # Windows 的目录删除/移出可能只有目录事件，逐个清理其图片索引。
-        root = Path(directory).resolve()
-        for row in get_pool().main().execute("SELECT path FROM images").fetchall():
-            if Path(row["path"]).is_relative_to(root):
-                self.indexer.enqueue("delete", row["path"])
+        prefix = self.indexer._normalize(directory).rstrip("/") + "/"
+        collation = " COLLATE NOCASE" if os.name == "nt" else ""
+        rows = get_pool().main().execute(
+            "SELECT path FROM images WHERE substr(path, 1, ?) = ?" + collation,
+            (len(prefix), prefix),
+        ).fetchall()
+        for row in rows:
+            self.indexer.enqueue("delete", row["path"])
 
 
 # ---------- 单例 ----------

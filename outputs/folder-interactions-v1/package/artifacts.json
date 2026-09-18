@@ -1,0 +1,14 @@
+{
+  "app/suxing-gallery.exe": {
+    "bytes": 6616576,
+    "sha256": "afca7cd9a619af40388cc48fecc09060b34438d875e6cf91b8748a6be49f0375"
+  },
+  "app/python-backend.exe": {
+    "bytes": 29053077,
+    "sha256": "e6ed1cfa553ffc25ccc499c390275a52acc0b0deddebf47bfb322e0d44395ad8"
+  },
+  "苏醒图库_0.2.1_x64-setup.exe": {
+    "bytes": 33065010,
+    "sha256": "55ac02ef654bc0b2b7e155da252820740c21f46764e4fcb9b099e6cf19334fa7"
+  }
+}

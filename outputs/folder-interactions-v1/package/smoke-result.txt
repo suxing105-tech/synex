@@ -1,0 +1,1 @@
+{"passed": true, "checks": ["startup", "directory_import", "source_display_rename", "persistent_reorder", "mixed_delete_create", "directory_delete", "stats"], "case": "C:\\Users\\Administrator\\Documents\\ChatGPT\\����ͼ��\\outputs\\folder-interactions-v1\\package\\smoke-aab1ece1"}

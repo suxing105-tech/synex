@@ -278,6 +278,7 @@
   // 缩略图点击：根据修饰键走单选 / Ctrl 多选切换 / Shift 区间
   function onThumbClick(e: MouseEvent, it: ImageSummary) {
     const modifier = e.shiftKey ? "shift" : e.ctrlKey || e.metaKey ? "ctrl" : "none";
+    if (modifier === "none" && selectedCount === 2 && $multiSelectedIds.has(it.id)) { selectedId = it.id; return; }
     applySelection($feedItems, it.id, modifier);
   }
 
@@ -368,8 +369,10 @@
 
   // 批量删除：单图也走这条，传 length=1 的数组即可。
   // 失败的项不会从多选集合里剔除，保留以便用户重试。
+  let deleting = false;
   async function deleteImages(items: ImageSummary[]) {
-    if (items.length === 0) return;
+    if (items.length === 0 || deleting) return;
+    deleting = true;
     const succeeded: number[] = [];
     const failed: number[] = [];
     let cleaned = 0;
@@ -377,6 +380,7 @@
       try {
         const resp = await imagesApi.remove(it.id, true);
         succeeded.push(it.id);
+        removeImageFromFeed(it.id);
         cleaned += resp.cleaned_previews ?? 0;
       } catch (e) {
         failed.push(it.id);
@@ -397,12 +401,8 @@
     // 乐观更新本地 feedItems：直接从数组里过滤掉已删 id。
     // 不调 refreshFeed() —— 整个数组替换会让 masonry 贪心分组重算，滚动条跳回顶部。
     // feedItems 用 (it.id) keyed each，Svelte 会复用 DOM，scroll 位置自然保持。
-    if (okCount > 0) {
-      const removed = new Set(succeeded);
-      feedItems.update((items) => items.filter((it) => !removed.has(it.id)));
-      feedTotal.update((n) => Math.max(0, n - okCount));
-    }
-    await refreshStats();
+    await Promise.allSettled([refreshStats(), refreshFolders()]);
+    deleting = false;
   }
 
   // 批量复制图片地址（多张时降级为 URL 文本）。
@@ -450,7 +450,13 @@
 
   function handleKey(e: KeyboardEvent) {
     if (shortcutBlocked(e)) return;
-    if (isTypingTarget(e.target)) return;
+    if (isTypingTarget(e.target) || lightboxOpen) return;
+    if (e.key === "Delete" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+      e.preventDefault();
+      const ids = $multiSelectedIds.size ? $multiSelectedIds : new Set(selectedId === null ? [] : [selectedId]);
+      void deleteImages($feedItems.filter(item => ids.has(item.id)));
+      return;
+    }
     if (e.key === "Escape") {
       if (selectedCount > 0) {
         e.preventDefault();
@@ -465,11 +471,12 @@
       if (lightboxOpen) return;
       // 空格放大：当前鼠标滑过的那张，不再依赖 selectedId。
       // 鼠标没在任何缩略图上 → 不响应（避免误触发）。
-      if (hoveredId !== null) {
+      const previewId = $multiSelectedIds.size === 2 ? [...$multiSelectedIds][0] : hoveredId ?? selectedId;
+      if (previewId !== null) {
         e.preventDefault();
         // 阻止 Lightbox 的 window keydown 也响应本次空格。
         e.stopImmediatePropagation();
-        const idx = $feedItems.findIndex((it) => it.id === hoveredId);
+        const idx = $feedItems.findIndex((it) => it.id === previewId);
         if (idx >= 0) {
           lightboxIndex = idx;
           lightboxOpen = true;
@@ -571,6 +578,9 @@
       {/if}
     </div>
   </div>
+  {#if selectedCount === 2}
+    <button class="rounded-lg px-3 py-2 text-xs" onclick={() => { const i = $feedItems.findIndex(it => $multiSelectedIds.has(it.id)); if (i >= 0) openLightbox($feedItems[i], i); }}>对比图片</button>
+  {/if}
   <GallerySearch />
   <div class="ml-auto flex items-center gap-2 text-[12.5px] text-muted">
     <span>列数</span>

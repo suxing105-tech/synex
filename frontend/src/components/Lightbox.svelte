@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ImageCompare from "./ImageCompare.svelte";
+  import { multiSelectedIds, removeImageFromFeed, refreshFolders } from "../lib/stores";
   import { copyOriginalImage } from "../lib/image-clipboard";
   import { matchesAction, shortcutBlocked } from "../lib/shortcut-settings";
   import { backendUrl } from "../lib/backend-url";
@@ -21,6 +23,11 @@
   }
   let { open = $bindable(), index = $bindable(), selectedId = $bindable() }: Props = $props();
 
+  let compareEnabled = $state(true);
+  let compareImages = $derived($feedItems.filter(it => $multiSelectedIds.has(it.id)));
+  let comparing = $derived(compareEnabled && compareImages.length === 2);
+  $effect(() => { if (open) compareEnabled = true; });
+
   // 右键菜单
   let menuOpen = $state(false);
   let menuX = $state(0);
@@ -40,6 +47,7 @@
   // 即使光标移出图片元素（甚至移出视口），所有 pointermove 还是会送到同一元素，
   // 不会因为 img 在 zoom 模式下溢出视口而丢事件。
   let zoomMode = $state<"fit" | "zoom">("fit");
+  let zoomScale = $state(1);
   let pan = $state<PanOffset>({ x: 0, y: 0 });
   let isDragging = $state(false);
   let dragStartMouseX = 0;
@@ -82,12 +90,12 @@
 
   let displayW = $derived(
     safeVisualW <= 0 ? 0 :
-    zoomMode === "zoom" ? safeVisualW :
+    zoomMode === "zoom" ? safeVisualW * zoomScale :
     Math.max(1, Math.round(safeVisualW * fitRatio))
   );
   let displayH = $derived(
     safeVisualH <= 0 ? 0 :
-    zoomMode === "zoom" ? safeVisualH :
+    zoomMode === "zoom" ? safeVisualH * zoomScale :
     Math.max(1, Math.round(safeVisualH * fitRatio))
   );
 
@@ -99,6 +107,7 @@
 
   function resetZoom() {
     zoomMode = "fit";
+    zoomScale = 1;
     pan = { x: 0, y: 0 };
     isDragging = false;
     if (dragEl && dragPointerId >= 0) {
@@ -110,8 +119,27 @@
 
   function toggleZoom() {
     const r = nextZoomMode(zoomMode);
+    zoomScale = 1;
     zoomMode = r.mode;
     pan = r.pan;
+  }
+
+  function wheelZoom(node: HTMLElement) {
+    node.addEventListener("wheel", onWheel, { passive: false });
+    return { destroy: () => node.removeEventListener("wheel", onWheel) };
+  }
+
+  function onWheel(e: WheelEvent) {
+    if (comparing || !safeVisualW || !e.deltaY) return;
+    e.preventDefault();
+    const previous = zoomMode === "fit" ? fitRatio : zoomScale;
+    const next = Math.max(Math.min(0.05, fitRatio), Math.min(8, previous * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = Number.isFinite(e.clientX) ? e.clientX - rect.left - rect.width / 2 : 0;
+    const y = Number.isFinite(e.clientY) ? e.clientY - rect.top - rect.height / 2 : 0;
+    pan = { x: x - (x - pan.x) * next / previous, y: y - (y - pan.y) * next / previous };
+    zoomScale = next;
+    zoomMode = "zoom";
   }
 
   function onImgDblClick(e: MouseEvent) {
@@ -155,7 +183,7 @@
       { x: dragStartPanX, y: dragStartPanY },
     );
     // 内联 clampPan，并 guard 写入：避免和后续 effect 形成死循环
-    const clamped = clampPan(next, { w: safeVisualW, h: safeVisualH }, viewportSize(), 0);
+    const clamped = clampPan(next, { w: displayW, h: displayH }, viewportSize(), 0);
     if (clamped.x !== pan.x || clamped.y !== pan.y) {
       pan = clamped;
     }
@@ -189,6 +217,12 @@
   function handleKey(e: KeyboardEvent) {
     if (shortcutBlocked(e)) return;
     if (!open) return;
+    if (e.key === "Delete" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+      e.preventDefault();
+      void deleteCurrent();
+      return;
+    }
+    if (comparing && e.key !== "Escape") return;
     if (e.key === "Escape") {
       if (zoomMode === "zoom") {
         e.preventDefault();
@@ -268,13 +302,22 @@
     }
   }
 
+  let deleting = false;
+  async function deleteCurrent() {
+    if (deleting) return;
+    deleting = true;
+    const targets = comparing ? [...compareImages] : [$feedItems[index]].filter(Boolean);
+    for (const it of targets) await deleteImage(it);
+    deleting = false;
+  }
   async function deleteImage(it: any) {
     try {
       const resp = await imagesApi.remove(it.id, true);
+      removeImageFromFeed(it.id);
       notify(`已删除图片（清理缩略图 ${resp.cleaned_previews ?? 0} 个）`);
       if (selectedId === it.id) selectedId = null;
       open = false;
-      await Promise.all([refreshFeed(), refreshStats()]);
+      await Promise.allSettled([refreshStats(), refreshFolders()]);
     } catch (e) {
       notify(`删除失败: ${(e as Error).message}`);
     }
@@ -324,7 +367,7 @@
 
   $effect(() => {
     if (zoomMode !== "zoom") return;
-    const bounded = clampPan(pan, { w: safeVisualW, h: safeVisualH }, { w: viewportW, h: viewportH }, 0);
+    const bounded = clampPan(pan, { w: displayW, h: displayH }, { w: viewportW, h: viewportH }, 0);
     if (bounded.x !== pan.x || bounded.y !== pan.y) pan = bounded;
   });
 
@@ -345,10 +388,17 @@
     <header class="flex items-center gap-2 px-4 py-3 shrink-0 border-b border-border bg-surface">
       <button class="rounded-lg px-3 py-2 text-xs" onclick={close} title="返回缩略图（Esc）">← 返回</button>
       <span class="flex-1 min-w-0 truncate text-xs text-muted" title={it.filename}>{it.filename}</span>
+      {#if compareImages.length === 2}<button class="rounded-lg px-3 py-2 text-xs" aria-pressed={comparing} onclick={() => compareEnabled = !compareEnabled}>{comparing ? "查看单图" : "对比图片"}</button>{/if}
+      {#if !comparing}
       <button class="rounded-lg px-3 py-2 text-xs" aria-pressed={zoomMode === "fit"} onclick={resetZoom}>适应窗口</button>
-      <button class="rounded-lg px-3 py-2 text-xs" aria-pressed={zoomMode === "zoom"} onclick={() => { if (zoomMode !== "zoom") toggleZoom(); }}>100%</button>
+      <button class="rounded-lg px-3 py-2 text-xs" aria-pressed={zoomMode === "zoom"} onclick={() => { zoomMode = "zoom"; zoomScale = 1; pan = { x: 0, y: 0 }; }}>100%</button>
+      <span class="text-xs text-muted">{Math.round((zoomMode === "fit" ? fitRatio : zoomScale) * 100)}%</span>
+      {/if}
     </header>
-    <div class="viewer-canvas relative flex-1 min-h-0 overflow-hidden" bind:clientWidth={viewportW} bind:clientHeight={viewportH} oncontextmenu={openMenu}>
+    <div class="viewer-canvas relative flex-1 min-h-0 overflow-hidden" bind:clientWidth={viewportW} bind:clientHeight={viewportH} oncontextmenu={openMenu} use:wheelZoom>
+      {#if comparing}
+        <ImageCompare images={compareImages} />
+      {:else}
       <div class="absolute inset-0 flex items-center justify-center overflow-hidden" ondblclick={(e) => { if (e.button === 0 && e.target === e.currentTarget) close(); }}>
     <img
       bind:this={imgEl}
@@ -372,15 +422,17 @@
     />
 
       </div>
+      {/if}
     </div>
     <footer class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 shrink-0 border-t border-border bg-surface text-xs">
-      <div class="flex items-center gap-2">
+      {#if !comparing}<div class="flex items-center gap-2">
         <button class="rounded-lg px-3 py-2" onclick={prev} title="上一张">‹</button>
         <span class="text-muted">{index + 1} / {$feedItems.length}</span>
         <button class="rounded-lg px-3 py-2" onclick={next} title="下一张">›</button>
       </div>
       <span class="text-muted">{#if it.width && it.height}{it.width} × {it.height} · {/if}{formatSize(it.size_bytes)}</span>
-      <span class="text-muted">{zoomMode === "zoom" ? "拖动查看细节 · 双击适应窗口" : "双击图片查看 100% · 双击空白返回"}</span>
+      {/if}
+      <span class="text-muted">{comparing ? "拖动分割线对比 · Delete 删除两张图片" : zoomMode === "zoom" ? "滚轮缩放 · 拖动查看细节 · 双击适应窗口" : "滚轮缩放 · 双击图片查看 100%"}</span>
     </footer>
   </section>
 {/if}

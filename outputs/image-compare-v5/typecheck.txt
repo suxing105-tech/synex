@@ -1,0 +1,64 @@
+npm warn Unknown project config "ignore-builds". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown project config "enable-pre-post-scripts". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\FolderTree.svelte:240:3
+Warn: Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events (svelte)
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\FolderTree.svelte:240:3
+Warn: `<div>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions (svelte)
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\FolderTree.svelte:252:3
+Warn: Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events (svelte)
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\FolderTree.svelte:252:3
+Warn: `<div>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions (svelte)
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\FolderTree.svelte:261:3
+Warn: Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events (svelte)
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\FolderTree.svelte:261:3
+Warn: `<div>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions (svelte)
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\FolderTree.svelte:311:3
+Warn: Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events (svelte)
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\Feed.svelte:653:5
+Warn: Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events (svelte)
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\Feed.svelte:653:5
+Warn: `<div>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions (svelte)
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\Feed.svelte:696:19
+Warn: Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events (svelte)
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\PromptCard.svelte:32:29
+Warn: This reference only captures the initial value of `initiallyExpanded`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally (svelte)
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\DetailPanel.svelte:462:15
+Warn: Avoid using autofocus
+https://svelte.dev/e/a11y_autofocus (svelte)
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\Lightbox.svelte:398:5
+Warn: `<div>` with a contextmenu handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions (svelte)
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\components\Lightbox.svelte:402:7
+Warn: `<div>` with a dblclick handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions (svelte)
+
+c:\Users\Administrator\Documents\ChatGPT\苏醒图库\frontend\src\App.svelte:214:5
+Warn: noninteractive element cannot have nonnegative tabIndex value
+https://svelte.dev/e/a11y_no_noninteractive_tabindex (svelte)
+
+====================================
+svelte-check found 0 errors and 15 warnings in 6 files

@@ -6,6 +6,7 @@ import sqlite3
 from fastapi import APIRouter, HTTPException
 
 from .. import repository
+from .. import folder_storage
 from ..models import FolderCreate, FolderUpdate, FolderReorder
 
 router = APIRouter(prefix="/api/folders", tags=["folders"])
@@ -19,8 +20,8 @@ def list_folders():
 @router.post("")
 def create_folder(payload: FolderCreate):
     try:
-        return repository.folder_create(payload.name, payload.parent_id)
-    except ValueError as e:
+        return folder_storage.create_folder(payload.name, payload.parent_id)
+    except (ValueError, OSError) as e:
         raise HTTPException(400, str(e)) from e
 
 
@@ -29,6 +30,10 @@ def update_folder(folder_id: int, payload: FolderUpdate):
     if repository.is_system_folder(folder_id) and "parent_id" in payload.model_fields_set:
         raise HTTPException(400, "来源文件夹不可改变层级；可修改显示名称和排序")
     try:
+        if payload.name is not None and payload.order is None and "parent_id" not in payload.model_fields_set:
+            from ..indexer import get_indexer
+            with get_indexer()._live_lock:
+                return folder_storage.rename_folder(folder_id, payload.name)
         parent_id = payload.parent_id if "parent_id" in payload.model_fields_set else ...
         return repository.folder_update(
             folder_id,
@@ -38,7 +43,7 @@ def update_folder(folder_id: int, payload: FolderUpdate):
         )
     except sqlite3.IntegrityError as e:
         raise HTTPException(400, "同级文件夹已存在此名称") from e
-    except ValueError as e:
+    except (ValueError, OSError) as e:
         raise HTTPException(400, str(e)) from e
 
 
@@ -56,7 +61,7 @@ def move_folder(folder_id: int, direction: str):
 def reorder_folder(folder_id: int, payload: FolderReorder):
     try:
         repository.folder_reorder(folder_id, payload.target_id, payload.position)
-    except ValueError as e:
+    except (ValueError, OSError) as e:
         raise HTTPException(400, str(e)) from e
     return {"ok": True}
 
@@ -84,7 +89,7 @@ def reveal_folder(folder_id: int):
     row = conn.execute(
         "SELECT path, is_system FROM folders WHERE id = ?", (folder_id,)
     ).fetchone()
-    if not row or not row["is_system"] or not row["path"]:
+    if not row or not row["path"]:
         raise HTTPException(404, "system folder 不存在或缺少 path")
     p = Path(row["path"])
     if not p.is_dir():

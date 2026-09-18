@@ -8,7 +8,7 @@ import { folders } from "../lib/stores";
 import { get } from "svelte/store";
 import { clearToasts, toasts } from "../lib/toast";
 
-vi.mock("../lib/api", () => ({ foldersApi: { rename: vi.fn(), reorder: vi.fn(), tree: vi.fn() } }));
+vi.mock("../lib/api", () => ({ foldersApi: { create: vi.fn().mockResolvedValue({ id: 7 }), rename: vi.fn(), reorder: vi.fn(), tree: vi.fn() } }));
 vi.mock("../lib/stores", () => ({
   folders: writable([]), folderId: writable(null), view: writable("all"),
   stats: writable({ total_images: 0, favorites: 0 }), refreshFolders: vi.fn(),
@@ -154,3 +154,29 @@ describe('真实文件夹组件交互', () => {
     await fireEvent.click(screen.getByRole('menuitem', { name: '所在位置' }));
     expect(get(toasts).some(t => t.message.includes('路径不存在'))).toBe(true);
   });
+
+
+it('我的文件夹直接在侧栏输入名称，Enter 创建并选中新文件夹', async () => {
+  const screen = render(FolderTree);
+  await fireEvent.click(screen.getByTitle('新建文件夹'));
+  const input = screen.getByRole('textbox', { name: '新建文件夹名称' });
+  expect(input.closest('.folder-scroll')).toBeTruthy();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  await fireEvent.input(input, { target: { value: '真实目录' } });
+  await fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+  expect(foldersApi.create).not.toHaveBeenCalled();
+  await fireEvent.keyDown(input, { key: 'Enter' });
+  expect(foldersApi.create).toHaveBeenCalledWith('真实目录', null);
+  expect(screen.queryByRole('textbox')).toBeNull();
+});
+
+it('取消新建不创建目录，顶部按钮只收起侧栏', async () => {
+  const collapse = vi.fn();
+  const screen = render(FolderTree, { oncollapse: collapse });
+  expect(screen.queryByTitle('在根目录新建文件夹')).toBeNull();
+  await fireEvent.click(screen.getByTitle('新建文件夹'));
+  await fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' });
+  expect(foldersApi.create).not.toHaveBeenCalled();
+  await fireEvent.click(screen.getByRole('button', { name: '收起左侧栏' }));
+  expect(collapse).toHaveBeenCalledOnce();
+});

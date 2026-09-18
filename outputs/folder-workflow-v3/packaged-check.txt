@@ -1,0 +1,1 @@
+{"passed": true, "checks": ["startup", "directory_import", "source_display_rename", "persistent_reorder", "mixed_delete_create", "directory_delete", "stats", "physical_create", "native_move", "physical_rename", "unwatched_delete_reconciliation"], "case": "C:\\Users\\Administrator\\Documents\\ChatGPT\\����ͼ��\\outputs\\folder-workflow-v3\\smoke-8a9e8b1c"}

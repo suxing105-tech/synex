@@ -8,6 +8,7 @@ mod commands;
 mod folders;
 mod sidecar;
 mod updates;
+mod window_style;
 
 use sidecar::{SidecarConfig, SidecarState};
 
@@ -27,6 +28,9 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                window_style::apply(&window);
+            }
             app.manage(updates::Updates::new(app.handle())?);
             let cfg = SidecarConfig::from_app(app.handle())?;
             let state = Arc::new(SidecarState::new(cfg.clone()));

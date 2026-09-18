@@ -154,7 +154,9 @@ export function removeImageFromFeed(id: number) {
   removeIdsFromSelection([id]);
 }
 
+let feedRequest = 0;
 export async function refreshFeed() {
+  const request = ++feedRequest;
   const removed = new Set<number>();
   pendingFeedRemovals.add(removed);
   feedLoading.set(true);
@@ -174,12 +176,13 @@ export async function refreshFeed() {
       tag: tg ?? undefined,
       limit: 1000,
     });
+    if (request !== feedRequest) return;
     const items = resp.items.filter((item) => !removed.has(item.id));
     feedItems.set(items);
     feedTotal.set(Math.max(0, resp.total - (resp.items.length - items.length)));
   } finally {
     pendingFeedRemovals.delete(removed);
-    feedLoading.set(false);
+    if (request === feedRequest) feedLoading.set(false);
   }
 }
 

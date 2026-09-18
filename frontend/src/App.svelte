@@ -128,6 +128,7 @@
   });
 
   // ============ 列宽可拖拽 + 窄屏抽屉 ============
+  let sidebarCollapsed = $state(false);
   let detailWidth = $state(360);
   const DETAIL_MIN = 320;
   const DETAIL_MAX = 560;
@@ -180,10 +181,16 @@
   <div
     class="flex-1 min-h-0 grid app-grid"
     class:drawer-mode={narrowMode}
-    style="grid-template-columns: 260px 1fr 6px {detailWidth}px;"
+    class:sidebar-collapsed={sidebarCollapsed}
+    style="--sidebar-width: {sidebarCollapsed ? 44 : 260}px; grid-template-columns: var(--sidebar-width) 1fr 6px {detailWidth}px;"
   >
     <aside class="border-r border-border bg-surface flex flex-col min-h-0">
-      <FolderTree />
+      {#if sidebarCollapsed}
+        <button class="sidebar-expand" title="展开左侧栏" aria-label="展开左侧栏" onclick={() => sidebarCollapsed = false}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16m4-11 3 3-3 3"/></svg>
+        </button>
+      {:else}
+      <FolderTree oncollapse={() => sidebarCollapsed = true} />
       <div class="sidebar-actions fill-interactions flex items-center gap-2 px-4 py-4 shrink-0">
         <button class="w-10 h-10 flex items-center justify-center rounded-lg text-muted" aria-label="设置" title="设置" onclick={() => settingsOpen = true}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="m12 2 9 5v10l-9 5-9-5V7z" /><circle cx="12" cy="12" r="4" /></svg>
@@ -192,6 +199,7 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 19V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM12 10v7m-3-3 3 3 3-3" /></svg>
         </button>
       </div>
+      {/if}
     </aside>
     <main class="relative min-w-0 min-h-0 overflow-hidden isolate">
       <div class="h-full flex flex-col" inert={lightboxOpen}>
@@ -239,6 +247,8 @@
 <SplashOverlay ready={gate.ready} error={gate.error} />
 
 <style>
+  .sidebar-expand { margin: 13px auto; padding: 4px; border: 0; background: transparent; color: #888; box-shadow: none; outline: none; }
+  .sidebar-expand:hover, .sidebar-expand:focus-visible { color: #eee; border: 0; background: transparent; box-shadow: none; outline: none; }
   .splitter {
     cursor: col-resize;
     background: transparent;
@@ -285,7 +295,7 @@
   }
   @media (max-width: 1100px) {
     .app-grid {
-      grid-template-columns: 220px 1fr 6px 320px !important;
+      grid-template-columns: var(--sidebar-width) 1fr 6px 320px !important;
     }
   }
 

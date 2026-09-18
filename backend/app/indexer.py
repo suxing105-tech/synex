@@ -457,6 +457,30 @@ class Indexer:
                 except RuntimeError:
                     pass
 
+    def reconcile_missing(self) -> list[int]:
+        """Recover missed deletes, including files removed while the app was closed."""
+        removed = []
+        with self._live_lock:
+            if self._stopping:
+                return removed
+            rows = get_pool().main().execute('SELECT id, path FROM images').fetchall()
+            for row in rows:
+                path = Path(row['path'])
+                try:
+                    path.stat()
+                except FileNotFoundError:
+                    # Offline drives/network shares are not evidence of deletion.
+                    anchor = Path(path.anchor)
+                    if not anchor.exists():
+                        continue
+                    payload = self._process_path_sync(path, remove=True)
+                    if payload:
+                        removed.append(payload['id'])
+                        self.emit_event_sync(payload)
+                except OSError:
+                    continue
+        return removed
+
     async def _emit(self, payload: dict) -> None:
         try:
             # on_event 是同步回调（直接 publish 到 bus），

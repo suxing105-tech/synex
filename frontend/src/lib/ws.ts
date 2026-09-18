@@ -10,6 +10,7 @@ export function connectEvents() {
   const url = eventsUrl();
   const ws = new WebSocket(url);
   socket = ws;
+  ws.onopen = () => { void Promise.all([refreshFeed(), refreshFolders(), refreshStats()]).catch(console.warn); };
   ws.onmessage = async (ev) => {
     try {
       const payload = JSON.parse(ev.data);

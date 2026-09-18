@@ -58,3 +58,15 @@ it('晚到的详情请求不能重新打开已删除图片', async () => {
   await Promise.resolve();
   expect(get(selectedDetail)).toBeNull();
 });
+
+
+it('旧的列表响应不能覆盖移动完成后的新列表', async () => {
+  let first!: (value: any) => void;
+  vi.mocked(imagesApi.list).mockImplementationOnce(() => new Promise(resolve => { first = resolve; }));
+  const old = refreshFeed();
+  vi.mocked(imagesApi.list).mockResolvedValueOnce({ items: [{ id: 42 }], total: 1 } as any);
+  await refreshFeed();
+  first({ items: [{ id: 8 }], total: 1 });
+  await old;
+  expect(get(feedItems).map(item => item.id)).toEqual([42]);
+});

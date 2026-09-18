@@ -8,6 +8,8 @@
   import { foldersApi } from "../lib/api";
   import { refreshFolders } from "../lib/stores";
 
+  let { oncollapse = () => {} }: { oncollapse?: () => void } = $props();
+
   let menuFor = $state<number | null>(null);
   let menuPos = $state<{ x: number; y: number }>({ x: 0, y: 0 });
   let renameFor = $state<number | null>(null);
@@ -191,26 +193,29 @@
   }
 
   function startNew(parent: number | null) {
+    menuFor = null;
     newFolderFor = { parent };
-    newFolderName = "";
+    newFolderName = "新建文件夹";
+    if (parent !== null) { const next = new Set(collapsed); next.delete(parent); collapsed = next; }
   }
 
   async function submitNewFolder() {
+    if (!newFolderFor || saving) return;
     const name = newFolderName.trim();
-    if (!name) {
+    if (!name) { newFolderFor = null; return; }
+    saving = true;
+    try {
+      const result = await foldersApi.create(name, newFolderFor.parent);
       newFolderFor = null;
-      return;
-    }
-    await foldersApi.create(name, newFolderFor?.parent ?? null);
-    newFolderFor = null;
-    newFolderName = "";
-    await refreshFolders();
+      newFolderName = "";
+      await refreshFolders();
+      view.set("all"); folderId.set(result.id);
+    } catch (error) {
+      pushToast(`创建失败：${error instanceof Error ? error.message : error}`, { kind: "error" });
+    } finally { saving = false; }
   }
 
-  function closeAll() {
-    menuFor = null;
-    newFolderFor = null;
-  }
+  function closeAll() { menuFor = null; }
 
   // 把 folder 树按 is_system 拆成两份：user / system。
   // 注意：后端 folder_tree() 已经按 parent_id 嵌套好了；这里只是按根节点过滤。
@@ -220,19 +225,12 @@
 
 <svelte:window onclick={closeAll} onpointermove={pointerMove} onpointerup={releaseFolder}
   onpointercancel={cancelDrag} onblur={cancelDrag}
-  onkeydown={(e) => { if (e.key === 'Escape') { renameFor = null; cancelDrag(); closeAll(); } }} />
+  onkeydown={(e) => { if (e.key === 'Escape') { renameFor = null; newFolderFor = null; cancelDrag(); closeAll(); } }} />
 
 <div class="px-[14px] pt-[14px] pb-[8px] flex items-center justify-between">
   <h3 class="text-[11px] uppercase text-muted tracking-wider">文件夹</h3>
-  <button
-    class="bg-transparent border border-border text-muted w-6 h-6 rounded-[5px] hover:border-accent hover:text-zinc-200 flex items-center justify-center"
-    onclick={(e) => {
-      e.stopPropagation();
-      startNew(null);
-    }}
-    title="在根目录新建文件夹"
-  >
-    <Icon name="plus" size={12} />
+  <button class="collapse-sidebar" onclick={oncollapse} title="收起左侧栏" aria-label="收起左侧栏">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16m7-11-3 3 3 3"/></svg>
   </button>
 </div>
 <div class="folder-scroll flex-1 overflow-y-auto px-2 pb-3">
@@ -297,7 +295,8 @@
 
   <p class="folder-hint">单击展开 · 双击改名 · 长按拖动排序</p>
 
-  {#if userFolders.length === 0}
+  {#if newFolderFor?.parent === null}{@render newFolderInput(0)}{/if}
+  {#if userFolders.length === 0 && !newFolderFor}
     <div class="text-[12px] text-muted px-3 py-2">还没有文件夹</div>
   {/if}
 
@@ -305,46 +304,6 @@
     {@render userFolderItem(f, 0)}
   {/each}
 </div>
-
-{#if newFolderFor !== null}
-  <div
-    class="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-    role="presentation"
-    onclick={closeAll}
-  >
-    <div
-      class="bg-surface-2 border border-border rounded-[10px] p-5 w-[360px]"
-      onclick={(e) => e.stopPropagation()}
-    >
-      <h3 class="text-sm font-medium mb-3">新建文件夹</h3>
-      <input
-        type="text"
-        bind:value={newFolderName}
-        class="w-full bg-bg border border-border rounded px-2 py-1 text-[13px] outline-none focus:border-accent"
-        placeholder="名称"
-        onkeydown={(e) => {
-          if (e.key === 'Enter') submitNewFolder();
-          if (e.key === 'Escape') closeAll();
-        }}
-        autofocus
-      />
-      <div class="flex justify-end gap-2 mt-3">
-        <button
-          class="text-[12px] px-3 py-1 rounded border border-border hover:border-accent"
-          onclick={closeAll}
-        >
-          取消
-        </button>
-        <button
-          class="text-[12px] px-3 py-1 rounded bg-accent text-bg font-medium"
-          onclick={submitNewFolder}
-        >
-          创建
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
 
 {#if menuFor !== null}
   {@const menuNode = findNode($folders, menuFor)}
@@ -463,11 +422,25 @@
   </div>
   {#if !collapsed.has(folder.id)}
     <div class="folder-children">
+    {#if newFolderFor?.parent === folder.id}{@render newFolderInput(depth + 1)}{/if}
     {#each folder.children as child (child.id)}
       {@render folderItem(child, depth + 1)}
     {/each}
     </div>
   {/if}
+{/snippet}
+
+{#snippet newFolderInput(depth: number)}
+  <div class="folder-item" style="margin-left: {depth * 14}px" onclick={(e) => e.stopPropagation()} role="presentation">
+    <span class="folder-caret"></span><Icon name="folder" size={15} />
+    <input class="folder-name-input" aria-label="新建文件夹名称" bind:value={newFolderName}
+      maxlength={64} readonly={saving} use:focusRename onblur={submitNewFolder}
+      onkeydown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); void submitNewFolder(); }
+        if (e.key === 'Escape') { e.preventDefault(); newFolderFor = null; }
+      }} />
+  </div>
 {/snippet}
 
 {#if dragging}
@@ -570,5 +543,7 @@
   :global(.folder-item.drop-before) { box-shadow: 0 -2px #f24e4e; }
   :global(.folder-item.drop-after) { box-shadow: 0 2px #f24e4e; }
   .drag-hint { position: fixed; bottom: 24px; left: 20px; z-index: 80; pointer-events: none; padding: 10px 14px; border-radius: 8px; background: #333338; color: #eee; font-size: 12px; box-shadow: 0 6px 24px #0005; }
+  .collapse-sidebar { border: 0; background: transparent; color: #888; padding: 4px; cursor: pointer; outline: none; box-shadow: none; }
+  .collapse-sidebar:hover, .collapse-sidebar:focus-visible { color: #eee; background: transparent; border: 0; outline: none; box-shadow: none; }
   .folder-name-input { flex: 1; min-width: 0; width: 0; padding: 1px 4px; border: 1px solid #777; border-radius: 3px; background: #151518; color: #eee; font: inherit; outline: none; user-select: text; }
 </style>

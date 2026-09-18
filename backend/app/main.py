@@ -106,9 +106,24 @@ async def lifespan(app: FastAPI):
     indexer.on_event = _on_event
     await indexer.start_watching(asyncio.get_running_loop())
     log.info("watching dirs: %s", cfg.watch_dirs)
-    yield
-    # 关闭
-    indexer.shutdown()
+    async def reconcile_loop():
+        while True:
+            try:
+                await asyncio.to_thread(indexer.reconcile_missing)
+            except Exception:
+                log.exception("reconcile missing images failed")
+            await asyncio.sleep(2)
+
+    await asyncio.to_thread(indexer.reconcile_missing)
+    reconcile_task = asyncio.create_task(reconcile_loop())
+    try:
+        yield
+    finally:
+        reconcile_task.cancel()
+        from contextlib import suppress
+        with suppress(asyncio.CancelledError):
+            await reconcile_task
+        indexer.shutdown()
 
 
 from .version import VERSION

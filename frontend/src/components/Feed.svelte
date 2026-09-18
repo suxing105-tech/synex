@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { subscribeFileDrop } from "../lib/native-drop";
   import GallerySearch from "./GallerySearch.svelte";
   import { copyOriginalImage } from "../lib/image-clipboard";
   import { matchesAction, shortcutBlocked } from "../lib/shortcut-settings";
   import { backendUrl } from "../lib/backend-url";
   import {
-    feedItems, feedTotal, feedLoading, refreshFeed, refreshStats,
+    removeImageFromFeed, feedItems, feedTotal, feedLoading, refreshFeed, refreshStats,
     targetColumns, activeFolderName, newIds,
     multiSelectedIds, folders, refreshFolders,
     selectedId as selectedIdStore,
@@ -138,6 +140,7 @@
   }
 
   async function importFiles(files: File[]) {
+    if (importing) return;
     importing = true;
     importingProgress = { done: 0, total: files.length };
     notify(`导入中… 0/${files.length}`);
@@ -149,10 +152,10 @@
       if (saved > 0 && skipped.length === 0) {
         // 兜底刷新：后端 import 已经入库并广播 image_indexed，
         // 但 WS 偶发丢事件时也能立刻让缩略图出现（不依赖 WS）。
-        await Promise.all([refreshFeed(), refreshStats()]);
+        await Promise.all([refreshFeed(), refreshStats(), refreshFolders()]);
         notify(`已导入 ${saved} 张到 ${folderTag}`);
       } else if (saved > 0 && skipped.length > 0) {
-        await Promise.all([refreshFeed(), refreshStats()]);
+        await Promise.all([refreshFeed(), refreshStats(), refreshFolders()]);
         const reasons = new Map<string, number>();
         for (const s of skipped) reasons.set(s.reason, (reasons.get(s.reason) ?? 0) + 1);
         const reasonText = Array.from(reasons.entries())
@@ -170,6 +173,44 @@
       importing = false;
       importingProgress = { done: 0, total: 0 };
     }
+  }
+
+  onMount(() => subscribeFileDrop(
+    () => scrollerEl,
+    (count) => { dragCounter = count ? 1 : 0; dragFileCount = count; },
+    async (paths) => {
+      if (importing) return;
+      const targetId = $folderId;
+      const label = dropTargetLabel;
+      importing = true;
+      importingProgress = { done: 0, total: paths.length };
+      try {
+        let done = 0;
+        let failed = 0;
+        // Each completed file appears immediately, without waiting for the batch.
+        for (const path of paths) {
+          const result = await imagesApi.moveFiles([path], targetId);
+          done += result.saved.length;
+          failed += result.skipped.length;
+          importingProgress = { done: done + failed, total: paths.length };
+          await refreshFeed();
+        }
+        await Promise.all([refreshStats(), refreshFolders()]);
+        notify(`已移动 ${done} 张到「${label}」${failed ? `，${failed} 张未能移动，原文件已保留` : ''}`);
+      } catch (error) { notify(`移动失败：${error instanceof Error ? error.message : error}`); }
+      finally { importing = false; dragCounter = 0; dragFileCount = 0; }
+    },
+  ));
+
+  async function checkMissing(id: number, image: HTMLImageElement) {
+    image.style.visibility = 'hidden';
+    try {
+      const result = await imagesApi.presence(id);
+      if (!result.exists) {
+        removeImageFromFeed(id);
+        await Promise.all([refreshStats(), refreshFolders()]);
+      }
+    } catch { /* Reconciliation retries after a temporary connection failure. */ }
   }
 
   function reasonTextOf(reason: string): string {
@@ -283,7 +324,7 @@
     try {
       await imagesApi.rename(it.id, trimmed);
       notify("已重命名");
-      await Promise.all([refreshFeed(), refreshStats()]);
+      await Promise.all([refreshFeed(), refreshStats(), refreshFolders()]);
     } catch (e) {
       notify(`重命名失败: ${(e as Error).message}`);
     }
@@ -534,7 +575,7 @@
   role="region"
   aria-label="图片流；可拖拽文件到此处导入"
 >
-  {#if dragHover || importing}
+  {#if dragHover}
     <div
       class="absolute inset-2 rounded-lg border-2 border-dashed border-accent bg-accent/10 backdrop-blur-sm flex items-center justify-center pointer-events-none z-20"
       role="presentation"
@@ -548,7 +589,7 @@
           </div>
         {:else}
           <div class="text-3xl mb-2">📥</div>
-          <div class="text-[15px] font-medium">释放以导入到{dropTargetLabel}</div>
+          <div class="text-[15px] font-medium">释放以保存到{dropTargetLabel}</div>
           <div class="text-[12px] text-muted mt-1">
             {#if dragFileCount > 0}
               <span class="inline-block px-2 py-0.5 rounded bg-accent/20 text-accent font-mono">
@@ -562,14 +603,11 @@
     </div>
   {/if}
 
-  {#if $feedLoading}
+  {#if importing}<div class="import-progress" role="status">正在保存 {importingProgress.done}/{importingProgress.total}</div>{/if}
+  {#if $feedLoading && $feedItems.length === 0}
     <div class="text-center text-muted py-12">加载中…</div>
   {:else if $feedItems.length === 0}
-    <div class="text-center text-muted py-16">
-      <div class="text-4xl mb-2 opacity-60">📂</div>
-      <div>此视图下没有图片</div>
-      <div class="text-[11px] mt-1">从左侧选择其他文件夹，或导入目录</div>
-    </div>
+    <div class="empty-feed" aria-label="空文件夹"></div>
   {:else}
     <!--
       贪心 masonry：
@@ -607,6 +645,7 @@
                   alt={it.filename}
                   loading="lazy"
                   decoding="async"
+                  onerror={(e) => checkMissing(it.id, e.currentTarget as HTMLImageElement)}
                   class="thumb-img w-full h-full object-cover"
                 />
                 <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] truncate">
@@ -657,6 +696,7 @@
 {/if}
 
 <style>
+  .import-progress { position: sticky; top: 0; z-index: 25; width: fit-content; margin: 0 auto 8px; padding: 6px 12px; background: #292929; border-radius: 16px; font-size: 12px; color: #ddd; }
   .gallery-toolbar { grid-template-columns: minmax(0, 1fr) minmax(120px, 2fr) minmax(0, 1fr); }
   @media (max-width: 760px) { .gallery-toolbar { grid-template-columns: minmax(0, 1fr); } }
   .masonry-scroller {

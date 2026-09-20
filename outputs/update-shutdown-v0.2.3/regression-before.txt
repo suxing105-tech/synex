@@ -1,0 +1,88 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+__________ test_idle_gallery_socket_does_not_block_prepared_shutdown __________
+
+tmp_path = WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-189/test_idle_gallery_socket_does_0')
+
+    def test_idle_gallery_socket_does_not_block_prepared_shutdown(tmp_path):
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            port = listener.getsockname()[1]
+        server = Path(__file__).resolve().parents[1] / 'run_server.py'
+        env = {**os.environ, 'SUXING_DATA_DIR': str(tmp_path / 'data'), 'SUXING_PORT': str(port),
+               'SUXING_CONTROL_TOKEN': 'isolated-test-control', 'SUXING_PARENT_PID': str(os.getpid())}
+        with (tmp_path / 'server.log').open('w', encoding='utf-8') as log:
+            process = subprocess.Popen([sys.executable, str(server)], env=env, stdout=log, stderr=log)
+            async def exercise():
+                async with httpx.AsyncClient(base_url=f'http://127.0.0.1:{port}', trust_env=False) as client:
+                    for _ in range(100):
+                        try:
+                            if (await client.get('/api/health')).status_code == 200:
+                                break
+                        except httpx.TransportError:
+                            pass
+                        await asyncio.sleep(.1)
+                    else:
+                        raise AssertionError('Test server did not start')
+                    async with websockets.connect(f'ws://127.0.0.1:{port}/ws/events'):
+                        headers = {'x-suxing-control': 'isolated-test-control'}
+                        prepared = await client.post('/api/desktop/prepare-update', headers=headers, timeout=15)
+                        assert prepared.status_code == 200
+                        assert (Path(prepared.json()['backup']) / 'db.sqlite').is_file()
+                        assert (await client.post('/api/desktop/shutdown', headers=headers)).status_code == 200
+                        code = await asyncio.to_thread(process.wait, 8)
+                        assert code == 0
+            try:
+>               asyncio.run(exercise())
+
+backend\tests\test_update_shutdown.py:42: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Python314\Lib\asyncio\runners.py:205: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+C:\Python314\Lib\asyncio\runners.py:128: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Python314\Lib\asyncio\base_events.py:719: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+backend\tests\test_update_shutdown.py:39: in exercise
+    code = await asyncio.to_thread(process.wait, 8)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Python314\Lib\asyncio\threads.py:26: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Python314\Lib\concurrent\futures\thread.py:86: in run
+    result = ctx.run(self.task)
+             ^^^^^^^^^^^^^^^^^^
+C:\Python314\Lib\concurrent\futures\thread.py:73: in run
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+C:\Python314\Lib\subprocess.py:1279: in wait
+    return self._wait(timeout=timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <Popen: returncode: 1 args: ['C:\\Users\\Administrator\\Documents\\ChatGPT\\...>
+timeout = 8
+
+    def _wait(self, timeout):
+        """Internal implementation of wait() on Windows."""
+        if timeout is None:
+            timeout_millis = _winapi.INFINITE
+        elif timeout <= 0:
+            timeout_millis = 0
+        else:
+            timeout_millis = int(timeout * 1000)
+        if self.returncode is None:
+            # API note: Returns immediately if timeout_millis == 0.
+            result = _winapi.WaitForSingleObject(self._handle,
+                                                 timeout_millis)
+            if result == _winapi.WAIT_TIMEOUT:
+>               raise TimeoutExpired(self.args, timeout)
+E               subprocess.TimeoutExpired: Command '['C:\\Users\\Administrator\\Documents\\ChatGPT\\����ͼ��\\backend\\.venv\\Scripts\\python.exe', 'C:\\Users\\Administrator\\Documents\\ChatGPT\\����ͼ��\\backend\\run_server.py']' timed out after 8 seconds
+
+C:\Python314\Lib\subprocess.py:1608: TimeoutExpired
+=========================== short test summary info ===========================
+FAILED backend\tests\test_update_shutdown.py::test_idle_gallery_socket_does_not_block_prepared_shutdown
+1 failed in 8.73s

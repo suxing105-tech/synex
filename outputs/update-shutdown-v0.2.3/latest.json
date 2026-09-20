@@ -1,0 +1,11 @@
+{
+  "version": "0.2.3",
+  "notes": "# 苏醒图库 0.2.3\n\n- 修复安装更新前，后台被空闲 WebSocket 连接阻塞而无法退出的问题。\n- 客户端断开时立即释放事件订阅，并为后台正常退出设置超时保障。\n- 增加保持图库实时连接打开时的更新准备、数据库备份、后台退出完整回归测试，并验证打包后的后台。\n\n0.2.1 / 0.2.2 若已遇到更新安装失败，请关闭图库，然后运行本版本安装包覆盖升级，无需卸载。旧版本的退出缺陷发生在新版安装之前，仅重新下载无法修复旧后台。\n",
+  "pub_date": "2026-09-20T01:13:19.479313+00:00",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUUWorKy9HbWRFSlZGM2dsRVZHNUdONk8xMHlvZHp6ejhyNUFnT2xUaWd5MUhDblJ2Z1Z3ZzV0OVg4MUtNT2ZRMzVzTkk3eWxzcldMSGxjTGNDam8wV09OMzl4cTNoYkEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5ODY2NzcxCWZpbGU6c3V4aW5nLWdhbGxlcnlfMC4yLjNfeDY0LXNldHVwLmV4ZQpkUXpCYXZWSnhETUFFM0VUZnJydXlXSXJJSmoyOEwvcjBSRERpclN3SlBMY0JFdWpUZmpYZHJLTnBjdmtkMFBsTE95ZFo1MXE1dmFSMFp2UjRuSGxEUT09Cg==",
+      "url": "https://github.com/suxing105-tech/synex/releases/download/v0.2.3/suxing-gallery_0.2.3_x64-setup.exe"
+    }
+  }
+}

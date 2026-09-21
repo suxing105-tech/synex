@@ -256,10 +256,10 @@
   {@const d = $selectedDetail}
   <div class="h-full flex flex-col overflow-hidden">
     <!-- ============== Header ============== -->
-    <header class="px-4 py-3 border-b border-border bg-surface-2 flex items-start gap-3">
+    <header class="px-4 py-3 border-b border-border bg-surface-2 flex items-start gap-3 transition-colors">
       <button
         type="button"
-        class="shrink-0 w-12 h-12 rounded-md overflow-hidden bg-surface-3 border border-border hover:bg-bg focus:outline-none focus:border-accent"
+        class="shrink-0 w-12 h-12 rounded-md overflow-hidden bg-surface-3 border border-border hover:bg-bg focus:outline-none focus:border-accent transition-colors"
         title="查看大图"
         aria-label="查看大图"
         onclick={() => openLightbox(d)}
@@ -305,7 +305,7 @@
       <div class="shrink-0 flex items-center gap-1" data-menu-root>
         <button
           type="button"
-          class="p-1.5 rounded border border-border hover:bg-surface-3"
+          class="p-1.5 rounded border border-border hover:bg-surface-3 transition-colors"
           class:!border-danger={d.favorite}
           class:text-danger={d.favorite}
           title={d.favorite ? "取消收藏" : "加入收藏"}
@@ -317,7 +317,7 @@
         </button>
         <button
           type="button"
-          class="p-1.5 rounded border border-border hover:bg-surface-3"
+          class="p-1.5 rounded border border-border hover:bg-surface-3 transition-colors"
           title="在 ComfyUI 中打开"
           aria-label="在 ComfyUI 中打开"
           onclick={openInComfyui}
@@ -327,7 +327,7 @@
         <div class="relative">
           <button
             type="button"
-            class="p-1.5 rounded border border-border hover:bg-surface-3"
+            class="p-1.5 rounded border border-border hover:bg-surface-3 transition-colors"
             class:!border-accent={menuOpen}
             title="更多操作"
             aria-label="更多操作"

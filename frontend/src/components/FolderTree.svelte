@@ -351,6 +351,12 @@
       <button class="block w-full text-left px-3 py-1 hover:bg-surface-3"
         onclick={() => menuNode && startRename(menuNode.id, menuNode.name)}>重命名</button>
     {:else}
+      <button role="menuitem"
+        class="block w-full text-left px-3 py-1 hover:bg-surface-3"
+        onclick={() => menuFor !== null && startNew(menuFor)}
+      >
+        新建子文件夹
+      </button>
       <button
         class="block w-full text-left px-3 py-1 hover:bg-surface-3"
         onclick={() => {
@@ -371,12 +377,6 @@
         onclick={() => menuFor !== null && move(menuFor, 'down')}
       >
         下移
-      </button>
-      <button
-        class="block w-full text-left px-3 py-1 hover:bg-surface-3"
-        onclick={() => menuFor !== null && startNew(menuFor)}
-      >
-        新建子文件夹
       </button>
       <button role="menuitem" class="block w-full text-left px-3 py-2 hover:bg-surface-3 disabled:opacity-40"
         disabled={!menuNode?.path} title={menuNode?.path || '此文件夹是图库分类，没有对应的磁盘位置'}

@@ -141,14 +141,19 @@ describe('真实文件夹组件交互', () => {
     expect(screen.getByRole('textbox', { name: '新建文件夹名称' })).toBeTruthy();
   });
 
-  it('文件夹菜单中新建子文件夹位于所在位置之前', async () => {
+  it('文件夹菜单第一项是新建子文件夹，创建时保留父目录', async () => {
     const screen = render(FolderTree);
     await fireEvent.contextMenu(screen.getByRole('button', { name: '父目录' }));
     const items = Array.from(screen.getByRole('menu').querySelectorAll('button'));
     const childIndex = items.findIndex((item) => item.textContent?.trim() === '新建子文件夹');
     const locationIndex = items.findIndex((item) => item.textContent?.trim() === '所在位置');
-    expect(childIndex).toBeGreaterThanOrEqual(0);
+    expect(childIndex).toBe(0);
     expect(locationIndex).toBeGreaterThan(childIndex);
+    await fireEvent.click(items[0]);
+    const input = screen.getByRole('textbox', { name: '新建文件夹名称' });
+    await fireEvent.input(input, { target: { value: '新子目录' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(foldersApi.create).toHaveBeenCalledWith('新子目录', 1);
   });
 
   it('改名失败保留行内输入；空白名称不提交', async () => {

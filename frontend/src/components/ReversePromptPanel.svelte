@@ -68,7 +68,7 @@
   }
 </script>
 
-<section class="fill-interactions reverse-panel group rounded-md border border-border bg-surface-2 p-3 space-y-3" aria-label="AI 反推提示词">
+<section class="fill-interactions reverse-panel rounded-lg border border-border bg-surface-2 p-3 space-y-3" aria-label="AI 反推提示词">
   <div class="flex justify-between items-center"><h4 class="text-[13px] font-semibold">AI 反推提示词</h4><span class="text-[10px] text-muted">中英双语</span></div>
   {#if !$modelConfigs.length}
     <button onclick={() => window.dispatchEvent(new CustomEvent("open-model-settings"))}>配置模型</button>
@@ -77,7 +77,7 @@
       <select aria-label="反推模型" class="min-w-0 flex-1" bind:value={modelId} disabled={running}>
         {#each $modelConfigs as model}<option value={model.id}>{model.name}</option>{/each}
       </select>
-      <button disabled={running || !modelId || editing} onclick={() => { error = ""; selectedVersion = null; if (modelId) void generateReverse(imageId, modelId); }}>
+      <button class="generate-reverse" disabled={running || !modelId || editing} onclick={() => { error = ""; selectedVersion = null; if (modelId) void generateReverse(imageId, modelId); }}>
         {running ? "正在反推…" : current ? "重新反推" : "反推提示词"}
       </button>
     </div>
@@ -122,16 +122,14 @@
 </section>
 
 <style>
-  .reverse-panel {
-    transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
-  }
-  .reverse-panel:hover {
-    background-color: rgba(242, 78, 78, 0.10);
-    border-color: rgba(242, 78, 78, 0.40);
-    box-shadow: inset 3px 0 0 #f24e4e;
-  }
-  .reverse-panel:hover h4 { color: #ffb3b3; }
   button, select { font-size: 11px; padding: 5px 8px; border: 1px solid #3f3f46; border-radius: 5px; background: #202024; }
+  /* 选好模型后（按钮启用），悬停“反推提示词”按钮底色变品牌色 */
+  .reverse-panel button.generate-reverse:enabled:hover,
+  .reverse-panel button.generate-reverse:enabled:focus-visible {
+    background-color: #f24e4e;
+    color: #0e0e10;
+    border-color: #f24e4e;
+  }
   button:disabled { opacity: .5; cursor: default; }
   textarea { display: block; width: 100%; margin-top: 6px; padding: 8px; font-size: 12px; color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 5px; }
 </style>

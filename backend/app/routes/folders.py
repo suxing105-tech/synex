@@ -4,12 +4,23 @@ from __future__ import annotations
 import sqlite3
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
 
 from .. import repository
 from .. import folder_storage
 from ..models import FolderCreate, FolderUpdate, FolderReorder
 
 router = APIRouter(prefix="/api/folders", tags=["folders"])
+
+
+class DirectoryDrop(BaseModel):
+    paths: list[str] = Field(min_length=1, max_length=100)
+
+
+@router.post('/import-directories')
+def import_directories(payload: DirectoryDrop):
+    from ..folder_import import move_directories
+    return move_directories(payload.paths)
 
 
 @router.get("")

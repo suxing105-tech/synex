@@ -1,12 +1,36 @@
 <script lang="ts">
-  import { onDestroy, tick } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
+  import { subscribeFileDrop } from '../lib/native-drop';
   import { pushToast } from "../lib/toast";
   import { backendUrl } from "../lib/backend-url";
   import { folders, folderId, view, stats } from "../lib/stores";
   import Icon from "./Icon.svelte";
   import type { FolderNode } from "../lib/types";
   import { foldersApi } from "../lib/api";
-  import { refreshFolders } from "../lib/stores";
+  import { refreshFolders, refreshFeed, refreshStats } from "../lib/stores";
+
+  let sidebarRegion: HTMLDivElement;
+  let externalHover = $state(0);
+  let importingFolders = $state(false);
+  onMount(() => subscribeFileDrop(() => sidebarRegion, count => externalHover = count, async paths => {
+    if (importingFolders) return;
+    importingFolders = true;
+    try {
+      const result = await foldersApi.importDirectories(paths);
+      await refreshFolders();
+      if (result.moved.length) {
+        view.set('all'); folderId.set(result.moved[0].id);
+        await Promise.all([refreshFeed(), refreshStats()]);
+        pushToast(`已完整移动 ${result.moved.length} 个文件夹到我的文件夹`);
+      }
+      for (const failure of [...result.failed, ...result.warnings]) {
+        pushToast(`${failure.path}：${failure.reason}`, { kind: 'error' });
+      }
+    } catch (error) {
+      pushToast(`文件夹导入失败：${error instanceof Error ? error.message : error}`, { kind: 'error' });
+      await Promise.allSettled([refreshFolders(), refreshFeed(), refreshStats()]);
+    } finally { importingFolders = false; }
+  }));
 
   let { oncollapse = () => {} }: { oncollapse?: () => void } = $props();
 
@@ -254,7 +278,10 @@
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16m7-11-3 3 3 3"/></svg>
   </button>
 </div>
-<div class="folder-scroll flex-1 overflow-y-auto px-2 pb-3" role="presentation" oncontextmenu={openBlankMenu}>
+<div bind:this={sidebarRegion} class:external-hover={externalHover > 0} class="folder-scroll flex-1 overflow-y-auto px-2 pb-3" role="presentation" oncontextmenu={openBlankMenu}>
+  {#if externalHover || importingFolders}
+    <div class="external-drop-status" role="status">{importingFolders ? '正在移动文件夹及全部内容…' : '松开后完整移动到我的文件夹'}</div>
+  {/if}
   <div class="text-[10px] uppercase text-muted tracking-wider px-[10px] py-[10px] opacity-70">
     系统
   </div>
@@ -488,6 +515,8 @@
 {/if}
 
 <style>
+  .external-hover { background: #f24e4e15; }
+  .external-drop-status { position: sticky; top: 0; z-index: 2; padding: 12px 8px; background: #303034; color: #eee; font-size: 12px; border-radius: 6px; }
   :global(.folder-item.drop-inside), .root-drop { background: #f24e4e33; outline: 1px solid #f24e4e; }
   :global(.folder-item) {
     display: flex;

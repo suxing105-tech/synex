@@ -4,14 +4,16 @@ import { writable } from "svelte/store";
 import { tick } from "svelte";
 import FolderTree from "../components/FolderTree.svelte";
 import { foldersApi } from "../lib/api";
-import { folders } from "../lib/stores";
+import { folders, folderId, refreshFeed, refreshFolders } from "../lib/stores";
+import { subscribeFileDrop } from '../lib/native-drop';
 import { get } from "svelte/store";
 import { clearToasts, toasts } from "../lib/toast";
 
-vi.mock("../lib/api", () => ({ foldersApi: { create: vi.fn().mockResolvedValue({ id: 7 }), rename: vi.fn(), reorder: vi.fn(), tree: vi.fn() } }));
+vi.mock('../lib/native-drop', () => ({ subscribeFileDrop: vi.fn(() => () => {}) }));
+vi.mock("../lib/api", () => ({ foldersApi: { importDirectories: vi.fn(), create: vi.fn().mockResolvedValue({ id: 7 }), rename: vi.fn(), reorder: vi.fn(), tree: vi.fn() } }));
 vi.mock("../lib/stores", () => ({
   folders: writable([]), folderId: writable(null), view: writable("all"),
-  stats: writable({ total_images: 0, favorites: 0 }), refreshFolders: vi.fn(),
+  stats: writable({ total_images: 0, favorites: 0 }), refreshFolders: vi.fn(), refreshFeed: vi.fn(), refreshStats: vi.fn(),
 }));
 
 const node = (id: number, name: string, children: any[] = [], parent_id: number | null = null) =>
@@ -25,6 +27,20 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe('真实文件夹组件交互', () => {
+  it('侧栏原生拖入目录后刷新树和缩略图并选中导入目录', async () => {
+    const screen = render(FolderTree);
+    const [region, hover, drop] = vi.mocked(subscribeFileDrop).mock.calls[0];
+    expect(region()).toBe(screen.container.querySelector('.folder-scroll'));
+    hover(1); await tick();
+    expect(screen.getByRole('status').textContent).toContain('完整移动');
+    vi.mocked(foldersApi.importDirectories).mockResolvedValue({ moved: [{ id: 22, name: '桌面目录', path: 'D:/data/folders/桌面目录' }], failed: [], warnings: [] });
+    await drop(['C:/Desktop/桌面目录']);
+    expect(foldersApi.importDirectories).toHaveBeenCalledWith(['C:/Desktop/桌面目录']);
+    expect(refreshFolders).toHaveBeenCalled();
+    expect(refreshFeed).toHaveBeenCalled();
+    expect(get(folderId)).toBe(22);
+  });
+
   it('单击收起子项，再次单击恢复；保留子节点自身的展开状态', async () => {
     const screen = render(FolderTree);
     const row = screen.getByRole('button', { name: '父目录' });

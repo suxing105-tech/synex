@@ -27,6 +27,7 @@ a = Analysis(
         "app.models",
         "app.parser",
         "app.repository",
+        "app.providers",
         "app.thumbnails",
         "app.routes",
         "app.routes.__init__",

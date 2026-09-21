@@ -59,7 +59,6 @@ CREATE TABLE IF NOT EXISTS images (
 CREATE INDEX IF NOT EXISTS idx_images_mtime ON images(mtime DESC);
 CREATE INDEX IF NOT EXISTS idx_images_favorite ON images(favorite) WHERE favorite = 1;
 CREATE INDEX IF NOT EXISTS idx_images_seed ON images(seed);
-CREATE INDEX IF NOT EXISTS idx_images_kind ON images(kind);
 CREATE TABLE IF NOT EXISTS folders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     parent_id INTEGER REFERENCES folders(id) ON DELETE CASCADE,

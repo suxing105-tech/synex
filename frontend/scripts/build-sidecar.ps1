@@ -39,12 +39,14 @@ if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir }
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
 
 Write-Host "==> run PyInstaller from $BackendRoot" -ForegroundColor Yellow
+$env:SUXING_REPO_ROOT = $RepoRoot
 Push-Location $BackendRoot
 try {
     & "$BackendVenv\Scripts\pyinstaller.exe" --clean --noconfirm --distpath "$SpecDir\dist" --workpath "$SpecDir\build" "$SpecFile" 2>&1 | Select-Object -Last 25
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed exit=$LASTEXITCODE" }
 } finally {
     Pop-Location
+    Remove-Item Env:\SUXING_REPO_ROOT -ErrorAction SilentlyContinue
 }
 
 $BuiltExe = "$DistDir\python-backend.exe"

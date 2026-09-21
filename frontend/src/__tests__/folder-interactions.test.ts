@@ -13,7 +13,8 @@ vi.mock('../lib/native-drop', () => ({ subscribeFileDrop: vi.fn(() => () => {}) 
 vi.mock("../lib/api", () => ({ foldersApi: { importDirectories: vi.fn(), create: vi.fn().mockResolvedValue({ id: 7 }), rename: vi.fn(), reorder: vi.fn(), tree: vi.fn() } }));
 vi.mock("../lib/stores", () => ({
   folders: writable([]), folderId: writable(null), view: writable("all"),
-  stats: writable({ total_images: 0, favorites: 0 }), refreshFolders: vi.fn(), refreshFeed: vi.fn(), refreshStats: vi.fn(),
+  kind: writable("image"), query: writable(""), tag: writable(null),
+  stats: writable({ total_images: 0, total_videos: 0, favorites: 0 }), refreshFolders: vi.fn(), refreshFeed: vi.fn(), refreshStats: vi.fn(),
 }));
 
 const node = (id: number, name: string, children: any[] = [], parent_id: number | null = null) =>

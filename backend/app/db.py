@@ -33,9 +33,14 @@ CREATE TABLE IF NOT EXISTS images (
     filename TEXT NOT NULL,
     size_bytes INTEGER NOT NULL,
     mtime REAL NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'image',
     width INTEGER,
     height INTEGER,
     format TEXT,
+    duration_seconds REAL,
+    video_codec TEXT,
+    audio_codec TEXT,
+    fps REAL,
     positive_prompt TEXT NOT NULL DEFAULT '',
     negative_prompt TEXT NOT NULL DEFAULT '',
     parameters TEXT NOT NULL DEFAULT '{}',
@@ -54,6 +59,7 @@ CREATE TABLE IF NOT EXISTS images (
 CREATE INDEX IF NOT EXISTS idx_images_mtime ON images(mtime DESC);
 CREATE INDEX IF NOT EXISTS idx_images_favorite ON images(favorite) WHERE favorite = 1;
 CREATE INDEX IF NOT EXISTS idx_images_seed ON images(seed);
+CREATE INDEX IF NOT EXISTS idx_images_kind ON images(kind);
 CREATE TABLE IF NOT EXISTS folders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     parent_id INTEGER REFERENCES folders(id) ON DELETE CASCADE,
@@ -142,6 +148,7 @@ class ConnectionPool:
             from .reverse_prompts import initialize as initialize_reverse_prompts
             initialize_reverse_prompts(self._main)
             migrate_system_folders(self._main)
+            migrate_media_kind(self._main)
             self._initialized = True
             self._ready_event.set()
 
@@ -294,6 +301,25 @@ def migrate_system_folders(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_folders_is_system ON folders(is_system)"
     )
 
+
+def migrate_media_kind(conn: sqlite3.Connection) -> None:
+    """幂等迁移：为旧库的 images 表补齐 ``kind`` 及视频元数据列。
+
+    新库（SCHEMA 已含这些列）→ no-op；旧库 → ALTER TABLE 逐列补上。
+    ``kind`` 默认 'image'，保证迁移后存量图片不被误判为视频。
+    """
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(images)").fetchall()}
+    added = {
+        "kind": "TEXT NOT NULL DEFAULT 'image'",
+        "duration_seconds": "REAL",
+        "video_codec": "TEXT",
+        "audio_codec": "TEXT",
+        "fps": "REAL",
+    }
+    for name, ddl in added.items():
+        if name not in cols:
+            conn.execute(f"ALTER TABLE images ADD COLUMN {name} {ddl}")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_images_kind ON images(kind)")
 
 def get_int_meta(key: str, default: int = 0) -> int:
     row = get_pool().main().execute(

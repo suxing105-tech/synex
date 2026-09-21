@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import re
 import struct
+import subprocess
 from collections import defaultdict as _dd
 from pathlib import Path
 from typing import Any
@@ -656,7 +657,26 @@ def _extract_dimensions(path):
 # ---------- 统一入口 ----------
 
 
-SUPPORTED_EXTS = {".png", ".webp", ".jpg", ".jpeg"}
+# 图片扩展名（沿用原集合）
+IMAGE_EXTS = {".png", ".webp", ".jpg", ".jpeg"}
+# 视频扩展名：全量索引 + 生成海报；App 内可播放与否见 PLAYABLE_EXTS
+VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".wmv", ".flv"}
+# WebView（WebView2/Chromium）可原生播放的容器，可直接走 <video>；否则回退系统播放器
+PLAYABLE_EXTS = {".mp4", ".mov", ".m4v", ".webm"}
+
+# 所有需要索引/监听的媒体扩展名
+SUPPORTED_EXTS = IMAGE_EXTS | VIDEO_EXTS
+
+
+def classify(path: Path | str) -> str:
+    """按扩展名判定媒体类型：``'image'`` 或 ``'video'``。未知一律视为图片。"""
+    ext = Path(path).suffix.lower()
+    return "video" if ext in VIDEO_EXTS else "image"
+
+
+def is_playable_video(path: Path | str) -> bool:
+    """判定该视频容器是否能在 WebView 内直接播放。"""
+    return Path(path).suffix.lower() in PLAYABLE_EXTS
 
 
 def parse_metadata(path: Path) -> dict[str, Any]:
@@ -667,6 +687,7 @@ def parse_metadata(path: Path) -> dict[str, Any]:
     ext = path.suffix.lower()
     result: dict[str, Any] = {
         "filename": path.name,
+        "kind": "image",
         "width": None,
         "height": None,
         "positive_prompt": "",
@@ -775,6 +796,90 @@ def parse_metadata(path: Path) -> dict[str, Any]:
                 pass
     return result
 
+
+def parse_video_metadata(path: Path) -> dict[str, Any]:
+    """解析视频元数据（ffprobe 子进程）。返回统一结构，失败时返回空字段。
+
+    字段：
+    - ``width`` / ``height``：视频流分辨率
+    - ``duration_seconds``：时长（秒）
+    - ``video_codec`` / ``audio_codec``：视频/音频编码名
+    - ``fps``：帧率
+    - ``format``：容器名（ffprobe ``format_name``，缺失时回退扩展名大写）
+    其它图片专属字段保持空。
+
+    不会抛出异常。
+    """
+    result: dict[str, Any] = {
+        "filename": path.name,
+        "kind": "video",
+        "width": None,
+        "height": None,
+        "duration_seconds": None,
+        "video_codec": None,
+        "audio_codec": None,
+        "fps": None,
+        "format": None,
+        "positive_prompt": "",
+        "negative_prompt": "",
+        "parameters": {},
+        "workflow": "",
+        "seed": None,
+        "model": None,
+        "sampler": None,
+        "steps": None,
+        "cfg": None,
+    }
+    try:
+        probe = subprocess.run(
+            [
+                "ffprobe",
+                "-v", "error",
+                "-print_format", "json",
+                "-show_format",
+                "-show_streams",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if probe.returncode != 0 or not probe.stdout:
+            return result
+        data = json.loads(probe.stdout)
+    except Exception:
+        return result
+
+    fmt = data.get("format", {})
+    # 用扩展名派生用户友好的容器名（如 "MP4" / "MKV"），避免 ffprobe 暴露冗长的 format_name
+    result["format"] = path.suffix.lstrip(".").upper() or (
+        fmt.get("format_name") or None
+    )
+    dur = fmt.get("duration")
+    if dur:
+        try:
+            result["duration_seconds"] = round(float(dur), 3)
+        except (TypeError, ValueError):
+            pass
+
+    for s in data.get("streams", []):
+        if s.get("codec_type") == "video":
+            result["width"] = s.get("width")
+            result["height"] = s.get("height")
+            result["video_codec"] = s.get("codec_name")
+            fps_str = s.get("avg_frame_rate") or s.get("r_frame_rate")
+            if fps_str and fps_str != "0/0":
+                try:
+                    num, _, den = fps_str.partition("/")
+                    num_f = float(num)
+                    den_f = float(den)
+                    if den_f:
+                        result["fps"] = round(num_f / den_f, 3)
+                except (ValueError, ZeroDivisionError):
+                    pass
+        elif s.get("codec_type") == "audio":
+            result["audio_codec"] = s.get("codec_name")
+    return result
 
 # ---------- 辅助：EXIF UserComment ----------
 

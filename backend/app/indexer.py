@@ -34,7 +34,7 @@ from watchdog.observers import Observer
 
 from .config import Config, load_config, save_config
 from .db import fts_sync, get_pool, transaction
-from .parser import SUPPORTED_EXTS, parse_metadata
+from .parser import SUPPORTED_EXTS, parse_metadata, parse_video_metadata, classify
 from . import repository
 
 log = logging.getLogger(__name__)
@@ -214,11 +214,16 @@ class Indexer:
             stat = path.stat()
         except OSError:
             return None
+        kind = classify(path)
         try:
-            meta = parse_metadata(path)
+            if kind == "video":
+                meta = parse_video_metadata(path)
+            else:
+                meta = parse_metadata(path)
         except Exception as e:
             log.warning("parse failed: %s (%s)", path, e)
             meta = {
+                "kind": kind,
                 "positive_prompt": "",
                 "negative_prompt": "",
                 "parameters": {},
@@ -228,6 +233,13 @@ class Indexer:
                 "sampler": None,
                 "steps": None,
                 "cfg": None,
+                "width": None,
+                "height": None,
+                "duration_seconds": None,
+                "video_codec": None,
+                "audio_codec": None,
+                "fps": None,
+                "format": None,
             }
         params_json = json.dumps(meta["parameters"], ensure_ascii=False)
         # UPSERT
@@ -239,7 +251,8 @@ class Indexer:
                     c.execute(
                         "UPDATE images SET filename=?, size_bytes=?, mtime=?, positive_prompt=?, "
                         "negative_prompt=?, parameters=?, workflow=?, seed=?, model=?, sampler=?, "
-                        "steps=?, cfg=?, width=?, height=? WHERE id=?",
+                        "steps=?, cfg=?, width=?, height=?, kind=?, format=?, duration_seconds=?, "
+                        "video_codec=?, audio_codec=?, fps=? WHERE id=?",
                         (
                             path.name,
                             stat.st_size,
@@ -255,14 +268,21 @@ class Indexer:
                             meta["cfg"],
                             meta["width"],
                             meta["height"],
+                            kind,
+                            meta.get("format"),
+                            meta.get("duration_seconds"),
+                            meta.get("video_codec"),
+                            meta.get("audio_codec"),
+                            meta.get("fps"),
                             image_id,
                         ),
                     )
                 else:
                     cur = c.execute(
                         "INSERT INTO images(path, filename, size_bytes, mtime, positive_prompt, "
-                        "negative_prompt, parameters, workflow, seed, model, sampler, steps, cfg, width, height) "
-                        "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "negative_prompt, parameters, workflow, seed, model, sampler, steps, cfg, width, height, "
+                        "kind, format, duration_seconds, video_codec, audio_codec, fps) "
+                        "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         (
                             path_str,
                             path.name,
@@ -279,6 +299,12 @@ class Indexer:
                             meta["cfg"],
                             meta["width"],
                             meta["height"],
+                            kind,
+                            meta.get("format"),
+                            meta.get("duration_seconds"),
+                            meta.get("video_codec"),
+                            meta.get("audio_codec"),
+                            meta.get("fps"),
                         ),
                     )
                     image_id = cur.lastrowid

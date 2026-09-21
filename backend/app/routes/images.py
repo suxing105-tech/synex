@@ -34,6 +34,7 @@ def list_images(
     q: str | None = None,
     tag: str | None = None,
     model: str | None = None,
+    kind: str | None = None,
     limit: int = Query(default=500, ge=1, le=2000),
     offset: int = Query(default=0, ge=0),
 ):
@@ -43,6 +44,7 @@ def list_images(
         q=q,
         tag=tag,
         model=model,
+        kind=kind,
         limit=limit,
         offset=offset,
     )
@@ -321,9 +323,10 @@ def reveal_image(image_id: int):
     }
 
 
-from ..parser import SUPPORTED_EXTS
+from ..parser import SUPPORTED_EXTS, VIDEO_EXTS
 _ALLOWED_EXTS = SUPPORTED_EXTS
-_MAX_FILE_BYTES = 100 * 1024 * 1024  # 100 MB 单文件上限
+_MAX_IMAGE_BYTES = 100 * 1024 * 1024  # 100 MB 图片单文件上限
+_MAX_VIDEO_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB 视频单文件上限
 _FILENAME_BAD = re.compile(r"[\\/\x00-\x1f\x7f]+")
 _FILENAME_TRAILING_DOTS = re.compile(r"^[.]+|[.]+$")
 
@@ -368,7 +371,7 @@ def import_images(
 ):
     """把拖入的文件保存到 data/inbox/ 并立即入库；可选自动归到指定文件夹。
 
-    - 仅接收 .png / .webp（与 indexer 的 SUPPORTED_EXTS 对齐），其它进 skipped 列表。
+    - 仅接收 indexer 的 SUPPORTED_EXTS（图片 + 视频），其它进 skipped 列表。
     - 文件名冲突自动追加 _1 _2...
     - 直接调用 Indexer._process_path_sync 索引，不走 watchdog（inbox 不在 watch_dirs）。
     - folder_id 校验存在；不存在 → 400。
@@ -420,7 +423,8 @@ def import_images(
 
         try:
             content = f.file.read()
-            if len(content) > _MAX_FILE_BYTES:
+            max_bytes = _MAX_VIDEO_BYTES if ext in VIDEO_EXTS else _MAX_IMAGE_BYTES
+            if len(content) > max_bytes:
                 skipped.append(
                     ImportSkippedItem(filename=original_name, reason="too_large")
                 )

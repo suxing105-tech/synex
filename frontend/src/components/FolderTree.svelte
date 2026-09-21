@@ -3,7 +3,7 @@
   import { subscribeFileDrop } from '../lib/native-drop';
   import { pushToast } from "../lib/toast";
   import { backendUrl } from "../lib/backend-url";
-  import { folders, folderId, view, stats } from "../lib/stores";
+  import { folders, folderId, view, stats, kind, query, tag } from "../lib/stores";
   import Icon from "./Icon.svelte";
   import type { FolderNode } from "../lib/types";
   import { foldersApi } from "../lib/api";
@@ -286,16 +286,34 @@
     系统
   </div>
   <div
-    class="folder-item {$view === 'all' && $folderId === null ? 'active' : ''}"
+    class="folder-item {$view === 'all' && $folderId === null && $kind === 'image' ? 'active' : ''}"
     onclick={() => {
+      kind.set('image');
       view.set('all');
       folderId.set(null);
+      tag.set(null);
+      query.set('');
     }}
   >
     <span class="caret-spacer"></span>
     <span class="icon"><Icon name="image" size={13} /></span>
     <span class="label">全部图片</span>
     <span class="count">{$stats.total_images}</span>
+  </div>
+  <div
+    class="folder-item {$view === 'all' && $folderId === null && $kind === 'video' ? 'active' : ''}"
+    onclick={() => {
+      kind.set('video');
+      view.set('all');
+      folderId.set(null);
+      tag.set(null);
+      query.set('');
+    }}
+  >
+    <span class="caret-spacer"></span>
+    <span class="icon"><Icon name="video" size={13} /></span>
+    <span class="label">所有视频</span>
+    <span class="count">{$stats.total_videos}</span>
   </div>
   <div
     class="folder-item {$view === 'favorite' ? 'active' : ''}"

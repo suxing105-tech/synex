@@ -23,6 +23,14 @@ function makeImage(overrides: Partial<ImageSummary> = {}): ImageSummary {
     filename: "a.png",
     path: "D:/a.png",
     original_url: null,
+    kind: "image",
+    thumbnail_url: null,
+    play_url: null,
+    playable: null,
+    duration_seconds: null,
+    video_codec: null,
+    audio_codec: null,
+    fps: null,
     width: 1024,
     height: 1024,
     mtime: 0,
@@ -35,7 +43,7 @@ function makeImage(overrides: Partial<ImageSummary> = {}): ImageSummary {
     new: false,
     has_workflow: true,
     ...overrides,
-  };
+  } as ImageSummary;
 }
 
 describe("Feed 缩略图 ComfyUI 按钮可见性", () => {

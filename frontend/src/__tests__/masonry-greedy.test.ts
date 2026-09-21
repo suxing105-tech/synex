@@ -34,6 +34,14 @@ function mkItem(id: number, w: number | null, h: number | null): ImageSummary {
     filename: `img_${id}.png`,
     path: `x/${id}.png`,
     original_url: `/api/images/${id}/file?max=1024`,
+    kind: "image",
+    thumbnail_url: `/api/images/${id}/file?max=1024`,
+    play_url: null,
+    playable: null,
+    duration_seconds: null,
+    video_codec: null,
+    audio_codec: null,
+    fps: null,
     width: w,
     height: h,
     mtime: 0,
@@ -156,4 +164,3 @@ describe("Feed 滑块 → 列宽公式 calcColumnWidth", () => {
     expect(greedySplit(items, 2, w2).map(c => c.items.length)).toEqual([3, 3]);
   });
 });
-

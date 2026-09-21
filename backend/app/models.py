@@ -14,9 +14,17 @@ class ImageSummary(BaseModel):
     id: int
     filename: str
     path: str
+    kind: str = "image"  # image / video
     original_url: str | None = None  # 原图 URL（feed 拿 ?max=1024 预览，浏览器缩放）
+    thumbnail_url: str | None = None  # 视频=海报帧；图片=缩放预览
+    play_url: str | None = None  # 视频原文件 URL（播放器用），仅视频有值
+    playable: bool | None = None  # 该视频容器是否可在 WebView 内播放
     width: int | None = None
     height: int | None = None
+    duration_seconds: float | None = None
+    video_codec: str | None = None
+    audio_codec: str | None = None
+    fps: float | None = None
     mtime: float
     size_bytes: int
     favorite: bool = False

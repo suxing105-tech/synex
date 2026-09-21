@@ -1,5 +1,5 @@
 import { writable, derived } from "svelte/store";
-import type { ComfyuiStatus, FeedResponse, FolderNode, ImageDetail, ImageSummary, ScanProgress, Stats } from "./types";
+import type { ComfyuiStatus, FeedResponse, FolderNode, ImageDetail, ImageSummary, MediaKind, ScanProgress, Stats } from "./types";
 import { foldersApi, imagesApi, scanApi, statsApi } from "./api";
 import { nextSelection, type Modifier, type SelectionState } from "./selection";
 
@@ -25,6 +25,7 @@ export const selectionAnchorId = writable<number | null>(null);
 
 export const folderId = writable<number | null>(null);
 export const view = writable<"all" | "favorite" | "recent">("all");
+export const kind = writable<MediaKind>("image");
 export const query = writable<string>("");
 export const tag = writable<string | null>(null);
 
@@ -36,7 +37,7 @@ export const feedTotal = writable<number>(0);
 export const feedLoading = writable<boolean>(false);
 
 export const folders = writable<FolderNode[]>([]);
-export const stats = writable<Stats>({ total_images: 0, favorites: 0, folders: 0 });
+export const stats = writable<Stats>({ total_images: 0, total_videos: 0, favorites: 0, folders: 0 });
 
 export const scanProgress = writable<ScanProgress>({
   running: false,
@@ -163,15 +164,18 @@ export async function refreshFeed() {
   try {
     let folder: number | null | undefined;
     let v: "all" | "favorite" | "recent" | undefined;
+    let k: MediaKind | undefined;
     let q: string | undefined;
     let tg: string | null | undefined;
     folderId.subscribe((v) => (folder = v))();
     view.subscribe((vv) => (v = vv as "all" | "favorite" | "recent"))();
+    kind.subscribe((kk) => (k = kk))();
     query.subscribe((vv) => (q = vv))();
     tag.subscribe((vv) => (tg = vv))();
     const resp = await imagesApi.list({
       folder_id: folder,
       view: v === "all" ? undefined : v,
+      kind: k,
       q,
       tag: tg ?? undefined,
       limit: 1000,
@@ -195,11 +199,13 @@ let lastKey = "";
 async function feedAutoRefresh() {
   let folder: number | null | undefined;
   let v: "all" | "favorite" | "recent" | undefined;
+  let k: MediaKind | undefined;
   let q: string | undefined;
   folderId.subscribe((v) => (folder = v))();
   view.subscribe((vv) => (v = vv as "all" | "favorite" | "recent"))();
+  kind.subscribe((kk) => (k = kk))();
   query.subscribe((vv) => (q = vv))();
-  const key = String(folder ?? "") + "|" + String(v) + "|" + String(q);
+  const key = String(folder ?? "") + "|" + String(v) + "|" + String(k) + "|" + String(q);
   if (key === lastKey) return;
   lastKey = key;
   await refreshFeed();
@@ -213,6 +219,7 @@ function debouncedRefresh() {
 
 folderId.subscribe(debouncedRefresh);
 view.subscribe(debouncedRefresh);
+kind.subscribe(debouncedRefresh);
 query.subscribe(debouncedRefresh);
 tag.subscribe(debouncedRefresh);
 
@@ -235,6 +242,7 @@ selectedId.subscribe(async (id) => {
 // 视图/筛选变化 → 清空选区（旧选中的 id 可能已经不在当前 feed）
 folderId.subscribe(() => clearSelection());
 view.subscribe(() => clearSelection());
+kind.subscribe(() => clearSelection());
 query.subscribe(() => clearSelection());
 tag.subscribe(() => clearSelection());
 
@@ -267,11 +275,11 @@ feedItems.subscribe((items) => {
 
 
 export const activeFolderName = derived(
-    [folders, folderId, view],
-    ([$folders, $folderId, $view]) => {
+    [folders, folderId, view, kind],
+    ([$folders, $folderId, $view, $kind]) => {
       if ($view === "favorite") return "收藏";
       if ($view === "recent") return "最近生成";
-      if ($folderId === null) return "全部图片";
+      if ($folderId === null) return $kind === "video" ? "所有视频" : "全部图片";
       const find = (nodes: FolderNode[]): FolderNode | null => {
         for (const n of nodes) {
           if (n.id === $folderId) return n;
@@ -280,7 +288,7 @@ export const activeFolderName = derived(
         }
         return null;
       };
-      return find($folders)?.name ?? "全部图片";
+      return find($folders)?.name ?? ($kind === "video" ? "所有视频" : "全部图片");
     }
 );
 

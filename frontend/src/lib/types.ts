@@ -1,10 +1,20 @@
+export type MediaKind = "image" | "video";
+
 export interface ImageSummary {
   id: number;
   filename: string;
   path: string;
+  kind: MediaKind;
   original_url: string | null;  // 原图 URL（feed 用 ?max=1024 拿预览）
+  thumbnail_url: string | null; // 视频=海报帧；图片=缩放预览
+  play_url: string | null;      // 视频原文件 URL（播放器用），仅视频有值
+  playable: boolean | null;     // 该视频容器是否可在 WebView 内播放
   width: number | null;
   height: number | null;
+  duration_seconds: number | null;
+  video_codec: string | null;
+  audio_codec: string | null;
+  fps: number | null;
   mtime: number;
   size_bytes: number;
   favorite: boolean;
@@ -71,6 +81,7 @@ export interface ScanProgress {
 
 export interface Stats {
   total_images: number;
+  total_videos: number;
   favorites: number;
   folders: number;
 }
@@ -96,6 +107,7 @@ export interface ImportResponse {
 export type FeedQuery = {
   folder_id?: number | null;
   view?: "all" | "favorite" | "recent";
+  kind?: MediaKind;
   q?: string;
   tag?: string;
   model?: string;

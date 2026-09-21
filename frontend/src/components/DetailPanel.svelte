@@ -23,7 +23,7 @@
     folders,
     refreshFolders,
   } from "../lib/stores";
-  import { imagesApi } from "../lib/api";
+  import { imagesApi, videosApi } from "../lib/api";
   import { copyText, formatSize, formatDate, allParamsText } from "../lib/ws";
   import { pushToast } from "../lib/toast";
   import { extractLoras } from "../lib/params";
@@ -160,11 +160,51 @@
     return 0;
   }
 
-  // 缩略图 URL：优先用 ?max=256 拿预览，没有就 null（让 alt 显示占位）
+  // 缩略图 URL：视频用海报帧，图片用 ?max=256 预览；没有就 null
   function thumbUrl(d: ImageDetail): string | null {
+    if (d.kind === "video") return d.thumbnail_url ? backendUrl(d.thumbnail_url) : null;
     if (!d.original_url) return null;
     const sep = d.original_url.includes("?") ? "&" : "?";
     return backendUrl(`${d.original_url}${sep}max=256`);
+  }
+
+  function formatDuration(sec: number | null): string {
+    if (sec == null) return "";
+    const s = Math.max(0, Math.floor(sec));
+    const m = Math.floor(s / 60);
+    const rem = s % 60;
+    return `${m}:${rem.toString().padStart(2, "0")}`;
+  }
+
+  function videoInfoRows(d: ImageDetail) {
+    return [
+      { label: "分辨率", value: d.width && d.height ? `${d.width}×${d.height}` : "—" },
+      { label: "时长", value: formatDuration(d.duration_seconds) || "—" },
+      { label: "容器", value: d.format ?? "—" },
+      { label: "视频编码", value: d.video_codec ?? "—" },
+      { label: "音频编码", value: d.audio_codec ?? "—" },
+      { label: "帧率", value: d.fps != null ? `${d.fps} fps` : "—" },
+      { label: "大小", value: formatSize(d.size_bytes) },
+    ];
+  }
+
+  // 打开视频播放器弹层（App.svelte 监听）
+  function playVideo() {
+    const d = $selectedDetail;
+    if (!d || d.kind !== "video") return;
+    window.dispatchEvent(new CustomEvent("open-video-player", { detail: { id: d.id } }));
+  }
+
+  // 用系统默认播放器打开视频
+  async function openVideoInSystem() {
+    const d = $selectedDetail;
+    if (!d) return;
+    try {
+      const r = await videosApi.open(d.id);
+      notify(r.ok ? "已用系统播放器打开" : "已请求用系统播放器打开");
+    } catch (e) {
+      notify(`打开失败：${e instanceof Error ? e.message : e}`, "error");
+    }
   }
 
   function openLightbox(d: ImageDetail) {
@@ -262,7 +302,7 @@
         class="shrink-0 w-12 h-12 rounded-md overflow-hidden bg-surface-3 border border-border hover:bg-bg focus:outline-none focus:border-accent transition-colors"
         title="查看大图"
         aria-label="查看大图"
-        onclick={() => openLightbox(d)}
+        onclick={() => d.kind === "video" ? playVideo() : openLightbox(d)}
       >
         {#if thumbUrl(d)}
           <img
@@ -273,7 +313,7 @@
           />
         {:else}
           <div class="w-full h-full flex items-center justify-center text-muted">
-            <Icon name="image" size={20} />
+            <Icon name={d.kind === "video" ? "video" : "image"} size={20} />
           </div>
         {/if}
       </button>
@@ -282,10 +322,11 @@
         <div class="text-[13px] font-mono font-semibold truncate" title={d.filename}>{d.filename}</div>
         <div class="text-[11px] text-muted mt-0.5 flex gap-2 flex-wrap">
           {#if d.width && d.height}<span>{d.width}×{d.height}</span>{/if}
+          {#if d.kind === "video" && d.duration_seconds != null}<span>{formatDuration(d.duration_seconds)}</span>{/if}
           <span>{formatSize(d.size_bytes)}</span>
           <span>{formatDate(d.mtime)}</span>
         </div>
-        {#if d.seed !== null}
+        {#if d.kind !== "video" && d.seed !== null}
           <div class="text-[11px] mt-0.5 flex items-center gap-1 text-muted">
             <Icon name="hash" size={10} />
             <span class="font-mono truncate" title={String(d.seed)}>{String(d.seed)}</span>
@@ -315,15 +356,17 @@
         >
           <Icon name={d.favorite ? "heart-fill" : "heart"} size={14} />
         </button>
-        <button
-          type="button"
-          class="p-1.5 rounded border border-border hover:bg-surface-3 transition-colors"
-          title="在 ComfyUI 中打开"
-          aria-label="在 ComfyUI 中打开"
-          onclick={openInComfyui}
-        >
-          <Icon name="comfyui" size={14} />
-        </button>
+        {#if d.kind !== "video"}
+          <button
+            type="button"
+            class="p-1.5 rounded border border-border hover:bg-surface-3 transition-colors"
+            title="在 ComfyUI 中打开"
+            aria-label="在 ComfyUI 中打开"
+            onclick={openInComfyui}
+          >
+            <Icon name="comfyui" size={14} />
+          </button>
+        {/if}
         <div class="relative">
           <button
             type="button"
@@ -342,6 +385,7 @@
               class="absolute right-0 top-full mt-1 z-30 bg-surface-2 border border-border rounded-md py-1 min-w-[180px] shadow-lg"
               role="menu"
             >
+              {#if d.kind !== "video"}
               <button
                 type="button"
                 class="w-full text-left px-3 py-1.5 text-[12px] hover:bg-surface-3 flex items-center gap-2"
@@ -377,6 +421,7 @@
                 <Icon name="code" size={11} />复制全部参数
               </button>
               <div class="border-t border-border my-1"></div>
+              {/if}
               <button
                 type="button"
                 class="w-full text-left px-3 py-1.5 text-[12px] hover:bg-surface-3 flex items-center gap-2"
@@ -385,6 +430,7 @@
               >
                 <Icon name="external-link" size={11} />复制绝对路径
               </button>
+              {#if d.kind !== "video"}
               <button
                 type="button"
                 class="w-full text-left px-3 py-1.5 text-[12px] hover:bg-surface-3 flex items-center gap-2"
@@ -393,6 +439,7 @@
               >
                 <Icon name="tag" size={11} />编辑标签…
               </button>
+              {/if}
             </div>
           {/if}
         </div>
@@ -401,6 +448,46 @@
 
     <!-- ============== Body ============== -->
     <div class="flex-1 overflow-y-auto p-4 space-y-4 detail-body">
+      {#if d.kind === "video"}
+        <!-- 视频播放区：可播格式内嵌播放器，否则用系统播放器 -->
+        <section class="bg-surface-2 border border-border rounded-md overflow-hidden">
+          <div class="aspect-video bg-black flex items-center justify-center">
+            {#if d.playable && d.play_url}
+              <video src={backendUrl(d.play_url)} controls playsinline class="w-full h-full" />
+            {:else}
+              <div class="flex flex-col items-center gap-3 text-muted p-8">
+                <Icon name="video" size={44} />
+                <div class="text-[12.5px]">该格式无法在应用内直接播放</div>
+                <button
+                  type="button"
+                  class="px-3 py-1.5 rounded-lg bg-accent text-bg text-[12px] font-medium hover:opacity-90"
+                  onclick={openVideoInSystem}
+                >
+                  用系统播放器打开
+                </button>
+              </div>
+            {/if}
+          </div>
+        </section>
+
+        <!-- 视频信息卡 -->
+        <section class="bg-surface-2 border border-border rounded-md p-3">
+          <h4 class="text-[11px] uppercase text-muted mb-2 tracking-wider">视频信息</h4>
+          <dl class="space-y-1.5 text-[12px]">
+            {#each videoInfoRows(d) as row}
+              <div class="flex justify-between gap-2">
+                <dt class="text-muted shrink-0">{row.label}</dt>
+                <dd class="font-mono text-zinc-200 text-right truncate">{row.value}</dd>
+              </div>
+            {/each}
+          </dl>
+        </section>
+
+        <!-- 文件夹（视频不做标签） -->
+        <section>
+          <MetadataCard tags={[]} folderIds={d.folder_ids} folders={$folders} onSwitchFolder={() => (showFolderPicker = true)} />
+        </section>
+      {:else}
       {#key d.id}<ReversePromptPanel imageId={d.id} />{/key}
       <!-- Prompt 卡片（正向 / 反向） -->
       <PromptCard
@@ -545,6 +632,7 @@
             <pre class="prompt-box border-t border-border p-2 max-h-48 overflow-y-auto">{d.workflow}</pre>
           </details>
         </section>
+      {/if}
       {/if}
     </div>
   </div>

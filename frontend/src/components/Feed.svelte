@@ -12,10 +12,10 @@
     multiSelectedIds, folders, refreshFolders,
     selectedId as selectedIdStore,
     applySelection, clearSelection, removeIdsFromSelection,
-    comfyuiStatus,
+    comfyuiStatus, kind,
   } from "../lib/stores";
   
-  import { imagesApi, comfyuiApi } from "../lib/api";
+  import { imagesApi, comfyuiApi, videosApi } from "../lib/api";
   import Icon from "./Icon.svelte";
   import { copyText } from "../lib/ws";
   import { loadComfyWorkflow, openOrReuseComfyuiTab } from "../lib/comfyui-window";
@@ -46,6 +46,21 @@
     toast = msg;
     setTimeout(() => (toast = null), 1800);
   }
+  async function openVideo(it: ImageSummary) {
+    if (it.kind !== "video") return;
+    if (it.playable) {
+      window.dispatchEvent(new CustomEvent("open-video-player", { detail: { id: it.id } }));
+      return;
+    }
+    try {
+      const r = await videosApi.open(it.id);
+      notify(r.ok ? "已用系统播放器打开" : "已请求用系统播放器打开");
+    } catch (e) {
+      notify("打开失败：" + (e instanceof Error ? e.message : e));
+    }
+  }
+  // 计数单位：图片用「张」，视频用「个」
+  let unit = $derived($kind === "video" ? "个" : "张");
   async function openInComfyui(it: ImageSummary) {
     try {
       notify("正在打开工作流…");
@@ -76,7 +91,11 @@
     return $activeFolderName;
   });
 
-  // 从拖拽事件里挑出可接受的图片 file 列表
+  // 从拖拽事件里挑出可接受的图片/视频 file 列表
+  function isAcceptedMedia(f: File): boolean {
+    if (f.type.startsWith("image/") || f.type.startsWith("video/")) return true;
+    return /\.(png|webp|jpe?g|mp4|mov|m4v|webm|mkv|avi|wmv|flv)$/i.test(f.name);
+  }
   function pickImageFiles(dt: DataTransfer | null): File[] {
     if (!dt) return [];
     const out: File[] = [];
@@ -85,12 +104,12 @@
         const it = dt.items[i];
         if (it.kind !== "file") continue;
         const f = it.getAsFile();
-        if (f && f.type.startsWith("image/")) out.push(f);
+        if (f && isAcceptedMedia(f)) out.push(f);
       }
     } else if (dt.files) {
       for (let i = 0; i < dt.files.length; i++) {
         const f = dt.files[i];
-        if (f.type.startsWith("image/") || /\.(png|webp|jpe?g)$/i.test(f.name)) {
+        if (isAcceptedMedia(f)) {
           out.push(f);
         }
       }
@@ -129,7 +148,7 @@
     dragFileCount = 0;
     const files = pickImageFiles(e.dataTransfer);
     if (files.length === 0) {
-      notify("未检测到 PNG / WebP / JPG / JPEG 图片");
+      notify("未检测到支持的图片或视频格式");
       return;
     }
     await importFiles(files);
@@ -497,6 +516,11 @@
         e.stopImmediatePropagation();
         const idx = $feedItems.findIndex((it) => it.id === previewId);
         if (idx >= 0) {
+          const preview = $feedItems[idx];
+          if (preview?.kind === "video") {
+            openVideo(preview);
+            return;
+          }
           lightboxIndex = idx;
           lightboxOpen = true;
         }
@@ -584,10 +608,10 @@
   <div>
     <div class="text-base font-medium">{$activeFolderName}</div>
     <div class="text-xs text-muted mt-0">
-      {$feedTotal} 张
+      {$feedTotal} {unit}
       {#if selectedCount > 0}
         <span class="ml-2 inline-flex items-center gap-1 text-accent">
-          <span>已选 {selectedCount} 张</span>
+          <span>已选 {selectedCount} {unit}</span>
           <button
             type="button"
             class="px-1.5 py-0.5 text-[11px] rounded border border-border hover:border-accent"
@@ -598,7 +622,7 @@
       {/if}
     </div>
   </div>
-  {#if selectedCount === 2}
+  {#if selectedCount === 2 && $kind === 'image'}
     <button class="compare-trigger shrink-0 rounded-lg px-2 py-2 text-xs" onclick={() => { const i = $feedItems.findIndex(it => $multiSelectedIds.has(it.id)); if (i >= 0) openLightbox($feedItems[i], i); }}>对比图片</button>
   {/if}
   </div>
@@ -651,7 +675,7 @@
               </span>
             {/if}
           </div>
-          <div class="text-[11px] text-muted/80 mt-2">支持 PNG / WebP / JPG / JPEG</div>
+          <div class="text-[11px] text-muted/80 mt-2">支持 PNG / WebP / JPG / JPEG / MP4 / MOV / WebM 等</div>
         {/if}
       </div>
     </div>
@@ -691,21 +715,38 @@
                 onclick={(e) => { if (draggedOriginal) { draggedOriginal = false; return; } onThumbClick(e, it); }}
                 onpointerdown={(e) => pointerOnImage(e, it)}
                 ondragstart={(e) => e.preventDefault()}
-                ondblclick={() => openLightbox(it, $feedItems.findIndex((x) => x.id === it.id))}
+                ondblclick={() => it.kind === "video" ? openVideo(it) : openLightbox(it, $feedItems.findIndex((x) => x.id === it.id))}
                 oncontextmenu={(e) => openContextMenu(e, it)}
                 onmouseenter={() => (hoveredId = it.id)}
                 onmouseleave={() => { if (hoveredId === it.id) hoveredId = null; }}
               >
                 <img
-                  src={it.original_url ? backendUrl(it.original_url) : undefined}
+                  src={it.thumbnail_url ? backendUrl(it.thumbnail_url) : (it.original_url ? backendUrl(it.original_url) : undefined)}
                   alt={it.filename}
                   draggable="false"
                   onload={(e) => imageLoaded(it, e.currentTarget as HTMLImageElement)}
                   loading="lazy"
                   decoding="async"
-                  onerror={(e) => checkMissing(it.id, e.currentTarget as HTMLImageElement)}
+                  onerror={(e) => { if (it.kind !== "video") checkMissing(it.id, e.currentTarget as HTMLImageElement); }}
                   class="thumb-img absolute inset-0 w-full h-full object-contain"
                 />
+                {#if it.kind === "video"}
+                  <div
+                    role="button"
+                    tabindex="-1"
+                    class="video-play-btn absolute inset-0 flex items-center justify-center"
+                    title="播放视频"
+                    aria-label="播放 {it.filename}"
+                    onclick={(e) => { e.stopPropagation(); e.preventDefault(); openVideo(it); }}
+                    onpointerdown={(e) => e.stopPropagation()}
+                    onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openVideo(it); } }}
+                  >
+                    <svg width="46" height="46" viewBox="0 0 24 24" aria-hidden="true" class="drop-shadow-lg">
+                      <circle cx="12" cy="12" r="11" fill="rgba(0,0,0,0.55)" stroke="rgba(255,255,255,0.92)" stroke-width="1.4"/>
+                      <path d="M10 8.5v7l5.6-3.5z" fill="#fff"/>
+                    </svg>
+                  </div>
+                {/if}
                 <div class="image-name absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] truncate"
                   role="button" tabindex="0" aria-label="图片名称"
                   onkeydown={(e) => { if (renamingId !== it.id && (e.key === "Enter" || e.key === "F2")) { e.stopPropagation(); e.preventDefault(); void renameImage(it); } }}
@@ -784,6 +825,9 @@
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
     z-index: 2;
   }
+  .video-play-btn { cursor: pointer; z-index: 2; }
+  .video-play-btn svg { transition: transform 0.15s ease; }
+  .video-play-btn:hover svg { transform: scale(1.12); }
   .thumb { user-select: none; touch-action: none; flex: none; min-height: 0; padding: 0; }
   .thumb-img {
     transition: transform 0.35s cubic-bezier(0.2, 0.6, 0.2, 1); will-change: transform;

@@ -9,6 +9,7 @@
   import DetailPanel from "./components/DetailPanel.svelte";
   import Lightbox from "./components/Lightbox.svelte";
   import OnboardingModal from "./components/OnboardingModal.svelte";
+  import VideoPlayer from "./components/VideoPlayer.svelte";
   import SettingsModal from "./components/SettingsModal.svelte";
   import ScanProgressBar from "./components/ScanProgressBar.svelte";
   import SplashOverlay from "./components/SplashOverlay.svelte";
@@ -35,6 +36,8 @@
   let selectedIdValue = $state<number | null>(null);
   let lightboxOpen = $state(false);
   let lightboxIndex = $state(0);
+  let videoPlayerOpen = $state(false);
+  let videoStartId = $state<number | null>(null);
 
   // 同步 selectedId prop 到 store
   $effect(() => {
@@ -75,6 +78,14 @@
     tag.set(t);
   }
 
+  // Feed 点击视频播放按钮 → 打开 VideoPlayer 弹层
+  function handleOpenVideoPlayer(e: Event) {
+    const id = (e as CustomEvent<{ id: number }>).detail?.id;
+    if (id == null) return;
+    videoStartId = id;
+    videoPlayerOpen = true;
+  }
+
   // ============ 后端就绪门（composable） ============
   // M0-f 第三轮：把 sidecar 生命周期抽出到 lib/splash-gate.svelte.ts。
   // gate 拥有 backendReady / backendError / sidecar 订阅 / 30s 超时，
@@ -113,6 +124,7 @@
     document.addEventListener("visibilitychange", onVis);
     window.addEventListener("open-lightbox", handleOpenLightbox);
     window.addEventListener("open-tag-search", handleTagSearch);
+    window.addEventListener("open-video-player", handleOpenVideoPlayer);
     checkNarrow();
     window.addEventListener("resize", checkNarrow);
   });
@@ -124,6 +136,7 @@
     if (comfyuiTimer) clearInterval(comfyuiTimer);
     window.removeEventListener("open-lightbox", handleOpenLightbox);
     window.removeEventListener("open-tag-search", handleTagSearch);
+    window.removeEventListener("open-video-player", handleOpenVideoPlayer);
     window.removeEventListener("resize", checkNarrow);
   });
 
@@ -210,6 +223,7 @@
       />
       </div>
       <Lightbox bind:open={lightboxOpen} bind:index={lightboxIndex} bind:selectedId={selectedIdValue} />
+      <VideoPlayer bind:open={videoPlayerOpen} bind:startId={videoStartId} />
     </main>
     <div
       class="splitter"

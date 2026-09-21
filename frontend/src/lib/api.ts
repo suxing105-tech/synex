@@ -121,6 +121,16 @@ export const imagesApi = {
   },
 };
 
+// ---------- 视频 ----------
+
+
+export const videosApi = {
+  /** 用系统默认播放器打开（App 内无法播放的容器）。 */
+  open(id: number): Promise<{ ok: boolean; id: number; path: string }> {
+    return http(`/api/videos/${id}/open`, { method: "POST" });
+  },
+};
+
 
 // ---------- 文件夹 ----------
 

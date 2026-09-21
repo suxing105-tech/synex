@@ -7,6 +7,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from .db import fts_sync, get_pool, transaction
+from .parser import is_playable_video
 
 
 
@@ -30,6 +31,41 @@ def original_url_for(image_id: int, file_mtime: float | None, *, max_size: int |
     key = hashlib.sha256(identity.encode()).hexdigest()[:16]
     qs.append(f"v=2-{file_mtime:.9f}-{key}")
     return f"/api/images/{image_id}/file?{"&".join(qs)}"
+
+
+def _cache_bust(identity: str) -> str:
+    import hashlib
+    return hashlib.sha256(identity.encode()).hexdigest()[:16]
+
+
+def video_thumb_url(video_id: int, identity: str = "") -> str:
+    """视频海报帧 URL（feed / 详情缩略图用）。"""
+    return f"/api/videos/{video_id}/thumb?v={_cache_bust(identity)}"
+
+
+def video_file_url(video_id: int, identity: str = "") -> str:
+    """视频原文件 URL（播放器用，后端支持 Range 分段）。"""
+    return f"/api/videos/{video_id}/file?v={_cache_bust(identity)}"
+
+
+def _media_urls(row: sqlite3.Row) -> dict:
+    """按媒体类型返回 ``original_url`` / ``thumbnail_url`` / ``play_url`` / ``playable``。"""
+    kind = row["kind"] or "image"
+    identity = f"{row['path']}|{row['size_bytes']}|{row['indexed_at']}"
+    if kind == "video":
+        return {
+            "original_url": None,
+            "thumbnail_url": video_thumb_url(row["id"], identity),
+            "play_url": video_file_url(row["id"], identity),
+            "playable": is_playable_video(Path(row["path"])),
+        }
+    ou = original_url_for(row["id"], row["mtime"], identity=identity)
+    return {
+        "original_url": ou,
+        "thumbnail_url": ou,
+        "play_url": None,
+        "playable": None,
+    }
 
 
 
@@ -342,15 +378,25 @@ def _row_to_summary(row: sqlite3.Row) -> dict:
             (row["id"],),
         ).fetchall()
     ]
+    kind = row["kind"] or "image"
+    media_urls = _media_urls(row)
     return {
         "id": row["id"],
         "filename": row["filename"],
         "path": row["path"],
-        "original_url": original_url_for(row["id"], row["mtime"], identity=f"{row['path']}|{row['size_bytes']}|{row['indexed_at']}"),
+        "kind": kind,
+        "original_url": media_urls["original_url"],
+        "thumbnail_url": media_urls["thumbnail_url"],
+        "play_url": media_urls["play_url"],
+        "playable": media_urls["playable"],
         "width": row["width"],
         "height": row["height"],
         "mtime": row["mtime"],
         "size_bytes": row["size_bytes"],
+        "duration_seconds": row["duration_seconds"],
+        "video_codec": row["video_codec"],
+        "audio_codec": row["audio_codec"],
+        "fps": row["fps"],
         "favorite": bool(row["favorite"]),
         "folder_ids": folder_ids,
         "tags": tags,
@@ -541,6 +587,7 @@ def feed(
     q: str | None = None,
     tag: str | None = None,
     model: str | None = None,
+    kind: str | None = None,
     limit: int = 500,
     offset: int = 0,
     new_ids: set[int] | None = None,
@@ -586,6 +633,10 @@ def feed(
     if model:
         where.append("images.model = ?")
         params.append(model)
+
+    if kind:
+        where.append("images.kind = ?")
+        params.append(kind)
 
     fts_ids: list[int] | None = None
     if q:
@@ -659,13 +710,19 @@ def tag_list() -> list[dict]:
 
 def stats() -> dict:
     conn = get_pool().main()
-    total = conn.execute("SELECT COUNT(*) AS c FROM images").fetchone()["c"]
+    total_images = conn.execute(
+        "SELECT COUNT(*) AS c FROM images WHERE kind = 'image'"
+    ).fetchone()["c"]
+    total_videos = conn.execute(
+        "SELECT COUNT(*) AS c FROM images WHERE kind = 'video'"
+    ).fetchone()["c"]
     favorites = conn.execute(
         "SELECT COUNT(*) AS c FROM images WHERE favorite = 1"
     ).fetchone()["c"]
     folders = conn.execute("SELECT COUNT(*) AS c FROM folders").fetchone()["c"]
     return {
-        "total_images": total,
+        "total_images": total_images,
+        "total_videos": total_videos,
         "favorites": favorites,
         "folders": folders,
     }

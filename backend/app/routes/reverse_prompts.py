@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field, SecretStr, ConfigDict
 from PIL import Image, ImageDraw
 from starlette.concurrency import run_in_threadpool
 
-from .. import db, reverse_prompts as service
+from .. import db, providers, reverse_prompts as service
 
 class SafeValidationRoute(APIRoute):
     def get_route_handler(self):
@@ -35,10 +35,11 @@ _busy_lock = threading.Lock()
 
 class ModelInput(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
-    name: str = Field(min_length=1, max_length=100)
-    base_url: str = Field(min_length=1, max_length=2048)
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    base_url: str | None = Field(default=None, min_length=1, max_length=2048)
     model: str = Field(min_length=1, max_length=200)
-    timeout: int = Field(default=120, ge=10, le=600)
+    timeout: int | None = Field(default=None, ge=10, le=600)
+    provider: str | None = Field(default=None, max_length=100)
     api_key: SecretStr | None = None
 
 
@@ -48,6 +49,7 @@ class ModelPatch(BaseModel):
     base_url: str | None = Field(default=None, min_length=1, max_length=2048)
     model: str | None = Field(default=None, min_length=1, max_length=200)
     timeout: int | None = Field(default=None, ge=10, le=600)
+    provider: str | None = Field(default=None, max_length=100)
     api_key: SecretStr | None = None
 
 
@@ -86,6 +88,11 @@ def list_configs():
     return [service.public_config(row) for row in rows]
 
 
+@router.get("/model-providers")
+def list_provider_presets():
+    return providers.list_presets()
+
+
 @router.post("/model-configs")
 def create_config(payload: ModelInput):
     return service.save_config(config_values(payload))
@@ -117,6 +124,7 @@ async def test_config(payload: ModelTest):
     output = io.BytesIO()
     image.save(output, "PNG")
     url = "data:image/png;base64," + base64.b64encode(output.getvalue()).decode()
+    values = service.resolve_draft(values)
     text = await service.request_model(values, key, url, "请准确描述图片中心的形状和颜色。")
     return {"ok": True, "message": "接口已返回图片描述，请核对是否识别为白底红色方形。", "text": text}
 

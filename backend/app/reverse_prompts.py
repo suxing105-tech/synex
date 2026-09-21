@@ -16,7 +16,7 @@ import httpx
 from fastapi import HTTPException
 from PIL import Image, ImageOps
 
-from . import db
+from . import db, providers
 
 DEFAULT_INSTRUCTION = (
     "请根据图片撰写可用于重新生成相似画面的详细提示词，涵盖主体、动作、环境、构图、"
@@ -27,7 +27,7 @@ OUTPUT_RULE = '\n仅返回 JSON 对象：{"prompt_zh":"完整中文提示词","p
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS model_configs (
  id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, base_url TEXT NOT NULL,
- model TEXT NOT NULL, timeout INTEGER NOT NULL DEFAULT 120, credential BLOB
+ model TEXT NOT NULL, timeout INTEGER NOT NULL DEFAULT 120, credential BLOB, provider TEXT
 );
 CREATE TABLE IF NOT EXISTS reverse_prompt_settings (
  id INTEGER PRIMARY KEY CHECK(id=1), default_model_id INTEGER REFERENCES model_configs(id) ON DELETE SET NULL,
@@ -48,6 +48,10 @@ _session_keys: dict[tuple[str, int], str] = {}
 
 def initialize(conn):
     conn.executescript(SCHEMA)
+    # 老库补齐 model_configs.provider 列（新库已由 SCHEMA 建好）。
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(model_configs)").fetchall()}
+    if "provider" not in cols:
+        conn.execute("ALTER TABLE model_configs ADD COLUMN provider TEXT")
     conn.execute("INSERT OR IGNORE INTO reverse_prompt_settings(id,instruction) VALUES(1,?)", (DEFAULT_INSTRUCTION,))
 
 
@@ -89,7 +93,7 @@ def get_config(config_id: int):
 
 
 def public_config(row):
-    result = {k: row[k] for k in ("id", "name", "base_url", "model", "timeout")}
+    result = {k: row[k] for k in ("id", "name", "base_url", "model", "timeout", "provider")}
     result["has_api_key"] = bool(row["credential"] or _session_keys.get(credential_scope(row["id"])))
     result["key_persistence"] = "encrypted" if sys.platform == "win32" else "session"
     return result
@@ -107,17 +111,41 @@ def save_config(values: dict, config_id: int | None = None):
     old = get_config(config_id) if config_id is not None else None
     values = dict(values)
     key = values.pop("api_key", None)
+    # provider: 预设 id / custom / None（视作手动自定义）
+    provider = values.get("provider") or None
+    if provider == providers.CUSTOM_ID:
+        provider = None
+    preset = providers.get_preset(provider) if provider else None
     merged = {**(old or {}), **values}
-    merged["base_url"] = normalize_url(merged["base_url"])
+    merged["provider"] = provider
+    if preset:
+        # 预设：用注册表 Base URL；模型下拉为常用名称（允许高级里覆盖为 endpoint id）
+        merged.setdefault("timeout", preset["default_timeout"])
+        provided_url = values.get("base_url")
+        if provided_url and provided_url.strip() and provided_url.strip() != preset["base_url"]:
+            merged["base_url"] = normalize_url(provided_url)
+        else:
+            merged["base_url"] = preset["base_url"]
+    else:
+        if not merged.get("base_url"):
+            raise HTTPException(422, "自定义服务需填写 Base URL")
+        merged["base_url"] = normalize_url(merged["base_url"])
+        merged.setdefault("timeout", 120)
+        if not merged.get("name"):
+            raise HTTPException(422, "请填写配置名称")
+    if not merged.get("model"):
+        raise HTTPException(422, "请选择或填写模型 ID")
+    if preset and not merged.get("name"):
+        merged["name"] = f"{preset['name']} · {providers.model_label(preset, merged['model'])}"
     credential = old["credential"] if old else None
     if key is not None:
         credential = crypt(key.encode()) if key and sys.platform == "win32" else None
     with db.transaction() as conn:
-        args = [merged[k] for k in ("name", "base_url", "model", "timeout")] + [credential]
+        args = [merged[k] for k in ("name", "base_url", "model", "timeout", "provider")] + [credential]
         if old:
-            conn.execute("UPDATE model_configs SET name=?,base_url=?,model=?,timeout=?,credential=? WHERE id=?", args + [config_id])
+            conn.execute("UPDATE model_configs SET name=?,base_url=?,model=?,timeout=?,provider=?,credential=? WHERE id=?", args + [config_id])
         else:
-            config_id = conn.execute("INSERT INTO model_configs(name,base_url,model,timeout,credential) VALUES(?,?,?,?,?)", args).lastrowid
+            config_id = conn.execute("INSERT INTO model_configs(name,base_url,model,timeout,provider,credential) VALUES(?,?,?,?,?,?)", args).lastrowid
             conn.execute("UPDATE reverse_prompt_settings SET default_model_id=? WHERE default_model_id IS NULL", (config_id,))
     if key is not None:
         if key and sys.platform != "win32":
@@ -153,6 +181,22 @@ def normalize_url(value: str) -> str:
         return urlunsplit((parts.scheme, parts.netloc, path, "", ""))
     except ValueError:
         raise HTTPException(422, "请输入有效的 HTTPS Base URL；HTTP 仅限本机或局域网地址，不得包含密钥或查询参数") from None
+
+
+def resolve_draft(values: dict) -> dict:
+    """为测试等尚未落库的草稿补齐预设 Base URL / 超时，返回可发请求的配置。"""
+    values = dict(values)
+    provider = values.get("provider") or None
+    if provider == providers.CUSTOM_ID:
+        provider = None
+    preset = providers.get_preset(provider) if provider else None
+    if preset:
+        values.setdefault("base_url", preset["base_url"])
+        values.setdefault("timeout", preset["default_timeout"])
+    if not values.get("base_url"):
+        raise HTTPException(422, "缺少 Base URL")
+    values["base_url"] = normalize_url(values["base_url"])
+    return values
 
 
 def settings():
@@ -210,6 +254,10 @@ def parse_text(text):
 
 
 async def request_model(config, key, data_url, instruction):
+    provider = config.get("provider") if config else None
+    fmt = providers.PRESETS[provider]["format"] if provider in providers.PRESETS else "openai"
+    if fmt != "openai":
+        raise HTTPException(422, "该服务商暂不支持，请改用自定义 OpenAI 兼容地址")
     url = normalize_url(config["base_url"]) + "/chat/completions"
     headers = {"Authorization": f"Bearer {key}"} if key else {}
     payload = {"model": config["model"], "stream": False, "messages": [

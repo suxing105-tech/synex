@@ -7,7 +7,8 @@ import { reverseApi, reverseJobs, modelConfigs, reverseSettings, generateReverse
 import { copyText } from "../lib/ws";
 vi.mock("../lib/ws", () => ({ copyText: vi.fn().mockResolvedValue(true) }));
 
-const model = { id: 1, name: "测试视觉", base_url: "https://example.com/v1", model: "vision", timeout: 120, has_api_key: true, key_persistence: "encrypted" as const };
+const model = { id: 1, name: "测试视觉", base_url: "https://example.com/v1", model: "vision", timeout: 120, provider: null, has_api_key: true, key_persistence: "encrypted" as const };
+const preset = { id: "qwen", name: "通义千问 Qwen", base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1", models: [{ id: "qwen2.5-vl-72b-instruct", label: "Qwen2.5-VL-72B", recommended: true }], default_timeout: 120, note: "" };
 const settings = { default_model_id: 1, instruction: "描述画面", default_instruction: "默认描述" };
 const record = { id: 10, image_id: 1, prompt_zh: "红色花朵", prompt_en: "red flower", raw_text: "", status: "complete" as const, source: "generated" as const, parent_id: null, model_name: "测试视觉", model: "vision", instruction: "", fingerprint: "abc", created_at: "2026-09-17T01:00:00Z" };
 
@@ -15,6 +16,7 @@ beforeEach(() => {
   reverseJobs.set({}); modelConfigs.set([model]); reverseSettings.set(settings);
   vi.spyOn(reverseApi, "models").mockResolvedValue([model]);
   vi.spyOn(reverseApi, "settings").mockResolvedValue(settings);
+  vi.spyOn(reverseApi, "providers").mockResolvedValue([preset]);
   vi.spyOn(reverseApi, "history").mockResolvedValue({ items: [], total: 0, running: false });
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -125,5 +127,25 @@ describe("reverse prompts", () => {
     await fireEvent.click(panel.getByLabelText("清除已保存密钥"));
     await fireEvent.click(panel.getByText("保存模型"));
     await waitFor(() => expect(save.mock.calls[0][0].api_key).toBe(""));
+  });
+  it("preset autofills model and saves with only an API Key", async () => {
+    const save = vi.spyOn(reverseApi, "saveModel").mockResolvedValue({ ...model, provider: "qwen", name: "通义千问 Qwen · Qwen2.5-VL-72B", base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen2.5-vl-72b-instruct", has_api_key: true });
+    const panel = render(ModelSettings);
+    await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
+    await waitFor(() => expect((panel.getByLabelText("反推模型") as HTMLSelectElement).value).toBe("qwen2.5-vl-72b-instruct"));
+    await fireEvent.input(panel.getByLabelText("API Key"), { target: { value: "sk-123" } });
+    await fireEvent.click(panel.getByText("保存模型"));
+    await waitFor(() => expect(save).toHaveBeenCalled());
+    expect(save.mock.calls[0][0]).toMatchObject({ provider: "qwen", model: "qwen2.5-vl-72b-instruct", api_key: "sk-123" });
+  });
+  it("switching to custom exposes manual fields and hides preset model dropdown", async () => {
+    const panel = render(ModelSettings);
+    await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
+    await waitFor(() => expect((panel.getByLabelText("反推模型") as HTMLSelectElement).value).toBe("qwen2.5-vl-72b-instruct"));
+    await fireEvent.change(panel.getByLabelText("服务商"), { target: { value: "custom" } });
+    expect(panel.getByLabelText("配置名称")).toBeTruthy();
+    expect(panel.getByLabelText("Base URL")).toBeTruthy();
+    expect(panel.getByLabelText("模型 ID")).toBeTruthy();
+    expect(panel.queryByLabelText("反推模型")).toBeNull();
   });
 });

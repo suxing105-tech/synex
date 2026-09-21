@@ -1,11 +1,16 @@
 import { writable } from "svelte/store";
 import { http } from "./api";
 
+export interface ProviderModel { id: string; label: string; recommended: boolean }
+export interface ProviderPreset { id: string; name: string; base_url: string; models: ProviderModel[]; default_timeout: number; note?: string }
 export interface ModelConfig {
   id: number; name: string; base_url: string; model: string; timeout: number;
-  has_api_key: boolean; key_persistence: "encrypted" | "session";
+  provider: string | null; has_api_key: boolean; key_persistence: "encrypted" | "session";
 }
-export type ModelDraft = Pick<ModelConfig, "name" | "base_url" | "model" | "timeout"> & { api_key?: string; config_id?: number };
+export type ModelDraft = {
+  name?: string; base_url?: string; model: string; timeout?: number;
+  provider?: string | null; api_key?: string; config_id?: number;
+};
 export interface ReverseSettings { default_model_id: number | null; instruction: string; default_instruction: string }
 export interface ReverseRecord {
   id: number; image_id: number; prompt_zh: string; prompt_en: string; raw_text: string;
@@ -16,6 +21,7 @@ export interface History { items: ReverseRecord[]; total: number; running: boole
 const json = (method: string, body: unknown) => ({ method, body: JSON.stringify(body) });
 export const reverseApi = {
   models: () => http<ModelConfig[]>("/api/model-configs"),
+  providers: () => http<ProviderPreset[]>("/api/model-providers"),
   saveModel: (draft: ModelDraft, id?: number) => http<ModelConfig>(`/api/model-configs${id ? `/${id}` : ""}`, json(id ? "PATCH" : "POST", draft)),
   deleteModel: (id: number) => http(`/api/model-configs/${id}`, { method: "DELETE" }),
   test: (draft: ModelDraft) => http<{ message: string; text: string }>("/api/model-configs/test", json("POST", draft)),
@@ -27,6 +33,14 @@ export const reverseApi = {
 };
 export const modelConfigs = writable<ModelConfig[]>([]);
 export const reverseSettings = writable<ReverseSettings | null>(null);
+export const providerPresets = writable<ProviderPreset[]>([]);
+export async function refreshProviderPresets() {
+  try {
+    providerPresets.set(await reverseApi.providers());
+  } catch {
+    providerPresets.set([]);
+  }
+}
 export async function refreshReverseConfig() {
   const [models, settings] = await Promise.all([reverseApi.models(), reverseApi.settings()]);
   modelConfigs.set(models); reverseSettings.set(settings);

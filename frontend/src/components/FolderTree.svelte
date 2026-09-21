@@ -11,6 +11,7 @@
   let { oncollapse = () => {} }: { oncollapse?: () => void } = $props();
 
   let menuFor = $state<number | null>(null);
+  let blankMenu = $state(false);
   let menuPos = $state<{ x: number; y: number }>({ x: 0, y: 0 });
   let renameFor = $state<number | null>(null);
   let renameValue = $state("");
@@ -133,6 +134,7 @@
     e.stopPropagation();
     clearTimeout(clickTimer);
     cancelDrag();
+    blankMenu = false;
     if (e.type !== "contextmenu" && menuFor === id) { menuFor = null; return; }
     menuFor = id;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -140,6 +142,19 @@
     const y = e.type === "contextmenu" ? e.clientY : rect.bottom;
     menuPos = { x: Math.max(8, Math.min(x, window.innerWidth - 208)),
       y: Math.max(8, Math.min(y, window.innerHeight - 260)) };
+  }
+
+  function openBlankMenu(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    clearTimeout(clickTimer);
+    cancelDrag();
+    menuFor = null;
+    blankMenu = true;
+    menuPos = {
+      x: Math.max(8, Math.min(e.clientX, window.innerWidth - 208)),
+      y: Math.max(8, Math.min(e.clientY, window.innerHeight - 120)),
+    };
   }
 
   function focusRename(input: HTMLInputElement) {
@@ -199,6 +214,7 @@
 
   function startNew(parent: number | null) {
     menuFor = null;
+    blankMenu = false;
     newFolderFor = { parent };
     newFolderName = "新建文件夹";
     if (parent !== null) { const next = new Set(collapsed); next.delete(parent); collapsed = next; }
@@ -220,7 +236,7 @@
     } finally { saving = false; }
   }
 
-  function closeAll() { menuFor = null; }
+  function closeAll() { menuFor = null; blankMenu = false; }
 
   // 把 folder 树按 is_system 拆成两份：user / system。
   // 注意：后端 folder_tree() 已经按 parent_id 嵌套好了；这里只是按根节点过滤。
@@ -238,7 +254,7 @@
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16m7-11-3 3 3 3"/></svg>
   </button>
 </div>
-<div class="folder-scroll flex-1 overflow-y-auto px-2 pb-3">
+<div class="folder-scroll flex-1 overflow-y-auto px-2 pb-3" role="presentation" oncontextmenu={openBlankMenu}>
   <div class="text-[10px] uppercase text-muted tracking-wider px-[10px] py-[10px] opacity-70">
     系统
   </div>
@@ -310,7 +326,18 @@
   {/each}
 </div>
 
-{#if menuFor !== null}
+{#if blankMenu}
+  <div
+    class="folder-menu fixed bg-surface-2 border border-border rounded-[8px] py-1 min-w-[160px] z-40 text-[13px] shadow-xl"
+    style="left: {menuPos.x}px; top: {menuPos.y}px;"
+    role="menu" tabindex="-1"
+    oncontextmenu={(e) => e.preventDefault()}
+    onclick={(e) => e.stopPropagation()}
+  >
+    <button role="menuitem" class="block w-full text-left px-3 py-2 hover:bg-surface-3"
+      onclick={() => startNew(null)}>新建文件夹</button>
+  </div>
+{:else if menuFor !== null}
   {@const menuNode = findNode($folders, menuFor)}
   {@const isSys = !!menuNode?.is_system}
   <div
@@ -320,13 +347,6 @@
     oncontextmenu={(e) => e.preventDefault()}
     onclick={(e) => e.stopPropagation()}
   >
-    <button role="menuitem" class="block w-full text-left px-3 py-2 hover:bg-surface-3 disabled:opacity-40"
-      disabled={!menuNode?.path} title={menuNode?.path || '此文件夹是图库分类，没有对应的磁盘位置'}
-      onclick={() => menuFor !== null && revealSystemFolder(menuFor)}>所在位置</button>
-    {#if !menuNode?.path}
-      <div class="px-3 pb-1 text-muted text-[11px]">图库分类，无磁盘位置</div>
-    {/if}
-    <div class="border-t border-border my-1"></div>
     {#if isSys}
       <button class="block w-full text-left px-3 py-1 hover:bg-surface-3"
         onclick={() => menuNode && startRename(menuNode.id, menuNode.name)}>重命名</button>
@@ -358,6 +378,12 @@
       >
         新建子文件夹
       </button>
+      <button role="menuitem" class="block w-full text-left px-3 py-2 hover:bg-surface-3 disabled:opacity-40"
+        disabled={!menuNode?.path} title={menuNode?.path || '此文件夹是图库分类，没有对应的磁盘位置'}
+        onclick={() => menuFor !== null && revealSystemFolder(menuFor)}>所在位置</button>
+      {#if !menuNode?.path}
+        <div class="px-3 pb-1 text-muted text-[11px]">图库分类，无磁盘位置</div>
+      {/if}
       <div class="border-t border-border my-1"></div>
       <button
         class="block w-full text-left px-3 py-1 hover:bg-danger/30 text-danger"
@@ -365,6 +391,14 @@
       >
         删除
       </button>
+    {/if}
+    {#if isSys}
+      <button role="menuitem" class="block w-full text-left px-3 py-2 hover:bg-surface-3 disabled:opacity-40"
+        disabled={!menuNode?.path} title={menuNode?.path || '此文件夹是图库分类，没有对应的磁盘位置'}
+        onclick={() => menuFor !== null && revealSystemFolder(menuFor)}>所在位置</button>
+      {#if !menuNode?.path}
+        <div class="px-3 pb-1 text-muted text-[11px]">图库分类，无磁盘位置</div>
+      {/if}
     {/if}
   </div>
 {/if}

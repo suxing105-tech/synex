@@ -131,6 +131,26 @@ describe('真实文件夹组件交互', () => {
     expect(screen.getByText('图库分类，无磁盘位置')).toBeTruthy();
   });
 
+  it('左侧栏空白处右键显示新建文件夹，并在侧栏内编辑', async () => {
+    const screen = render(FolderTree);
+    const scroll = screen.container.querySelector('.folder-scroll');
+    expect(scroll).toBeTruthy();
+    await fireEvent.contextMenu(scroll! , { clientX: 90, clientY: 180 });
+    expect(screen.getByRole('menuitem', { name: '新建文件夹' })).toBeTruthy();
+    await fireEvent.click(screen.getByRole('menuitem', { name: '新建文件夹' }));
+    expect(screen.getByRole('textbox', { name: '新建文件夹名称' })).toBeTruthy();
+  });
+
+  it('文件夹菜单中新建子文件夹位于所在位置之前', async () => {
+    const screen = render(FolderTree);
+    await fireEvent.contextMenu(screen.getByRole('button', { name: '父目录' }));
+    const items = Array.from(screen.getByRole('menu').querySelectorAll('button'));
+    const childIndex = items.findIndex((item) => item.textContent?.trim() === '新建子文件夹');
+    const locationIndex = items.findIndex((item) => item.textContent?.trim() === '所在位置');
+    expect(childIndex).toBeGreaterThanOrEqual(0);
+    expect(locationIndex).toBeGreaterThan(childIndex);
+  });
+
   it('改名失败保留行内输入；空白名称不提交', async () => {
     const screen = render(FolderTree);
     await fireEvent.doubleClick(screen.getByRole('button', { name: '父目录' }));

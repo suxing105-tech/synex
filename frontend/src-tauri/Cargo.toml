@@ -1,6 +1,6 @@
 [package]
 name = "suxing-gallery"
-version = "0.2.4"
+version = "0.2.5"
 description = "苏醒图库 — ComfyUI 本地图库管理器"
 authors = ["Suxing Gallery"]
 edition = "2021"

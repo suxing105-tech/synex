@@ -28,10 +28,10 @@ describe("详情面板视频分支", () => {
     expect(raw.indexOf("<PromptCard")).toBeGreaterThan(elseIdx);
   });
 
-  it("视频分支包含内嵌播放器 / 系统打开入口与视频信息卡", () => {
+  it("视频分支不再内嵌播放器，提供静态预览 / 系统打开入口与视频信息卡", () => {
     expect(raw).toContain("视频信息");
     expect(raw).toContain("用系统播放器打开");
-    expect(raw).toContain('d.playable && d.play_url');
+    expect(raw).not.toContain("<video");
   });
 
   it("视频信息卡展示分辨率/时长/容器/编码/帧率", () => {

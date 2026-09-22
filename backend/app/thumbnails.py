@@ -102,7 +102,7 @@ def generate_video_thumbnail(video_path: Path, video_id: int, max_size: int = 10
                 str(temp_path),
             ]
             proc = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=60,
+                cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
             )
             if proc.returncode == 0 and temp_path.exists() and temp_path.stat().st_size > 0:
                 ok = True

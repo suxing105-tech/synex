@@ -449,25 +449,31 @@
     <!-- ============== Body ============== -->
     <div class="flex-1 overflow-y-auto p-4 space-y-4 detail-body">
       {#if d.kind === "video"}
-        <!-- 视频播放区：可播格式内嵌播放器，否则用系统播放器 -->
+        <!-- 视频预览：静态海报帧，点击进入全屏播放（或系统打开） -->
         <section class="bg-surface-2 border border-border rounded-md overflow-hidden">
-          <div class="aspect-video bg-black flex items-center justify-center">
-            {#if d.playable && d.play_url}
-              <video src={backendUrl(d.play_url)} controls playsinline class="w-full h-full" />
-            {:else}
-              <div class="flex flex-col items-center gap-3 text-muted p-8">
-                <Icon name="video" size={44} />
-                <div class="text-[12.5px]">该格式无法在应用内直接播放</div>
-                <button
-                  type="button"
-                  class="px-3 py-1.5 rounded-lg bg-accent text-bg text-[12px] font-medium hover:opacity-90"
-                  onclick={openVideoInSystem}
-                >
-                  用系统播放器打开
-                </button>
-              </div>
+          <button
+            type="button"
+            class="relative aspect-video w-full bg-black flex items-center justify-center group"
+            title={d.playable ? "点击播放" : "点击用系统播放器打开"}
+            aria-label={d.playable ? "播放视频" : "用系统播放器打开视频"}
+            onclick={d.playable ? playVideo : openVideoInSystem}
+          >
+            {#if thumbUrl(d)}
+              <img
+                src={thumbUrl(d)}
+                alt={d.filename}
+                class="absolute inset-0 w-full h-full object-cover opacity-80"
+                loading="lazy"
+              />
             {/if}
-          </div>
+            <div class="relative z-10 flex flex-col items-center gap-1 text-white">
+              <svg viewBox="0 0 24 24" class="w-12 h-12 drop-shadow-lg" aria-hidden="true">
+                <circle cx="12" cy="12" r="11" fill="rgba(0,0,0,0.55)" stroke="rgba(255,255,255,0.92)" stroke-width="1.4"/>
+                <path d="M10 8.5v7l5.6-3.5z" fill="#fff"/>
+              </svg>
+              <span class="text-[11px] text-white/80">{d.playable ? "点击播放" : "点击用系统播放器打开"}</span>
+            </div>
+          </button>
         </section>
 
         <!-- 视频信息卡 -->

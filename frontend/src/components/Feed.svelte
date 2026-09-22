@@ -715,7 +715,7 @@
                 onclick={(e) => { if (draggedOriginal) { draggedOriginal = false; return; } onThumbClick(e, it); }}
                 onpointerdown={(e) => pointerOnImage(e, it)}
                 ondragstart={(e) => e.preventDefault()}
-                ondblclick={() => it.kind === "video" ? openVideo(it) : openLightbox(it, $feedItems.findIndex((x) => x.id === it.id))}
+                ondblclick={() => { if (it.kind !== "video") openLightbox(it, $feedItems.findIndex((x) => x.id === it.id)); }}
                 oncontextmenu={(e) => openContextMenu(e, it)}
                 onmouseenter={() => (hoveredId = it.id)}
                 onmouseleave={() => { if (hoveredId === it.id) hoveredId = null; }}
@@ -825,13 +825,14 @@
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
     z-index: 2;
   }
-  .video-play-btn { cursor: pointer; z-index: 2; }
+  .video-play-btn { cursor: pointer; z-index: 2; pointer-events: none; }
   .video-play-icon {
     width: 26%;
     height: auto;
     aspect-ratio: 1 / 1;
     max-width: 52px;
     min-width: 16px;
+    pointer-events: auto;
     opacity: 0.3;
     transition: transform 0.15s ease, opacity 0.15s ease;
   }

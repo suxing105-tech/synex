@@ -44,11 +44,11 @@ it('不可播放的视频点击播放按钮调用系统播放器 open', async ()
   expect(videosApi.open).toHaveBeenCalledWith(2);
 });
 
-it('视频视图双击卡片同样打开播放', async () => {
+it('视频视图双击卡片不再直接播放（仅播放按钮播放）', async () => {
   const dispatch = vi.spyOn(window, 'dispatchEvent');
   const screen = render(Feed, { selectedId: null, lightboxOpen: false, lightboxIndex: 0 });
   await fireEvent.doubleClick(screen.getByTitle('1.mp4'));
-  expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'open-video-player' }));
+  expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'open-video-player' }));
 });
 
 it('视频视图工具栏计数使用「个」而非「张」', async () => {

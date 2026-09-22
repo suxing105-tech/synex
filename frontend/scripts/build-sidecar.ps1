@@ -90,7 +90,11 @@ try {
         if (Test-Path $stderrFile) { Get-Content $stderrFile -Tail 20 }
     }
 } finally {
-    if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force }
+    # PyInstaller 单文件会派生子进程，仅 Stop-Process 只杀父进程会残留 child 占用 8765 端口。
+    # 用 taskkill /T 终止整个进程树。
+    if ($proc) {
+        cmd /c "taskkill /PID $($proc.Id) /T /F" 2>$null | Out-Null
+    }
     Remove-Item $stdoutFile, $stderrFile -ErrorAction SilentlyContinue
 }
 

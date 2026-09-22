@@ -88,6 +88,31 @@ def test_parse_video_metadata(tmp_path: Path):
     assert meta["format"] == "MP4"
     # 图片字段保持空
     assert meta["positive_prompt"] == ""
+
+
+def test_parse_video_metadata_handles_utf8_comment(tmp_path: Path):
+    """ffprobe 输出含非 GBK 字符（如中文/emoji）时，仍应按 UTF-8 解码并返回元数据。"""
+    from app.parser import parse_video_metadata
+
+    vid = tmp_path / "clip.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-f", "lavfi", "-i", "color=c=black:s=64x48:d=1",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-metadata", "comment=测试\U0001F431",
+            str(vid),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert vid.exists(), "ffmpeg 未能生成带注释的测试视频"
+    meta = parse_video_metadata(vid)
+    assert meta["width"] == 64
+    assert meta["height"] == 48
+    assert meta["duration_seconds"] is not None
+    assert meta["video_codec"] == "h264"
     assert meta["negative_prompt"] == ""
 
 
@@ -198,6 +223,23 @@ def test_video_open_endpoint_uses_system_player(client, monkeypatch):
     r = client.post(f"/api/videos/{vid_id}/open")
     assert r.status_code == 200
     assert called["path"].endswith("clip.mp4")
+
+
+def test_video_detail_lazy_fills_metadata(client):
+    """旧库视频缺少时长/分辨率/编码时，详情读取会用 ffprobe 懒加载补齐。"""
+    vid_id = client.get("/api/images", params={"kind": "video"}).json()["items"][0]["id"]
+    conn = get_pool().main()
+    conn.execute(
+        "UPDATE images SET width=NULL, height=NULL, duration_seconds=NULL, "
+        "video_codec=NULL, audio_codec=NULL, fps=NULL WHERE id=?",
+        (vid_id,),
+    )
+    conn.commit()
+    d = client.get(f"/api/images/{vid_id}").json()
+    assert d["duration_seconds"] is not None
+    assert d["width"] is not None
+    assert d["height"] is not None
+    assert d["video_codec"] == "h264"
 
 
 # ---------- 迁移 ----------

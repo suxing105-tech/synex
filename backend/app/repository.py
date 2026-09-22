@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from .db import fts_sync, get_pool, transaction
-from .parser import is_playable_video
+from .parser import is_playable_video, parse_video_metadata
 
 
 
@@ -355,11 +355,44 @@ def set_tags(image_id: int, tags: Iterable[str]) -> list[str]:
     return clean
 
 
+def _fill_video_metadata(conn, row) -> None:
+    """懒加载视频元数据：旧库导入的视频可能缺少时长/分辨率/编码，在此用 ffprobe 补齐。"""
+    path = row["path"]
+    if not isinstance(path, str) or not path.strip():
+        return
+    p = Path(path)
+    if not p.exists():
+        return
+    meta = parse_video_metadata(p)
+    if meta["duration_seconds"] is None and meta["width"] is None and meta["video_codec"] is None:
+        return  # 解析失败，不覆盖现有（可能已有的）字段
+    conn.execute(
+        "UPDATE images SET width=?, height=?, duration_seconds=?, video_codec=?, "
+        "audio_codec=?, fps=?, format=? WHERE id=?",
+        (
+            meta["width"],
+            meta["height"],
+            meta["duration_seconds"],
+            meta["video_codec"],
+            meta["audio_codec"],
+            meta["fps"],
+            meta["format"] or row["format"],
+            row["id"],
+        ),
+    )
+    conn.commit()
+
+
 def image_detail(image_id: int) -> dict | None:
     conn = get_pool().main()
     row = conn.execute("SELECT * FROM images WHERE id = ?", (image_id,)).fetchone()
     if not row:
         return None
+    if (row["kind"] or "image") == "video" and row["duration_seconds"] is None:
+        _fill_video_metadata(conn, row)
+        row = conn.execute("SELECT * FROM images WHERE id = ?", (image_id,)).fetchone()
+        if not row:
+            return None
     return _row_to_detail(row)
 
 

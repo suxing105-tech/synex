@@ -129,6 +129,24 @@ export const videosApi = {
   open(id: number): Promise<{ ok: boolean; id: number; path: string }> {
     return http(`/api/videos/${id}/open`, { method: "POST" });
   },
+  /** 把视频文件复制到系统剪贴板（可粘贴到资源管理器）。 */
+  copy(id: number): Promise<{ ok: boolean; id: number; path: string; method: string }> {
+    return http(`/api/videos/${id}/copy`, { method: "POST" });
+  },
+  /** 截取视频指定时刻作为封面。 */
+  setCover(id: number, time: number): Promise<{ ok: boolean; id: number; cover_path: string | null }> {
+    return http(`/api/videos/${id}/cover`, { method: "POST", body: JSON.stringify({ time }) });
+  },
+  /** 恢复默认封面（自动截取）。 */
+  resetCover(id: number): Promise<{ ok: boolean; id: number; cover_path: string | null; reset: boolean }> {
+    return http(`/api/videos/${id}/cover`, { method: "POST", body: JSON.stringify({ reset: true }) });
+  },
+  /** 上传自定义图片作为视频封面。 */
+  uploadCover(id: number, file: File): Promise<{ ok: boolean; id: number; cover_path: string }> {
+    const fd = new FormData();
+    fd.append("file", file, file.name);
+    return http(`/api/videos/${id}/cover/upload`, { method: "POST", body: fd });
+  },
 };
 
 

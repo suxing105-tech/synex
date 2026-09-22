@@ -6,11 +6,11 @@ import os
 import mimetypes
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 
 from ..db import get_pool
-from ..thumbnails import generate_video_thumbnail
+from ..thumbnails import generate_video_thumbnail, generate_video_cover, save_video_cover_image
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ _EXT_MIME = {
 
 def _row(video_id: int):
     row = get_pool().main().execute(
-        "SELECT id, path, filename, mtime, size_bytes FROM images WHERE id = ? AND kind = 'video'",
+        "SELECT id, path, filename, mtime, size_bytes, cover_path FROM images WHERE id = ? AND kind = 'video'",
         (video_id,),
     ).fetchone()
     if not row:
@@ -84,9 +84,13 @@ def get_video_thumb(video_id: int, request: Request, max: int | None = Query(def
     p = Path(row["path"])
     if not p.exists():
         raise HTTPException(404, "视频文件不存在")
-    thumb_path = generate_video_thumbnail(p, video_id, max_size=max)
-    if thumb_path is None:
-        raise HTTPException(500, "海报生成失败")
+    cover = row["cover_path"]
+    if cover and Path(cover).exists():
+        thumb_path = Path(cover)
+    else:
+        thumb_path = generate_video_thumbnail(p, video_id, max_size=max)
+        if thumb_path is None:
+            raise HTTPException(500, "海报生成失败")
     digest = hashlib.file_digest(thumb_path.open("rb"), "sha256").hexdigest()
     etag = f'"{digest}-max{max}"'
     if request.headers.get("if-none-match") == etag:
@@ -116,3 +120,86 @@ def open_video_system(video_id: int):
     except OSError as e:
         raise HTTPException(500, f"打开失败：{e}")
     return {"ok": True, "id": video_id, "path": str(p)}
+
+
+
+def _set_cover(video_id: int, cover_path: str) -> None:
+    get_pool().main().execute(
+        "UPDATE images SET cover_path = ? WHERE id = ?", (cover_path, video_id)
+    )
+
+
+def _clear_cover(video_id: int) -> None:
+    row = get_pool().main().execute(
+        "SELECT cover_path FROM images WHERE id = ?", (video_id,)
+    ).fetchone()
+    old = row["cover_path"] if row else None
+    if old and Path(old).exists():
+        try:
+            Path(old).unlink()
+        except OSError:
+            pass
+    get_pool().main().execute(
+        "UPDATE images SET cover_path = NULL WHERE id = ?", (video_id,)
+    )
+
+
+@router.post("/{video_id}/cover")
+def set_video_cover(video_id: int, payload: dict):
+    """设置视频封面：``{"time": 秒}`` 截取指定帧，``{"reset": true}`` 恢复默认。"""
+    row = _row(video_id)
+    p = Path(row["path"])
+    if not p.exists():
+        raise HTTPException(404, "视频文件不存在")
+    if payload.get("reset"):
+        _clear_cover(video_id)
+        return {"ok": True, "id": video_id, "cover_path": None, "reset": True}
+    try:
+        time = float(payload.get("time", 0) or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "time 参数无效")
+    cover = generate_video_cover(p, video_id, time)
+    if cover is None:
+        raise HTTPException(500, "封面生成失败")
+    _set_cover(video_id, str(cover))
+    return {"ok": True, "id": video_id, "cover_path": str(cover)}
+
+
+@router.post("/{video_id}/cover/upload")
+async def upload_video_cover(video_id: int, file: UploadFile = File(...)):
+    """上传自定义图片作为视频封面。"""
+    row = _row(video_id)
+    if not Path(row["path"]).exists():
+        raise HTTPException(404, "视频文件不存在")
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "未读取到图片内容")
+    cover = save_video_cover_image(data, video_id)
+    if cover is None:
+        raise HTTPException(500, "封面保存失败（请上传常见图片格式）")
+    _set_cover(video_id, str(cover))
+    return {"ok": True, "id": video_id, "cover_path": str(cover)}
+
+
+@router.post("/{video_id}/copy")
+def copy_video_clipboard(video_id: int):
+    """把视频文件复制到系统剪贴板（可粘贴到资源管理器等）。"""
+    import subprocess
+    row = _row(video_id)
+    p = Path(row["path"])
+    if not p.exists():
+        raise HTTPException(404, "视频文件不存在")
+    if os.name == "nt":
+        env = {**os.environ, "SUXING_COPY_PATH": str(p)}
+        cmd = ["powershell", "-NoProfile", "-Command", "Set-Clipboard -LiteralPath $env:SUXING_COPY_PATH"]
+        try:
+            proc = subprocess.run(
+                cmd, env=env, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError) as e:
+            raise HTTPException(500, f"复制失败：{e}")
+        if proc.returncode != 0:
+            raise HTTPException(500, f"复制失败：{proc.stderr.strip() or '未知错误'}")
+        return {"ok": True, "id": video_id, "path": str(p), "method": "clipboard"}
+    raise HTTPException(501, "当前平台仅支持在 Windows 上复制视频文件到剪贴板")

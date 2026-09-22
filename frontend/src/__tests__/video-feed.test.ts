@@ -8,7 +8,7 @@ import { videosApi } from '../lib/api';
 vi.mock('../lib/api', () => ({
   imagesApi: { list: vi.fn(async () => ({ items: [], total: 0 })), detail: vi.fn() },
   foldersApi: { tree: vi.fn(async () => []) }, statsApi: { get: vi.fn() }, scanApi: { progress: vi.fn() }, comfyuiApi: {},
-  videosApi: { open: vi.fn(async () => ({ ok: true, id: 1, path: 'D:/x.mp4' })) },
+  videosApi: { open: vi.fn(async () => ({ ok: true, id: 1, path: 'D:/x.mp4' })), copy: vi.fn(async () => ({ ok: true, id: 1, path: 'D:/x.mp4', method: 'clipboard' })) },
 }));
 
 const video = (id: number, playable: boolean) => ({
@@ -55,4 +55,14 @@ it('视频视图工具栏计数使用「个」而非「张」', async () => {
   feedTotal.set(3);
   const screen = render(Feed, { selectedId: null, lightboxOpen: false, lightboxIndex: 0 });
   expect(screen.getByText(/3 个/)).toBeTruthy();
+});
+
+
+it('视频右键菜单显示「复制视频」，点击调用 videosApi.copy', async () => {
+  const screen = render(Feed, { selectedId: null, lightboxOpen: false, lightboxIndex: 0 });
+  await fireEvent.contextMenu(screen.getByTitle('1.mp4'));
+  expect(screen.getByText('复制视频')).toBeTruthy();
+  expect(screen.queryByText('复制图片')).toBeNull();
+  await fireEvent.click(screen.getByText('复制视频'));
+  expect(videosApi.copy).toHaveBeenCalledWith(1);
 });

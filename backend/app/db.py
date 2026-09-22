@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS images (
     video_codec TEXT,
     audio_codec TEXT,
     fps REAL,
+    cover_path TEXT,
     positive_prompt TEXT NOT NULL DEFAULT '',
     negative_prompt TEXT NOT NULL DEFAULT '',
     parameters TEXT NOT NULL DEFAULT '{}',
@@ -314,6 +315,7 @@ def migrate_media_kind(conn: sqlite3.Connection) -> None:
         "video_codec": "TEXT",
         "audio_codec": "TEXT",
         "fps": "REAL",
+        "cover_path": "TEXT",
     }
     for name, ddl in added.items():
         if name not in cols:

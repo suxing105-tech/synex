@@ -1,4 +1,4 @@
-"""视频管理测试：分类、元数据、索引、feed 过滤、统计、视频路由。"""
+﻿"""视频管理测试：分类、元数据、索引、feed 过滤、统计、视频路由。"""
 from __future__ import annotations
 
 import subprocess
@@ -271,5 +271,65 @@ def test_migrate_media_kind_adds_columns_on_legacy_table(tmp_data_dir):
     assert "video_codec" in cols
     assert "audio_codec" in cols
     assert "fps" in cols
+    assert "cover_path" in cols
     # 幂等
     migrate_media_kind(conn)
+
+
+# ---------- 封面 / 复制 ----------
+
+
+def test_video_cover_set_by_time(client):
+    vid_id = client.get("/api/images", params={"kind": "video"}).json()["items"][0]["id"]
+    r = client.post(f"/api/videos/{vid_id}/cover", json={"time": 0.1})
+    assert r.status_code == 200
+    cover_path = r.json()["cover_path"]
+    assert cover_path
+    tr = client.get(f"/api/videos/{vid_id}/thumb")
+    assert tr.status_code == 200
+    assert tr.headers["content-type"].startswith("image/")
+    assert tr.content[:4] == b"RIFF"
+    conn = get_pool().main()
+    row = conn.execute("SELECT cover_path FROM images WHERE id=?", (vid_id,)).fetchone()
+    assert row["cover_path"] == cover_path
+    detail = client.get(f"/api/images/{vid_id}").json()
+    assert "thumb" in detail["thumbnail_url"]
+
+
+def test_video_cover_reset(client):
+    vid_id = client.get("/api/images", params={"kind": "video"}).json()["items"][0]["id"]
+    client.post(f"/api/videos/{vid_id}/cover", json={"time": 0.1})
+    r = client.post(f"/api/videos/{vid_id}/cover", json={"reset": True})
+    assert r.status_code == 200
+    assert r.json()["reset"] is True
+    conn = get_pool().main()
+    row = conn.execute("SELECT cover_path FROM images WHERE id=?", (vid_id,)).fetchone()
+    assert row["cover_path"] is None
+    tr = client.get(f"/api/videos/{vid_id}/thumb")
+    assert tr.status_code == 200
+
+
+def test_video_cover_upload(client, tmp_path):
+    vid_id = client.get("/api/images", params={"kind": "video"}).json()["items"][0]["id"]
+    png = make_png(tmp_path / "cover.png")
+    data = png.read_bytes()
+    r = client.post(
+        f"/api/videos/{vid_id}/cover/upload",
+        files={"file": ("cover.png", data, "image/png")},
+    )
+    assert r.status_code == 200
+    assert r.json()["cover_path"]
+    tr = client.get(f"/api/videos/{vid_id}/thumb")
+    assert tr.status_code == 200
+    assert tr.headers["content-type"].startswith("image/")
+
+
+def test_video_copy_endpoint(client):
+    import os
+    vid_id = client.get("/api/images", params={"kind": "video"}).json()["items"][0]["id"]
+    r = client.post(f"/api/videos/{vid_id}/copy")
+    if os.name == "nt":
+        assert r.status_code == 200
+        assert r.json()["ok"] is True
+    else:
+        assert r.status_code == 501

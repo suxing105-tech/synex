@@ -327,27 +327,35 @@
     if (items.length === 0) return [];
     if (items.length === 1) {
       const t = items[0];
+      const isVideo = t.kind === "video";
       return [
-        { label: "复制图片", onClick: () => copyImageToClipboard(t) },
+        { label: isVideo ? "复制视频" : "复制图片", onClick: () => isVideo ? copyVideoToClipboard(t) : copyImageToClipboard(t) },
         { label: "重命名", onClick: () => renameImage(t) },
         { label: t.favorite ? "取消收藏" : "收藏", onClick: () => favoriteImage(t) },
-        { label: "图片所在位置", onClick: () => revealImage(t) },
+        { label: isVideo ? "视频所在位置" : "图片所在位置", onClick: () => revealImage(t) },
         { label: "移动到…", children: moveMenu(items) },
         { kind: "sep" },
-        { label: "删除图片", danger: true, onClick: () => deleteImages(items) },
+        { label: isVideo ? "删除视频" : "删除图片", danger: true, onClick: () => deleteImages(items) },
       ];
     }
+    const isVideo = items[0].kind === "video";
+    const noun = isVideo ? "视频" : "图片";
     return [
-      { label: `复制 ${items.length} 个图片地址`, onClick: () => copyImageUrls(items) },
+      { label: `复制 ${items.length} 个${noun}地址`, onClick: () => copyImageUrls(items) },
       { label: "移动到…", children: moveMenu(items) },
       { kind: "sep" },
-      { label: `批量删除 ${items.length} 张图片`, danger: true, onClick: () => deleteImages(items) },
+      { label: `批量删除 ${items.length} 个${noun}`, danger: true, onClick: () => deleteImages(items) },
     ];
   });
 
   async function copyImageToClipboard(it: ImageSummary) {
     try { await copyOriginalImage(it.id); notify("已复制原图到剪贴板"); }
     catch (e) { notify(`复制原图失败：${(e as Error).message}`); }
+  }
+
+  async function copyVideoToClipboard(it: ImageSummary) {
+    try { await videosApi.copy(it.id); notify("已复制视频到剪贴板"); }
+    catch (e) { notify(`复制视频失败：${e instanceof Error ? e.message : e}`); }
   }
 
   let renamingId = $state<number | null>(null);
@@ -731,6 +739,7 @@
                   class="thumb-img absolute inset-0 w-full h-full object-contain"
                 />
                 {#if it.kind === "video"}
+                  <div class="video-thumb-overlay absolute inset-0" aria-hidden="true"></div>
                   <div
                     role="button"
                     tabindex="-1"
@@ -742,8 +751,7 @@
                     onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openVideo(it); } }}
                   >
                     <svg viewBox="0 0 24 24" aria-hidden="true" class="video-play-icon drop-shadow-lg">
-                      <circle cx="12" cy="12" r="11" fill="rgba(0,0,0,0.55)" stroke="rgba(255,255,255,0.92)" stroke-width="1.4"/>
-                      <path d="M10 8.5v7l5.6-3.5z" fill="#fff"/>
+                      <path d="M9 6.3 17.7 12 9 17.7 Z" fill="#fff" stroke="#fff" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
                     </svg>
                   </div>
                 {/if}
@@ -825,13 +833,14 @@
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
     z-index: 2;
   }
+  .video-thumb-overlay { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.15); z-index: 1; pointer-events: none; }
   .video-play-btn { cursor: pointer; z-index: 2; pointer-events: none; }
   .video-play-icon {
-    width: 26%;
+    width: 17%;
     height: auto;
     aspect-ratio: 1 / 1;
-    max-width: 52px;
-    min-width: 16px;
+    max-width: 35px;
+    min-width: 12px;
     pointer-events: auto;
     opacity: 0.3;
     transition: transform 0.15s ease, opacity 0.15s ease;

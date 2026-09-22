@@ -71,7 +71,7 @@
 />
 
 {#if open && current}
-  <div class="fixed inset-0 z-[80] bg-black flex items-center justify-center" role="dialog" aria-modal="true" aria-label="视频播放器">
+  <div class="fixed inset-0 z-[100] bg-black flex items-center justify-center" role="dialog" aria-modal="true" aria-label="视频播放器">
     <button
       type="button"
       class="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"

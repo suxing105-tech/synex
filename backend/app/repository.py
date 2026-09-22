@@ -51,7 +51,7 @@ def video_file_url(video_id: int, identity: str = "") -> str:
 def _media_urls(row: sqlite3.Row) -> dict:
     """按媒体类型返回 ``original_url`` / ``thumbnail_url`` / ``play_url`` / ``playable``。"""
     kind = row["kind"] or "image"
-    identity = f"{row['path']}|{row['size_bytes']}|{row['indexed_at']}"
+    identity = f"{row['path']}|{row['size_bytes']}|{row['indexed_at']}|{row['cover_path'] or ''}"
     if kind == "video":
         return {
             "original_url": None,

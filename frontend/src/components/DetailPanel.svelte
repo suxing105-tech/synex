@@ -20,10 +20,11 @@
   import { get } from "svelte/store";
   import {
     selectedDetail,
+    feedItems,
     folders,
     refreshFolders,
   } from "../lib/stores";
-  import { imagesApi, videosApi } from "../lib/api";
+  import { imagesApi } from "../lib/api";
   import { copyText, formatSize, formatDate, allParamsText } from "../lib/ws";
   import { pushToast } from "../lib/toast";
   import { extractLoras } from "../lib/params";
@@ -34,6 +35,7 @@
   import ParamsCard from "./ParamsCard.svelte";
   import MetadataCard from "./MetadataCard.svelte";
   import FolderPickerModal from "./FolderPickerModal.svelte";
+  import VideoCoverModal from "./VideoCoverModal.svelte";
 
   // ---------- 通知（全局 toast） ----------
   async function copy(text: string, label: string) {
@@ -56,6 +58,25 @@
   // ---------- 标签 ----------
   let showTagInput = $state(false);
   let tagInput = $state<string>("");
+
+  // ---------- 视频封面 ----------
+  let coverModalOpen = $state(false);
+
+  async function refreshAfterCoverChange() {
+    const id = $selectedDetail?.id;
+    if (id == null) return;
+    try {
+      const detail = await imagesApi.detail(id);
+      selectedDetail.set(detail);
+      feedItems.update((items) =>
+        items.map((it) =>
+          it.id === id ? { ...it, thumbnail_url: detail.thumbnail_url } : it,
+        ),
+      );
+    } catch {
+      // 忽略：详情面板仍可继续使用
+    }
+  }
 
   async function saveTagInput() {
     const d = $selectedDetail;
@@ -193,18 +214,6 @@
     const d = $selectedDetail;
     if (!d || d.kind !== "video") return;
     window.dispatchEvent(new CustomEvent("open-video-player", { detail: { id: d.id } }));
-  }
-
-  // 用系统默认播放器打开视频
-  async function openVideoInSystem() {
-    const d = $selectedDetail;
-    if (!d) return;
-    try {
-      const r = await videosApi.open(d.id);
-      notify(r.ok ? "已用系统播放器打开" : "已请求用系统播放器打开");
-    } catch (e) {
-      notify(`打开失败：${e instanceof Error ? e.message : e}`, "error");
-    }
   }
 
   function openLightbox(d: ImageDetail) {
@@ -449,31 +458,29 @@
     <!-- ============== Body ============== -->
     <div class="flex-1 overflow-y-auto p-4 space-y-4 detail-body">
       {#if d.kind === "video"}
-        <!-- 视频预览：静态海报帧，点击进入全屏播放（或系统打开） -->
+        <!-- 视频封面：可修改 -->
         <section class="bg-surface-2 border border-border rounded-md overflow-hidden">
-          <button
-            type="button"
-            class="relative aspect-video w-full bg-black flex items-center justify-center group"
-            title={d.playable ? "点击播放" : "点击用系统播放器打开"}
-            aria-label={d.playable ? "播放视频" : "用系统播放器打开视频"}
-            onclick={d.playable ? playVideo : openVideoInSystem}
-          >
+          <div class="relative aspect-video w-full bg-black">
             {#if thumbUrl(d)}
               <img
                 src={thumbUrl(d)}
                 alt={d.filename}
-                class="absolute inset-0 w-full h-full object-cover opacity-80"
+                class="absolute inset-0 w-full h-full object-cover"
                 loading="lazy"
               />
             {/if}
-            <div class="relative z-10 flex flex-col items-center gap-1 text-white">
-              <svg viewBox="0 0 24 24" class="w-12 h-12 drop-shadow-lg" aria-hidden="true">
-                <circle cx="12" cy="12" r="11" fill="rgba(0,0,0,0.55)" stroke="rgba(255,255,255,0.92)" stroke-width="1.4"/>
-                <path d="M10 8.5v7l5.6-3.5z" fill="#fff"/>
-              </svg>
-              <span class="text-[11px] text-white/80">{d.playable ? "点击播放" : "点击用系统播放器打开"}</span>
+            <div class="absolute inset-0 bg-black/25 flex items-center justify-center">
+              <button
+                type="button"
+                class="px-4 py-2 rounded-md bg-black/70 border border-white/20 hover:bg-accent text-white text-[12.5px] font-medium backdrop-blur-sm transition-colors"
+                title="修改视频封面"
+                aria-label="修改视频封面"
+                onclick={() => (coverModalOpen = true)}
+              >
+                修改封面
+              </button>
             </div>
-          </button>
+          </div>
         </section>
 
         <!-- 视频信息卡 -->
@@ -641,6 +648,8 @@
       {/if}
       {/if}
     </div>
+
+    <VideoCoverModal bind:open={coverModalOpen} video={d} onCoverChange={refreshAfterCoverChange} />
   </div>
 {/if}
 

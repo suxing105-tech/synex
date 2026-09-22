@@ -28,9 +28,9 @@ describe("详情面板视频分支", () => {
     expect(raw.indexOf("<PromptCard")).toBeGreaterThan(elseIdx);
   });
 
-  it("视频分支不再内嵌播放器，提供静态预览 / 系统打开入口与视频信息卡", () => {
+  it("视频分支提供视频信息卡与「修改封面」入口，不再内嵌播放器", () => {
     expect(raw).toContain("视频信息");
-    expect(raw).toContain("用系统播放器打开");
+    expect(raw).toContain("修改封面");
     expect(raw).not.toContain("<video");
   });
 

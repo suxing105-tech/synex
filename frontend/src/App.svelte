@@ -223,7 +223,6 @@
       />
       </div>
       <Lightbox bind:open={lightboxOpen} bind:index={lightboxIndex} bind:selectedId={selectedIdValue} />
-      <VideoPlayer bind:open={videoPlayerOpen} bind:startId={videoStartId} />
     </main>
     <div
       class="splitter"
@@ -253,6 +252,8 @@
   {/if}
 </div>
 
+
+<VideoPlayer bind:open={videoPlayerOpen} bind:startId={videoStartId} />
 
 <OnboardingModal bind:open={onboardingOpen} />
 <SettingsModal bind:open={settingsOpen} bind:tab={settingsTab} />

@@ -47,8 +47,13 @@ def create_folder(name: str, parent_id: int | None) -> dict:
     if path.exists():
         raise ValueError('同级文件夹已存在此名称')
     path.mkdir()
+    is_system = False
+    if parent_id is not None:
+        prow = get_pool().main().execute('SELECT is_system FROM folders WHERE id=?', (parent_id,)).fetchone()
+        if prow and prow['is_system']:
+            is_system = True
     try:
-        result = repository.folder_create(name, parent_id)
+        result = repository.folder_create(name, parent_id, is_system=is_system)
         normalized = repository._normalize_path(path.resolve())
         get_pool().main().execute('UPDATE folders SET path=? WHERE id=?', (normalized, result['id']))
         return {**result, 'path': normalized}

@@ -62,8 +62,6 @@ def update_folder(folder_id: int, payload: FolderUpdate):
 def move_folder(folder_id: int, direction: str):
     if direction not in ("up", "down"):
         raise HTTPException(400, "direction 必须为 up 或 down")
-    if repository.is_system_folder(folder_id):
-        raise HTTPException(400, "系统文件夹不可移动")
     repository.folder_move_order(folder_id, direction)
     return {"ok": True}
 
@@ -81,8 +79,26 @@ def reorder_folder(folder_id: int, payload: FolderReorder):
 
 @router.delete("/{folder_id}")
 def delete_folder(folder_id: int):
+    """删除文件夹。
+
+    - 用户文件夹：仅删除图库归属，磁盘图片保留；
+    - 来源目录（system）：目录是磁盘目录的镜像，需连同磁盘目录一并删除，否则索引器会因
+      磁盘仍存在而重建。此操作由前端二次确认后调用，属于显式的破坏性操作。
+    """
     if repository.is_system_folder(folder_id):
-        raise HTTPException(400, "系统文件夹不可删除")
+        import shutil
+        from pathlib import Path
+        conn = repository.get_pool().main()
+        row = conn.execute("SELECT path FROM folders WHERE id = ?", (folder_id,)).fetchone()
+        if row and row["path"]:
+            p = Path(row["path"])
+            if p.is_dir():
+                try:
+                    shutil.rmtree(p)
+                except OSError as e:
+                    raise HTTPException(400, f"删除磁盘目录失败：{e}") from e
+        repository.folder_delete(folder_id)
+        return {"ok": True, "removed_disk": True}
     repository.folder_delete(folder_id)
     return {"ok": True}
 

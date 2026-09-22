@@ -1,4 +1,4 @@
-// 苏醒图库 — Tauri run() 实现
+// 闪寻空间 Seek-X — Tauri run() 实现
 
 use std::sync::Arc;
 

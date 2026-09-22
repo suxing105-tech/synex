@@ -8,7 +8,7 @@ afterEach(cleanup);
 describe("全屏 LOGO 启动画面", () => {
   it("加载时只展示 LOGO 和动效，不显示品牌文字", () => {
     const ui = render(SplashOverlay, { ready: false, error: null });
-    expect(ui.getByRole("img", { name: "苏醒图库" })).toBeTruthy();
+    expect(ui.getByRole("img", { name: "闪寻空间" })).toBeTruthy();
     expect(ui.queryByText("苏醒图库")).toBeNull();
     expect(ui.getByRole("status").getAttribute("aria-busy")).toBe("true");
     expect(ui.container.querySelector('.splash-orbit')).toBeTruthy();

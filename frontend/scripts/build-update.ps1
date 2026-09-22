@@ -31,7 +31,7 @@ try {
         cargo tauri build --ci *> "$OutputDir/desktop-build.log"
         if ($LASTEXITCODE) { throw "桌面版打包失败，查看 desktop-build.log" }
     } finally { Pop-Location }
-    $BuiltInstaller = "苏醒图库_${Version}_x64-setup.exe"
+    $BuiltInstaller = "闪寻空间_${Version}_x64-setup.exe"
     $Installer = "suxing-gallery_${Version}_x64-setup.exe"
     foreach ($Suffix in @("", ".sig")) {
         Copy-Item -LiteralPath "$RepoRoot/frontend/src-tauri/target/release/bundle/nsis/$BuiltInstaller$Suffix" -Destination "$OutputDir/$Installer$Suffix" -Force

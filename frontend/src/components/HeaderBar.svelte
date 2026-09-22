@@ -60,9 +60,10 @@
   <div class="flex items-center gap-2 font-semibold text-sm shrink-0">
     <img
       src="/logo.png"
-      alt="苏醒图库"
+      alt="闪寻空间"
       class="w-[22px] h-[22px] rounded-[7px] object-cover"
     />
+    <span class="text-[13px] font-semibold text-zinc-200 tracking-wide">闪寻空间</span>
   </div>
 
   <!--

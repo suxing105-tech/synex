@@ -216,7 +216,14 @@
   }
 
   async function remove(id: number) {
-    if (!confirm("删除此文件夹？其中的图片将升级到上一级。")) return;
+    const node = findNode($folders, id);
+    const isSys = !!node?.is_system;
+    if (isSys) {
+      const msg = `确定要删除来源目录「${node?.name}」吗？\n\n此操作会永久删除该文件夹及其磁盘上的所有文件，且不可恢复。\n\n${node?.path || ''}`;
+      if (!confirm(msg)) return;
+    } else {
+      if (!confirm("删除此文件夹？其中的图片将升级到上一级。")) return;
+    }
     await foldersApi.remove(id);
     menuFor = null;
     if ($folderId === id) folderId.set(null);
@@ -384,7 +391,6 @@
   </div>
 {:else if menuFor !== null}
   {@const menuNode = findNode($folders, menuFor)}
-  {@const isSys = !!menuNode?.is_system}
   <div
     class="folder-menu fixed bg-surface-2 border border-border rounded-[8px] py-1 min-w-[160px] z-40 text-[13px] shadow-xl"
     style="left: {menuPos.x}px; top: {menuPos.y}px;"
@@ -392,59 +398,46 @@
     oncontextmenu={(e) => e.preventDefault()}
     onclick={(e) => e.stopPropagation()}
   >
-    {#if isSys}
-      <button class="block w-full text-left px-3 py-1 hover:bg-surface-3"
-        onclick={() => menuNode && startRename(menuNode.id, menuNode.name)}>重命名</button>
-    {:else}
-      <button role="menuitem"
-        class="block w-full text-left px-3 py-1 hover:bg-surface-3"
-        onclick={() => menuFor !== null && startNew(menuFor)}
-      >
-        新建子文件夹
-      </button>
-      <button
-        class="block w-full text-left px-3 py-1 hover:bg-surface-3"
-        onclick={() => {
-          const node = findNode($folders, menuFor!);
-          if (node) startRename(menuFor!, node.name);
-        }}
-      >
-        重命名
-      </button>
-      <button
-        class="block w-full text-left px-3 py-1 hover:bg-surface-3"
-        onclick={() => menuFor !== null && move(menuFor, 'up')}
-      >
-        上移
-      </button>
-      <button
-        class="block w-full text-left px-3 py-1 hover:bg-surface-3"
-        onclick={() => menuFor !== null && move(menuFor, 'down')}
-      >
-        下移
-      </button>
-      <button role="menuitem" class="block w-full text-left px-3 py-2 hover:bg-surface-3 disabled:opacity-40"
-        disabled={!menuNode?.path} title={menuNode?.path || '此文件夹是图库分类，没有对应的磁盘位置'}
-        onclick={() => menuFor !== null && revealSystemFolder(menuFor)}>所在位置</button>
-      {#if !menuNode?.path}
-        <div class="px-3 pb-1 text-muted text-[11px]">图库分类，无磁盘位置</div>
-      {/if}
-      <div class="border-t border-border my-1"></div>
-      <button
-        class="block w-full text-left px-3 py-1 hover:bg-danger/30 text-danger"
-        onclick={() => menuFor !== null && remove(menuFor)}
-      >
-        删除
-      </button>
+    <button role="menuitem"
+      class="block w-full text-left px-3 py-1 hover:bg-surface-3"
+      onclick={() => menuFor !== null && startNew(menuFor)}
+    >
+      新建文件夹
+    </button>
+    <button
+      class="block w-full text-left px-3 py-1 hover:bg-surface-3"
+      onclick={() => {
+        const node = findNode($folders, menuFor!);
+        if (node) startRename(menuFor!, node.name);
+      }}
+    >
+      重命名
+    </button>
+    <button
+      class="block w-full text-left px-3 py-1 hover:bg-surface-3"
+      onclick={() => menuFor !== null && move(menuFor, 'up')}
+    >
+      上移
+    </button>
+    <button
+      class="block w-full text-left px-3 py-1 hover:bg-surface-3"
+      onclick={() => menuFor !== null && move(menuFor, 'down')}
+    >
+      下移
+    </button>
+    <button role="menuitem" class="block w-full text-left px-3 py-1 hover:bg-surface-3 disabled:opacity-40"
+      disabled={!menuNode?.path} title={menuNode?.path || '此文件夹是图库分类，没有对应的磁盘位置'}
+      onclick={() => menuFor !== null && revealSystemFolder(menuFor)}>所在文件夹位置</button>
+    {#if !menuNode?.path}
+      <div class="px-3 pb-1 text-muted text-[11px]">图库分类，无磁盘位置</div>
     {/if}
-    {#if isSys}
-      <button role="menuitem" class="block w-full text-left px-3 py-2 hover:bg-surface-3 disabled:opacity-40"
-        disabled={!menuNode?.path} title={menuNode?.path || '此文件夹是图库分类，没有对应的磁盘位置'}
-        onclick={() => menuFor !== null && revealSystemFolder(menuFor)}>所在位置</button>
-      {#if !menuNode?.path}
-        <div class="px-3 pb-1 text-muted text-[11px]">图库分类，无磁盘位置</div>
-      {/if}
-    {/if}
+    <div class="border-t border-border my-1"></div>
+    <button
+      class="block w-full text-left px-3 py-1 hover:bg-danger/30 text-danger"
+      onclick={() => menuFor !== null && remove(menuFor)}
+    >
+      删除文件夹
+    </button>
   </div>
 {/if}
 

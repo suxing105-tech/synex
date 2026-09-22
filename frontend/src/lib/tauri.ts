@@ -1,4 +1,4 @@
-// 苏醒图库 — Tauri 壳层适配层
+// 闪寻空间 Seek-X — Tauri 壳层适配层
 //
 // 仅在 Tauri WebView 中可用（isTauri() 判断）。
 // - isTauri()         是否运行在 Tauri 壳里

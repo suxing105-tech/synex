@@ -121,7 +121,7 @@ def folder_tree() -> list[dict]:
     return build(None)
 
 
-def folder_create(name: str, parent_id: int | None) -> dict:
+def folder_create(name: str, parent_id: int | None, is_system: bool = False) -> dict:
     name = name.strip()
     if not name:
         raise ValueError("name 不能为空")
@@ -134,11 +134,12 @@ def folder_create(name: str, parent_id: int | None) -> dict:
     order = (row["m"] if row else -1) + 1
     with transaction() as c:
         cur = c.execute(
-            "INSERT INTO folders(parent_id, name, \"order\") VALUES(?, ?, ?)",
-            (parent_id, name, order),
+            "INSERT INTO folders(parent_id, name, \"order\", is_system) VALUES(?, ?, ?, ?)",
+            (parent_id, name, order, 1 if is_system else 0),
         )
         folder_id = cur.lastrowid
-    return {"id": folder_id, "parent_id": parent_id, "name": name, "order": order}
+    return {"id": folder_id, "parent_id": parent_id, "name": name, "order": order,
+            "is_system": 1 if is_system else 0}
 
 
 def folder_update(folder_id: int, *, name: str | None = None, order: int | None = None, parent_id: int | None = ...) -> dict:
@@ -251,7 +252,7 @@ def folder_move_order(folder_id: int, direction: str) -> None:
         raise ValueError("direction 必须是 up 或 down")
     conn = get_pool().main()
     row = conn.execute(
-        "SELECT id, parent_id, \"order\" FROM folders WHERE id = ?", (folder_id,)
+        "SELECT id, parent_id, \"order\", is_system FROM folders WHERE id = ?", (folder_id,)
     ).fetchone()
     if not row:
         return
@@ -259,15 +260,15 @@ def folder_move_order(folder_id: int, direction: str) -> None:
     # 找同 parent 下邻居
     if direction == "up":
         neighbor = conn.execute(
-            "SELECT id, \"order\" FROM folders WHERE parent_id IS ? AND \"order\" < ? "
+            "SELECT id, \"order\" FROM folders WHERE parent_id IS ? AND is_system = ? AND \"order\" < ? "
             "ORDER BY \"order\" DESC LIMIT 1",
-            (row["parent_id"], row["order"]),
+            (row["parent_id"], row["is_system"], row["order"]),
         ).fetchone()
     else:
         neighbor = conn.execute(
-            "SELECT id, \"order\" FROM folders WHERE parent_id IS ? AND \"order\" > ? "
+            "SELECT id, \"order\" FROM folders WHERE parent_id IS ? AND is_system = ? AND \"order\" > ? "
             "ORDER BY \"order\" ASC LIMIT 1",
-            (row["parent_id"], row["order"]),
+            (row["parent_id"], row["is_system"], row["order"]),
         ).fetchone()
     if not neighbor:
         return

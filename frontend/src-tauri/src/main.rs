@@ -1,4 +1,4 @@
-// 苏醒图库 — Tauri 主进程入口
+// 闪寻空间 Seek-X — Tauri 主进程入口
 //
 // 仅承担：
 //   - spawn PyInstaller sidecar（python-backend.exe）

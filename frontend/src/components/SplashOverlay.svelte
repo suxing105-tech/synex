@@ -12,7 +12,7 @@
     <div class="splash-stage">
       <div class="splash-emblem">
         {#if !error}<div class="splash-orbit" aria-hidden="true"></div>{/if}
-        <img class="splash-logo" src="/logo.png" alt="苏醒图库" width="72" height="72" />
+        <img class="splash-logo" src="/logo.png" alt="闪寻空间" width="72" height="72" />
       </div>
       {#if error}
         <div class="splash-err" role="alert">启动未完成：{error}</div>

@@ -67,7 +67,7 @@ impl SidecarConfig {
         // P1 优化：Rust 选空闲端口，通过 READY 消息告诉前端
         let port: u16 = 8765;
 
-        // 3. 数据目录：dev 走 <project>/backend/data/，prod 走 %APPDATA%\苏醒图库\data\
+        // 3. 数据目录：dev 走 <project>/backend/data/，prod 走 app_data_dir()（基于 identifier com.suxing.gallery）\data\
         let data_dir = if cfg!(debug_assertions) {
             let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
             manifest_dir

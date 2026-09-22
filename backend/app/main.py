@@ -130,7 +130,7 @@ async def lifespan(app: FastAPI):
 from .version import VERSION
 from .maintenance import WriteGateMiddleware, router as desktop_router
 
-app = FastAPI(title="苏醒图库", version=VERSION, lifespan=lifespan)
+app = FastAPI(title="闪寻空间", version=VERSION, lifespan=lifespan)
 app.add_middleware(WriteGateMiddleware)
 app.include_router(desktop_router)
 
@@ -221,7 +221,7 @@ async def root():
     if _FRONTEND_INDEX and _FRONTEND_INDEX.exists():
         return FileResponse(_FRONTEND_INDEX)
     return JSONResponse({
-        "name": "苏醒图库 API",
+        "name": "闪寻空间 API",
         "hint": "前端尚未构建。请在 frontend/ 执行 pnpm build。",
     })
 

@@ -10,7 +10,7 @@ import { get } from "svelte/store";
 import { clearToasts, toasts } from "../lib/toast";
 
 vi.mock('../lib/native-drop', () => ({ subscribeFileDrop: vi.fn(() => () => {}) }));
-vi.mock("../lib/api", () => ({ foldersApi: { importDirectories: vi.fn(), create: vi.fn().mockResolvedValue({ id: 7 }), rename: vi.fn(), reorder: vi.fn(), tree: vi.fn() } }));
+vi.mock("../lib/api", () => ({ foldersApi: { importDirectories: vi.fn(), create: vi.fn().mockResolvedValue({ id: 7 }), rename: vi.fn(), reorder: vi.fn(), move: vi.fn(), remove: vi.fn(), tree: vi.fn() } }));
 vi.mock("../lib/stores", () => ({
   folders: writable([]), folderId: writable(null), view: writable("all"),
   kind: writable("image"), query: writable(""), tag: writable(null),
@@ -25,7 +25,7 @@ beforeEach(() => {
   clearToasts();
   folders.set([node(1, '父目录', [node(2, '子目录', [], 1)]), node(3, '另一个目录')]);
 });
-afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('真实文件夹组件交互', () => {
   it('侧栏原生拖入目录后刷新树和缩略图并选中导入目录', async () => {
@@ -135,7 +135,7 @@ describe('真实文件夹组件交互', () => {
     const row = screen.getByRole('button', { name: '来源' });
     await fireEvent.contextMenu(row, { clientX: 80, clientY: 120 });
     expect(screen.getByRole('menu')).toBeTruthy();
-    await fireEvent.click(screen.getByRole('menuitem', { name: '所在位置' }));
+    await fireEvent.click(screen.getByRole('menuitem', { name: '所在文件夹位置' }));
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/folders/5/reveal'), { method: 'POST' });
     expect(screen.getByText('子项')).toBeTruthy();
     expect(screen.queryByRole('menu')).toBeNull();
@@ -144,7 +144,7 @@ describe('真实文件夹组件交互', () => {
   it('虚拟分类不伪造磁盘位置', async () => {
     const screen = render(FolderTree);
     await fireEvent.contextMenu(screen.getByRole('button', { name: '父目录' }));
-    expect((screen.getByRole('menuitem', { name: '所在位置' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('menuitem', { name: '所在文件夹位置' }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText('图库分类，无磁盘位置')).toBeTruthy();
   });
 
@@ -162,8 +162,8 @@ describe('真实文件夹组件交互', () => {
     const screen = render(FolderTree);
     await fireEvent.contextMenu(screen.getByRole('button', { name: '父目录' }));
     const items = Array.from(screen.getByRole('menu').querySelectorAll('button'));
-    const childIndex = items.findIndex((item) => item.textContent?.trim() === '新建子文件夹');
-    const locationIndex = items.findIndex((item) => item.textContent?.trim() === '所在位置');
+    const childIndex = items.findIndex((item) => item.textContent?.trim() === '新建文件夹');
+    const locationIndex = items.findIndex((item) => item.textContent?.trim() === '所在文件夹位置');
     expect(childIndex).toBe(0);
     expect(locationIndex).toBeGreaterThan(childIndex);
     await fireEvent.click(items[0]);
@@ -193,7 +193,7 @@ describe('真实文件夹组件交互', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, json: async () => ({ detail: '路径不存在' }) } as Response);
     const screen = render(FolderTree);
     await fireEvent.contextMenu(screen.getByRole('button', { name: '来源' }));
-    await fireEvent.click(screen.getByRole('menuitem', { name: '所在位置' }));
+    await fireEvent.click(screen.getByRole('menuitem', { name: '所在文件夹位置' }));
     expect(get(toasts).some(t => t.message.includes('路径不存在'))).toBe(true);
   });
 
@@ -236,3 +236,24 @@ it('取消新建不创建目录，顶部按钮只收起侧栏', async () => {
   await fireEvent.pointerUp(window);
   expect(foldersApi.reorder).toHaveBeenCalledWith(2, 3, 'inside');
  });
+
+
+it('来源目录菜单包含新建/重命名/上移/下移/所在文件夹位置/删除文件夹', async () => {
+  folders.set([{ ...node(5, '来源', [], null), is_system: true, path: 'D:/watch/source' }]);
+  const screen = render(FolderTree);
+  await fireEvent.contextMenu(screen.getByRole('button', { name: '来源' }));
+  const items = Array.from(screen.getByRole('menu').querySelectorAll('button')).map((b) => b.textContent?.trim());
+  expect(items).toEqual(['新建文件夹', '重命名', '上移', '下移', '所在文件夹位置', '删除文件夹']);
+});
+
+it('删除来源目录触发破坏性确认并调用 remove', async () => {
+  folders.set([{ ...node(5, '来源', [], null), is_system: true, path: 'D:/watch/source' }]);
+  const c = vi.fn((_msg: string) => true);
+  vi.stubGlobal('confirm', c);
+  const screen = render(FolderTree);
+  await fireEvent.contextMenu(screen.getByRole('button', { name: '来源' }));
+  await fireEvent.click(screen.getByText('删除文件夹'));
+  expect(c).toHaveBeenCalled();
+  expect(String(c.mock.calls[0][0])).toContain('永久删除');
+  expect(foldersApi.remove).toHaveBeenCalledWith(5);
+});

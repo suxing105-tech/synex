@@ -333,8 +333,8 @@ def test_api_patch_system_folder_updates_display_name(tmp_data_dir):
     assert conn.execute("SELECT path FROM folders WHERE id = ?", (fid,)).fetchone()["path"] == "D:/watch/krea2"
 
 
-def test_api_delete_system_folder_returns_400(tmp_data_dir):
-    """DELETE system folder 应返回 400。"""
+def test_api_delete_system_folder_removes_disk_and_record(tmp_data_dir):
+    """DELETE system folder（来源目录）应允许，并连同磁盘目录一并删除。"""
     from fastapi.testclient import TestClient
 
     from app.main import app
@@ -342,14 +342,22 @@ def test_api_delete_system_folder_returns_400(tmp_data_dir):
     init_pool()
     client = TestClient(app)
     conn = get_pool().main()
+    # 造一个真实存在于磁盘的 system folder 目录
+    disk_dir = tmp_data_dir / "Audio"
+    disk_dir.mkdir()
+    (disk_dir / "a.txt").write_text("x")
     cur = conn.execute(
         "INSERT INTO folders(parent_id, name, \"order\", is_system, path) "
-        "VALUES(NULL, 'Audio', 0, 1, 'D:/watch/Audio')"
+        "VALUES(NULL, 'Audio', 0, 1, ?)",
+        (str(disk_dir),),
     )
     fid = cur.lastrowid
 
     r = client.delete(f"/api/folders/{fid}")
-    assert r.status_code == 400
+    assert r.status_code == 200
+    assert r.json().get("removed_disk") is True
+    assert conn.execute("SELECT id FROM folders WHERE id = ?", (fid,)).fetchone() is None
+    assert not disk_dir.exists()
 
 
 def test_api_folder_tree_includes_is_system(tmp_data_dir):
@@ -504,3 +512,59 @@ def test_prune_deletes_descendants_and_assignments(tmp_data_dir):
         assert conn.execute("SELECT COUNT(*) AS c FROM image_folders").fetchone()["c"] == 0
     finally:
         idx.shutdown()
+
+
+# ---------- 来源目录：移动 / 新建（system 子目录） ----------
+
+
+def test_move_system_folder_reorders_within_same_section(tmp_data_dir):
+    """来源目录上移/下移仅在同类（is_system）内排序，不与用户文件夹混排。"""
+    init_pool()
+    sys_a = repository.folder_create("SrcA", None, is_system=True)
+    sys_b = repository.folder_create("SrcB", None, is_system=True)
+    user_a = repository.folder_create("UsrA", None, is_system=False)
+
+    repository.folder_move_order(sys_a["id"], "down")
+
+    conn = get_pool().main()
+    sys_rows = conn.execute(
+        'SELECT id FROM folders WHERE is_system = 1 ORDER BY "order"'
+    ).fetchall()
+    assert [r["id"] for r in sys_rows] == [sys_b["id"], sys_a["id"]]
+    user_rows = conn.execute(
+        'SELECT id FROM folders WHERE is_system = 0 ORDER BY "order"'
+    ).fetchall()
+    assert [r["id"] for r in user_rows] == [user_a["id"]]
+
+
+def test_create_folder_under_system_parent_is_system(tmp_data_dir):
+    """在来源目录下新建文件夹应创建为 system 子目录（磁盘实体）。"""
+    init_pool()
+    sys_parent = repository.folder_create("Src", None, is_system=True)
+    parent_dir = tmp_data_dir / "Src"
+    parent_dir.mkdir()
+    conn = get_pool().main()
+    conn.execute("UPDATE folders SET path=? WHERE id=?", (str(parent_dir), sys_parent["id"]))
+
+    from app import folder_storage
+    result = folder_storage.create_folder("Sub", sys_parent["id"])
+
+    assert result["is_system"] == 1
+    assert (parent_dir / "Sub").is_dir()
+    assert result["path"] == repository._normalize_path(str((parent_dir / "Sub").resolve()))
+
+
+def test_api_move_system_folder_allowed(tmp_data_dir):
+    """来源目录通过 API 上移/下移应被允许。"""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    init_pool()
+    client = TestClient(app)
+    sys_a = repository.folder_create("SrcA", None, is_system=True)
+    repository.folder_create("SrcB", None, is_system=True)
+
+    r = client.post(f"/api/folders/{sys_a['id']}/move?direction=down")
+    assert r.status_code == 200
+    assert r.json()["ok"] is True

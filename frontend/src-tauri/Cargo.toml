@@ -1,8 +1,8 @@
 [package]
 name = "suxing-gallery"
 version = "0.2.5"
-description = "苏醒图库 — ComfyUI 本地图库管理器"
-authors = ["Suxing Gallery"]
+description = "闪寻空间 — ComfyUI 本地图库与媒体管理器"
+authors = ["Seek-X"]
 edition = "2021"
 rust-version = "1.77.2"
 

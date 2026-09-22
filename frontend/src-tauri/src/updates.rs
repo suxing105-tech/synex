@@ -87,7 +87,7 @@ fn installed_directory() -> Option<PathBuf> {
         for hive in [HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER] {
             for view in [KEY_WOW64_64KEY, KEY_WOW64_32KEY] {
                 if let Ok(key) = RegKey::predef(hive).open_subkey_with_flags(
-                    "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\苏醒图库",
+                    "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\闪寻空间",
                     KEY_READ | view,
                 ) {
                     if let Ok(location) = key.get_value::<String, _>("InstallLocation") {

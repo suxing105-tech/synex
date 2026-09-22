@@ -73,7 +73,7 @@ try {
     Start-Process -FilePath $previewExe -WorkingDirectory (Split-Path -Parent $previewExe)
 } catch {
     Add-Type -AssemblyName PresentationFramework
-    [void][System.Windows.MessageBox]::Show($_.Exception.Message, '苏醒图库 · 新版预览')
+    [void][System.Windows.MessageBox]::Show($_.Exception.Message, '闪寻空间 · 新版预览')
     exit 1
 }
 '@

@@ -1,10 +1,11 @@
 <script lang="ts">
   import { backendUrl } from "../lib/backend-url";
-  import { feedItems } from "../lib/stores";
+  import { feedItems, multiSelectedIds } from "../lib/stores";
   import { videosApi } from "../lib/api";
   import { pushToast } from "../lib/toast";
   import type { ImageSummary } from "../lib/types";
   import Icon from "./Icon.svelte";
+  import VideoCompare from "./VideoCompare.svelte";
 
   interface Props {
     open: boolean;
@@ -20,6 +21,22 @@
   let currentIndex = $state(0);
 
   const current = $derived(videos[currentIndex] ?? null);
+
+  // 对比：feed 里恰好 ctrl 选中的两个视频，且都可播放两路 URL
+  let compareOn = $state(false);
+  const selectedVideos = $derived(
+    $feedItems.filter(
+      (it): it is ImageSummary & { play_url: string } =>
+        it.kind === "video" && !!it.play_url && $multiSelectedIds.has(it.id),
+    ),
+  );
+  const compareReady = $derived(selectedVideos.length === 2);
+  // 自动进入对比：仅当打开的视频本身就在选中的两个视频里（否则由用户点「对比」）
+  $effect(() => {
+    if (open && compareReady && current && selectedVideos.some((v) => v.id === current.id)) {
+      compareOn = true;
+    }
+  });
 
   function openAt(id: number): void {
     const idx = videos.findIndex((v) => v.id === id);
@@ -82,6 +99,18 @@
       <Icon name="x" size={18} />
     </button>
 
+    {#if compareReady && !compareOn}
+      <button
+        type="button"
+        class="absolute top-4 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-md bg-accent text-bg text-[13px] font-medium hover:opacity-90"
+        title="对比选中的两个视频"
+        aria-label="对比视频"
+        onclick={() => { compareOn = true; }}
+      >
+        对比
+      </button>
+    {/if}
+
     <button
       type="button"
       class="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
@@ -105,7 +134,15 @@
       class="max-w-[90vw] max-h-[88vh] w-full h-full flex flex-col items-center justify-center gap-3"
       onclick={(e) => e.stopPropagation()}
     >
-      {#if current.playable}
+      {#if compareOn && compareReady}
+        <div class="flex items-center gap-2 mb-1">
+          <button type="button" class="cmp-exit" onclick={() => { compareOn = false; }}>退出对比</button>
+          <span class="text-white/70 text-[12px]">对比已选中的两个视频</span>
+        </div>
+        <div class="w-full h-[76vh]">
+          <VideoCompare videos={selectedVideos} />
+        </div>
+      {:else if current.playable}
         {#key current.id}
           <video
             src={backendUrl(current.play_url)}

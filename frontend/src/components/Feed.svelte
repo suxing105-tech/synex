@@ -751,7 +751,8 @@
                     onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openVideo(it); } }}
                   >
                     <svg viewBox="0 0 24 24" aria-hidden="true" class="video-play-icon drop-shadow-lg">
-                      <path d="M9 6.3 17.7 12 9 17.7 Z" fill="#fff" stroke="#fff" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+                      <circle cx="12" cy="12" r="9.2" fill="rgba(0,0,0,0.35)" stroke="#fff" stroke-width="1.5"/>
+                      <path d="M9.7 7.9 16.4 12 9.7 16.1 Z" fill="#fff" stroke="#fff" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
                     </svg>
                   </div>
                 {/if}

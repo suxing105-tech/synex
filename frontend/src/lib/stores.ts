@@ -214,7 +214,13 @@ async function feedAutoRefresh() {
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 function debouncedRefresh() {
   if (debounceTimer) clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(feedAutoRefresh, 200);
+  debounceTimer = setTimeout(async () => {
+    try {
+      await feedAutoRefresh();
+    } catch (err) {
+      console.warn("feed auto-refresh failed", err);
+    }
+  }, 200);
 }
 
 folderId.subscribe(debouncedRefresh);

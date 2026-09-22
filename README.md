@@ -1,165 +1,147 @@
-# 苏醒图库
+# 闪寻空间 (Seek-X)
 
-## 桌面 App 快速开始（NSIS 安装包）
+![闪寻空间 - 图片与视频本地媒体管理器](docs/images/main.png)
 
-```powershell
-# 一次性
-& "frontend\scripts\build-sidecar.ps1"      # 打包 PyInstaller sidecar（~30s）
-cd "frontend\src-tauri"
-& cargo tauri build                             # 构建 Tauri + NSIS（约 5 min）
-# 产物
-#   target\release\suxing-gallery.exe              主程序 4.5 MB
-#   target\release\bundle\nsis\苏醒图库_0.1.0_x64-setup.exe  NSIS 安装包 29.6 MB
-# 安装 + 启动
-& "target\release\bundle\nsis\苏醒图库_0.1.0_x64-setup.exe" /S
-& "C:\Program Files\苏醒图库\suxing-gallery.exe"
-```
+**闪寻空间 (Seek-X)** 是面向 ComfyUI 用户的**本地图片与视频媒体管理器**。它会自动扫描你配置的目录，把 AI 生成的成品按文件夹/时间整理成瀑布流，并支持反推提示词、标签、收藏、全文搜索，以及本地视频播放与对比。
 
-实现细节、决策记录与已知问题见 `materials\29-tauri-m0-delivery.md`。
+> 由「苏醒图库」更名而来，界面、数据目录与更新通道保持不变。
 
 ---
 
+## ✨ 核心能力
 
+### 图片 & 视频统一管理
+- 三栏布局：左侧文件夹树 / 中间瀑布流缩略图 / 右侧详情面板
+- 图片：PNG / WebP / JPG 等，自动解析元数据（A1111 / ComfyUI tEXt）
+- 视频：MP4 / MOV / M4V / WebM / MKV / AVI / WMV / FLV，自动生成**海报帧缩略图**，点击播放按钮内嵌播放，支持**分割视图 / 并排对比**，可**一键改封面**
+- 缩略图生成与磁盘缓存，滚动流畅
 
-本仓库是面向 ComfyUI 用户的轻量级本地图库管理器 MVP。设计思路见：
-- 产品设计：`outputs\mvp-product-design.md`
-- 技术方案：`outputs\tech-design.md`
-- UI 原型：`outputs\demo.html`
-- 调研 / 决策记录：`materials\`
+### 反推提示词
+- 内置 **OpenAI 兼容**的几家 API 预设（含 DeepSeek），各预设提供多个模型下拉
+- 输入 API Key 保存即可使用；也保留**手动自定义**入口
+- 支持简单 / 详细两档提示词输出
 
-## 本轮交付
+### 整理 & 搜索
+- 文件夹树：来源目录 + 我的文件夹，支持**新建 / 重命名 / 上移 / 下移 / 所在文件夹位置 / 删除**
+- 标签（逗号分隔，自动去重）、收藏、系统视图（全部图片 / 所有视频 / 收藏 / 最近生成）
+- 全文搜索（SQLite FTS5 + 模糊双轨）
+- 批量多选、拖拽导入
 
-- Web 版 + **Tauri 桌面 App 版**（NSIS 安装包）双轨并行。
-- 原方案：Tauri 2.x (Rust 壳 + Python sidecar) + Svelte 5 + SQLite/FTS5，仅 Windows。
-- Web 版先于桌面版交付（M0 → M2），所有 P0 功能跑 FastAPI + Vite。
-- 桌面版 M0 已跑通：NSIS 安装 + sidecar spawn + HTTP API + AppData 持久化；UI 渲染问题留 M0-f。详见 `materials\29-tauri-m0-delivery.md`。
+### 桌面体验
+- 左侧栏 & 右侧详情栏均可一键收起
+- ComfyUI 一键打开（生成临时 `.json` 并跳转）
+- Onboarding 引导、扫描进度、快捷键
+- 签名自动更新（GitHub Releases）
 
-### 已实现的产品 P0 功能
+---
 
-- 文件夹监听导入 + Live 模式（watchdog）
-- PNG / WebP 元数据自动解析（手写 tEXt / A1111 / ComfyUI）
-- 缩略图生成 + 缓存（Pillow → WebP，256px）
-- 三栏布局：文件夹树 / 流式 feed / 详情面板
-- 文件夹树管理（嵌套 / 重命名 / 上移下移 / 新建子 / 删除）
-- 文件夹递归计数与筛选
-- 流式 feed（时间倒序 + NEW 徽标 + 缩放滑块 140~360px）
-- 详情面板（Header 缩略图 + 主操作 / Prompt 卡片 / 按域分组的参数 + LoRA 列表 / 元数据 / Workflow JSON；快捷键 P/N/S/Shift+C/F/T/Esc + 列宽可拖拽 + 窄屏抽屉）
-- Lightbox 大图查看（双击 / 空格 / ←→）
-- 全文搜索（FTS5 + 模糊双轨）
-- 标签管理（覆盖式，逗号分隔，自动去重）
-- 收藏（♡/♥ 切换 + 左侧系统视图快捷过滤）
-- 系统视图（全部图片 / 收藏 / 最近生成）
-- Onboarding 引导（首次启动扫描进度）
-- 设置页（监听目录 / 缩略图参数 / Live 开关）
-- 拖拽导入（拖入 PNG/WebP 到中间缩略图区域 → 自动保存到当前文件夹；不支持格式给出来因）
-- ComfyUI 一键打开（hover/选中缩略图右上角出现圆形按钮 → 后端落临时 .json + 自动打开 ComfyUI 标签页）
+## 🛠 技术栈
 
-### 已排除（明确推迟）
+| 层 | 技术 |
+|------|------|
+| 桌面壳 | Tauri 2 (Rust) + NSIS `x64` |
+| 后端 | Python FastAPI + SQLite / FTS5 |
+| 前端 | Svelte 5 + Vite + Tailwind |
+| 视频处理 | 本地 `ffmpeg` / `ffprobe`（无额外 Python 依赖） |
+| 平台 | Windows |
 
-- Tauri 打包 / NSIS 安装包（无 Rust 工具链）
-- WebView2 bootstrapper（同上）
-- Grid 子图拆分入库 / 多选批量操作 / AI 自动打标签 / 相似图搜索 / 重复图检测 / 暗亮主题切换（均为 P1+）
+---
 
-## 目录结构
+## 🚀 安装
 
-```
-苏醒图库\
-├── outputs\                  # 产品 / 技术文档、HTML 原型
-├── materials\                # 调研、决策、交付小结
-├── backend\                  # Python FastAPI 后端
-│   ├── app\                  # 应用代码
-│   │   ├── main.py           # FastAPI 入口 + WebSocket
-│   │   ├── config.py         # 数据目录 / 配置持久化
-│   │   ├── db.py             # SQLite / FTS5 schema + 连接池
-│   │   ├── parser.py         # PNG/WebP 元数据解析
-│   │   ├── thumbnails.py     # 缩略图生成
-│   │   ├── indexer.py        # 扫描 / 监听 / 入库
-│   │   ├── repository.py     # 数据查询 / 变更
-│   │   ├── events.py         # WebSocket 事件总线
-│   │   ├── models.py         # Pydantic 模型
-│   │   └── routes\           # REST 路由
-│   ├── tests\                # pytest
-│   ├── pyproject.toml
-│   └── data\                 # 运行时数据（git ignored）
-│       ├── db.sqlite
-│       ├── thumbs\
-│       └── config.json
-├── frontend\                 # Svelte 5 + Vite + Tailwind
-│   ├── src\
-│   │   ├── App.svelte
-│   │   ├── main.ts
-│   │   ├── app.css
-│   │   ├── lib\              # API / stores / ws / types
-│   │   ├── components\       # HeaderBar / FolderTree / Feed / DetailPanel / Lightbox / OnboardingModal / SettingsModal / ScanProgressBar
-│   │   └── __tests__\        # vitest
-│   ├── package.json
-│   ├── vite.config.ts
-│   └── dist\                 # 构建产物（git ignored，但已能跑）
-└── data\                 # 全局数据目录（前端 FastAPI 也用 ./backend/data/）
+从 [GitHub Releases](https://github.com/suxing105-tech/synex/releases) 下载最新版 `闪寻空间_<版本>_x64-setup.exe` 安装即可。已装用户可通过应用内更新自动升级。
+
+### 从源码构建
+
+```powershell
+# 1) 打包后端 sidecar（约 30s）
+& "frontend\scripts\build-sidecar.ps1"
+
+# 2) 构建 Tauri + NSIS（约 30s~5min）
+cd frontend\src-tauri
+cargo tauri build
+
+# 产物
+#   target\release\suxing-gallery.exe                     主程序
+#   target\release\bundle\nsis\闪寻空间_0.2.6_x64-setup.exe   NSIS 安装包
 ```
 
-## 快速开始
+> 发布签名安装包请使用 `frontend\scripts\build-update.ps1`（需配置更新签名私钥）。
+
+### 本地开发
 
 ```powershell
 # 后端
 cd backend
 python -m venv .venv
-.\.venv\Scripts\Activate.ps
+.\.venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
-
-# 测试
-pytest -v
-
-# 启动
 uvicorn app.main:app --host 127.0.0.1 --port 8765
 
 # 前端（新终端）
 cd ..\frontend
-pnpm install        # 或 npm install
-pnpm dev            # http://localhost:5173（已配置代理到 8765）
-# 或构建并由 FastAPI 托管：
-pnpm build          # 产物落到 frontend\dist\
-                    # 后端再次启动时自动托管
-# 然后访问 http://127.0.0.1:8765/
+pnpm install
+pnpm dev        # http://localhost:5173（代理到 8765）
 ```
 
-第一次访问会自动弹出 Onboarding 引导，输入 ComfyUI 输出目录即可。
+---
 
-## 已通过的测试
+## 🧪 测试
 
-- 后端：27 个 pytest（parser / db / feed / api / thumbnails）
-- 前端：14 个 vitest（stores / 工具函数）
+- 后端：`293 passed`（parser / indexer / repository / api / video / folders）
+- 前端：`404 passed`（56 个测试文件）
+- `svelte-check`：`0 errors`
 
-## API 简表
+```powershell
+# 后端
+cd backend && python -m pytest -q
 
-| 方法 / 路径 | | 说明 |
-|------|---|------|
-| GET  | | /api/health |
-| GET  | | /api/images?folder_id&view&q&tag&model&limit&offset |
-| GET  | | /api/images/{id} |
-| GET  | | /api/images/{id}/file |
-| POST | | /api/images/{id}/favorite |
-| POST | | /api/images/{id}/tags |
-| POST | | /api/images/{id}/folder |
-| DELETE | | /api/images/{id}?remove_file= |
-| GET  | | /api/folders |
-| POST | | /api/folders |
-| PATCH | | /api/folders/{id} |
-| POST | | /api/folders/{id}/move?direction=up\|down |
-| DELETE | | /api/folders/{id} |
-| GET  | | /api/tags |
-| GET  | | /api/settings |
-| PUT  | | /api/settings |
-| POST | | /api/scan |
-| GET  | | /api/scan/progress |
-| GET  | | /api/stats |
-| GET  | | /api/integrations/comfyui/status |
-| PUT  | | /api/integrations/comfyui/config |
-| POST | | /api/integrations/comfyui/open_workflow/{id} |
-| GET  | | /api/integrations/comfyui/temp_files (调试) |
-| WS   | | /ws/events |
+# 前端
+cd frontend && pnpm test -- --run
+```
 
-## 后续路线图
+---
 
-详见 `outputs\tech-design.md` §12 里程碑 + `materials\01-m1-m2-delivery.md`。
+## 📁 目录结构
 
+```
+闪寻空间\
+├── backend\                # FastAPI 后端
+│   ├── app\                # 入口 / 解析 / 缩略图 / 索引 / 仓储 / 路由
+│   └── tests\              # pytest
+├── frontend\               # Svelte 5 + Vite + Tailwind
+│   ├── src\                # App / 组件 / stores / api
+│   ├── src-tauri\          # Rust 壳 + NSIS 配置
+│   └── scripts\            # sidecar / 更新 / 发布脚本
+├── docs\images\            # README 配图
+├── outputs\                # 产品 / 技术文档、构建产物
+└── materials\              # 调研 / 决策记录
+```
+
+---
+
+## 🔌 API 简表（部分）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/images?kind=&folder_id=&view=&q=&tag=&limit=&offset=` | 图片/视频列表（`kind=image|video`） |
+| GET | `/api/images/{id}` | 详情 |
+| GET | `/api/images/{id}/file` | 原文件 |
+| GET | `/api/videos/{id}/file` | 视频流（支持 Range 拖动） |
+| GET | `/api/videos/{id}/thumb` | 海报帧 |
+| GET | `/api/videos/{id}/open` | 用系统播放器打开 |
+| POST | `/api/images/{id}/favorite` | 收藏 |
+| POST | `/api/images/{id}/tags` | 标签 |
+| GET | `/api/folders` · POST · PATCH · DELETE | 文件夹管理 |
+| POST | `/api/folders/{id}/move?direction=` | 上移/下移 |
+| GET | `/api/stats` | 统计（含 `total_videos`） |
+| PUT | `/api/integrations/comfyui/config` | ComfyUI 配置 |
+| WS | `/ws/events` | 实时事件 |
+
+---
+
+## 📝 说明
+
+- 本仓库暂无 `LICENSE`；如需开源授权请补充。
+- 自动更新使用签名安装包，更新清单见 Release 里的 `latest.json`。
+- 详细设计 / 决策记录见 `outputs/`、`materials/`。

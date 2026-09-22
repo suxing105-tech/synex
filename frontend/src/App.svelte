@@ -153,7 +153,7 @@
       narrowMode = false;
       return;
     }
-    narrowMode = window.innerWidth < 1024;
+    narrowMode = window.innerWidth < 768;
   }
 
   let drawerOpen = $state(false);

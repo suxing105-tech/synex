@@ -739,7 +739,6 @@
                   class="thumb-img absolute inset-0 w-full h-full object-contain"
                 />
                 {#if it.kind === "video"}
-                  <div class="video-thumb-overlay absolute inset-0" aria-hidden="true"></div>
                   <div
                     role="button"
                     tabindex="-1"
@@ -834,7 +833,6 @@
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
     z-index: 2;
   }
-  .video-thumb-overlay { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.15); z-index: 1; pointer-events: none; }
   .video-play-btn { cursor: pointer; z-index: 2; pointer-events: none; }
   .video-play-icon {
     width: 17%;

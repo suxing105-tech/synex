@@ -77,7 +77,7 @@ try {
     exit 1
 }
 '@
-Set-Content -LiteralPath (Join-Path $pkg "launch-preview.ps1") -Value $launch -Encoding utf8
+[System.IO.File]::WriteAllText((Join-Path $pkg "launch-preview.ps1"), $launch, (New-Object System.Text.UTF8Encoding $true))
 
 # 快捷启动
 $shell = New-Object -ComObject WScript.Shell

@@ -65,6 +65,7 @@ def get_video_file(video_id: int, request: Request):
         p,
         media_type=mime,
         filename=row["filename"],
+        content_disposition_type="inline",
         headers={
             "ETag": etag,
             "Last-Modified": last_modified_dt,

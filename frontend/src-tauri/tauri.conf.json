@@ -28,7 +28,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: http://127.0.0.1:8765 asset: https://asset.localhost; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' http://127.0.0.1:8765 ws://127.0.0.1:8765 ipc: http://ipc.localhost"
+      "csp": "default-src 'self'; img-src 'self' data: http://127.0.0.1:8765 asset: https://asset.localhost; media-src 'self' http://127.0.0.1:8765; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' http://127.0.0.1:8765 ws://127.0.0.1:8765 ipc: http://ipc.localhost"
     },
     "withGlobalTauri": true
   },

@@ -163,6 +163,7 @@ def test_video_file_endpoint(client):
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("video/")
     assert r.headers["accept-ranges"] == "bytes"
+    assert "inline" in r.headers.get("content-disposition", "")
     assert "etag" in r.headers
     assert len(r.content) > 0
 

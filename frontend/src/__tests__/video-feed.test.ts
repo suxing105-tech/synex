@@ -30,6 +30,7 @@ it('视频卡片渲染居中播放按钮，点击可弹层 open-video-player 事
   const dispatch = vi.spyOn(window, 'dispatchEvent');
   const screen = render(Feed, { selectedId: null, lightboxOpen: false, lightboxIndex: 0 });
   expect(screen.getByLabelText('播放 1.mp4')).toBeTruthy();
+  expect(screen.getByLabelText('播放 1.mp4').querySelector('svg.video-play-icon')).toBeTruthy();
   await fireEvent.click(screen.getByLabelText('播放 1.mp4'));
   expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'open-video-player' }));
   expect(get(feedItems)[0].id).toBe(1);

@@ -741,7 +741,7 @@
                     onpointerdown={(e) => e.stopPropagation()}
                     onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openVideo(it); } }}
                   >
-                    <svg width="46" height="46" viewBox="0 0 24 24" aria-hidden="true" class="drop-shadow-lg">
+                    <svg viewBox="0 0 24 24" aria-hidden="true" class="video-play-icon drop-shadow-lg">
                       <circle cx="12" cy="12" r="11" fill="rgba(0,0,0,0.55)" stroke="rgba(255,255,255,0.92)" stroke-width="1.4"/>
                       <path d="M10 8.5v7l5.6-3.5z" fill="#fff"/>
                     </svg>
@@ -826,8 +826,19 @@
     z-index: 2;
   }
   .video-play-btn { cursor: pointer; z-index: 2; }
-  .video-play-btn svg { transition: transform 0.15s ease; }
-  .video-play-btn:hover svg { transform: scale(1.12); }
+  .video-play-icon {
+    width: 26%;
+    height: auto;
+    aspect-ratio: 1 / 1;
+    max-width: 52px;
+    min-width: 16px;
+    opacity: 0.3;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+  }
+  .video-play-btn:hover .video-play-icon {
+    opacity: 0.6;
+    transform: scale(1.08);
+  }
   .thumb { user-select: none; touch-action: none; flex: none; min-height: 0; padding: 0; }
   .thumb-img {
     transition: transform 0.35s cubic-bezier(0.2, 0.6, 0.2, 1); will-change: transform;

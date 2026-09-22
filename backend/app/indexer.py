@@ -487,6 +487,20 @@ class Indexer:
                 except RuntimeError:
                     pass
 
+    def prune_missing_system_folders(self) -> int:
+        """清理磁盘上已不存在的 system folder（来源目录镜像）记录。
+
+        在 ``reconcile_missing`` 巡检以及 watchdog 目录删除事件时调用；若有被删除的
+        目录，广播 ``folders_changed`` 事件让左侧「来源目录」树刷新。
+        """
+        with self._live_lock:
+            if self._stopping:
+                return 0
+            removed = repository.prune_missing_system_folders(self._watch_roots)
+            if removed:
+                self.emit_event_sync({"type": "folders_changed"})
+            return removed
+
     def reconcile_missing(self) -> list[int]:
         """Recover missed deletes, including files removed while the app was closed."""
         removed = []
@@ -509,6 +523,11 @@ class Indexer:
                         self.emit_event_sync(payload)
                 except OSError:
                     continue
+        # 目录可能被删除（应用运行期间或上次关闭后）；一并清理消失的 system folder。
+        try:
+            self.prune_missing_system_folders()
+        except Exception:  # noqa: BLE001
+            log.warning("prune system folders failed", exc_info=True)
         return removed
 
     async def _emit(self, payload: dict) -> None:
@@ -546,6 +565,10 @@ class _Handler(FileSystemEventHandler):
     def on_moved(self, event):
         if event.is_directory:
             self._enqueue_directory_removal(event.src_path)
+            try:
+                self.indexer.prune_missing_system_folders()
+            except Exception:  # noqa: BLE001
+                log.warning("prune system folders on move failed: %s", event.src_path)
             # 目录重命名：把新路径预先挂上 system folder 链（空目录也能看见）
             try:
                 self.indexer._ensure_system_folder_for_dir(Path(event.dest_path))
@@ -566,8 +589,12 @@ class _Handler(FileSystemEventHandler):
         # 因而不能仅凭 is_directory 判断是否需要清理目录后代。
         self._enqueue_directory_removal(event.src_path)
         if event.is_directory:
-            # 目录删除属于"被文件系统同步"事件；不动 system folder 表
-            # （用户如果在子目录里删了所有图，目录还会留在树上，递归计数 = 0）。
+            # 目录删除属于"被文件系统同步"事件。旧实现"不动 system folder 表"
+            # 导致左侧「来源目录」残留已删除的镜像文件夹；现在点删除立即清理。
+            try:
+                self.indexer.prune_missing_system_folders()
+            except Exception:  # noqa: BLE001
+                log.warning("prune system folders on delete failed: %s", event.src_path)
             return
         self.indexer.enqueue("delete", event.src_path)
 

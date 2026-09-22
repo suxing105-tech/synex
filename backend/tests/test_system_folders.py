@@ -407,3 +407,100 @@ def test_api_feed_system_folder_returns_descendant_images(tmp_data_dir):
     paths = {item["path"] for item in data["items"]}
     assert any("krea2/foo" in p for p in paths)
     assert any(p.endswith("a.png") for p in paths)
+
+
+
+
+
+# ---------- prune_missing_system_folders ----------
+
+
+def test_prune_removes_deleted_system_folder(tmp_data_dir):
+    """磁盘子目录被删除后，来源目录镜像应被清理。"""
+    init_pool()
+    watch = tmp_data_dir / "watch"
+    watch.mkdir()
+    gone = watch / "gone"
+    gone.mkdir()
+    keep = watch / "keep"
+    keep.mkdir()
+
+    # 建立来源目录镜像
+    repository.ensure_system_folder_chain(gone / ".__sentinel__", watch)
+    repository.ensure_system_folder_chain(keep / ".__sentinel__", watch)
+
+    # 删除磁盘上的 gone 子目录（keep 保留）
+    gone.rmdir()
+
+    removed = repository.prune_missing_system_folders([watch])
+    assert removed == 1
+
+    rows = repository.folder_tree()
+    names = [n["name"] for n in rows if n["is_system"]]
+    assert "gone" not in names
+    assert "keep" in names
+
+
+def test_prune_does_not_touch_user_folders(tmp_data_dir):
+    """用户手动创建的文件夹（is_system=0）即使无实体目录也绝不删除。"""
+    init_pool()
+    watch = tmp_data_dir / "watch"
+    watch.mkdir()
+    repository.folder_create("我的自定义", None)  # is_system=0, path=None
+
+    removed = repository.prune_missing_system_folders([watch])
+    assert removed == 0
+
+    rows = repository.folder_tree()
+    assert any(n["name"] == "我的自定义" and not n["is_system"] for n in rows)
+
+
+def test_prune_skips_offline_drive(tmp_data_dir):
+    """网络/离线盘（盘符不存在）不作为删除证据，应跳过。"""
+    import os
+    init_pool()
+    watch = tmp_data_dir / "watch"
+    watch.mkdir()
+
+    # 手工造一个 is_system=1 且 path 位于"不存在盘符"下的镜像，模拟离线盘
+    conn = get_pool().main()
+    conn.execute(
+        "INSERT INTO folders(parent_id, name, \"order\", is_system, path) "
+        "VALUES(NULL, 'netdir', 0, 1, 'Z:/nonexistent/网盘')"
+    )
+
+    removed = repository.prune_missing_system_folders([watch])
+    assert removed == 0
+    conn = get_pool().main()
+    assert conn.execute("SELECT COUNT(*) AS c FROM folders WHERE name='netdir'").fetchone()["c"] == 1
+
+
+def test_prune_deletes_descendants_and_assignments(tmp_data_dir):
+    """删除父目录镜像时级联清掉后代与 image_folders 归属。"""
+    init_pool()
+    watch = tmp_data_dir / "watch"
+    watch.mkdir()
+    parent = watch / "parent"
+    child = parent / "child"
+    child.mkdir(parents=True)
+    img = make_png(child / "a.png")
+    from app.indexer import Indexer
+    idx = Indexer()
+    try:
+        idx._watch_roots = [watch]
+        idx._process_path_sync(img)
+        conn = get_pool().main()
+        # 确认已挂到 system folder
+        assert conn.execute(
+            "SELECT COUNT(*) AS c FROM image_folders"
+        ).fetchone()["c"] == 1
+        # 删除整条磁盘目录
+        import shutil
+        shutil.rmtree(parent)
+        removed = repository.prune_missing_system_folders([watch])
+        assert removed >= 1
+        conn = get_pool().main()
+        assert conn.execute("SELECT COUNT(*) AS c FROM folders WHERE is_system=1").fetchone()["c"] == 0
+        assert conn.execute("SELECT COUNT(*) AS c FROM image_folders").fetchone()["c"] == 0
+    finally:
+        idx.shutdown()

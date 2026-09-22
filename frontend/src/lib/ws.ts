@@ -23,6 +23,9 @@ export function connectEvents() {
         // 乐观更新本地 feedItems（filter 掉该 id），避免 refreshFeed 重排导致滚动条跳顶。
         removeImageFromFeed(payload.id);
         await Promise.all([refreshStats(), refreshFolders()]);
+      } else if (payload.type === "folders_changed") {
+        // 来源目录镜像文件夹被清理（磁盘目录删除）→ 刷新左侧目录树
+        await Promise.all([refreshFolders(), refreshStats()]);
       } else if (payload.type === "scan_progress") {
         // 后端会发 scan 进度；用单独轮询补上
         await refreshScanProgress();

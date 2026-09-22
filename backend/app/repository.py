@@ -852,6 +852,45 @@ def get_folder_descendants(folder_id: int) -> list[int]:
     return out
 
 
+def prune_missing_system_folders(watch_dirs: list[Path]) -> int:
+    """删除磁盘上已不存在的 system folder 记录（来源目录镜像）。
+
+    只清理满足全部条件的目录：
+      - ``is_system = 1``（只有来源目录镜像会被自动维护；用户手动建的文件夹不动）；
+      - ``path`` 非空；
+      - path 落在某个 ``watch_dirs`` 下（避免误删其它来源）；
+      - 盘符存在（离线/网络盘不作为删除证据，与 ``reconcile_missing`` 同理）；
+      - 目录本身已不存在。
+
+    删除时级联：``parent_id`` 与 ``image_folders`` 均 ON DELETE CASCADE，后代与归属关系
+    会一并清掉。返回删除的文件夹数。
+    """
+    conn = get_pool().main()
+    rows = conn.execute(
+        "SELECT id, path FROM folders WHERE is_system = 1 AND path IS NOT NULL"
+    ).fetchall()
+    if not rows:
+        return 0
+    roots = [Path(d).resolve() for d in watch_dirs]
+    to_delete: list[int] = []
+    for r in rows:
+        p = Path(r["path"])
+        if find_watch_root(p, roots) is None:
+            continue
+        anchor = Path(p.anchor)
+        if not anchor.exists():
+            continue
+        if p.exists():
+            continue
+        to_delete.append(r["id"])
+    if not to_delete:
+        return 0
+    with transaction() as c:
+        placeholders = ",".join("?" * len(to_delete))
+        c.execute(f"DELETE FROM folders WHERE id IN ({placeholders})", to_delete)
+    return len(to_delete)
+
+
 def backfill_system_folders(watch_dirs: list[Path]) -> int:
     """为已索引但未挂 system folder 的图片建立归属。返回处理的图片数。"""
     conn = get_pool().main()

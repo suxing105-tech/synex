@@ -77,10 +77,24 @@ impl SidecarConfig {
                 .join("backend")
                 .join("data")
         } else {
-            app.path()
+            // 生产：优先把数据放在 exe 所在盘根下的 SeekX-Data（跟随安装盘、不占 C 盘，
+            // 且不随卸载删除）；若该位置不可写（如装在只读目录），回退到 app_data_dir。
+            let appdata_data = app
+                .path()
                 .app_data_dir()
                 .map_err(|e| format!("resolve app_data_dir: {e}"))?
-                .join("data")
+                .join("data");
+            let install_drive_data = std::env::current_exe().ok().and_then(|exe| {
+                exe.parent()
+                    .and_then(|dir| dir.ancestors().last().map(|root| root.join("SeekX-Data")))
+            });
+            match install_drive_data {
+                Some(ref dir) if ensure_dir_writable(dir) => {
+                    migrate_legacy_data(&appdata_data, dir);
+                    dir.clone()
+                }
+                _ => appdata_data,
+            }
         };
 
         Ok(Self {
@@ -89,6 +103,42 @@ impl SidecarConfig {
             data_dir,
         })
     }
+}
+
+/// 判断目录是否可创建且可写（放安装盘数据前的探测）。
+fn ensure_dir_writable(dir: &std::path::Path) -> bool {
+    if std::fs::create_dir_all(dir).is_err() {
+        return false;
+    }
+    let probe = dir.join(".seekx-write-probe");
+    let ok = std::fs::write(&probe, b"ok").is_ok();
+    let _ = std::fs::remove_file(&probe);
+    ok
+}
+
+/// 递归复制目录（用于把旧的 app_data 数据搬到安装盘）。
+fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_all(&from, &to)?;
+        } else {
+            std::fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
+}
+
+/// 若目标数据目录为空（无 db.sqlite）而旧的 app_data 目录里有数据，
+/// 则一次性把旧数据复制过来（保留旧目录作为备份），保证换盘/升级后图库不丢。
+fn migrate_legacy_data(legacy: &std::path::Path, target: &std::path::Path) {
+    if target.join("db.sqlite").exists() || !legacy.join("db.sqlite").exists() || legacy == target {
+        return;
+    }
+    let _ = copy_dir_all(legacy, target);
 }
 
 fn current_target_triple() -> &'static str {

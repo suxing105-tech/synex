@@ -63,7 +63,7 @@ cargo tauri build
 
 # 产物
 #   target\release\suxing-gallery.exe                     主程序
-#   target\release\bundle\nsis\闪寻空间_0.2.6_x64-setup.exe   NSIS 安装包
+#   target\release\bundle\nsis\闪寻空间_<版本>_x64-setup.exe   NSIS 安装包
 ```
 
 > 发布签名安装包请使用 `frontend\scripts\build-update.ps1`（需配置更新签名私钥）。

@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$SigningKeyPath,
     [string]$ReleaseNotes,
     [string]$OutputDirectory
@@ -15,6 +15,18 @@ if (!(Test-Path -LiteralPath $ReleaseNotes)) { throw "缺少版本说明。" }
 $Config = Get-Content "$RepoRoot/frontend/src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
 $Version = $Config.version
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+# 发布前先锁版本号：0.2.7 曾漏改 backend/app/version.py，
+# 打出的安装包一启动就变砖，只能重装。不一致就禁止发布。
+$VersionCheck = 1
+Push-Location (Join-Path $RepoRoot "backend")
+try {
+    $PreviousEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & $Python -m pytest tests/test_version_consistency.py -q *> "$OutputDir/version-check.log"
+    $VersionCheck = $LASTEXITCODE
+    $ErrorActionPreference = $PreviousEap
+} finally { Pop-Location }
+if ($VersionCheck) { throw "版本号不一致，已停止发布。查看 version-check.log" }
 $PreviousKey = $env:TAURI_SIGNING_PRIVATE_KEY
 $PreviousRoot = $env:SUXING_REPO_ROOT
 try {

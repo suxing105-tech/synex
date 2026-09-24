@@ -49,3 +49,16 @@ it('VideoPlayer 只选中一个视频时不显示对比入口', async () => {
   const ui = render(VideoPlayer, { open: true, startId: 1 });
   expect(ui.queryByRole('button', { name: '对比视频' })).toBeNull();
 });
+
+
+it('VideoCompare 右键弹出同步菜单，可切换同步/取消同步', async () => {
+  const ui = render(VideoCompare, { videos: [video(1), video(2)] as any });
+  const rootEl = ui.container.querySelector('.video-compare') as HTMLElement;
+  await fireEvent.contextMenu(rootEl);
+  expect(ui.getByRole('menuitem', { name: '取消同步' })).toBeTruthy();
+  await fireEvent.click(ui.getByRole('menuitem', { name: '取消同步' }));
+  expect(ui.getByText('已取消同步')).toBeTruthy();
+  expect(ui.queryByRole('menuitem')).toBeNull();
+  await fireEvent.contextMenu(rootEl);
+  expect(ui.getByRole('menuitem', { name: '同步播放' })).toBeTruthy();
+});

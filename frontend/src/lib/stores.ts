@@ -1,4 +1,4 @@
-import { writable, derived } from "svelte/store";
+import { writable, derived, get } from "svelte/store";
 import type { ComfyuiStatus, FeedResponse, FolderNode, ImageDetail, ImageSummary, MediaKind, ScanProgress, Stats } from "./types";
 import { foldersApi, imagesApi, scanApi, statsApi } from "./api";
 import { nextSelection, type Modifier, type SelectionState } from "./selection";
@@ -28,6 +28,21 @@ export const view = writable<"all" | "favorite" | "recent">("all");
 export const kind = writable<MediaKind>("image");
 export const query = writable<string>("");
 export const tag = writable<string | null>(null);
+export const textMode = writable(false);
+export const textTotal = writable(0);
+type ContentType = MediaKind | 'text';
+const contentViews = new Map<ContentType, { folder: number | null; view: 'all' | 'favorite' | 'recent'; query: string; tag: string | null }>();
+export function switchContent(next: ContentType, all = false, keepFolder = false) {
+  const current: ContentType = get(textMode) ? 'text' : get(kind);
+  const folder = get(folderId);
+  contentViews.set(current, { folder, view: get(view), query: get(query), tag: get(tag) });
+  const saved = contentViews.get(next);
+  textMode.set(next === 'text');
+  if (next !== 'text') kind.set(next);
+  folderId.set(keepFolder ? folder : all ? null : saved?.folder ?? null);
+  view.set(all || keepFolder ? 'all' : saved?.view ?? 'all');
+  query.set(all ? '' : saved?.query ?? ''); tag.set(all ? null : saved?.tag ?? null);
+}
 
 export const targetColumns = writable<number>(5);
 
@@ -157,6 +172,7 @@ export function removeImageFromFeed(id: number) {
 
 let feedRequest = 0;
 export async function refreshFeed() {
+  if (get(textMode)) return;
   const request = ++feedRequest;
   const removed = new Set<number>();
   pendingFeedRemovals.add(removed);
@@ -311,4 +327,3 @@ export const comfyuiStatus = writable<ComfyuiStatus>({
 
 
 export const comfyuiEnabled = writable<boolean>(true);
-

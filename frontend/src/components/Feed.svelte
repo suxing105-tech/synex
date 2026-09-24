@@ -3,6 +3,7 @@
   import { subscribeFileDrop } from "../lib/native-drop";
   import { beginOriginalDrag } from "../lib/original-drag";
   import GallerySearch from "./GallerySearch.svelte";
+  import ContentSwitcher from "./ContentSwitcher.svelte";
   import { copyOriginalImage } from "../lib/image-clipboard";
   import { matchesAction, shortcutBlocked } from "../lib/shortcut-settings";
   import { backendUrl } from "../lib/backend-url";
@@ -634,7 +635,7 @@
     <button class="compare-trigger shrink-0 rounded-lg px-2 py-2 text-xs" onclick={() => { const i = $feedItems.findIndex(it => $multiSelectedIds.has(it.id)); if (i >= 0) openLightbox($feedItems[i], i); }}>对比图片</button>
   {/if}
   </div>
-  <GallerySearch />
+  <GallerySearch label={$kind === 'video' ? '搜索视频' : '搜索图片'} />
   <div class="ml-auto flex items-center gap-2 text-[12.5px] text-muted">
     <span>列数</span>
     <input
@@ -647,7 +648,8 @@
       class="columns-slider w-20"
       style="--value: {$targetColumns}"
     />
-    <span class="text-zinc-200">{$targetColumns} 列</span>
+    <span class="text-zinc-200 whitespace-nowrap">{$targetColumns} 列</span>
+    <ContentSwitcher />
   </div>
 </div>
 
@@ -809,8 +811,12 @@
   .thumb.is-selected::after { content: ""; position: absolute; inset: 0; border: 1px solid #f24e4e; border-radius: inherit; pointer-events: none; z-index: 2; }
   .image-rename { min-width: 0; border: 1px solid #888; border-radius: 3px; background: #222; color: #eee; padding: 1px 3px; outline: none; font: inherit; }
   .import-progress { position: sticky; top: 0; z-index: 25; width: fit-content; margin: 0 auto 8px; padding: 6px 12px; background: #292929; border-radius: 16px; font-size: 12px; color: #ddd; }
-  .gallery-toolbar { grid-template-columns: minmax(0, 1fr) minmax(120px, 2fr) minmax(0, 1fr); }
-  @media (max-width: 760px) { .gallery-toolbar { grid-template-columns: minmax(0, 1fr); } }
+  .gallery-toolbar { grid-template-columns: minmax(100px, 1fr) minmax(120px, 2fr) minmax(280px, 1fr); }
+  @container (max-width: 650px) {
+    .gallery-toolbar { grid-template-columns:minmax(80px,1fr) auto; gap:8px; padding-inline:10px; }
+    .toolbar-info { display:none; }
+    .gallery-toolbar .columns-slider { width:48px; }
+  }
   .masonry-scroller {
     /* 容器宽变化时整排可能溢出，横向滚动兜底；
        纵向交给父级 overflow-y-auto 处理 */

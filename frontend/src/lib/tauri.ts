@@ -28,6 +28,11 @@ export async function selectImportDirectory(current = "", previous = ""): Promis
   return (window as any).__TAURI__.core.invoke("select_import_directory", { current, previous });
 }
 
+export async function selectTextPaths(directory: boolean): Promise<string[]> {
+  if (!isTauri()) throw new Error('文件选择仅在桌面版提供，请输入本地路径');
+  return (window as any).__TAURI__.core.invoke('select_text_paths', { directory });
+}
+
 /**
  * 读取 sidecar 当前状态（同步 invoke）。
  * Tauri 不可用时返回 null。

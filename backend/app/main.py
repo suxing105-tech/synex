@@ -35,6 +35,7 @@ from .routes import settings as settings_route
 from .routes import tags as tags_route
 from .routes import reverse_prompts as reverse_prompts_route
 from .routes import videos as videos_route
+from .routes import texts as texts_route
 
 log = logging.getLogger("suxing_gallery")
 logging.basicConfig(
@@ -111,6 +112,9 @@ async def lifespan(app: FastAPI):
         while True:
             try:
                 await asyncio.to_thread(indexer.reconcile_missing)
+                from . import texts
+                if await asyncio.to_thread(texts.reconcile):
+                    await bus.publish({'type': 'texts_changed'})
             except Exception:
                 log.exception("reconcile missing images failed")
             await asyncio.sleep(2)
@@ -153,6 +157,7 @@ app.include_router(tags_route.router)
 app.include_router(settings_route.router)
 app.include_router(reverse_prompts_route.router)
 app.include_router(videos_route.router)
+app.include_router(texts_route.router)
 
 
 # ---------- 静态资源 ----------

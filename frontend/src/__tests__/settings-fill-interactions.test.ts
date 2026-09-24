@@ -20,7 +20,7 @@ describe("设置与反推使用底色交互", () => {
     expect(read("App.svelte")).not.toContain('<HeaderBar');
     expect(read("App.svelte")).toContain('sidebar-actions');
     expect(read("App.svelte")).toContain('aria-label="导入目录"');
-    expect(read("components/Feed.svelte")).toContain('<GallerySearch />');
+    expect(read("components/Feed.svelte")).toContain('<GallerySearch label=');
     const source = read("components/SettingsModal.svelte");
     expect(source).toContain('settings-title w-[240px] shrink-0 bg-surface');
     expect(source).toContain('overflow-y-auto bg-surface');

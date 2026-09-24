@@ -3,7 +3,7 @@
   import { subscribeFileDrop } from '../lib/native-drop';
   import { pushToast } from "../lib/toast";
   import { backendUrl } from "../lib/backend-url";
-  import { folders, folderId, view, stats, kind, query, tag } from "../lib/stores";
+  import { folders, folderId, view, stats, kind, query, tag, textMode, textTotal, switchContent } from "../lib/stores";
   import Icon from "./Icon.svelte";
   import type { FolderNode } from "../lib/types";
   import { foldersApi } from "../lib/api";
@@ -13,6 +13,7 @@
   let externalHover = $state(0);
   let importingFolders = $state(false);
   onMount(() => subscribeFileDrop(() => sidebarRegion, count => externalHover = count, async paths => {
+    if ($textMode) { window.dispatchEvent(new CustomEvent('associate-text-paths', { detail: paths })); return; }
     if (importingFolders) return;
     importingFolders = true;
     try {
@@ -224,10 +225,14 @@
     } else {
       if (!confirm("删除此文件夹？其中的图片将升级到上一级。")) return;
     }
-    await foldersApi.remove(id);
-    menuFor = null;
-    if ($folderId === id) folderId.set(null);
-    await refreshFolders();
+    try {
+      await foldersApi.remove(id);
+      menuFor = null;
+      if ($folderId === id) folderId.set(null);
+      await refreshFolders();
+    } catch (error) {
+      pushToast(`删除失败：${error instanceof Error ? error.message : error}`, { kind: 'error' });
+    }
   }
 
   async function revealSystemFolder(id: number) {
@@ -287,14 +292,15 @@
 </div>
 <div bind:this={sidebarRegion} class:external-hover={externalHover > 0} class="folder-scroll flex-1 overflow-y-auto px-2 pb-3" role="presentation" oncontextmenu={openBlankMenu}>
   {#if externalHover || importingFolders}
-    <div class="external-drop-status" role="status">{importingFolders ? '正在复制文件夹及全部内容…' : '松开后复制到我的文件夹（保留原文件）'}</div>
+    <div class="external-drop-status" role="status">{$textMode ? '松开以关联文本；编辑将保存到原文件' : importingFolders ? '正在复制文件夹及全部内容…' : '松开后复制到我的文件夹（保留原文件）'}</div>
   {/if}
   <div class="text-[10px] uppercase text-muted tracking-wider px-[10px] py-[10px] opacity-70">
     系统
   </div>
   <div
-    class="folder-item {$view === 'all' && $folderId === null && $kind === 'image' ? 'active' : ''}"
+    class="folder-item {!$textMode && $view === 'all' && $folderId === null && $kind === 'image' ? 'active' : ''}"
     onclick={() => {
+      switchContent('image', true);
       kind.set('image');
       view.set('all');
       folderId.set(null);
@@ -308,8 +314,9 @@
     <span class="count">{$stats.total_images}</span>
   </div>
   <div
-    class="folder-item {$view === 'all' && $folderId === null && $kind === 'video' ? 'active' : ''}"
+    class="folder-item {!$textMode && $view === 'all' && $folderId === null && $kind === 'video' ? 'active' : ''}"
     onclick={() => {
+      switchContent('video', true);
       kind.set('video');
       view.set('all');
       folderId.set(null);
@@ -322,6 +329,12 @@
     <span class="label">所有视频</span>
     <span class="count">{$stats.total_videos}</span>
   </div>
+  <div class="folder-item {$textMode && $view === 'all' && $folderId === null ? 'active' : ''}"
+    role="button" tabindex="0" onclick={() => switchContent('text', true)}
+    onkeydown={(e) => { if (e.key === 'Enter') switchContent('text', true); }}>
+    <span class="caret-spacer"></span><span class="icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>
+    <span class="label">全部文本</span><span class="count">{$textTotal || ''}</span>
+  </div>
   <div
     class="folder-item {$view === 'favorite' ? 'active' : ''}"
     onclick={() => setView('favorite')}
@@ -329,7 +342,7 @@
     <span class="caret-spacer"></span>
     <span class="icon"><Icon name="star" size={13} /></span>
     <span class="label">收藏</span>
-    <span class="count">{$stats.favorites}</span>
+    <span class="count">{$textMode ? '' : $stats.favorites}</span>
   </div>
   <div
     class="folder-item {$view === 'recent' ? 'active' : ''}"
@@ -337,7 +350,7 @@
   >
     <span class="caret-spacer"></span>
     <span class="icon"><Icon name="clock" size={13} /></span>
-    <span class="label">最近生成</span>
+    <span class="label">{$textMode ? '最近打开' : '最近生成'}</span>
     <span class="count"></span>
   </div>
 
@@ -492,7 +505,7 @@
     {:else}
       <span class="label" title={folder.path ?? folder.name}>{folder.name}</span>
     {/if}
-    <span class="count">{folder.recursive_count}</span>
+    <span class="count">{$textMode ? folder.text_count ?? 0 : folder.recursive_count}</span>
     <button class="menu-btn" onclick={(e) => openMenu(folder.id, e)}
       ondblclick={(e) => e.stopPropagation()} aria-label="文件夹操作">
       <Icon name="more-vertical" size={14} />
@@ -561,6 +574,11 @@
     border-radius: 1px;
   }
   :global(.folder-item .icon) {
+    width:16px;
+    height:16px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
     font-size: 13px;
     opacity: 0.85;
     flex-shrink: 0;

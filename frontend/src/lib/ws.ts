@@ -14,7 +14,9 @@ export function connectEvents() {
   ws.onmessage = async (ev) => {
     try {
       const payload = JSON.parse(ev.data);
-      if (payload.type === "image_indexed") {
+      if (payload.type === 'texts_changed') {
+        window.dispatchEvent(new CustomEvent('texts-changed'));
+      } else if (payload.type === "image_indexed") {
         // 拉一次最新 feed（保持倒序）
         await refreshFeed();
         await Promise.all([refreshStats(), refreshFolders()]);

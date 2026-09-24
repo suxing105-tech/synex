@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .db import fts_sync, get_pool, transaction
 from .parser import is_playable_video, parse_video_metadata
+from .texts import serialized
 
 
 
@@ -470,6 +471,7 @@ class RenameError(ValueError):
     """重命名失败时抛；HTTP 层转 400/404/409。"""
 
 
+@serialized
 def rename_image(image_id: int, new_filename: str) -> dict:
     """重命名磁盘文件 + 更新 images 表。
 
@@ -534,6 +536,8 @@ def rename_image(image_id: int, new_filename: str) -> dict:
         raise RenameError("目标文件已存在")
 
     old_path.rename(new_path)
+    from .texts import remap
+    remap(old_path, new_path)
     stat = new_path.stat()
     new_mtime = float(stat.st_mtime)
     with transaction() as c:
@@ -809,7 +813,8 @@ def ensure_system_folder_chain(file_path: Path, watch_root: Path) -> int | None:
     if not parts:
         return None
     conn = get_pool().main()
-    parent_id: int | None = None
+    root_row = conn.execute('SELECT id FROM folders WHERE path=?', (_normalize_folder_path(watch_root),)).fetchone()
+    parent_id: int | None = root_row['id'] if root_row else None
     deepest_id: int | None = None
     cumulative = watch_root
     for part in parts:

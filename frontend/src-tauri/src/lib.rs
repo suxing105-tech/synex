@@ -59,6 +59,7 @@ pub fn run() {
             comfyui::open_comfy_workflow,
             commands::get_sidecar_status,
             folders::select_import_directory,
+            folders::select_text_paths,
             commands::restart_sidecar,
             updates::get_update_status,
             updates::set_update_automatic,

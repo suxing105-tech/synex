@@ -6,7 +6,7 @@ export const shortcutActions = [
   { id: "seed", label: "复制 Seed", key: "s" },
   { id: "comfy", label: "在 ComfyUI 打开", key: "shift+c" },
   { id: "favorite", label: "切换收藏", key: "f" },
-  { id: "tags", label: "编辑标签", key: "t" },
+  { id: "tags", label: "编辑标签", key: "shift+t" },
   { id: "preview", label: "预览图片 / 预览下一张", key: "space" },
   { id: "previous", label: "预览上一张", key: "arrowleft" },
   { id: "next", label: "预览下一张", key: "arrowright" },
@@ -22,6 +22,7 @@ export function validateShortcuts(value: ShortcutMap): string | null {
     const key = value[a.id];
     if (typeof key !== "string" || (key && !validKey.test(key))) return `${a.label}：不支持该按键`;
     if (!key) continue;
+    if (["i", "v", "t"].includes(key)) return `${a.label}：I / V / T 保留用于切换内容类型`;
     const parts = key.split("+");
     const canonical = [...new Set(parts.slice(0, -1))].sort().concat(parts.at(-1)!).join("+");
     if (seen.has(canonical)) return `「${a.label}」与「${seen.get(canonical)}」的快捷键冲突`;
@@ -33,6 +34,9 @@ export function loadShortcuts(): ShortcutMap {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey) || "null");
     const value = { ...defaultShortcuts, ...saved };
+    for (const action of shortcutActions) {
+      if (['i', 'v', 't'].includes(value[action.id])) value[action.id] = action.id === 'tags' && value[action.id] === 't' ? 'shift+t' : '';
+    }
     if (!validateShortcuts(value)) return value;
   } catch { /* 损坏或不可用的本地存储使用默认值 */ }
   return { ...defaultShortcuts };

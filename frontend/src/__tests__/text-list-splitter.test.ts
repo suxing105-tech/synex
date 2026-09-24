@@ -1,0 +1,31 @@
+import { afterEach, expect, it, vi } from 'vitest';
+import { render, cleanup, fireEvent } from '@testing-library/svelte';
+import TextListSplitter from '../components/TextListSplitter.svelte';
+afterEach(cleanup);
+it('整条分隔线拖动调宽，限制边界，松开后保存', async () => {
+  const onchange=vi.fn(); const ui=render(TextListSplitter,{value:220,max:440,onchange});
+  const bar=ui.getByRole('separator',{name:'调整文本列表宽度'});
+  await fireEvent.pointerDown(bar,{button:0,pointerId:1,clientX:220});
+  await fireEvent.pointerMove(window,{pointerId:1,clientX:350});
+  expect(bar.getAttribute('aria-valuenow')).toBe('350');
+  expect(onchange).not.toHaveBeenCalled();
+  await fireEvent.pointerMove(window,{pointerId:1,clientX:900});
+  expect(bar.getAttribute('aria-valuenow')).toBe('440');
+  await fireEvent.pointerUp(window,{pointerId:1});
+  expect(onchange).toHaveBeenCalledTimes(1);
+});
+it('Esc 取消拖动，方向键调节，双击恢复默认宽度', async () => {
+  const onchange=vi.fn(); const ui=render(TextListSplitter,{value:220,onchange});
+  const bar=ui.getByRole('separator');
+  await fireEvent.pointerDown(bar,{button:0,pointerId:1,clientX:220});
+  await fireEvent.pointerMove(window,{pointerId:1,clientX:310});
+  await fireEvent.keyDown(window,{key:'Escape'});
+  expect(bar.getAttribute('aria-valuenow')).toBe('220');
+  expect(onchange).not.toHaveBeenCalled();
+  await fireEvent.keyDown(bar,{key:'ArrowRight'});
+  expect(bar.getAttribute('aria-valuenow')).toBe('236');
+  await fireEvent.doubleClick(bar);
+  expect(bar.getAttribute('aria-valuenow')).toBe('220');
+  await fireEvent.keyDown(bar,{key:'Home'});
+  expect(bar.getAttribute('aria-valuenow')).toBe('180');
+});

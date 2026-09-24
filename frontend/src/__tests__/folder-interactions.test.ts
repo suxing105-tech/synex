@@ -14,6 +14,7 @@ vi.mock("../lib/api", () => ({ foldersApi: { importDirectories: vi.fn(), create:
 vi.mock("../lib/stores", () => ({
   folders: writable([]), folderId: writable(null), view: writable("all"),
   kind: writable("image"), query: writable(""), tag: writable(null),
+  textMode: writable(false), textTotal: writable(0), switchContent: vi.fn(),
   stats: writable({ total_images: 0, total_videos: 0, favorites: 0 }), refreshFolders: vi.fn(), refreshFeed: vi.fn(), refreshStats: vi.fn(),
 }));
 

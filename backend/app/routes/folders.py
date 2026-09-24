@@ -25,7 +25,17 @@ def import_directories(payload: DirectoryDrop):
 
 @router.get("")
 def list_folders():
-    return repository.folder_tree()
+    from pathlib import Path
+    from .. import texts
+    tree = repository.folder_tree()
+    paths = [Path(r['path']) for r in texts.conn().execute('SELECT path FROM texts WHERE missing=0')]
+    def enrich(nodes):
+        for node in nodes:
+            directory = Path(node['path']).resolve() if node.get('path') else None
+            node['text_count'] = sum(p.is_relative_to(directory) for p in paths) if directory else 0
+            enrich(node['children'])
+    enrich(tree)
+    return tree
 
 
 @router.post("")
@@ -86,6 +96,9 @@ def delete_folder(folder_id: int):
       磁盘仍存在而重建。此操作由前端二次确认后调用，属于显式的破坏性操作。
     """
     if repository.is_system_folder(folder_id):
+        from .. import texts
+        if texts.listing(folder_id=folder_id, limit=1)['total']:
+            raise HTTPException(400, '此目录包含已关联文本。请先在全部文本中将原文件移入回收站，避免永久删除正文。')
         import shutil
         from pathlib import Path
         conn = repository.get_pool().main()

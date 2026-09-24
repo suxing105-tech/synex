@@ -5,6 +5,12 @@
   import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, comfyuiEnabled, feedItems, tag, folderId, query, view, selectedDetail } from "./lib/stores";
   import { createSplashGate } from "./lib/splash-gate.svelte";
   import FolderTree from "./components/FolderTree.svelte";
+  import TextWorkspace from './components/TextWorkspace.svelte';
+  import { registerContentShortcuts } from './lib/content-shortcuts';
+  onMount(() => registerContentShortcuts(type => switchContent(type, false, true), () => lightboxOpen || settingsOpen || onboardingOpen));
+  import { textMode, switchContent } from './lib/stores';
+  let textOpened = $state(false);
+  $effect(() => { if ($textMode) textOpened = true; });
   import Feed from "./components/Feed.svelte";
   import DetailPanel from "./components/DetailPanel.svelte";
   import Lightbox from "./components/Lightbox.svelte";
@@ -194,9 +200,10 @@
   {/if}
   <div
     class="flex-1 min-h-0 grid app-grid"
-    class:drawer-mode={narrowMode}
+    class:drawer-mode={narrowMode && !$textMode}
     class:sidebar-collapsed={sidebarCollapsed}
-    style="--sidebar-width: {sidebarCollapsed ? 44 : 260}px; grid-template-columns: var(--sidebar-width) 1fr 6px {detailCollapsed ? 44 : detailWidth}px;"
+    class:text-mode={$textMode}
+    style="--sidebar-width: {sidebarCollapsed ? 44 : 260}px; grid-template-columns: {$textMode ? 'var(--sidebar-width) 1fr' : `var(--sidebar-width) 1fr 6px ${detailCollapsed ? 44 : detailWidth}px`};"
   >
     <aside class="border-r border-border bg-surface flex flex-col min-h-0">
       {#if sidebarCollapsed}
@@ -215,7 +222,9 @@
       </div>
       {/if}
     </aside>
-    <main class="relative min-w-0 min-h-0 overflow-hidden isolate">
+    <main class="relative min-w-0 min-h-0 overflow-hidden isolate" style="display:flex;flex-direction:column;">
+      {#if textOpened}<div style:display={$textMode ? 'block' : 'none'} style="flex:1;min-height:0;"><TextWorkspace /></div>{/if}
+      {#if !$textMode}
       <div class="h-full flex flex-col" inert={lightboxOpen}>
       <Feed
         bind:selectedId={selectedIdValue}
@@ -224,7 +233,9 @@
       />
       </div>
       <Lightbox bind:open={lightboxOpen} bind:index={lightboxIndex} bind:selectedId={selectedIdValue} />
+      {/if}
     </main>
+    {#if !$textMode}
     <div
       class="splitter"
       role="separator"
@@ -253,9 +264,10 @@
         </div>
       {/if}
     </aside>
+    {/if}
   </div>
 
-  {#if narrowMode && $selectedDetail && !drawerOpen}
+  {#if !$textMode && narrowMode && $selectedDetail && !drawerOpen}
     <button
       type="button"
       class="drawer-toggle"
@@ -277,6 +289,7 @@
 <SplashOverlay ready={gate.ready} error={gate.error} />
 
 <style>
+  main { container-type:inline-size; }
   .sidebar-expand { margin: 13px auto; padding: 4px; border: 0; background: transparent; color: #888; box-shadow: none; outline: none; }
   .sidebar-expand:hover, .sidebar-expand:focus-visible { color: #eee; border: 0; background: transparent; box-shadow: none; outline: none; }
   .collapse-sidebar { border: 0; background: transparent; color: #888; padding: 4px; cursor: pointer; outline: none; box-shadow: none; }
@@ -326,7 +339,7 @@
     transform: translateY(-1px);
   }
   @media (max-width: 1100px) {
-    .app-grid {
+    .app-grid:not(.text-mode) {
       grid-template-columns: var(--sidebar-width) 1fr 6px 320px !important;
     }
   }

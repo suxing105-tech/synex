@@ -16,6 +16,7 @@ vi.mock("../lib/stores", async () => {
   return {
     folders: writable([]), folderId: writable(null), view: writable("all"),
     kind: writable("image"), query: writable(""), tag: writable(null),
+    textMode: writable(false), textTotal: writable(0), switchContent: vi.fn(),
     stats: writable({ total_images: 0, total_videos: 5, favorites: 0 }),
     refreshFolders: vi.fn(), refreshFeed: vi.fn(), refreshStats: vi.fn(),
   };

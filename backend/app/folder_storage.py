@@ -5,6 +5,7 @@ import re
 from . import repository
 from .config import data_dir, inbox_dir
 from .db import get_pool, transaction
+from .texts import serialized
 
 
 def valid_name(name: str) -> str:
@@ -63,6 +64,7 @@ def create_folder(name: str, parent_id: int | None) -> dict:
         raise
 
 
+@serialized
 def rename_folder(folder_id: int, name: str) -> dict:
     row = get_pool().main().execute('SELECT * FROM folders WHERE id=?', (folder_id,)).fetchone()
     if not row or not row['path'] or row['is_system']:
@@ -82,7 +84,7 @@ def rename_folder(folder_id: int, name: str) -> dict:
             for table in ('folders', 'images'):
                 conn.execute(f'UPDATE {table} SET path=? || substr(path, ?) WHERE path=? OR substr(path,1,?)=?',
                              (new_text, len(old_text) + 1, old_text, len(old_text) + 1, old_text + '/'))
-        return repository.folder_update(folder_id, name=name)
+        result = repository.folder_update(folder_id, name=name)
     except Exception:
         new.rename(old)
         with transaction() as conn:
@@ -90,7 +92,11 @@ def rename_folder(folder_id: int, name: str) -> dict:
                 conn.execute(f'UPDATE {table} SET path=? || substr(path, ?) WHERE path=? OR substr(path,1,?)=?',
                              (old_text, len(new_text) + 1, new_text, len(new_text) + 1, new_text + '/'))
         raise
+    from .texts import remap
+    remap(old, new)
+    return result
 
+@serialized
 def relocate_folder(folder_id: int, target_id: int | None, position: str) -> None:
     """Move a directory and its indexed subtree together; refuse merges and cycles."""
     conn = get_pool().main()
@@ -144,3 +150,6 @@ def relocate_folder(folder_id: int, target_id: int | None, position: str) -> Non
         if old and new != old:
             new.rename(old)
         raise
+    if old and new != old:
+        from .texts import remap
+        remap(old, new)

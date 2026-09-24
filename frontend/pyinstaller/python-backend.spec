@@ -32,6 +32,8 @@ a = Analysis(
         "app.routes",
         "app.routes.__init__",
         "app.routes.images",
+        "app.texts",
+        "app.routes.texts",
         "app.routes.folders",
         "app.routes.settings",
         "app.routes.tags",

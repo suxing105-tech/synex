@@ -145,6 +145,8 @@ class ConnectionPool:
             # SCHEMA 先跑（建表 + 索引；老库缺 path 列时 idx_folders_path 不在这里建）。
             # migrate_system_folders 后跑：老库 ALTER 补列 + 建唯一索引；新库 no-op。
             self._main.executescript(SCHEMA)
+            from .texts import initialize as initialize_texts
+            initialize_texts(self._main)
             from .reverse_prompts import initialize as initialize_reverse_prompts
             initialize_reverse_prompts(self._main)
             migrate_system_folders(self._main)

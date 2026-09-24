@@ -360,12 +360,13 @@ pub async fn spawn(app: AppHandle, state: Arc<SidecarState>) -> Result<(), Sidec
             if let Some(rest) = line.strip_prefix("READY ") {
                 match serde_json::from_str::<serde_json::Value>(rest) {
                     Ok(v) => {
-                        if v["version"].as_str() != Some(env!("CARGO_PKG_VERSION"))
-                            || v["protocol"].as_u64() != Some(1)
-                        {
-                            state_a
-                                .set_error("图库与后台版本不一致，请使用完整安装包重新安装".into());
-                            return;
+                        match check_ready_payload(&v) {
+                            Err(reason) => {
+                                state_a.set_error(reason);
+                                return;
+                            }
+                            Ok(Some(warning)) => log::warn!("[sidecar] {warning}"),
+                            Ok(None) => {}
                         }
                         log::info!("[sidecar] READY payload={v}");
                         state_a.mark_ready();
@@ -444,9 +445,62 @@ pub async fn spawn(app: AppHandle, state: Arc<SidecarState>) -> Result<(), Sidec
     Err(error)
 }
 
+/// 校验 sidecar 上报的 READY 载荷。
+///
+/// 协议不兼容意味着前后端根本没法通信，必须失败；版本号只是可观测性信息，
+/// 不一致时只告警不拦启动——否则任何一次漏改版本号，都会让已经装好的
+/// app 直接变成打不开的空壳（0.2.7 就是这么坏的）。
+fn check_ready_payload(v: &serde_json::Value) -> Result<Option<String>, String> {
+    const DESKTOP_PROTOCOL: u64 = 1;
+    if v["protocol"].as_u64() != Some(DESKTOP_PROTOCOL) {
+        let reported = match v["protocol"].as_u64() {
+            Some(p) => p.to_string(),
+            None => "未知".to_string(),
+        };
+        return Err(format!(
+            "图库与后台通信协议不兼容（后台 {reported}，桌面端 {DESKTOP_PROTOCOL}），请使用完整安装包重新安装"
+        ));
+    }
+    let desktop = env!("CARGO_PKG_VERSION");
+    match v["version"].as_str() {
+        Some(backend) if backend == desktop => Ok(None),
+        Some(backend) => Ok(Some(format!(
+            "版本号不一致：桌面端 {desktop}，后台 {backend}；协议兼容，继续启动"
+        ))),
+        None => Ok(Some("后台未上报版本号；协议兼容，继续启动".to_string())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn matching_ready_payload_starts_clean() {
+        let v = serde_json::json!({
+            "port": 8765,
+            "version": env!("CARGO_PKG_VERSION"),
+            "protocol": 1,
+        });
+        assert_eq!(check_ready_payload(&v).unwrap(), None);
+    }
+
+    #[test]
+    fn version_mismatch_warns_but_still_starts() {
+        let v = serde_json::json!({"port": 8765, "version": "0.0.1", "protocol": 1});
+        let warning = check_ready_payload(&v).unwrap().expect("warning");
+        assert!(warning.contains("版本号不一致"), "{warning}");
+    }
+
+    #[test]
+    fn protocol_mismatch_is_fatal() {
+        let v = serde_json::json!({
+            "port": 8765,
+            "version": env!("CARGO_PKG_VERSION"),
+            "protocol": 2,
+        });
+        assert!(check_ready_payload(&v).unwrap_err().contains("协议不兼容"));
+    }
+
 
     #[test]
     fn occupied_port_reports_conflict_without_waiting() {

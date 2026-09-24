@@ -7,7 +7,7 @@ import { folders, folderId, kind, query, tag, view } from "../lib/stores";
 vi.mock("../lib/native-drop", () => ({ subscribeFileDrop: vi.fn(() => () => {}) }));
 vi.mock("../lib/api", () => ({
   foldersApi: {
-    tree: vi.fn(async () => []), importDirectories: vi.fn(async () => ({ moved: [], failed: [], warnings: [] })),
+    tree: vi.fn(async () => []), importDirectories: vi.fn(async () => ({ copied: [], failed: [], warnings: [] })),
     create: vi.fn(), rename: vi.fn(), reorder: vi.fn(), reveal: vi.fn(),
   },
 }));

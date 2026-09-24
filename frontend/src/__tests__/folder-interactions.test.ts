@@ -33,8 +33,8 @@ describe('真实文件夹组件交互', () => {
     const [region, hover, drop] = vi.mocked(subscribeFileDrop).mock.calls[0];
     expect(region()).toBe(screen.container.querySelector('.folder-scroll'));
     hover(1); await tick();
-    expect(screen.getByRole('status').textContent).toContain('完整移动');
-    vi.mocked(foldersApi.importDirectories).mockResolvedValue({ moved: [{ id: 22, name: '桌面目录', path: 'D:/data/folders/桌面目录' }], failed: [], warnings: [] });
+    expect(screen.getByRole('status').textContent).toContain('复制');
+    vi.mocked(foldersApi.importDirectories).mockResolvedValue({ copied: [{ id: 22, name: '桌面目录', path: 'D:/data/folders/桌面目录' }], failed: [], warnings: [] });
     await drop(['C:/Desktop/桌面目录']);
     expect(foldersApi.importDirectories).toHaveBeenCalledWith(['C:/Desktop/桌面目录']);
     expect(refreshFolders).toHaveBeenCalled();

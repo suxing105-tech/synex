@@ -18,10 +18,10 @@
     try {
       const result = await foldersApi.importDirectories(paths);
       await refreshFolders();
-      if (result.moved.length) {
-        view.set('all'); folderId.set(result.moved[0].id);
+      if (result.copied.length) {
+        view.set('all'); folderId.set(result.copied[0].id);
         await Promise.all([refreshFeed(), refreshStats()]);
-        pushToast(`已完整移动 ${result.moved.length} 个文件夹到我的文件夹`);
+        pushToast(`已复制 ${result.copied.length} 个文件夹到我的文件夹（保留原文件）`);
       }
       for (const failure of [...result.failed, ...result.warnings]) {
         pushToast(`${failure.path}：${failure.reason}`, { kind: 'error' });
@@ -287,7 +287,7 @@
 </div>
 <div bind:this={sidebarRegion} class:external-hover={externalHover > 0} class="folder-scroll flex-1 overflow-y-auto px-2 pb-3" role="presentation" oncontextmenu={openBlankMenu}>
   {#if externalHover || importingFolders}
-    <div class="external-drop-status" role="status">{importingFolders ? '正在移动文件夹及全部内容…' : '松开后完整移动到我的文件夹'}</div>
+    <div class="external-drop-status" role="status">{importingFolders ? '正在复制文件夹及全部内容…' : '松开后复制到我的文件夹（保留原文件）'}</div>
   {/if}
   <div class="text-[10px] uppercase text-muted tracking-wider px-[10px] py-[10px] opacity-70">
     系统

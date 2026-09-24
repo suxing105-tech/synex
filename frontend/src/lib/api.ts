@@ -154,7 +154,7 @@ export const videosApi = {
 
 
 export const foldersApi = {
-  importDirectories(paths: string[]): Promise<{ moved: { id: number; name: string; path: string }[]; failed: { path: string; reason: string }[]; warnings: { path: string; reason: string }[] }> {
+  importDirectories(paths: string[]): Promise<{ copied: { id: number; name: string; path: string }[]; failed: { path: string; reason: string }[]; warnings: { path: string; reason: string }[] }> {
     return http('/api/folders/import-directories', { method: 'POST', body: JSON.stringify({ paths }) });
   },
   reorder(id: number, target_id: number | null, position: "before" | "after" | "inside" | "root"): Promise<{ ok: boolean }> {

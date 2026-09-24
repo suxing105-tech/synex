@@ -19,8 +19,8 @@ class DirectoryDrop(BaseModel):
 
 @router.post('/import-directories')
 def import_directories(payload: DirectoryDrop):
-    from ..folder_import import move_directories
-    return move_directories(payload.paths)
+    from ..folder_import import copy_directories
+    return copy_directories(payload.paths)
 
 
 @router.get("")

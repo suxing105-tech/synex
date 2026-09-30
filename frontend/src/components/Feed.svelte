@@ -637,7 +637,6 @@
   </div>
   <GallerySearch label={$kind === 'video' ? '搜索视频' : '搜索图片'} />
   <div class="ml-auto flex items-center gap-2 text-[12.5px] text-muted">
-    <span>列数</span>
     <input
       type="range"
       min="4"
@@ -645,10 +644,10 @@
       step="1"
       value={$targetColumns}
       oninput={(e) => targetColumns.set(Number((e.target as HTMLInputElement).value))}
+      aria-label="列数"
       class="columns-slider w-20"
       style="--value: {$targetColumns}"
     />
-    <span class="text-zinc-200 whitespace-nowrap">{$targetColumns} 列</span>
     <ContentSwitcher />
   </div>
 </div>

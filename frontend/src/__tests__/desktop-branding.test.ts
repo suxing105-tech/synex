@@ -7,11 +7,11 @@ const root = resolve(__dirname, "../..");
 const config = JSON.parse(readFileSync(resolve(root, "src-tauri/tauri.conf.json"), "utf8"));
 
 describe("桌面品牌与深色窗口", () => {
-  it("浅色系统下仍使用深色原生标题栏，并保留窗口控制按钮", () => {
+  it("深色桌面窗口使用可定高标题栏，并保留窗口缩放能力", () => {
     const main = config.app.windows.find((w: { label: string }) => w.label === "main");
     expect(main.theme).toBe("Dark");
     expect(main.backgroundColor).toBe("#18181b");
-    expect(main.decorations).toBe(true);
+    expect(main.decorations).toBe(false);
     expect(main.resizable).toBe(true);
   });
 

@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { get } from 'svelte/store';
 import Feed from '../components/Feed.svelte';
-import { feedItems, feedLoading, multiSelectedIds } from '../lib/stores';
+import { feedItems, feedLoading, multiSelectedIds, targetColumns } from '../lib/stores';
 vi.mock('../lib/api', () => ({
   imagesApi: { list: vi.fn(async () => ({ items: get(feedItems), total: get(feedItems).length })), detail: vi.fn() },
   foldersApi: { tree: vi.fn(async () => []) }, statsApi: { get: vi.fn() }, scanApi: { progress: vi.fn() }, comfyuiApi: {},
@@ -34,4 +34,13 @@ it('改名输入框使用紧凑宽度，保留完整文件名供编辑', async (
   expect(input.value).toBe('1');
   expect(getComputedStyle(input).width).toBe('180px');
   expect(getComputedStyle(input).maxWidth).toBe('100%');
+});
+
+it('列数控件只显示滑块，拖动仍更新列数', async () => {
+  const screen = render(Feed, { selectedId: null, lightboxOpen: false, lightboxIndex: 0 });
+  const slider = screen.getByRole('slider', { name: '列数' });
+  expect(screen.queryByText('列数')).toBeNull();
+  expect(screen.queryByText(/^[0-9]+ 列$/)).toBeNull();
+  await fireEvent.input(slider, { target: { value: '8' } });
+  expect(get(targetColumns)).toBe(8);
 });

@@ -5,7 +5,19 @@
   import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, comfyuiEnabled, feedItems, tag, folderId, query, view, selectedDetail } from "./lib/stores";
   import { createSplashGate } from "./lib/splash-gate.svelte";
   import FolderTree from "./components/FolderTree.svelte";
+  import DesktopTitlebar from "./components/DesktopTitlebar.svelte";
+  import { isTauri } from "./lib/tauri";
+  const desktop = isTauri();
+  let desktopMaximized = $state(false);
+  import CollapsedSidebar from "./components/CollapsedSidebar.svelte";
   import TextWorkspace from './components/TextWorkspace.svelte';
+  import { registerSidebarShortcuts } from "./lib/sidebar-shortcuts";
+  onMount(() => registerSidebarShortcuts(
+    () => sidebarCollapsed = !sidebarCollapsed,
+    () => detailCollapsed = !detailCollapsed,
+    () => lightboxOpen || settingsOpen || onboardingOpen || videoPlayerOpen,
+    () => !$textMode,
+  ));
   import { registerContentShortcuts } from './lib/content-shortcuts';
   onMount(() => registerContentShortcuts(type => switchContent(type, false, true), () => lightboxOpen || settingsOpen || onboardingOpen));
   import { textMode, switchContent } from './lib/stores';
@@ -191,7 +203,9 @@
   });
 </script>
 
-<div class="h-screen w-screen flex flex-col bg-bg text-zinc-200" ondragover={swallowDrag} ondrop={swallowDrag} role="application">
+<div class="app-shell" class:desktop-shell={desktop} style:--desktop-titlebar-height={desktop ? (desktopMaximized ? "24px" : "36px") : "0px"}>
+{#if desktop}<DesktopTitlebar bind:maximized={desktopMaximized} />{/if}
+<div class="h-full w-full flex flex-col bg-bg text-zinc-200" ondragover={swallowDrag} ondrop={swallowDrag} role="application">
   <ScanProgressBar />
   {#if $updateStatus?.version && ["available", "ready"].includes($updateStatus.phase)}
     <button class="bg-surface-2 border-b border-border text-xs py-2 text-accent" onclick={() => (settingsOpen = true)}>
@@ -207,20 +221,15 @@
   >
     <aside class="border-r border-border bg-surface flex flex-col min-h-0">
       {#if sidebarCollapsed}
-        <button class="sidebar-expand" title="展开左侧栏" aria-label="展开左侧栏" onclick={() => sidebarCollapsed = false}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16m4-11 3 3-3 3"/></svg>
-        </button>
+        <CollapsedSidebar onexpand={() => sidebarCollapsed = false} />
       {:else}
       <FolderTree oncollapse={() => sidebarCollapsed = true} />
-      <div class="sidebar-actions fill-interactions flex items-center gap-2 px-4 py-4 shrink-0">
+      {/if}
+      <div class="sidebar-actions fill-interactions flex items-center mt-auto pt-4 pb-2 shrink-0" class:justify-center={sidebarCollapsed} class:px-4={!sidebarCollapsed}>
         <button class="w-10 h-10 flex items-center justify-center rounded-lg text-muted" aria-label="设置" title="设置" onclick={() => settingsOpen = true}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="m12 2 9 5v10l-9 5-9-5V7z" /><circle cx="12" cy="12" r="4" /></svg>
         </button>
-        <button class="w-10 h-10 flex items-center justify-center rounded-lg text-muted" aria-label="导入目录" title="导入目录" onclick={() => onboardingOpen = true}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 19V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM12 10v7m-3-3 3 3 3-3" /></svg>
-        </button>
       </div>
-      {/if}
     </aside>
     <main class="relative min-w-0 min-h-0 overflow-hidden isolate" style="display:flex;flex-direction:column;">
       {#if textOpened}<div style:display={$textMode ? 'block' : 'none'} style="flex:1;min-height:0;"><TextWorkspace /></div>{/if}
@@ -283,12 +292,16 @@
 <VideoPlayer bind:open={videoPlayerOpen} bind:startId={videoStartId} />
 
 <OnboardingModal bind:open={onboardingOpen} />
-<SettingsModal bind:open={settingsOpen} bind:tab={settingsTab} />
+<SettingsModal bind:open={settingsOpen} bind:tab={settingsTab} onOpenOnboarding={() => { settingsOpen = false; onboardingOpen = true; }} />
 <Toast />
 
 <SplashOverlay ready={gate.ready} error={gate.error} />
+</div>
 
 <style>
+  .app-shell { height: 100%; padding-top: var(--desktop-titlebar-height); }
+  .desktop-shell :global(.fixed.inset-0) { top: var(--desktop-titlebar-height); }
+
   main { container-type:inline-size; }
   .sidebar-expand { margin: 13px auto; padding: 4px; border: 0; background: transparent; color: #888; box-shadow: none; outline: none; }
   .sidebar-expand:hover, .sidebar-expand:focus-visible { color: #eee; border: 0; background: transparent; box-shadow: none; outline: none; }

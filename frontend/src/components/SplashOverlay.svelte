@@ -28,7 +28,7 @@
 <style>
   .splash-overlay {
     position: fixed;
-    inset: 0;
+    inset: var(--desktop-titlebar-height, 0px) 0 0;
     z-index: 80;
     display: grid;
     place-items: center;

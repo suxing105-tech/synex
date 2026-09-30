@@ -8,6 +8,20 @@ import { registerShortcuts } from "../lib/shortcuts";
 beforeEach(() => { localStorage.clear(); shortcutSettings.set({ ...defaultShortcuts }); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = ""; });
 describe("自定义快捷键", () => {
+  it("旧配置补充两个侧栏默认键并保留已有改键", () => {
+    localStorage.setItem("suxing.shortcuts.v1", JSON.stringify({ positive: "ctrl+q" }));
+    expect(loadShortcuts()).toMatchObject({ positive: "ctrl+q", rightSidebar: "tab", leftSidebar: "backquote" });
+    expect(validateShortcuts({ ...defaultShortcuts, leftSidebar: "tab" })).toContain("冲突");
+  });
+  it("侧栏快捷键可以录制 Tab 和波浪键并保存", async () => {
+    const ui = render(ShortcutSettings);
+    const right = ui.getByRole("button", { name: "设置展开 / 收起右侧栏快捷键" });
+    const left = ui.getByRole("button", { name: "设置展开 / 收起左侧栏快捷键" });
+    await fireEvent.click(right); await fireEvent.keyDown(right, { key: "Tab" });
+    await fireEvent.click(left); await fireEvent.keyDown(left, { key: "~", code: "Backquote", shiftKey: true });
+    await fireEvent.click(ui.getByText("保存快捷键"));
+    expect(loadShortcuts()).toMatchObject({ rightSidebar: "tab", leftSidebar: "backquote" });
+  });
   it("保存后重载，支持清除，损坏存储回退默认", () => {
     saveShortcuts({ ...defaultShortcuts, positive: "ctrl+q", seed: "" });
     expect(loadShortcuts().positive).toBe("ctrl+q");

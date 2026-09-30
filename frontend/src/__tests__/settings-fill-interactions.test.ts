@@ -11,20 +11,21 @@ describe("设置与反推使用底色交互", () => {
     const source = read("components/SettingsModal.svelte");
     expect(source).toContain('fixed inset-0 z-[60] bg-surface-2');
     expect(source).toContain('settings-shell w-full h-full');
-    expect(source).toContain('settings-content flex-1 min-w-0 overflow-y-auto');
-    expect(source).toContain('max-w-[960px] mx-auto');
+    expect(source).toContain('settings-content min-w-0 overflow-y-auto');
+    expect(source).toContain('max-width: 1080px');
     expect(source).not.toMatch(/max-w-\[94vw\]|88vh|bg-black\/75/);
   });
-  it("移除左下设置入口，标题与分类统一底色且分类有线性图标", () => {
+  it("底部保留设置入口，导入目录进入通用设置", () => {
     expect(read("App.svelte")).not.toContain('sidebar-settings');
     expect(read("App.svelte")).not.toContain('<HeaderBar');
-    expect(read("App.svelte")).toContain('sidebar-actions');
-    expect(read("App.svelte")).toContain('aria-label="导入目录"');
+    expect(read("App.svelte")).toContain('sidebar-actions fill-interactions flex items-center mt-auto pt-4 pb-2 shrink-0');
+    expect(read("App.svelte")).not.toContain('aria-label="导入目录"');
+    expect(read("components/SettingsModal.svelte")).toContain('onclick={onOpenOnboarding}>导入目录</button>');
     expect(read("components/Feed.svelte")).toContain('<GallerySearch label=');
     const source = read("components/SettingsModal.svelte");
-    expect(source).toContain('settings-title w-[240px] shrink-0 bg-surface');
-    expect(source).toContain('overflow-y-auto bg-surface');
-    expect(source).toContain('width="18" height="18"');
+    expect(source).toContain('settings-index');
+    expect(source).toContain('aria-controls={`settings-${section.id}`}');
+    expect(source).toContain('grid-template-columns: minmax(0, 1fr) 224px');
     expect(source).toContain('aria-label="返回图库"');
     expect(source).not.toContain('>×</button>');
     expect(read('components/FolderTree.svelte')).not.toContain('本地缓存');

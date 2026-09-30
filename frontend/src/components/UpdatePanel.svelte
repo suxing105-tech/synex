@@ -5,7 +5,7 @@
   const percent = $derived(downloadPercent($updateStatus?.downloaded ?? 0, $updateStatus?.total ?? null));
 </script>
 
-<section class="space-y-3 mb-5 rounded-lg border border-border p-4" aria-label="软件更新">
+<section class="update-settings space-y-4" aria-label="软件更新">
   <div class="flex justify-between items-center">
     <h3 class="text-sm font-semibold">软件更新</h3>
     <span class="text-xs text-muted">{$updateStatus ? `v${$updateStatus.current_version}` : "网页版"}</span>
@@ -55,3 +55,8 @@
     <p class="text-xs text-muted">自动更新仅在桌面版中提供。</p>
   {/if}
 </section>
+
+<style>
+  .update-settings { max-width: 640px; }
+  .update-settings p, .update-settings label { font-size: 13px; line-height: 1.7; }
+</style>

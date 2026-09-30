@@ -29,6 +29,11 @@ export const ICON_PATHS: Record<string, string> = {
     '<rect x="3" y="5" width="18" height="14" rx="2"/>' +
     '<path d="m10 9 5 3-5 3z"/>',
 
+  // 文本文档
+  text:
+    '<rect x="4" y="3" width="16" height="18" rx="2"/>' +
+    '<path d="M8 8h8M8 12h8M8 16h5"/>',
+
   // 文件夹
   folder:
     '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',

@@ -1,6 +1,8 @@
 import { writable, get } from "svelte/store";
 
 export const shortcutActions = [
+  { id: "rightSidebar", label: "展开 / 收起右侧栏", key: "tab" },
+  { id: "leftSidebar", label: "展开 / 收起左侧栏", key: "backquote" },
   { id: "positive", label: "复制正向 Prompt", key: "p" },
   { id: "negative", label: "复制反向 Prompt", key: "n" },
   { id: "seed", label: "复制 Seed", key: "s" },
@@ -15,7 +17,7 @@ export type ShortcutId = typeof shortcutActions[number]["id"];
 export type ShortcutMap = Record<ShortcutId, string>;
 export const defaultShortcuts = Object.fromEntries(shortcutActions.map(a => [a.id, a.key])) as ShortcutMap;
 const storageKey = "suxing.shortcuts.v1";
-const validKey = /^(?:(?:ctrl|alt|shift|meta)\+)*(?:[a-z0-9]|space|arrowleft|arrowright|arrowup|arrowdown|f[1-9]|f1[0-2]|home|end|pageup|pagedown)$/;
+const validKey = /^(?:(?:ctrl|alt|shift|meta)\+)*(?:[a-z0-9]|space|tab|backquote|arrowleft|arrowright|arrowup|arrowdown|f[1-9]|f1[0-2]|home|end|pageup|pagedown)$/;
 export function validateShortcuts(value: ShortcutMap): string | null {
   const seen = new Map<string, string>();
   for (const a of shortcutActions) {
@@ -49,9 +51,11 @@ export function saveShortcuts(value: ShortcutMap) {
   shortcutSettings.set({ ...value });
 }
 export function eventShortcut(e: KeyboardEvent): string {
-  const key = e.key === " " ? "space" : e.key.toLowerCase();
+  if (["Dead", "Process"].includes(e.key) || e.isComposing) return "";
+  const backquote = e.code === "Backquote" || e.key === "`" || e.key === "~";
+  const key = backquote ? "backquote" : e.key === " " ? "space" : e.key.toLowerCase();
   if (["control", "shift", "alt", "meta", "dead", "process"].includes(key) || e.isComposing) return "";
-  return [e.ctrlKey && "ctrl", e.altKey && "alt", e.shiftKey && "shift", e.metaKey && "meta", key].filter(Boolean).join("+");
+  return [e.ctrlKey && "ctrl", e.altKey && "alt", e.shiftKey && !backquote && "shift", e.metaKey && "meta", key].filter(Boolean).join("+");
 }
 export function shortcutBlocked(e: KeyboardEvent): boolean {
   const target = e.target;
@@ -64,6 +68,6 @@ export function matchesAction(e: KeyboardEvent, action: ShortcutId): boolean {
 }
 export function shortcutLabel(key: string): string {
   if (!key) return "未设置";
-  const names: Record<string, string> = { space: "Space", arrowleft: "←", arrowright: "→", arrowup: "↑", arrowdown: "↓", ctrl: "Ctrl", alt: "Alt", shift: "Shift", meta: "Win / Cmd" };
+  const names: Record<string, string> = { tab: "Tab", backquote: "~ / `", space: "Space", arrowleft: "←", arrowright: "→", arrowup: "↑", arrowdown: "↓", ctrl: "Ctrl", alt: "Alt", shift: "Shift", meta: "Win / Cmd" };
   return key.split("+").map(k => names[k] || k.toUpperCase()).join(" + ");
 }

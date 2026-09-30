@@ -158,8 +158,11 @@
 </section>
 
 <style>
-  label { display: block; font-size: 12px; color: #b8b8c3; }
-  input:not([type=checkbox]), textarea, select { display: block; width: 100%; margin-top: 6px; padding: 8px 10px; color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 6px; }
-  button { font-size: 12px; padding: 6px 10px; border: 1px solid #3f3f46; border-radius: 6px; }
+  .model-settings { max-width: 640px; }
+  fieldset { margin-top: 24px; }
+  legend { font-size: 14px; font-weight: 500; }
+  label { display: block; font-size: 13px; color: #b8b8c3; }
+  input:not([type=checkbox]), textarea, select { display: block; width: 100%; margin-top: 6px; padding: 9px 12px; color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 6px; }
+  button { font-size: 13px; padding: 8px 14px; border: 1px solid #3f3f46; border-radius: 6px; }
   button:disabled { opacity: .5; }
 </style>

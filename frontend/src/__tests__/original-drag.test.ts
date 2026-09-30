@@ -7,7 +7,7 @@ it('系统拖出传递原文件路径，包括 JPG；不传缩略图 URL', async
   let finish!: () => void;
   const invoke = vi.fn(() => new Promise<void>(resolve => { finish = resolve; }));
   (window as any).__TAURI__ = { core: { invoke } };
-  const files = ['D:/作品/横图.png', 'D:/照片/竖图.JPG'];
+  const files = ['D:/作品/横图.png', 'D:/照片/竖图.JPG', 'D:/视频/镜头.mp4', 'D:/视频/镜头.MOV'];
   const pending = dragOriginalImages(files);
   expect(invoke).toHaveBeenCalledWith('drag_original_images', { paths: files });
   expect(isDraggingOriginal()).toBe(true);

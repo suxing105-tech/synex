@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { startUpdates, updateStatus } from "./lib/updates";
+  import { startUpdates } from "./lib/updates";
   import { onMount, onDestroy } from "svelte";
   import { connectEvents, disconnectEvents } from "./lib/ws";
   import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, comfyuiEnabled, feedItems, tag, folderId, query, view, selectedDetail } from "./lib/stores";
   import { createSplashGate } from "./lib/splash-gate.svelte";
   import FolderTree from "./components/FolderTree.svelte";
   import DesktopTitlebar from "./components/DesktopTitlebar.svelte";
+  import SidebarUpdateButton from "./components/SidebarUpdateButton.svelte";
   import { isTauri } from "./lib/tauri";
   const desktop = isTauri();
   let desktopMaximized = $state(false);
@@ -161,8 +162,8 @@
   // ============ 列宽可拖拽 + 窄屏抽屉 ============
   let sidebarCollapsed = $state(false);
   let detailCollapsed = $state(false);
-  let detailWidth = $state(360);
   const DETAIL_MIN = 320;
+  let detailWidth = $state(DETAIL_MIN);
   const DETAIL_MAX = 560;
 
   let narrowMode = $state(false);
@@ -203,15 +204,10 @@
   });
 </script>
 
-<div class="app-shell" class:desktop-shell={desktop} style:--desktop-titlebar-height={desktop ? (desktopMaximized ? "24px" : "36px") : "0px"}>
+<div class="app-shell" class:desktop-shell={desktop} style:--desktop-titlebar-height={desktop ? (desktopMaximized ? "24px" : "28px") : "0px"}>
 {#if desktop}<DesktopTitlebar bind:maximized={desktopMaximized} />{/if}
 <div class="h-full w-full flex flex-col bg-bg text-zinc-200" ondragover={swallowDrag} ondrop={swallowDrag} role="application">
   <ScanProgressBar />
-  {#if $updateStatus?.version && ["available", "ready"].includes($updateStatus.phase)}
-    <button class="bg-surface-2 border-b border-border text-xs py-2 text-accent" onclick={() => (settingsOpen = true)}>
-      新版本 v{$updateStatus.version} {$updateStatus.phase === "ready" ? "已下载，点击选择安装时间" : "可用，点击查看更新"}
-    </button>
-  {/if}
   <div
     class="flex-1 min-h-0 grid app-grid"
     class:drawer-mode={narrowMode && !$textMode}
@@ -225,10 +221,11 @@
       {:else}
       <FolderTree oncollapse={() => sidebarCollapsed = true} />
       {/if}
-      <div class="sidebar-actions fill-interactions flex items-center mt-auto pt-4 pb-2 shrink-0" class:justify-center={sidebarCollapsed} class:px-4={!sidebarCollapsed}>
+      <div class="sidebar-actions fill-interactions flex items-center mt-auto pt-4 pb-2 shrink-0" class:justify-center={sidebarCollapsed} class:px-4={!sidebarCollapsed} class:collapsed-actions={sidebarCollapsed}>
         <button class="w-10 h-10 flex items-center justify-center rounded-lg text-muted" aria-label="设置" title="设置" onclick={() => settingsOpen = true}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="m12 2 9 5v10l-9 5-9-5V7z" /><circle cx="12" cy="12" r="4" /></svg>
         </button>
+        <SidebarUpdateButton />
       </div>
     </aside>
     <main class="relative min-w-0 min-h-0 overflow-hidden isolate" style="display:flex;flex-direction:column;">
@@ -259,7 +256,7 @@
     >
       {#if detailCollapsed}
         <button class="sidebar-expand" title="展开右侧栏" aria-label="展开右侧栏" onclick={() => (detailCollapsed = false)}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16m-6-11 3 3-3 3"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16m-4-11-3 3 3 3"/></svg>
         </button>
       {:else}
         <div class="flex items-center justify-between px-3 py-[10px] border-b border-border shrink-0">
@@ -299,6 +296,8 @@
 </div>
 
 <style>
+  .sidebar-actions { gap: 8px; }
+  .sidebar-actions.collapsed-actions { flex-direction: column-reverse; gap: 4px; }
   .app-shell { height: 100%; padding-top: var(--desktop-titlebar-height); }
   .desktop-shell :global(.fixed.inset-0) { top: var(--desktop-titlebar-height); }
 

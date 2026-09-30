@@ -2,13 +2,13 @@ use std::path::PathBuf;
 
 fn original_paths(paths: Vec<String>) -> Result<Vec<PathBuf>, String> {
     if paths.is_empty() || paths.len() > 2000 {
-        return Err("请选择要拖出的图片".into());
+        return Err("请选择要拖出的图片或视频".into());
     }
     paths.into_iter().map(|path| {
         let path = PathBuf::from(path);
         let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
-        if !path.is_absolute() || !path.is_file() || !["png", "webp", "jpg", "jpeg"].contains(&ext.as_str()) {
-            return Err("原图片不存在或格式不支持".into());
+        if !path.is_absolute() || !path.is_file() || !["png", "webp", "jpg", "jpeg", "mp4", "mov", "m4v", "webm", "mkv", "avi", "wmv", "flv"].contains(&ext.as_str()) {
+            return Err("原文件不存在或格式不支持".into());
         }
         Ok(path)
     }).collect()
@@ -51,4 +51,17 @@ mod tests {
         let file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("icons/32x32.png");
         assert_eq!(original_paths(vec![file.to_string_lossy().into_owned()]).unwrap(), vec![file]);
     }
+    #[test]
+    fn accepts_video_originals() {
+        let dir = std::env::temp_dir().join(format!("seekx-drag-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for ext in ["mp4", "MOV", "m4v", "webm", "mkv", "avi", "wmv", "flv"] {
+            let file = dir.join(format!("original.{ext}"));
+            std::fs::write(&file, b"test original path").unwrap();
+            assert_eq!(original_paths(vec![file.to_string_lossy().into_owned()]).unwrap(), vec![file.clone()]);
+            std::fs::remove_file(file).unwrap();
+        }
+        std::fs::remove_dir(dir).unwrap();
+    }
+
 }

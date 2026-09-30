@@ -11,12 +11,14 @@
     open: boolean;
     folders: FolderNode[];          // 整个 tree，组件内部按 is_system 过滤
     title?: string;
+    allowNone?: boolean;
+    includeSystem?: boolean;
     subtitle?: string;
     /** 选中某项；folder=null 表示「不分配」 */
     onPick: (folder: { id: number; name: string } | null) => void | Promise<void>;
     onClose: () => void;
   }
-  let { open, folders, title = "移动到文件夹", subtitle, onPick, onClose }: Props = $props();
+  let { open, folders, title = "移动到文件夹", allowNone = true, includeSystem = false, subtitle, onPick, onClose }: Props = $props();
 
   // 把 tree 摊平成可选列表（DFS，按 name 排序），过滤掉 system folder。
   let flat = $derived.by(() => {
@@ -24,7 +26,7 @@
     const visit = (nodes: FolderNode[], depth: number) => {
       const sorted = [...nodes].sort((a, b) => a.name.localeCompare(b.name, "zh"));
       for (const n of sorted) {
-        if (n.is_system) continue;
+        if (n.is_system && !includeSystem) continue;
         out.push({ id: n.id, name: n.name, depth });
         visit(n.children, depth + 1);
       }
@@ -58,7 +60,7 @@
 
   async function pickItem(idx: number) {
     if (idx < 0 || idx >= filtered.length) return;
-    const item = flat[idx];
+    const item = filtered[idx];
     await onPick({ id: item.id, name: item.name });
     onClose();
   }
@@ -76,15 +78,15 @@
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
       // +1 因为第 0 项是「不分配」
-      const max = filtered.length; // 含 null 项
+      const max = filtered.length + (allowNone ? 1 : 0); // 含 null 项
       selectedIdx = Math.min(max - 1, selectedIdx + 1);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       selectedIdx = Math.max(0, selectedIdx - 1);
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (selectedIdx === 0) pickNone();
-      else pickItem(selectedIdx - 1);
+      if (allowNone && selectedIdx === 0) pickNone();
+      else pickItem(selectedIdx - (allowNone ? 1 : 0));
     }
   }
 </script>
@@ -125,7 +127,7 @@
       </div>
 
       <div bind:this={listEl} class="flex-1 overflow-y-auto -mx-1 px-1">
-        <button
+        {#if allowNone}<button
           type="button"
           class="fp-item w-full text-left px-3 py-2 rounded-md {selectedIdx === 0 ? 'active' : ''}"
           onclick={pickNone}
@@ -133,13 +135,14 @@
           <span class="fp-icon"><Icon name="circle-slash" size={13} /></span>
           <span class="fp-label">不分配 / 从文件夹移出</span>
         </button>
+        {/if}
         {#if filtered.length === 0}
-          <p class="text-[12px] text-muted px-2 py-3">还没有 user folder</p>
+          <p class="text-[12px] text-muted px-2 py-3">没有可选文件夹，请先在左侧新建或导入文件夹</p>
         {/if}
         {#each filtered as item, i (item.id)}
           <button
             type="button"
-            class="fp-item w-full text-left px-3 py-2 rounded-md {selectedIdx === i + 1 ? 'active' : ''}"
+            class="fp-item w-full text-left px-3 py-2 rounded-md {selectedIdx === i + (allowNone ? 1 : 0) ? 'active' : ''}"
             onclick={() => pickItem(i)}
           >
             <span class="fp-spacer" style="width: {item.depth * 14}px"></span>

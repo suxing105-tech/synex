@@ -2,6 +2,7 @@
   import { onMount, onDestroy, tick } from "svelte";
   import { subscribeFileDrop } from "../lib/native-drop";
   import { beginOriginalDrag } from "../lib/original-drag";
+  import FolderPickerModal from "./FolderPickerModal.svelte";
   import GallerySearch from "./GallerySearch.svelte";
   import ContentSwitcher from "./ContentSwitcher.svelte";
   import { copyOriginalImage } from "../lib/image-clipboard";
@@ -42,6 +43,22 @@
   // 移动到文件夹选择器
   let movePickerIds = $state<number[]>([]);
   let movePickerCount = $state(0);
+  let destinationOpen = $state(false);
+  let resolveDestination: ((folder: { id: number; name: string } | null) => void) | undefined;
+  function finishDestination(folder: { id: number; name: string } | null) {
+    destinationOpen = false;
+    resolveDestination?.(folder); resolveDestination = undefined;
+  }
+  async function dropDestination() {
+    if ($folderId !== null) return { id: $folderId, name: $activeFolderName };
+    destinationOpen = true;
+    return new Promise<{ id: number; name: string } | null>(resolve => resolveDestination = resolve);
+  }
+  onDestroy(() => resolveDestination?.(null));
+  function mediaCount(paths: string[]) {
+    const videos = paths.filter(path => /\.(mp4|mov|m4v|webm|mkv|avi|wmv|flv)$/i.test(path)).length;
+    return [paths.length > videos ? `${paths.length - videos} 张图片` : '', videos ? `${videos} 个视频` : ''].filter(Boolean).join('、');
+  }
   let toast = $state<string | null>(null);
   function notify(msg: string) {
     toast = msg;
@@ -88,7 +105,7 @@
 
   // 派生：拖拽时的目标文件夹展示名
   let dropTargetLabel = $derived.by(() => {
-    if ($folderId == null) return "收件箱";
+    if ($folderId == null) return "选择的文件夹";
     return $activeFolderName;
   });
 
@@ -161,15 +178,17 @@
     importingProgress = { done: 0, total: files.length };
     notify(`导入中… 0/${files.length}`);
     try {
-      const resp = await imagesApi.import(files, $folderId);
+      const destination = await dropDestination();
+      if (!destination) return;
+      const resp = await imagesApi.import(files, destination.id);
       const saved = resp.saved?.length ?? 0;
       const skipped = resp.skipped ?? [];
-      const folderTag = $folderId != null ? `「${dropTargetLabel}」` : "收件箱";
+      const folderTag = `「${destination.name}」`;
       if (saved > 0 && skipped.length === 0) {
         // 兜底刷新：后端 import 已经入库并广播 image_indexed，
         // 但 WS 偶发丢事件时也能立刻让缩略图出现（不依赖 WS）。
         await Promise.all([refreshFeed(), refreshStats(), refreshFolders()]);
-        notify(`已导入 ${saved} 张到 ${folderTag}`);
+        notify(`已导入 ${mediaCount(resp.saved.map(item => item.filename))}到 ${folderTag}`);
       } else if (saved > 0 && skipped.length > 0) {
         await Promise.all([refreshFeed(), refreshStats(), refreshFolders()]);
         const reasons = new Map<string, number>();
@@ -196,23 +215,27 @@
     (count) => { dragCounter = count ? 1 : 0; dragFileCount = count; },
     async (paths) => {
       if (importing) return;
-      const targetId = $folderId;
-      const label = dropTargetLabel;
       importing = true;
       importingProgress = { done: 0, total: paths.length };
       try {
+        const destination = await dropDestination();
+        if (!destination) return;
+        const targetId = destination.id;
+        const label = destination.name;
+        const savedNames: string[] = [];
         let done = 0;
         let failed = 0;
         // Each completed file appears immediately, without waiting for the batch.
         for (const path of paths) {
           const result = await imagesApi.copyFiles([path], targetId);
           done += result.saved.length;
+          savedNames.push(...result.saved.map(item => item.filename));
           failed += result.skipped.length;
           importingProgress = { done: done + failed, total: paths.length };
           await refreshFeed();
         }
         await Promise.all([refreshStats(), refreshFolders()]);
-        notify(`已复制 ${done} 张到「${label}」${failed ? `，${failed} 张未能复制，原文件已保留` : ''}`);
+        notify(`已复制 ${mediaCount(savedNames) || '0 个文件'}到「${label}」${failed ? `，${failed} 个文件未能复制，原文件已保留` : ''}`);
       } catch (error) { notify(`复制失败：${error instanceof Error ? error.message : error}`); }
       finally { importing = false; dragCounter = 0; dragFileCount = 0; }
     },
@@ -399,9 +422,9 @@
     try {
       const r = await imagesApi.reveal(it.id);
       if (r.method && r.method !== "noop") {
-        notify(`已打开图片所在位置（${r.method}）`);
+        notify(`已打开${it.kind === "video" ? "视频" : "图片"}所在位置`);
       } else {
-        notify(`已请求打开图片所在位置`);
+        notify(`已请求打开${it.kind === "video" ? "视频" : "图片"}所在位置`);
       }
     } catch (e) {
       notify(`打开位置失败: ${(e as Error).message}`);
@@ -746,8 +769,8 @@
                     class="video-play-btn absolute inset-0 flex items-center justify-center"
                     title="播放视频"
                     aria-label="播放 {it.filename}"
-                    onclick={(e) => { e.stopPropagation(); e.preventDefault(); openVideo(it); }}
-                    onpointerdown={(e) => e.stopPropagation()}
+                    onclick={(e) => { e.stopPropagation(); e.preventDefault(); if (draggedOriginal) { draggedOriginal = false; return; } openVideo(it); }}
+                    onpointerdown={(e) => { e.stopPropagation(); pointerOnImage(e, it); }}
                     onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openVideo(it); } }}
                   >
                     <svg viewBox="0 0 24 24" aria-hidden="true" class="video-play-icon drop-shadow-lg">
@@ -806,8 +829,10 @@
   <div class="toast">{toast}</div>
 {/if}
 
+<FolderPickerModal open={destinationOpen} folders={$folders} title="选择保存文件夹" subtitle="原文件会保留，复制到所选文件夹。" allowNone={false} includeSystem={true} onPick={finishDestination} onClose={() => finishDestination(null)} />
+
 <style>
-  .thumb.is-selected::after { content: ""; position: absolute; inset: 0; border: 1px solid #f24e4e; border-radius: inherit; pointer-events: none; z-index: 2; }
+  .thumb.is-selected::after { content: ""; position: absolute; inset: 0; box-sizing: border-box; border: 2px solid #d4d4d4; border-radius: inherit; pointer-events: none; z-index: 3; }
   .image-rename { min-width: 0; border: 1px solid #888; border-radius: 3px; background: #222; color: #eee; padding: 1px 3px; outline: none; font: inherit; }
   .import-progress { position: sticky; top: 0; z-index: 25; width: fit-content; margin: 0 auto 8px; padding: 6px 12px; background: #292929; border-radius: 16px; font-size: 12px; color: #ddd; }
   .gallery-toolbar { grid-template-columns: minmax(100px, 1fr) minmax(120px, 2fr) minmax(280px, 1fr); }

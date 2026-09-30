@@ -8,7 +8,7 @@ from . import repository
 from .db import get_pool, transaction
 from .folder_storage import target_directory
 from .indexer import get_indexer
-from .parser import SUPPORTED_EXTS
+from .parser import SUPPORTED_EXTS, VIDEO_EXTS
 
 
 def copy_files(paths: list[str], folder_id: int | None) -> dict:
@@ -23,11 +23,15 @@ def copy_files(paths: list[str], folder_id: int | None) -> dict:
             if source.suffix.lower() not in SUPPORTED_EXTS:
                 raise ValueError('unsupported_format')
             with indexer._live_lock:
-                with Image.open(source) as image:
-                    image.verify()
+                is_video = source.suffix.lower() in VIDEO_EXTS
                 before = source.stat()
-                if before.st_size > 100 * 1024 * 1024:
-                    raise ValueError('超过 100MB')
+                limit = 2 * 1024 * 1024 * 1024 if is_video else 100 * 1024 * 1024
+                if before.st_size > limit:
+                    raise ValueError('超过 2GB' if is_video else '超过 100MB')
+                # Video metadata/posters are handled by the video indexer, not Pillow.
+                if not is_video:
+                    with Image.open(source) as image:
+                        image.verify()
                 target = directory / source.name
                 row = get_pool().main().execute('SELECT id, favorite FROM images WHERE path=?',
                     (repository._normalize_path(source),)).fetchone()
@@ -45,11 +49,11 @@ def copy_files(paths: list[str], folder_id: int | None) -> dict:
                         shutil.copyfileobj(input_file, output)
                     after = source.stat()
                     if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
-                        raise ValueError('图片仍在写入，请稍后重试')
+                        raise ValueError('文件仍在写入，请稍后重试')
                     shutil.copystat(source, target)
                 payload = indexer._process_path_sync(target)
                 if not payload:
-                    raise ValueError('无法读取图片')
+                    raise ValueError('无法读取媒体文件')
                 image_id = payload['id']
                 with transaction() as conn:
                     if folder_id is not None:

@@ -47,7 +47,7 @@
 </header>
 
 <style>
-  .desktop-titlebar { position: fixed; top: 0; left: 0; right: 0; height: var(--desktop-titlebar-height, 36px); display: flex; align-items: stretch; background: #202020; color: #e8e8e8; border-bottom: 1px solid #2e2e33; z-index: 200; user-select: none; }
+  .desktop-titlebar { position: fixed; top: 0; left: 0; right: 0; height: var(--desktop-titlebar-height, 28px); display: flex; align-items: stretch; background: #202020; color: #e8e8e8; border-bottom: 1px solid #2e2e33; z-index: 200; user-select: none; }
   .titlebar-drag { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 0 18px; }
   .titlebar-drag img, .titlebar-drag span { pointer-events: none; }
   .titlebar-drag img { object-fit: contain; }

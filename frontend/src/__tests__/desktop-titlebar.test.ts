@@ -18,10 +18,10 @@ beforeEach(() => {
   (window as any).__TAURI__ = { window: { getCurrentWindow: () => appWindow } };
 });
 afterEach(() => { cleanup(); delete (window as any).__TAURI__; });
-it('标题栏高度为36px，品牌区域可拖动而窗口按钮独立', () => {
+it('标题栏高度为28px，品牌区域可拖动而窗口按钮独立', () => {
   const screen = render(DesktopTitlebar);
   const titlebar = screen.getByRole('banner', { name: '窗口标题栏' });
-  expect(readFileSync(resolve(process.cwd(), 'src/components/DesktopTitlebar.svelte'), 'utf8')).toContain('height: var(--desktop-titlebar-height, 36px)');
+  expect(readFileSync(resolve(process.cwd(), 'src/components/DesktopTitlebar.svelte'), 'utf8')).toContain('height: var(--desktop-titlebar-height, 28px)');
   expect(titlebar.querySelector('[data-tauri-drag-region]')?.textContent).toContain('闪寻空间');
   for (const button of screen.getAllByRole('button')) expect(button.closest('[data-tauri-drag-region]')).toBeNull();
 });
@@ -61,6 +61,6 @@ it('启动时已经最大化也进入紧凑状态，页面顶部使用同一高�
   const screen = render(DesktopTitlebar);
   await waitFor(() => expect(screen.getByRole('banner').classList.contains('compact')).toBe(true));
   const source = readFileSync(resolve(process.cwd(), 'src/App.svelte'), 'utf8');
-  expect(source).toContain('desktopMaximized ? "24px" : "36px"');
+  expect(source).toContain('desktopMaximized ? "24px" : "28px"');
   expect(source).toContain('<DesktopTitlebar bind:maximized={desktopMaximized} />');
 });

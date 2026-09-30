@@ -298,9 +298,8 @@ def reveal_image(image_id: int):
             return False
 
     if system == "windows":
-        try_exec("explorer-select", lambda: subprocess.Popen(
-            ["explorer.exe", f"/select,{p}"], close_fds=True,
-        ))
+        from ..windows_reveal import reveal_file
+        try_exec("shell-select", lambda: reveal_file(p))
         if not chosen:
             try_exec("explorer-dir", lambda: subprocess.Popen(
                 ["explorer.exe", str(parent)], close_fds=True,

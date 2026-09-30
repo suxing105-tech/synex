@@ -132,3 +132,58 @@ def test_browser_upload_saves_to_selected_disk_folder(indexer, tmp_path, monkeyp
         files={'files': ('a.png', image.read_bytes(), 'image/png')})
     assert response.status_code == 200
     assert Path(response.json()['saved'][0]['path']).parent == Path(folder['path'])
+
+
+def test_native_video_drop_copies_original_and_indexes_video(indexer, tmp_path):
+    from .test_videos import make_video
+    folder = folder_storage.create_folder('视频拖入', None)
+    source = make_video(tmp_path / 'clip.MP4')
+    original = source.read_bytes()
+    client = TestClient(app)
+    for expected_name in ['clip.MP4', 'clip_1.MP4']:
+        response = client.post('/api/images/copy-files', json={'paths': [str(source)], 'folder_id': folder['id']})
+        assert response.status_code == 200
+        result = response.json()
+        assert result['skipped'] == []
+        saved = result['saved'][0]
+        assert saved['filename'] == expected_name
+        assert Path(saved['path']).read_bytes() == original
+        assert repository.image_detail(saved['id'])['kind'] == 'video'
+        assert source.read_bytes() == original
+    assert repository.feed(folder_id=folder['id'], kind='video')[1] == 2
+
+
+def test_native_video_drop_uses_video_size_limit(indexer, tmp_path):
+    from .test_videos import make_video
+    source = make_video(tmp_path / 'large.mp4')
+    with source.open('ab') as stream:
+        stream.truncate(101 * 1024 * 1024)
+    # Already in its target folder: exercise validation without copying a large fixture.
+    folder = folder_storage.create_folder('large', None)
+    target = Path(folder['path']) / source.name
+    source.rename(target)
+    result = copy_files([str(target)], folder['id'])
+    assert result['skipped'] == []
+    assert len(result['saved']) == 1
+    oversized = tmp_path / 'too-large.mp4'
+    with oversized.open('wb') as stream:
+        stream.truncate(2 * 1024 * 1024 * 1024 + 1)
+    result = copy_files([str(oversized)], folder['id'])
+    assert result['saved'] == []
+    assert result['skipped'][0]['reason'] == '超过 2GB'
+    assert oversized.exists()
+    assert not (Path(folder['path']) / oversized.name).exists()
+
+
+def test_reveal_copied_video_targets_exact_original(indexer, tmp_path, monkeypatch):
+    from .test_videos import make_video
+    source = make_video(tmp_path / '镜头 , 01.mp4')
+    folder = folder_storage.create_folder('指定视频目录', None)
+    saved = copy_files([str(source)], folder['id'])['saved'][0]
+    monkeypatch.setattr('platform.system', lambda: 'Windows')
+    with patch('app.windows_reveal.reveal_file') as reveal:
+        response = TestClient(app).post(f"/api/images/{saved['id']}/reveal")
+        assert response.status_code == 200
+        assert response.json()['method'] == 'shell-select'
+        reveal.assert_called_once_with(Path(saved['path']))
+        assert Path(saved['path']).parent == Path(folder['path'])

@@ -8,6 +8,7 @@ export interface UpdateStatus {
 }
 export const updateStatus = writable<UpdateStatus | null>(null);
 export const updateError = writable("");
+export const oneClickUpdating = writable(false);
 export function isUpdateBusy(phase: string) {
   return ["checking", "downloading", "installing"].includes(phase);
 }
@@ -16,12 +17,29 @@ export function downloadPercent(downloaded: number, total: number | null) {
 }
 export async function updateAction(command: string, args: Record<string, unknown> = {}) {
   if (!isTauri()) return;
-  if (args.automatic && isUpdateBusy(get(updateStatus)?.phase ?? "")) return;
+  if (args.automatic && (get(oneClickUpdating) || isUpdateBusy(get(updateStatus)?.phase ?? ""))) return;
   updateError.set("");
   try {
     const result = await (window as any).__TAURI__.core.invoke(command, args);
     updateStatus.set(result);
+    return result as UpdateStatus;
   } catch (error) { updateError.set(String(error)); }
+}
+export async function installLatestUpdate() {
+  const status = get(updateStatus);
+  if (!status?.version || !status.installable || !status.configured ||
+      get(oneClickUpdating) || isUpdateBusy(status.phase)) return;
+  oneClickUpdating.set(true);
+  try {
+    const ready = status.phase === "ready" ? status : await updateAction("download_update");
+    if (!ready) return;
+    if (ready.phase !== "ready" || ready.version !== status.version) {
+      updateError.set(ready.message || "更新未下载完成，请重试");
+      return;
+    }
+    const installed = await updateAction("install_update");
+    if (installed?.phase === "ready") updateError.set(installed.message);
+  } finally { oneClickUpdating.set(false); }
 }
 export function startUpdates() {
   if (!isTauri()) return () => {};

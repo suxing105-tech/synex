@@ -310,8 +310,8 @@ def test_indexer_auto_assign_preserves_user_assignment(tmp_data_dir):
 # ---------- API 校验 ----------
 
 
-def test_api_patch_system_folder_updates_display_name(tmp_data_dir):
-    """PATCH system folder 只修改显示名称，保留磁盘路径。"""
+def test_api_patch_system_folder_renames_disk_directory(tmp_data_dir):
+    """PATCH system folder renames its physical directory and stored path."""
     from fastapi.testclient import TestClient
 
     from app.main import app
@@ -319,18 +319,22 @@ def test_api_patch_system_folder_updates_display_name(tmp_data_dir):
 
     init_pool()
     client = TestClient(app)
-    # 直接往 DB 插一个 system folder 记录
+    # 直接往 DB 插一个真实存在的 system folder 记录
     conn = get_pool().main()
+    disk_dir = tmp_data_dir / 'krea2'
+    disk_dir.mkdir()
     cur = conn.execute(
         "INSERT INTO folders(parent_id, name, \"order\", is_system, path) "
-        "VALUES(NULL, 'krea2', 0, 1, 'D:/watch/krea2')"
+        "VALUES(NULL, 'krea2', 0, 1, ?)", (str(disk_dir),)
     )
     fid = cur.lastrowid
 
     r = client.patch(f"/api/folders/{fid}", json={"name": "新名字"})
     assert r.status_code == 200
     assert r.json()["name"] == "新名字"
-    assert conn.execute("SELECT path FROM folders WHERE id = ?", (fid,)).fetchone()["path"] == "D:/watch/krea2"
+    renamed = tmp_data_dir / '新名字'
+    assert renamed.is_dir() and not disk_dir.exists()
+    assert Path(conn.execute("SELECT path FROM folders WHERE id = ?", (fid,)).fetchone()["path"]) == renamed
 
 
 def test_api_delete_system_folder_removes_disk_and_record(tmp_data_dir):

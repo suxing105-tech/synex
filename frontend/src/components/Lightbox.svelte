@@ -24,9 +24,9 @@
   let { open = $bindable(), index = $bindable(), selectedId = $bindable() }: Props = $props();
 
   let compareEnabled = $state(true);
+  let compareMode = $state<"split" | "side">("split");
   let compareImages = $derived($feedItems.filter(it => $multiSelectedIds.has(it.id)));
   let comparing = $derived(compareEnabled && compareImages.length === 2);
-  $effect(() => { if (open) compareEnabled = true; });
 
   // 右键菜单
   let menuOpen = $state(false);
@@ -201,8 +201,14 @@
 
   function close() {
     open = false;
+    compareEnabled = true;
     originalUrl = null;
+    compareMode = "split";
     resetZoom();
+  }
+
+  function toggleCompare() {
+    compareEnabled = !compareEnabled;
   }
 
   function prev() {
@@ -385,21 +391,24 @@
 {#if open && $feedItems.length > 0 && $feedItems[index]}
   {@const it = $feedItems[index]}
   <section class="inline-viewer absolute inset-0 z-20 flex flex-col bg-bg overflow-hidden fill-interactions" aria-label="图片细节预览">
-    <header class="flex items-center gap-2 px-4 py-3 shrink-0 border-b border-border bg-surface">
+    <header class="lightbox-header flex items-center gap-2 px-4 py-3 shrink-0 border-b border-border bg-surface">
       <button class="rounded-lg px-3 py-2 text-xs" onclick={close} title="返回缩略图（Esc）">← 返回</button>
       <span class="flex-1 min-w-0 truncate text-xs text-muted" title={it.filename}>{it.filename}</span>
-      {#if compareImages.length === 2}<button class="rounded-lg px-3 py-2 text-xs" aria-pressed={comparing} onclick={() => compareEnabled = !compareEnabled}>{comparing ? "查看单图" : "对比图片"}</button>{/if}
+      {#if comparing}
+        <div class="compare-mode-switch" role="group" aria-label="图片对比方式">
+          <button class:active={compareMode === "split"} type="button" aria-label="分割对比" aria-pressed={compareMode === "split"} onclick={() => compareMode = "split"}>分割对比</button>
+          <button class:active={compareMode === "side"} type="button" aria-label="左右对比" aria-pressed={compareMode === "side"} onclick={() => compareMode = "side"}>左右对比</button>
+        </div>
+      {/if}
+      {#if compareImages.length === 2}<button class="rounded-lg px-3 py-2 text-xs" aria-pressed={comparing} onclick={toggleCompare}>{comparing ? "查看单图" : "对比图片"}</button>{/if}
       {#if !comparing}
       <button class="rounded-lg px-3 py-2 text-xs" aria-pressed={zoomMode === "fit"} onclick={resetZoom}>适应窗口</button>
       <button class="rounded-lg px-3 py-2 text-xs" aria-pressed={zoomMode === "zoom"} onclick={() => { zoomMode = "zoom"; zoomScale = 1; pan = { x: 0, y: 0 }; }}>100%</button>
       <span class="text-xs text-muted">{Math.round((zoomMode === "fit" ? fitRatio : zoomScale) * 100)}%</span>
       {/if}
     </header>
-    <div class="viewer-canvas relative flex-1 min-h-0 overflow-hidden" bind:clientWidth={viewportW} bind:clientHeight={viewportH} oncontextmenu={openMenu} use:wheelZoom>
-      {#if comparing}
-        <ImageCompare images={compareImages} />
-      {:else}
-      <div class="absolute inset-0 flex items-center justify-center overflow-hidden" ondblclick={(e) => { if (e.button === 0 && e.target === e.currentTarget) close(); }}>
+    <div class="viewer-canvas relative flex-1 min-h-0 overflow-hidden" bind:clientWidth={viewportW} bind:clientHeight={viewportH} oncontextmenu={openMenu} ondblclick={(e) => { if (!comparing && e.target === e.currentTarget) close(); }} use:wheelZoom>
+      <div class="absolute inset-0 flex items-center justify-center overflow-hidden" class:hidden={comparing} ondblclick={(e) => { if (e.target === e.currentTarget) close(); }}>
     <img
       bind:this={imgEl}
       src={originalUrl ?? ""}
@@ -422,7 +431,9 @@
     />
 
       </div>
-      {/if}
+      <div class="absolute inset-0" class:hidden={!comparing}>
+        {#if compareImages.length === 2}<ImageCompare images={compareImages} mode={compareMode} />{/if}
+      </div>
     </div>
     <footer class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 shrink-0 border-t border-border bg-surface text-xs">
       {#if !comparing}<div class="flex items-center gap-2">
@@ -432,7 +443,7 @@
       </div>
       <span class="text-muted">{#if it.width && it.height}{it.width} × {it.height} · {/if}{formatSize(it.size_bytes)}</span>
       {/if}
-      <span class="text-muted">{comparing ? "拖动分割线对比 · Delete 删除两张图片" : zoomMode === "zoom" ? "滚轮缩放 · 拖动查看细节 · 双击适应窗口" : "滚轮缩放 · 双击图片查看 100%"}</span>
+      <span class="text-muted">{comparing ? (compareMode === "split" ? "拖动分割线对比 · Delete 删除两张图片" : "左右并排查看 · Delete 删除两张图片") : zoomMode === "zoom" ? "滚轮缩放 · 拖动查看细节 · 双击适应窗口" : "滚轮缩放 · 双击图片查看 100%"}</span>
     </footer>
   </section>
 {/if}
@@ -444,6 +455,11 @@
 {/if}
 
 <style>
+  .lightbox-header { position:relative; }
+  .compare-mode-switch { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); display:flex; gap:3px; padding:3px; border:1px solid #343438; border-radius:9px; background:#111113; }
+  .compare-mode-switch button { padding:5px 12px; border:0; border-radius:6px; color:#a1a1aa; background:transparent; font-size:12px; cursor:pointer; white-space:nowrap; }
+  .compare-mode-switch button:hover { color:#f4f4f5; }
+  .compare-mode-switch button.active { color:#fff; background:#3f3f46; }
   .lightbox-img {
     max-width: none;
     -webkit-user-drag: none;

@@ -1,4 +1,5 @@
 """Physical folders owned by this gallery; legacy classifications materialize on use."""
+import os
 from pathlib import Path
 import re
 
@@ -40,6 +41,66 @@ def target_directory(folder_id: int | None) -> Path:
     return path
 
 
+@serialized
+def sync_user_folders(indexer=None) -> int:
+    """Mirror physical directories under data/folders into the user-folder tree."""
+    storage = (data_dir() / 'folders').resolve()
+    storage.mkdir(parents=True, exist_ok=True)
+    conn = get_pool().main()
+    discovered: list[Path] = []
+    for current, children, _files in os.walk(storage, followlinks=False):
+        base = Path(current)
+        safe_children = []
+        for name in sorted(children, key=str.casefold):
+            child = base / name
+            if child.is_symlink() or (hasattr(child, 'is_junction') and child.is_junction()):
+                continue
+            safe_children.append(name)
+            discovered.append(child)
+        children[:] = safe_children
+    found = {repository._normalize_path(p.resolve()): p.resolve() for p in discovered}
+    rows = conn.execute('SELECT id,parent_id,path FROM folders WHERE is_system=0 AND path IS NOT NULL').fetchall()
+    existing = {repository._normalize_path(Path(r['path']).resolve()): r for r in rows}
+    removed_paths = [Path(row['path']).resolve() for key, row in existing.items()
+                     if key not in found and Path(row['path']).resolve().is_relative_to(storage)]
+    # Remove only topmost missing branches. This treats the physical tree as canonical.
+    stale_roots = [path for path in removed_paths if not any(path != other and path.is_relative_to(other) for other in removed_paths)]
+    if stale_roots:
+        for row in conn.execute('SELECT id,path FROM folders WHERE is_system=0 AND path IS NOT NULL').fetchall():
+            path = Path(row['path']).resolve()
+            if any(path == root or path.is_relative_to(root) for root in stale_roots):
+                conn.execute('DELETE FROM folders WHERE id=?', (row['id'],))
+        for row in conn.execute('SELECT id,path FROM images').fetchall():
+            path = Path(row['path']).resolve()
+            if any(path.is_relative_to(root) for root in stale_roots):
+                if indexer:
+                    event = indexer._process_path_sync(path, remove=True)
+                    if event:
+                        indexer.emit_event_sync(event)
+                else:
+                    conn.execute('DELETE FROM images WHERE id=?', (row['id'],))
+        from . import texts
+        for row in texts.conn().execute('SELECT id,path FROM texts WHERE missing=0').fetchall():
+            path = Path(row['path']).resolve()
+            if any(path.is_relative_to(root) for root in stale_roots):
+                texts.conn().execute('UPDATE texts SET missing=1 WHERE id=?', (row['id'],))
+                texts.conn().execute('DELETE FROM texts_fts WHERE rowid=?', (row['id'],))
+    added = 0
+    for path in discovered:
+        full = path.resolve()
+        normalized = repository._normalize_path(full)
+        if normalized in existing:
+            continue
+        parent_path = full.parent
+        parent_row = conn.execute('SELECT id FROM folders WHERE is_system=0 AND path=?',
+                                  (repository._normalize_path(parent_path),)).fetchone()
+        parent_id = parent_row['id'] if parent_row else None
+        conn.execute('INSERT OR IGNORE INTO folders(parent_id,name,"order",is_system,path) VALUES(?,?,0,0,?)',
+                     (parent_id, full.name, normalized))
+        added += 1
+    return added
+
+
 def create_folder(name: str, parent_id: int | None) -> dict:
     name = valid_name(name)
     parent = target_directory(parent_id) if parent_id else data_dir() / 'folders'
@@ -67,30 +128,37 @@ def create_folder(name: str, parent_id: int | None) -> dict:
 @serialized
 def rename_folder(folder_id: int, name: str) -> dict:
     row = get_pool().main().execute('SELECT * FROM folders WHERE id=?', (folder_id,)).fetchone()
-    if not row or not row['path'] or row['is_system']:
+    if not row or not row['path']:
         return repository.folder_update(folder_id, name=name)
     name = valid_name(name)
-    old = Path(row['path'])
+    old = Path(row['path']).resolve()
     new = old.with_name(name)
     if old == new:
         return repository.folder_update(folder_id, name=name)
     if new.exists():
         raise ValueError('同级文件夹已存在此名称')
+    new = new.resolve()
     old.rename(new)
-    old_text = repository._normalize_path(old)
-    new_text = repository._normalize_path(new)
+
+    def remap_index_paths(source: Path, destination: Path) -> None:
+        conn = get_pool().main()
+        for table in ('folders', 'images'):
+            rows = conn.execute(f'SELECT id,path FROM {table} WHERE path IS NOT NULL').fetchall()
+            for item in rows:
+                path = Path(item['path']).resolve()
+                if path == source or path.is_relative_to(source):
+                    mapped = destination / path.relative_to(source)
+                    conn.execute(f'UPDATE {table} SET path=? WHERE id=?',
+                                 (repository._normalize_path(mapped), item['id']))
+
     try:
-        with transaction() as conn:
-            for table in ('folders', 'images'):
-                conn.execute(f'UPDATE {table} SET path=? || substr(path, ?) WHERE path=? OR substr(path,1,?)=?',
-                             (new_text, len(old_text) + 1, old_text, len(old_text) + 1, old_text + '/'))
+        with transaction():
+            remap_index_paths(old, new)
         result = repository.folder_update(folder_id, name=name)
     except Exception:
         new.rename(old)
-        with transaction() as conn:
-            for table in ('folders', 'images'):
-                conn.execute(f'UPDATE {table} SET path=? || substr(path, ?) WHERE path=? OR substr(path,1,?)=?',
-                             (old_text, len(new_text) + 1, new_text, len(new_text) + 1, new_text + '/'))
+        with transaction():
+            remap_index_paths(new, old)
         raise
     from .texts import remap
     remap(old, new)

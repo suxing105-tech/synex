@@ -233,3 +233,47 @@ def test_delete_rejects_data_directory(indexer, tmp_path):
     assert response.status_code == 400
     recycle.assert_not_called()
     assert tmp_path.is_dir()
+
+
+def test_user_folders_added_on_disk_are_mirrored_in_sidebar(indexer, tmp_path, monkeypatch):
+    from app import folder_storage
+    storage = tmp_path / 'SeekX-Data' / 'folders'
+    (storage / 'direct-drop' / 'child').mkdir(parents=True)
+    monkeypatch.setattr(folder_storage, 'data_dir', lambda: tmp_path / 'SeekX-Data')
+    first = TestClient(app).get('/api/folders')
+    assert first.status_code == 200, first.text
+    tree = first.json()
+    parent = next(node for node in tree if node['name'] == 'direct-drop' and not node['is_system'])
+    child = parent['children'][0]
+    assert child['name'] == 'child'
+    assert Path(parent['path']) == storage / 'direct-drop'
+    assert Path(child['path']) == storage / 'direct-drop' / 'child'
+    second = TestClient(app).get('/api/folders').json()
+    assert sum(node['name'] == 'direct-drop' and not node['is_system'] for node in second) == 1
+
+
+def test_renaming_source_folder_renames_disk_tree_and_watch_root(indexer, tmp_path):
+    from app.db import get_pool
+    from app import repository
+    from app.main import app
+    client = TestClient(app)
+    root = tmp_path / 'watch-root'
+    nested = root / 'nested'
+    nested.mkdir(parents=True)
+    media = make_png(nested / 'sample.png')
+    indexer.update_config(watch_dirs=[str(root)])
+    conn = get_pool().main()
+    root_id = conn.execute('INSERT INTO folders(name,is_system,path) VALUES(?,1,?)', ('watch-root', repository._normalize_path(root))).lastrowid
+    child_id = conn.execute('INSERT INTO folders(name,parent_id,is_system,path) VALUES(?,?,1,?)',
+                             ('nested', root_id, repository._normalize_path(nested))).lastrowid
+    event = indexer._process_path_sync(media)
+    assert event
+    repository.assign_folder(event['id'], child_id)
+    response = client.patch(f'/api/folders/{root_id}', json={'name':'renamed-root'})
+    assert response.status_code == 200, response.text
+    new_root = root.with_name('renamed-root')
+    assert new_root.is_dir() and not root.exists()
+    assert (new_root / 'nested' / 'sample.png').is_file()
+    assert Path(repository.image_detail(event['id'])['path']) == new_root / 'nested' / 'sample.png'
+    assert Path(conn.execute('SELECT path FROM folders WHERE id=?',(child_id,)).fetchone()['path']) == new_root / 'nested'
+    assert indexer.config.watch_dirs == [str(new_root)]

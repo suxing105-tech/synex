@@ -29,9 +29,24 @@ it('两张选中图片预览自动进入对比，并可切换单图', async () =
   const screen = render(Lightbox, { open: true, index: 0, selectedId: 1 });
   expect(screen.getByAltText('A：1.jpg').getAttribute('src')).toMatch(/\/1\/file\?cache=2$/);
   expect(screen.getByAltText('B：2.jpg').getAttribute('src')).toMatch(/\/2\/file\?cache=2$/);
-  await fireEvent.click(screen.getByText('查看单图'));
-  expect(screen.queryByLabelText('图片对比分割线')).toBeNull();
+  expect(screen.getByRole('button', { name: '分割对比' }).getAttribute('aria-pressed')).toBe('true');
+  await fireEvent.click(screen.getByRole('button', { name: '查看单图' }));
+  await tick();
+  expect(screen.getByRole('button', { name: '对比图片' })).toBeTruthy();
+  expect(screen.container.querySelector('.viewer-canvas > div:nth-child(2)')?.classList.contains('hidden')).toBe(true);
   expect(screen.getByAltText('1.jpg')).toBeTruthy();
+});
+it('图片对比可在默认分割模式和左右并排模式间切换', async () => {
+  multiSelectedIds.set(new Set([1, 2]));
+  const screen = render(Lightbox, { open: true, index: 0, selectedId: 1 });
+  expect(screen.getByLabelText('图片对比分割线')).toBeTruthy();
+  await fireEvent.click(screen.getByRole('button', { name: '左右对比' }));
+  expect(screen.getByRole('button', { name: '左右对比' }).getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByAltText('A：1.jpg')).toBeTruthy();
+  expect(screen.getByAltText('B：2.jpg')).toBeTruthy();
+  expect(screen.container.querySelector('.side-stage')).toBeTruthy();
+  await fireEvent.click(screen.getByRole('button', { name: '分割对比' }));
+  expect(screen.getByLabelText('图片对比分割线')).toBeTruthy();
 });
 it('分割线位置改变裁切范围，原图不拉伸', async () => {
   const screen = render(ImageCompare, { images: items.slice(0, 2) as any });

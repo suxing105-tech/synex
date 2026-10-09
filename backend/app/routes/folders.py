@@ -89,31 +89,50 @@ def reorder_folder(folder_id: int, payload: FolderReorder):
 
 @router.delete("/{folder_id}")
 def delete_folder(folder_id: int):
-    """删除文件夹。
+    """Recycle the physical directory before removing its index entries."""
+    from pathlib import Path
+    from .. import texts
+    from ..config import data_dir
+    from ..indexer import get_indexer
 
-    - 用户文件夹：仅删除图库归属，磁盘图片保留；
-    - 来源目录（system）：目录是磁盘目录的镜像，需连同磁盘目录一并删除，否则索引器会因
-      磁盘仍存在而重建。此操作由前端二次确认后调用，属于显式的破坏性操作。
-    """
-    if repository.is_system_folder(folder_id):
-        from .. import texts
-        if texts.listing(folder_id=folder_id, limit=1)['total']:
-            raise HTTPException(400, '此目录包含已关联文本。请先在全部文本中将原文件移入回收站，避免永久删除正文。')
-        import shutil
-        from pathlib import Path
+    indexer = get_indexer()
+    with indexer._live_lock, texts.LOCK:
         conn = repository.get_pool().main()
-        row = conn.execute("SELECT path FROM folders WHERE id = ?", (folder_id,)).fetchone()
-        if row and row["path"]:
-            p = Path(row["path"])
-            if p.is_dir():
-                try:
-                    shutil.rmtree(p)
-                except OSError as e:
-                    raise HTTPException(400, f"删除磁盘目录失败：{e}") from e
+        row = conn.execute('SELECT path FROM folders WHERE id=?', (folder_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, '文件夹不存在')
+        if not row['path']:
+            raise HTTPException(400, '此旧分类没有磁盘目录，请先打开所在文件夹确认位置')
+        raw = Path(row['path'])
+        try:
+            directory = raw.resolve()
+            if (not raw.is_absolute() or raw.is_symlink() or
+                    (hasattr(raw, 'is_junction') and raw.is_junction()) or
+                    directory == Path(directory.anchor) or data_dir().resolve().is_relative_to(directory) or
+                    directory == (data_dir() / 'folders').resolve()):
+                raise ValueError('不能删除磁盘根目录、图库数据目录或目录链接')
+            try:
+                directory.stat()
+            except FileNotFoundError:
+                raise ValueError('目录不存在，请检查磁盘连接后重试')
+            if not directory.is_dir():
+                raise ValueError('目标不是文件夹')
+            images = [Path(r['path']) for r in conn.execute('SELECT path FROM images')
+                      if Path(r['path']).resolve().is_relative_to(directory)]
+            documents = [r['id'] for r in texts.conn().execute('SELECT id, path FROM texts')
+                         if Path(r['path']).resolve().is_relative_to(directory)]
+            texts.recycle_file(directory)
+        except (ValueError, OSError) as e:
+            raise HTTPException(400, f'移入回收站失败：{e}') from e
+        for path in images:
+            event = indexer._process_path_sync(path, remove=True)
+            if event:
+                indexer.emit_event_sync(event)
+        for text_id in documents:
+            texts.conn().execute('UPDATE texts SET missing=1 WHERE id=?', (text_id,))
+            texts.conn().execute('DELETE FROM texts_fts WHERE rowid=?', (text_id,))
         repository.folder_delete(folder_id)
-        return {"ok": True, "removed_disk": True}
-    repository.folder_delete(folder_id)
-    return {"ok": True}
+        return {'ok': True, 'removed_disk': True, 'recycled': True}
 
 
 @router.post("/{folder_id}/reveal")

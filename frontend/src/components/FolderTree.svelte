@@ -218,18 +218,16 @@
 
   async function remove(id: number) {
     const node = findNode($folders, id);
-    const isSys = !!node?.is_system;
-    if (isSys) {
-      const msg = `确定要删除来源目录「${node?.name}」吗？\n\n此操作会永久删除该文件夹及其磁盘上的所有文件，且不可恢复。\n\n${node?.path || ''}`;
-      if (!confirm(msg)) return;
-    } else {
-      if (!confirm("删除此文件夹？其中的图片将升级到上一级。")) return;
-    }
+    const msg = `确定要将文件夹「${node?.name}」及其中的所有文件、子文件夹移入回收站吗？\n\n可从系统回收站恢复。\n\n${node?.path || ''}`;
+    if (!confirm(msg)) return;
+    const containsSelected = (item: FolderNode): boolean => item.id === $folderId || item.children.some(containsSelected);
+    const removingSelected = node ? containsSelected(node) : false;
     try {
       await foldersApi.remove(id);
       menuFor = null;
-      if ($folderId === id) folderId.set(null);
+      if (removingSelected) folderId.set(null);
       await refreshFolders();
+      await Promise.all([refreshFeed(), refreshStats()]);
     } catch (error) {
       pushToast(`删除失败：${error instanceof Error ? error.message : error}`, { kind: 'error' });
     }

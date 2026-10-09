@@ -187,3 +187,49 @@ def test_reveal_copied_video_targets_exact_original(indexer, tmp_path, monkeypat
         assert response.json()['method'] == 'shell-select'
         reveal.assert_called_once_with(Path(saved['path']))
         assert Path(saved['path']).parent == Path(folder['path'])
+
+
+def test_delete_physical_folder_recycles_nested_files_and_cleans_index(indexer, tmp_path):
+    parent = folder_storage.create_folder('delete-target', None)
+    child = folder_storage.create_folder('child', parent['id'])
+    image = make_png(Path(child['path']) / 'a.png')
+    image_id = indexer._process_path_sync(image)['id']
+    (Path(child['path']) / 'unindexed.txt').write_text('keep in recycle bin')
+    outside = make_png(tmp_path / 'outside.png')
+    outside_id = indexer._process_path_sync(outside)['id']
+    from app import texts
+    document_id = texts.index(Path(child['path']) / 'unindexed.txt')['id']
+    recycled = tmp_path / 'mock-recycle-bin'
+    with patch('app.texts.recycle_file', side_effect=lambda p: p.rename(recycled)) as recycle:
+        response = TestClient(app).delete(f"/api/folders/{parent['id']}")
+    assert response.status_code == 200, response.text
+    recycle.assert_called_once_with(Path(parent['path']).resolve())
+    assert response.json()['recycled']
+    assert texts.row(document_id)['missing'] == 1
+    assert not texts.listing(q='keep in recycle bin')['items']
+    assert not Path(parent['path']).exists()
+    assert (recycled / 'child' / 'unindexed.txt').read_text() == 'keep in recycle bin'
+    assert repository.get_pool().main().execute('SELECT id FROM images WHERE id=?', (image_id,)).fetchone() is None
+    assert repository.get_pool().main().execute('SELECT id FROM folders WHERE id IN (?,?)', (parent['id'], child['id'])).fetchall() == []
+    assert repository.image_detail(outside_id) and outside.exists()
+
+
+def test_delete_recycle_failure_preserves_folder_and_files(indexer):
+    folder = folder_storage.create_folder('keep', None)
+    image = make_png(Path(folder['path']) / 'a.png')
+    image_id = indexer._process_path_sync(image)['id']
+    with patch('app.texts.recycle_file', side_effect=OSError('busy')):
+        response = TestClient(app).delete(f"/api/folders/{folder['id']}")
+    assert response.status_code == 400
+    assert image.exists() and repository.image_detail(image_id)
+    assert repository.get_pool().main().execute('SELECT id FROM folders WHERE id=?', (folder['id'],)).fetchone()
+
+
+def test_delete_rejects_data_directory(indexer, tmp_path):
+    conn = repository.get_pool().main()
+    ident = conn.execute('INSERT INTO folders(name, path) VALUES(?,?)', ('unsafe', str(tmp_path))).lastrowid
+    with patch('app.texts.recycle_file') as recycle:
+        response = TestClient(app).delete(f'/api/folders/{ident}')
+    assert response.status_code == 400
+    recycle.assert_not_called()
+    assert tmp_path.is_dir()

@@ -255,6 +255,29 @@ it('删除来源目录触发破坏性确认并调用 remove', async () => {
   await fireEvent.contextMenu(screen.getByRole('button', { name: '来源' }));
   await fireEvent.click(screen.getByText('删除文件夹'));
   expect(c).toHaveBeenCalled();
-  expect(String(c.mock.calls[0][0])).toContain('永久删除');
+  expect(String(c.mock.calls[0][0])).toContain('移入回收站');
   expect(foldersApi.remove).toHaveBeenCalledWith(5);
+});
+
+
+it('删除父目录后退出选中的子目录并刷新媒体列表', async () => {
+  folderId.set(2);
+  vi.stubGlobal('confirm', vi.fn(() => true));
+  const screen = render(FolderTree);
+  await fireEvent.contextMenu(screen.getByRole('button', { name: '父目录' }));
+  await fireEvent.click(screen.getByText('删除文件夹'));
+  await tick();
+  expect(foldersApi.remove).toHaveBeenCalledWith(1);
+  expect(get(folderId)).toBeNull();
+  expect(refreshFeed).toHaveBeenCalled();
+});
+
+it('取消文件夹删除时保留当前目录且不调用删除接口', async () => {
+  folderId.set(2);
+  vi.stubGlobal('confirm', vi.fn(() => false));
+  const screen = render(FolderTree);
+  await fireEvent.contextMenu(screen.getByRole('button', { name: '父目录' }));
+  await fireEvent.click(screen.getByText('删除文件夹'));
+  expect(foldersApi.remove).not.toHaveBeenCalled();
+  expect(get(folderId)).toBe(2);
 });

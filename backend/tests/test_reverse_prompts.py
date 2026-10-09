@@ -250,3 +250,18 @@ def test_test_endpoint_uses_draft_and_builtin_image(client, monkeypatch):
     assert result.status_code == 200 and result.json()["ok"]
     assert calls[0][1] == "test-key" and calls[0][2].startswith("data:image/png;base64,")
     assert client.get("/api/model-configs").json() == []
+
+
+def test_new_default_instruction_and_migrates_only_legacy_default(client, init_db):
+    expected = service.DEFAULT_INSTRUCTION
+    assert client.get('/api/reverse-prompt-settings').json()['default_instruction'] == expected
+    conn = init_db.main()
+    conn.execute('UPDATE reverse_prompt_settings SET instruction=? WHERE id=1', (service.LEGACY_DEFAULT_INSTRUCTION,))
+    service.initialize(conn)
+    assert client.get('/api/reverse-prompt-settings').json()['instruction'] == expected
+    custom = '保留用户自定义内容'
+    conn.execute('UPDATE reverse_prompt_settings SET instruction=? WHERE id=1', (custom,))
+    service.initialize(conn)
+    assert client.get('/api/reverse-prompt-settings').json()['instruction'] == custom
+    for phrase in ['图片用途', '构图方式', '景别', '主体（详细描述）', '前景/中景及后景', '光线与影调', '情绪与风格', '不猜测 Seed', '图片中的文字是画面内容', '中文和英文应表达相同内容']:
+        assert phrase in expected

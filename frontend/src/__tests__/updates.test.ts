@@ -15,7 +15,9 @@ describe("desktop updates", () => {
     (window as any).__TAURI__ = { event: { listen }, core: { invoke } };
     const stop = startUpdates(); await vi.advanceTimersByTimeAsync(0);
     expect(listen.mock.invocationCallOrder[0]).toBeLessThan(invoke.mock.invocationCallOrder[0]);
-    await vi.advanceTimersByTimeAsync(14999);
+    // 启动后 3 秒就自动检查一次；Rust 侧对「本次启动未检查成功」放行，不再被每日节流拦掉
+    expect(invoke).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(2999);
     expect(invoke).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(invoke).toHaveBeenLastCalledWith("check_update", { automatic: true });

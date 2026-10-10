@@ -45,7 +45,8 @@ export function startUpdates() {
   if (!isTauri()) return () => {};
   let disposed = false;
   let unsubscribe: (() => void) | undefined;
-  const timer = setTimeout(() => { if (!disposed) void updateAction("check_update", { automatic: true }); }, 15000);
+  // 启动后尽快检查一次：Rust 侧对「本次启动还没检查成功」放行，不再被每日节流挡住。
+  const timer = setTimeout(() => { if (!disposed) void updateAction("check_update", { automatic: true }); }, 3000);
   const retry = setInterval(() => { if (!disposed) void updateAction("check_update", { automatic: true }); }, 60000);
   void (async () => {
     try {

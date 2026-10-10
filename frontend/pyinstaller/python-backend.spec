@@ -4,10 +4,12 @@
 
 from pathlib import Path
 import os
+from PyInstaller.utils.hooks import collect_submodules
 
 REPO_ROOT = Path(os.environ["SUXING_REPO_ROOT"])
 BACKEND_DIR = REPO_ROOT / "backend"
 ENTRY = BACKEND_DIR / "run_server.py"
+PSD_HIDDENIMPORTS = collect_submodules("psd_tools")
 
 PATHEX = [str(BACKEND_DIR)]
 
@@ -29,6 +31,7 @@ a = Analysis(
         "app.repository",
         "app.providers",
         "app.thumbnails",
+        "app.photoshop",
         "app.routes",
         "app.routes.__init__",
         "app.routes.images",
@@ -80,6 +83,7 @@ a = Analysis(
         "PIL._jpeg",
         "PIL._png",
         "PIL._tkinter",
+        *PSD_HIDDENIMPORTS,
         "multipart",
         "multipart.multipart",
         "pydantic._internal._generate_schema",

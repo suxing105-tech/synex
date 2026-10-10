@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "suxing-gallery-backend"
-version = "0.2.13"
+version = "0.2.14"
 description = "苏醒图库 FastAPI 后端"
 requires-python = ">=3.11"
 dependencies = [
@@ -13,6 +13,7 @@ dependencies = [
   "uvicorn[standard]>=0.32",
   "watchdog>=4.0",
   "Pillow>=10.4",
+  "psd-tools>=1.24.0",
   "pydantic>=2.7",
   "websockets>=13",
   "python-multipart>=0.0.9",  # POST /api/images/import 多文件表单解析

@@ -6,6 +6,7 @@ import asyncio
 import os
 import re
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 
@@ -60,7 +61,12 @@ def get_image(image_id: int) -> ImageDetail:
 
 
 @router.get("/{image_id}/file")
-def get_original(image_id: int, request: Request, max: int | None = Query(default=None, ge=64, le=4096)):
+def get_original(
+    image_id: int,
+    request: Request,
+    max: int | None = Query(default=None, ge=64, le=4096),
+    fit: Literal["psd-portrait"] | None = None,
+):
     """返回原图字节流（Lightbox / Feed 预览用）。
 
     参数：
@@ -87,16 +93,26 @@ def get_original(image_id: int, request: Request, max: int | None = Query(defaul
     mtime = float(row["mtime"] or 0.0)
     stat = p.stat()
 
-    # 决定要服务的物理文件：原图 or 预览缓存
-    if max is not None:
+    # PSD 无法由浏览器直接显示；即使未指定 max，也返回完整分辨率的合成图。
+    is_psd = p.suffix.lower() == ".psd"
+    if fit is not None and (not is_psd or max is None):
+        raise HTTPException(400, "该预览裁切仅适用于带 max 参数的 PSD 请求")
+    if max is not None or is_psd:
         from ..thumbnails import generate_preview
-        preview_path = generate_preview(p, image_id, max)
+        preview_path = generate_preview(
+            p,
+            image_id,
+            max,
+            crop_aspect=(9, 16) if fit == "psd-portrait" else None,
+        )
         if preview_path is None:
+            if is_psd:
+                raise HTTPException(422, "PSD 合成预览生成失败，请确认文件完整且受支持")
             raise HTTPException(500, "预览生成失败")
         preview_stat = preview_path.stat()
         serve_path = preview_path
         fname_stem = Path(row["filename"]).stem
-        serve_filename = f"{fname_stem}_max{max}.webp"
+        serve_filename = f"{fname_stem}_{'max' + str(max) if max is not None else 'preview'}.webp"
         etag = f'"{int(mtime)}-{stat.st_size}-max{max}-{preview_stat.st_size}"'
         last_modified_dt = email.utils.formatdate(preview_stat.st_mtime, usegmt=True)
     else:
@@ -130,6 +146,42 @@ def get_original(image_id: int, request: Request, max: int | None = Query(defaul
             "Cache-Control": "private, no-cache",
         },
     )
+
+
+@router.post("/{image_id}/open-photoshop")
+def open_in_photoshop(image_id: int):
+    """用已安装的 Adobe Photoshop 打开原始 PSD 文件。"""
+    import platform
+    import subprocess
+
+    row = get_pool().main().execute(
+        "SELECT path FROM images WHERE id = ?", (image_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "图片不存在")
+    path = Path(row["path"])
+    if path.suffix.lower() != ".psd":
+        raise HTTPException(400, "此操作仅支持 PSD 文件")
+    if not path.is_file():
+        raise HTTPException(404, "PSD 原文件不存在")
+    if platform.system() != "Windows":
+        raise HTTPException(501, "在 Photoshop 中打开目前仅支持 Windows")
+
+    from ..photoshop import find_photoshop_executable
+
+    executable = find_photoshop_executable()
+    if executable is None:
+        raise HTTPException(503, "未找到 Adobe Photoshop，请确认已安装后重试")
+    try:
+        subprocess.Popen(
+            [str(executable), str(path.resolve())],
+            cwd=str(path.parent),
+            close_fds=True,
+        )
+    except OSError as error:
+        log.warning("Photoshop launch failed for %s: %s", path, error)
+        raise HTTPException(500, "启动 Adobe Photoshop 失败") from error
+    return {"ok": True, "id": image_id, "path": str(path), "method": "photoshop"}
 
 
 @router.delete("/{image_id}")

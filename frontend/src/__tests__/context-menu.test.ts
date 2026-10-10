@@ -1,5 +1,23 @@
 import { describe, it, expect } from "vitest";
 import type { ImageSummary } from "../lib/types";
+import { isPsdFilename, thumbnailAspectRatio, thumbnailObjectFit } from "../lib/media-format";
+
+describe("PSD 右键菜单条件", () => {
+  it("仅按 PSD 扩展名识别，忽略大小写", () => {
+    expect(isPsdFilename("art.psd")).toBe(true);
+    expect(isPsdFilename("art.PSD")).toBe(true);
+    expect(isPsdFilename("art.png")).toBe(false);
+    expect(isPsdFilename("art.psb")).toBe(false);
+  });
+
+  it("PSD 缩略图默认使用 9:16 卡片并裁切铺满", () => {
+    expect(thumbnailAspectRatio("poster.psd", "image", 1600, 900)).toBe("9 / 16");
+    expect(thumbnailAspectRatio("poster.png", "image", 1600, 900)).toBe("1600 / 900");
+    expect(thumbnailAspectRatio("poster.psd", "video", 1600, 900)).toBe("1600 / 900");
+    expect(thumbnailObjectFit("poster.psd")).toBe("cover");
+    expect(thumbnailObjectFit("poster.png")).toBe("contain");
+  });
+});
 
 // 复刻 Feed/Lightbox 里的 sanitize 逻辑：保留原扩展名，强制剥离用户给的错误扩展名。
 // 这是右键菜单 "重命名" 的输入校验纯函数部分。

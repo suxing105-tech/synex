@@ -6,6 +6,7 @@
   import GallerySearch from "./GallerySearch.svelte";
   import ContentSwitcher from "./ContentSwitcher.svelte";
   import { copyOriginalImage } from "../lib/image-clipboard";
+  import { isPsdFilename, thumbnailAspectRatio, thumbnailHeightToWidthRatio, thumbnailObjectFit } from "../lib/media-format";
   import { matchesAction, shortcutBlocked } from "../lib/shortcut-settings";
   import { backendUrl } from "../lib/backend-url";
   import {
@@ -281,6 +282,11 @@
   }
 
   function imageLoaded(item: ImageSummary, image: HTMLImageElement) {
+    image.style.visibility = "visible";
+    if (previewFailedIds.has(item.id)) {
+      previewFailedIds = new Set([...previewFailedIds].filter(id => id !== item.id));
+    }
+    if (isPsdFilename(item.filename)) return;
     const width = image.naturalWidth, height = image.naturalHeight;
     if (width > 0 && height > 0 && (!item.width || !item.height || Math.abs(item.width / item.height - width / height) > .01)) {
       feedItems.update(items => items.map(row => row.id === item.id ? { ...row, width, height } : row));
@@ -288,8 +294,7 @@
   }
 
   function aspectFor(it: ImageSummary): string {
-    if (it.width && it.height && it.height > 0) return `${it.width} / ${it.height}`;
-    return "1 / 1";
+    return thumbnailAspectRatio(it.filename, it.kind, it.width, it.height);
   }
 
   // 当前多选张数（派生：用于 header 计数器）
@@ -297,6 +302,7 @@
 
   // 当前鼠标滑过的缩略图 id（空格键放大这张；不受 selectedId 影响）
   let hoveredId = $state<number | null>(null);
+  let previewFailedIds = $state<Set<number>>(new Set());
 
   // 反向同步：applySelection 写 store.selectedId 但不会反向写到这里的 prop，
   // 导致 handleKey（空格开 Lightbox）读到旧 prop。
@@ -354,6 +360,7 @@
       const isVideo = t.kind === "video";
       return [
         { label: isVideo ? "复制视频" : "复制图片", onClick: () => isVideo ? copyVideoToClipboard(t) : copyImageToClipboard(t) },
+        ...(isPsdFilename(t.filename) ? [{ label: "在 Photoshop 中打开", onClick: () => openInPhotoshop(t) }] : []),
         { label: "重命名", onClick: () => renameImage(t) },
         { label: t.favorite ? "取消收藏" : "收藏", onClick: () => favoriteImage(t) },
         { label: isVideo ? "视频所在位置" : "图片所在位置", onClick: () => revealImage(t) },
@@ -373,8 +380,18 @@
   });
 
   async function copyImageToClipboard(it: ImageSummary) {
-    try { await copyOriginalImage(it.id); notify("已复制原图到剪贴板"); }
+    try { await copyOriginalImage(it.id); notify(isPsdFilename(it.filename) ? "已复制 PSD 合成画面" : "已复制原图到剪贴板"); }
     catch (e) { notify(`复制原图失败：${(e as Error).message}`); }
+  }
+
+  async function openInPhotoshop(it: ImageSummary) {
+    try {
+      await imagesApi.openPhotoshop(it.id);
+      notify("已在 Photoshop 中打开 PSD");
+    } catch (e) {
+      const error = e as Error & { detail?: string };
+      notify(error.detail ?? `在 Photoshop 中打开失败：${error.message}`);
+    }
   }
 
   async function copyVideoToClipboard(it: ImageSummary) {
@@ -603,7 +620,7 @@
     );
     if (w <= 0) return cols;
     for (const it of $feedItems) {
-      const ratio = it.width && it.height ? it.height / it.width : 1;
+      const ratio = thumbnailHeightToWidthRatio(it.filename, it.kind, it.width, it.height);
       const h = w * ratio + COL_GAP;
       // 找当前最矮的列
       let target = cols[0];
@@ -759,9 +776,18 @@
                   onload={(e) => imageLoaded(it, e.currentTarget as HTMLImageElement)}
                   loading="lazy"
                   decoding="async"
-                  onerror={(e) => { if (it.kind !== "video") checkMissing(it.id, e.currentTarget as HTMLImageElement); }}
-                  class="thumb-img absolute inset-0 w-full h-full object-contain"
+                  onerror={(e) => {
+                    if (it.kind === "video") return;
+                    if (isPsdFilename(it.filename)) previewFailedIds = new Set([...previewFailedIds, it.id]);
+                    checkMissing(it.id, e.currentTarget as HTMLImageElement);
+                  }}
+                  class="thumb-img absolute inset-0 w-full h-full"
+                  class:object-cover={thumbnailObjectFit(it.filename) === "cover"}
+                  class:object-contain={thumbnailObjectFit(it.filename) === "contain"}
                 />
+                {#if previewFailedIds.has(it.id)}
+                  <span class="absolute inset-0 flex items-center justify-center px-2 text-center text-xs text-muted" aria-label="PSD 预览不可用">PSD 预览不可用</span>
+                {/if}
                 {#if it.kind === "video"}
                   <div
                     role="button"

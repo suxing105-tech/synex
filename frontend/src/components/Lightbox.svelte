@@ -2,6 +2,7 @@
   import ImageCompare from "./ImageCompare.svelte";
   import { multiSelectedIds, removeImageFromFeed, refreshFolders } from "../lib/stores";
   import { copyOriginalImage } from "../lib/image-clipboard";
+  import { isPsdFilename } from "../lib/media-format";
   import { matchesAction, shortcutBlocked } from "../lib/shortcut-settings";
   import { backendUrl } from "../lib/backend-url";
   import { feedItems, refreshFeed, refreshStats } from "../lib/stores";
@@ -41,6 +42,7 @@
   }
 
   let originalUrl = $state<string | null>(null);
+  let fullPreviewFailed = $state(false);
 
   // ---------- 100% 放大 + 抓手拖动 ----------
   // 用 pointer events + setPointerCapture 是最稳的拖动模式：
@@ -278,8 +280,8 @@
     ];
   });
 
-  async function copyImage(it: { id: number }) {
-    try { await copyOriginalImage(it.id); notify("已复制原图到剪贴板"); }
+  async function copyImage(it: { id: number; filename: string }) {
+    try { await copyOriginalImage(it.id); notify(isPsdFilename(it.filename) ? "已复制 PSD 合成画面" : "已复制原图到剪贴板"); }
     catch (e) { notify(`复制原图失败：${(e as Error).message}`); }
   }
 
@@ -335,6 +337,7 @@
       const it = $feedItems[index];
       if (it) {
         originalUrl = backendUrl(`/api/images/${it.id}/file?cache=2`);
+        fullPreviewFailed = false;
         selectedId = it.id;
       }
     }
@@ -428,9 +431,14 @@
       onpointerup={onImgPointerUp}
       onpointercancel={onImgPointerUp}
       ondblclick={onImgDblClick}
+      onerror={() => { fullPreviewFailed = true; }}
+      onload={() => { fullPreviewFailed = false; }}
     />
 
       </div>
+      {#if fullPreviewFailed && !comparing}
+        <div class="absolute inset-0 flex items-center justify-center text-sm text-muted" role="status">图片预览不可用</div>
+      {/if}
       <div class="absolute inset-0" class:hidden={!comparing}>
         {#if compareImages.length === 2}<ImageCompare images={compareImages} mode={compareMode} />{/if}
       </div>

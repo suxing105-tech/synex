@@ -645,6 +645,12 @@ def _extract_dimensions(path):
     except ImportError:
         return None, None
     try:
+        if Path(path).suffix.lower() == ".psd":
+            from psd_tools import PSDImage
+
+            with Path(path).open("rb") as source:
+                psd = PSDImage.open(source)
+                return int(psd.width), int(psd.height)
         with Image.open(path) as img:
             width, height = img.size
             if img.getexif().get(274) in (5, 6, 7, 8):
@@ -658,7 +664,7 @@ def _extract_dimensions(path):
 
 
 # 图片扩展名（沿用原集合）
-IMAGE_EXTS = {".png", ".webp", ".jpg", ".jpeg"}
+IMAGE_EXTS = {".png", ".webp", ".jpg", ".jpeg", ".psd"}
 # 视频扩展名：全量索引 + 生成海报；App 内可播放与否见 PLAYABLE_EXTS
 VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".wmv", ".flv"}
 # WebView（WebView2/Chromium）可原生播放的容器，可直接走 <video>；否则回退系统播放器

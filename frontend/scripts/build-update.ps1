@@ -12,7 +12,7 @@ if (!$SigningKeyPath) { $SigningKeyPath = Join-Path $RepoRoot "outputs/auto-upda
 if (!$ReleaseNotes) { $ReleaseNotes = Join-Path $OutputDir "release-notes.md" }
 if (!(Test-Path -LiteralPath $SigningKeyPath)) { throw "缺少更新签名私钥，不能构建发布包。" }
 if (!(Test-Path -LiteralPath $ReleaseNotes)) { throw "缺少版本说明。" }
-$Config = Get-Content "$RepoRoot/frontend/src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
+$Config = Get-Content "$RepoRoot/frontend/src-tauri/tauri.conf.json" -Raw -Encoding UTF8 | ConvertFrom-Json
 $Version = $Config.version
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 # 发布前先锁版本号：0.2.7 曾漏改 backend/app/version.py，
@@ -34,14 +34,24 @@ try {
     $env:TAURI_SIGNING_PRIVATE_KEY = (Resolve-Path -LiteralPath $SigningKeyPath).Path
     Push-Location $RepoRoot
     try {
+        # Windows PowerShell 5.1 在 Stop 模式下会把原生命令的 stderr 当成终止错误，
+        # 所以跑原生命令时临时切 Continue，靠 $LASTEXITCODE 判断成败。
+        $PreviousEap = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
         & $Python -m PyInstaller --noconfirm --distpath "$OutputDir/sidecar" --workpath "$OutputDir/build/pyinstaller" "$RepoRoot/frontend/pyinstaller/python-backend.spec" *> "$OutputDir/sidecar-build.log"
-        if ($LASTEXITCODE) { throw "后台打包失败，查看 sidecar-build.log" }
+        $PyiExit = $LASTEXITCODE
+        $ErrorActionPreference = $PreviousEap
+        if ($PyiExit) { throw "后台打包失败，查看 sidecar-build.log" }
         Copy-Item -LiteralPath "$OutputDir/sidecar/python-backend.exe" -Destination "$RepoRoot/frontend/src-tauri/binaries/python-backend-x86_64-pc-windows-msvc.exe" -Force
     } finally { Pop-Location }
     Push-Location "$RepoRoot/frontend"
     try {
+        $PreviousEap = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
         cargo tauri build --ci *> "$OutputDir/desktop-build.log"
-        if ($LASTEXITCODE) { throw "桌面版打包失败，查看 desktop-build.log" }
+        $TauriExit = $LASTEXITCODE
+        $ErrorActionPreference = $PreviousEap
+        if ($TauriExit) { throw "桌面版打包失败，查看 desktop-build.log" }
     } finally { Pop-Location }
     $BuiltInstaller = "闪寻空间_${Version}_x64-setup.exe"
     $Installer = "suxing-gallery_${Version}_x64-setup.exe"

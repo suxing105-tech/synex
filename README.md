@@ -12,7 +12,7 @@
 
 ### 图片 & 视频统一管理
 - 三栏布局：左侧文件夹树 / 中间瀑布流缩略图 / 右侧详情面板
-- 图片：PNG / WebP / JPG 等，自动解析元数据（A1111 / ComfyUI tEXt）
+- 图片：PNG / WebP / JPG / PSD 等，自动解析常见元数据（A1111 / ComfyUI tEXt）；PSD 缩略图按 9:16 裁切铺满，预览显示合成画面，右键可在 Photoshop 中打开
 - 视频：MP4 / MOV / M4V / WebM / MKV / AVI / WMV / FLV，自动生成**海报帧缩略图**，点击播放按钮内嵌播放，支持**分割视图 / 并排对比**，可**一键改封面**
 - 缩略图生成与磁盘缓存，滚动流畅
 
@@ -95,8 +95,8 @@ pnpm dev        # http://localhost:5173（代理到 8765）
 
 ## 🧪 测试
 
-- 后端：`293 passed`（parser / indexer / repository / api / video / folders）
-- 前端：`404 passed`（56 个测试文件）
+- 后端：`339 passed`（parser / indexer / repository / api / video / folders / psd）
+- 前端：`474 passed`（71 个测试文件）
 - `svelte-check`：`0 errors`
 
 ```powershell

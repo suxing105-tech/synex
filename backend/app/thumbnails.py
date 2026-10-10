@@ -27,21 +27,54 @@ Image.MAX_IMAGE_PIXELS = None
 _LOCK = threading.Lock()
 
 
-def generate_preview(image_path: Path, image_id: int, max_size: int, quality: int = 85) -> Path | None:
-    """Cache by source bytes, never by image ID or file timestamps alone."""
+def generate_preview(
+    image_path: Path,
+    image_id: int,
+    max_size: int | None,
+    quality: int = 85,
+    crop_aspect: tuple[int, int] | None = None,
+) -> Path | None:
+    """Cache by source bytes; PSDs are rendered from their merged composite."""
     import hashlib
     import os
     import tempfile
     temp_path = None
     try:
-        source = image_path.read_bytes()
-        digest = hashlib.sha256(source).hexdigest()
-        out_path = previews_dir() / f"{image_id}_max{max_size}_q{quality}_{digest}.webp"
+        with image_path.open("rb") as source_file:
+            digest = hashlib.file_digest(source_file, "sha256").hexdigest()
+        size_key = f"max{max_size}" if max_size is not None else "maxfull"
+        if crop_aspect is not None:
+            size_key += f"_crop{crop_aspect[0]}x{crop_aspect[1]}"
+        out_path = previews_dir() / f"{image_id}_{size_key}_q{quality}_{digest}.webp"
         if out_path.exists():
             return out_path
-        with Image.open(io.BytesIO(source)) as im:
-            im = ImageOps.exif_transpose(im)
-            im.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+        if image_path.suffix.lower() == ".psd":
+            from psd_tools import PSDImage
+
+            with image_path.open("rb") as source_file:
+                psd = PSDImage.open(source_file)
+                im = psd.composite()
+        else:
+            with Image.open(image_path) as source_image:
+                im = ImageOps.exif_transpose(source_image).copy()
+        try:
+            if crop_aspect is not None:
+                target_ratio = crop_aspect[0] / crop_aspect[1]
+                source_ratio = im.width / im.height
+                if source_ratio > target_ratio:
+                    crop_width = max(1, round(im.height * target_ratio))
+                    left = (im.width - crop_width) // 2
+                    cropped = im.crop((left, 0, left + crop_width, im.height))
+                    im.close()
+                    im = cropped
+                elif source_ratio < target_ratio:
+                    crop_height = max(1, round(im.width / target_ratio))
+                    top = (im.height - crop_height) // 2
+                    cropped = im.crop((0, top, im.width, top + crop_height))
+                    im.close()
+                    im = cropped
+            if max_size is not None:
+                im.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
             if im.mode not in ("RGB", "RGBA"):
                 im = im.convert("RGB")
             elif im.mode == "RGBA":
@@ -51,12 +84,14 @@ def generate_preview(image_path: Path, image_id: int, max_size: int, quality: in
             with tempfile.NamedTemporaryFile(dir=out_path.parent, suffix=".tmp", delete=False) as temp:
                 temp_path = Path(temp.name)
                 im.save(temp, format="WEBP", quality=quality, method=4)
+        finally:
+            im.close()
         with _LOCK:
             if not out_path.exists():
                 os.replace(temp_path, out_path)
         return out_path
-    except (UnidentifiedImageError, OSError) as e:
-        log.warning("preview failed: %s (max=%d): %s", image_path, max_size, e)
+    except Exception as e:  # noqa: BLE001 - PSD decoders use format-specific exception types
+        log.warning("preview failed: %s (max=%s): %s", image_path, max_size, e)
         return None
     finally:
         if temp_path is not None:

@@ -29,7 +29,12 @@ def copy_files(paths: list[str], folder_id: int | None) -> dict:
                 if before.st_size > limit:
                     raise ValueError('超过 2GB' if is_video else '超过 100MB')
                 # Video metadata/posters are handled by the video indexer, not Pillow.
-                if not is_video:
+                if not is_video and source.suffix.lower() == ".psd":
+                    from psd_tools import PSDImage
+
+                    with source.open("rb") as source_file:
+                        PSDImage.open(source_file)
+                elif not is_video:
                     with Image.open(source) as image:
                         image.verify()
                 target = directory / source.name

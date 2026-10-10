@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { ImageSummary } from "../lib/types";
+import { thumbnailAspectRatio, thumbnailHeightToWidthRatio } from "../lib/media-format";
 
 // Feed.svelte 里 aspectFor 的等效纯函数。新布局走 CSS columns + aspect-ratio，
 // 列宽由 column-width 控制，浏览器自动按容器宽度算列数与列宽，缩放滑块接到 column-width。
@@ -36,6 +37,12 @@ describe("Feed 流式瀑布（CSS columns + 原图比例）", () => {
     expect(aspectFor({ width: null, height: null })).toBe("1 / 1");
     expect(aspectFor({ width: 0, height: 0 })).toBe("1 / 1");
     expect(renderedHeight({ width: null, height: null }, 300)).toBe(300);
+  });
+
+  it("PSD 竖卡固定 9:16，瀑布流高度不受超长源 PSD 比例影响", () => {
+    expect(thumbnailAspectRatio("long.psd", "image", 2000, 10000)).toBe("9 / 16");
+    expect(thumbnailHeightToWidthRatio("long.psd", "image", 2000, 10000)).toBe(16 / 9);
+    expect(Math.round(300 * thumbnailHeightToWidthRatio("long.psd", "image", 2000, 10000))).toBe(533);
   });
 
   it("缩放滑块 140→360 时列宽同步变化，竖图高度同比放大", () => {

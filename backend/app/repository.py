@@ -12,7 +12,14 @@ from .texts import serialized
 
 
 
-def original_url_for(image_id: int, file_mtime: float | None, *, max_size: int | None = 1024, identity: str = "") -> str | None:
+def original_url_for(
+    image_id: int,
+    file_mtime: float | None,
+    *,
+    max_size: int | None = 1024,
+    identity: str = "",
+    fit: str | None = None,
+) -> str | None:
     """返回带 cache-bust 的原图 URL（feed 直接拿原图让浏览器缩放）。
 
     原图文件被覆盖时 mtime 变 → URL 变 → 浏览器重新下载。
@@ -28,6 +35,8 @@ def original_url_for(image_id: int, file_mtime: float | None, *, max_size: int |
     qs = []
     if max_size is not None:
         qs.append(f"max={int(max_size)}")
+    if fit is not None:
+        qs.append(f"fit={fit}")
     import hashlib
     key = hashlib.sha256(identity.encode()).hexdigest()[:16]
     qs.append(f"v=2-{file_mtime:.9f}-{key}")
@@ -61,9 +70,15 @@ def _media_urls(row: sqlite3.Row) -> dict:
             "playable": is_playable_video(Path(row["path"])),
         }
     ou = original_url_for(row["id"], row["mtime"], identity=identity)
+    thumbnail_url = original_url_for(
+        row["id"],
+        row["mtime"],
+        identity=identity,
+        fit="psd-portrait" if Path(row["path"]).suffix.lower() == ".psd" else None,
+    )
     return {
         "original_url": ou,
-        "thumbnail_url": ou,
+        "thumbnail_url": thumbnail_url,
         "play_url": None,
         "playable": None,
     }

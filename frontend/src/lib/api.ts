@@ -107,6 +107,9 @@ export const imagesApi = {
   reveal(id: number): Promise<{ ok: boolean; id: number; path: string; method: string }> {
     return http(`/api/images/${id}/reveal`, { method: "POST" });
   },
+  openPhotoshop(id: number): Promise<{ ok: boolean; id: number; path: string; method: string }> {
+    return http(`/api/images/${id}/open-photoshop`, { method: "POST" });
+  },
   /**
    * 把多个文件拖入当前文件夹。
    * - `folderId` 为 null/undefined → 仅入库收件箱，不分配文件夹；

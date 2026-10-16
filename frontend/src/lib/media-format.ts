@@ -27,3 +27,10 @@ export function thumbnailHeightToWidthRatio(
   if (width && height && width > 0) return height / width;
   return 1;
 }
+
+/** 剪贴板与拖拽共用的可导入格式判断：有 MIME 就用 MIME，否则退回扩展名（剪贴板位图叫 image.png）。 */
+export function isAcceptedMediaFile(file: { name?: string; type?: string }): boolean {
+  const type = file.type || "";
+  if (type.startsWith("image/") || type.startsWith("video/")) return true;
+  return /\.(png|webp|jpe?g|mp4|mov|m4v|webm|mkv|avi|wmv|flv)$/i.test(file.name || "");
+}

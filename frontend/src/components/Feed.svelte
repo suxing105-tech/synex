@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from "svelte";
   import { subscribeFileDrop } from "../lib/native-drop";
+  import { subscribeClipboardPaste } from "../lib/clipboard-paste";
   import { beginOriginalDrag } from "../lib/original-drag";
   import FolderPickerModal from "./FolderPickerModal.svelte";
   import GallerySearch from "./GallerySearch.svelte";
   import ContentSwitcher from "./ContentSwitcher.svelte";
   import { copyOriginalImage } from "../lib/image-clipboard";
-  import { isPsdFilename, thumbnailAspectRatio, thumbnailHeightToWidthRatio, thumbnailObjectFit } from "../lib/media-format";
+  import { isAcceptedMediaFile, isPsdFilename, thumbnailAspectRatio, thumbnailHeightToWidthRatio, thumbnailObjectFit } from "../lib/media-format";
   import { matchesAction, shortcutBlocked } from "../lib/shortcut-settings";
   import { backendUrl } from "../lib/backend-url";
   import {
@@ -110,10 +111,9 @@
     return $activeFolderName;
   });
 
-  // 从拖拽事件里挑出可接受的图片/视频 file 列表
+  // 从拖拽事件里挑出可接受的图片/视频 file 列表（与剪贴板粘贴共用同一份格式判断）
   function isAcceptedMedia(f: File): boolean {
-    if (f.type.startsWith("image/") || f.type.startsWith("video/")) return true;
-    return /\.(png|webp|jpe?g|mp4|mov|m4v|webm|mkv|avi|wmv|flv)$/i.test(f.name);
+    return isAcceptedMediaFile(f);
   }
   function pickImageFiles(dt: DataTransfer | null): File[] {
     if (!dt) return [];
@@ -241,6 +241,12 @@
       finally { importing = false; dragCounter = 0; dragFileCount = 0; }
     },
   ));
+
+  // 鼠标停在缩略图区域时按 Ctrl+V：剪贴板里的图片/视频走和拖拽一样的导入流程。
+  onMount(() => subscribeClipboardPaste(() => scrollerEl, async ({ files, hasFileEntry }) => {
+    if (files.length > 0) { await importFiles(files); return; }
+    if (hasFileEntry) notify("剪贴板里没有支持的图片或视频格式");
+  }));
 
   async function checkMissing(id: number, image: HTMLImageElement) {
     image.style.visibility = 'hidden';
@@ -700,7 +706,7 @@
   ondragleave={onDragLeave}
   ondrop={onDrop}
   role="region"
-  aria-label="图片流；可拖拽文件到此处导入"
+  aria-label="图片流；可拖拽文件到此处导入，鼠标停在此处按 Ctrl+V 导入剪贴板图片"
 >
   {#if dragHover}
     <div
@@ -724,7 +730,7 @@
               </span>
             {/if}
           </div>
-          <div class="text-[11px] text-muted/80 mt-2">支持 PNG / WebP / JPG / JPEG / MP4 / MOV / WebM 等</div>
+          <div class="text-[11px] text-muted/80 mt-2">支持 PNG / WebP / JPG / JPEG / MP4 / MOV / WebM 等；也可以按 Ctrl+V 导入剪贴板内容</div>
         {/if}
       </div>
     </div>

@@ -118,10 +118,13 @@ fn open_in_app_window(
     let label = format!("comfy-popup-{}", NEXT_WINDOW.fetch_add(1, Ordering::Relaxed));
     // window_features 必须带上：Windows 上 Create 响应要求新 webview 与来源 webview
     // 共用同一个 WebView2 environment，否则拿不到窗口。
+    // 拖放 / 剪贴板同 open_comfy_workflow：交给 ComfyUI 页面自己处理
     let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url.clone()))
         .title(&popup_title(&url))
         .theme(Some(tauri::Theme::Dark))
         .visible(false)
+        .disable_drag_drop_handler()
+        .enable_clipboard_access()
         .inner_size(1200.0, 800.0)
         .window_features(features)
         .initialization_script(&panel_script_for(&url))
@@ -247,10 +250,17 @@ pub async fn open_comfy_workflow(app: tauri::AppHandle, url: String, name: Strin
     let label = format!("comfy-workflow-{}", NEXT_WINDOW.fetch_add(1, Ordering::Relaxed));
     let opener = target.clone();
     let panel_label = label.clone();
+    // 拖放和剪贴板必须交回网页本身，否则 ComfyUI 里「把图拖进 Load Image 节点」和
+    // Ctrl+V 贴图都没反应：Tauri 默认给每个 webview 装 drag-drop handler，文件 drop 只会
+    // 变成 Rust 事件，页面拿不到 File；WebView2 默认也不批准 PermissionRequested(CLIPBOARD_READ)，
+    // navigator.clipboard.read() 直接失败。两个 flag 只在 ComfyUI 窗口上设置，
+    // 主窗口的导入拖拽要用 Tauri 事件，保持默认。
     let window = WebviewWindowBuilder::new(&app, label, WebviewUrl::External(target))
         .title(workflow_window_title(&name))
         .theme(Some(tauri::Theme::Dark))
         .visible(false)
+        .disable_drag_drop_handler()
+        .enable_clipboard_access()
         .inner_size(1280.0, 900.0)
         .initialization_script(&script)
         .on_new_window(new_window_policy(app.clone(), opener, Some(panel_label)))
@@ -365,5 +375,16 @@ mod tests {
         assert_eq!(workflow_window_title("一采_00083_"), "ComfyUI");
         assert_eq!(workflow_window_title("高清_00019_"), "ComfyUI");
         assert_eq!(workflow_window_title(""), "ComfyUI");
+    }
+
+    #[test]
+    fn comfyui_windows_hand_drops_and_clipboard_to_the_page() {
+        // 这两个 webview flag 只在运行时生效，单元测试跑不出来，所以监住源码：
+        // 工作流窗口和弹窗窗口都必须同时关掉 Tauri 拖拽、打开剪贴板读取。
+        let source = include_str!("comfyui.rs");
+        let drops = source.matches("\n        .disable_drag_drop_handler()\n").count();
+        let clipboard = source.matches("\n        .enable_clipboard_access()\n").count();
+        assert_eq!(drops, 2, "ComfyUI 窗口丢了 disable_drag_drop_handler");
+        assert_eq!(clipboard, 2, "ComfyUI 窗口丢了 enable_clipboard_access");
     }
 }

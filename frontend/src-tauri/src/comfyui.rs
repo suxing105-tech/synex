@@ -5,10 +5,9 @@ use tauri::webview::{NewWindowFeatures, NewWindowResponse};
 use tauri::{Manager, Url, WebviewUrl, WebviewWindowBuilder};
 static NEXT_WINDOW: AtomicUsize = AtomicUsize::new(1);
 
-/// 注入 ComfyUI 工作流窗口的三段脚本：标签页清理 + 面板宿主 + 工作流加载桥。
+/// 注入 ComfyUI 工作流窗口的两段脚本：面板宿主 + 工作流加载桥，顺序固定：面板在前、桥在后。
 const PANEL_JS: &str = include_str!("comfyui_panel.js");
 const BRIDGE_JS: &str = include_str!("comfyui_bridge.js");
-const TABS_JS: &str = include_str!("comfyui_tabs.js");
 
 /// 已经开出来的独立弹窗：去重键 -> 窗口 label。
 /// 只有插件显式要求独立窗口（window.open 带尺寸，如 LoRA 管理器 Shift+点）才会走到这里。
@@ -245,7 +244,7 @@ pub async fn open_comfy_workflow(app: tauri::AppHandle, url: String, name: Strin
     }
     let request = serde_json::json!({ "origin": target.origin().ascii_serialization(), "base": target.as_str(), "name": name, "workflow": workflow });
     // 面板宿主 + 工作流桥共用同一个 request 作用域；面板必须在前。
-    let script = format!("(() => {{ const request = {}; {TABS_JS} {PANEL_JS} {BRIDGE_JS} }})();", request);
+    let script = format!("(() => {{ const request = {}; {PANEL_JS} {BRIDGE_JS} }})();", request);
     let (sender, receiver) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let sender = Arc::new(Mutex::new(Some(sender)));
     let label = format!("comfy-workflow-{}", NEXT_WINDOW.fetch_add(1, Ordering::Relaxed));
@@ -340,11 +339,10 @@ mod tests {
     }
 
     #[test]
-    fn bridge_and_tabs_only_take_over_the_canvas_document() {
-        // 插件页面（/loras 等）与画布同源：桥接和标签清理都必须先确认自己在画布文档里，
-        // 否则会把插件的初始化链 / localStorage 标签列表一起带坏（LoRA 管理器点了没反应）
+    fn bridge_only_takes_over_the_canvas_document() {
+        // 插件页面（/loras 等）与画布同源：桥接必须先确认自己在画布文档里，
+        // 否则会把插件的初始化链一起带坏（LoRA 管理器点了没反应）
         assert!(BRIDGE_JS.contains("pagePath === canvasPath"));
-        assert!(TABS_JS.contains("onCanvas"));
         assert!(!PANEL_JS.contains("loadGraphData"));
         // 页面模式的返回靠这两个键，键名撞车会让返回地址被深度值覆盖
         assert!(PANEL_JS.contains("RETURN_KEY = \"SeekX.PanelReturn\""));
@@ -402,17 +400,18 @@ mod tests {
     }
 
     #[test]
-    fn tab_cleanup_runs_before_the_loader() {
-        // 清理必须排在桥接之前：ComfyUI 启动时就会读 localStorage 恢复标签，
-        // 晚于它加载就等于这一轮清理白做。
-        assert!(TABS_JS.contains("SeekX.OpenedWorkflowTabs"));
-        assert!(TABS_JS.contains("pagehide"));
-        // 注入顺序必须是 清理 -> 面板 -> 桥接，清理要赶在 ComfyUI 恢复标签之前跑完
+    fn workflow_tab_is_fixed_name_and_never_waits_for_a_tab() {
+        // 「工作流不见了」的成因：桥接把「已有活动工作流标签」当成前提，
+        // 而 ComfyUI 的标签恢复一旦被我们留下的野路径带坏就永远等不到标签。
+        // 现在只等画布可用、标签名固定成 ComfyUI，持久化里永远只有那一条。
+        assert!(BRIDGE_JS.contains("const TAB_NAME = 'ComfyUI';"));
+        assert!(BRIDGE_JS.contains("if (app.canvas && app.graph && !app.configuringGraph) break;"));
+        assert!(BRIDGE_JS.contains("createNewTemporary"));
+        // 不再改 ComfyUI 的标签持久化键，除了「有记录却一个标签都没恢复出来」时的自愈
+        assert!(!BRIDGE_JS.contains("localStorage.setItem"));
         let source = include_str!("comfyui.rs");
-        assert!(source.contains("{TABS_JS} {PANEL_JS} {BRIDGE_JS}"));
-        let combined = format!("{TABS_JS}{PANEL_JS}{BRIDGE_JS}");
-        let cleanup = combined.find("SeekX.OpenedWorkflowTabs").unwrap();
-        let loader = combined.find("loadGraphData(request.workflow").unwrap();
-        assert!(cleanup < loader, "标签清理跑在加载工作流之后了");
+        // 注入脚本只剩 panel + bridge 两段：会改写 ComfyUI 标签持久化的清理脚本删掉了，别再加回来
+        assert_eq!(source.matches("include_str!(\"comfyui_").count(), 2, "注入脚本数量变了，检查是否又把标签清理塞回去");
+        assert!(source.contains("{PANEL_JS} {BRIDGE_JS}"));
     }
 }

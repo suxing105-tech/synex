@@ -10,7 +10,12 @@
  *   再 ``await`` 后续的 fetch。
  * - ComfyUI 与本应用是不同 origin（端口不同），所以不能直接 ``ref.location = url``，
  *   只能借助 ``window.open(url, name)`` 让浏览器自己跨域导航。
+ * - 桌面版（Tauri / WebView2）没有新窗口宿主：``window.open`` 会被 webview 直接
+ *   吞掉，表现就是「点了没反应」。所以桌面版改走 Rust 命令
+ *   ``open_external_url``，交给系统默认浏览器打开。
  */
+
+import { isTauri } from "./tauri";
 
 const WINDOW_NAME = "suxing_comfyui";
 
@@ -25,10 +30,17 @@ let comfyuiWindow: Window | null = null;
  * 必须在用户点击事件的同步执行段调用，不能在 ``await`` 之后调用，否则会被
  * 浏览器弹窗拦截器拦掉。
  *
- * @returns 新打开 / 复用的 Window 引用；如果浏览器拦截弹窗则为 null。
+ * @returns 新打开 / 复用的 Window 引用；桌面版或浏览器拦截弹窗时为 null。
  */
 export function openOrReuseComfyuiTab(url: string): Window | null {
   if (typeof window === "undefined") return null;
+  if (isTauri()) {
+    // 桌面版：WebView2 没有新窗口宿主，window.open 静默失效 -> 交给系统默认浏览器。
+    void (window as any).__TAURI__.core
+      .invoke("open_external_url", { url })
+      .catch(() => {});
+    return null;
+  }
   const w = window.open(url, WINDOW_NAME);
   if (w) {
     comfyuiWindow = w;

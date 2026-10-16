@@ -57,6 +57,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             image_drag::drag_original_images,
             comfyui::open_comfy_workflow,
+            comfyui::open_external_url,
             commands::get_sidecar_status,
             folders::select_import_directory,
             folders::select_text_paths,

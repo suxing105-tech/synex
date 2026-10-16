@@ -3,7 +3,15 @@
 // 标签还留在 localStorage 里，开得越多积得越多。这里把「我们打开过的」标签名记在
 // 自己的键里，在下次打开工作流时、以及本窗口关闭时，从 ComfyUI 持久化的标签列表里
 // 摘掉。只摘我们自己打开的那几个名字，用户自己保存的工作流标签不碰。
-if (location.origin === request.origin) {
+// 同样只在画布文档里收拾标签：插件页面（/loras）跟画布共用同一份 localStorage，
+// 在那里跑会把刚刚打开的工作流标签提前摘掉。
+const trimSlash = (value) => String(value || '').replace(/\/+$/, '');
+const docPath = (raw, fallback) => {
+  try { return trimSlash(new URL(raw || fallback, fallback).pathname.replace(/\/index\.html$/, '/')); } catch (err) { return ''; }
+};
+const onCanvas =
+  docPath(location.href || request.base, request.origin + '/') === docPath(request.base, request.origin + '/');
+if (location.origin === request.origin && onCanvas) {
   const TRACKED = 'SeekX.OpenedWorkflowTabs';
   // ComfyUI 新旧两版持久化键都覆盖：值都是「打开的标签」路径列表
   const PATH_LIST_KEYS = ['Comfy.OpenWorkflowsPaths', 'Comfy.Workflow.DraftOrder'];

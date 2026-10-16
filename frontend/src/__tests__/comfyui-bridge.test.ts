@@ -24,3 +24,43 @@ it('加载失败不会回报成功，也不会提交生成任务', async () => {
   expect(location.href).toContain('suxing-workflow://failed');
   expect(app.queuePrompt).not.toHaveBeenCalled();
 });
+
+it('面板页面（如 LoRA 管理器 /loras）不会被桥接重复加载工作流', async () => {
+  const loadGraphData = vi.fn();
+  const app = { graph: {}, canvas: {}, extensionManager: { workflow: { activeWorkflow: {} } }, loadGraphData };
+  const location = { origin: 'http://localhost:8188', href: 'http://localhost:8188/loras' };
+  vm.runInNewContext(bridge, {
+    window: { comfyAPI: { app: { app } } }, location, document: { readyState: 'complete' },
+    request: { origin: location.origin, base: 'http://localhost:8188/', name: '人物', workflow: { nodes: [] } },
+    URL, encodeURIComponent, setTimeout: (cb: () => void) => queueMicrotask(cb),
+  });
+  for (let i = 0; i < 40; i++) await Promise.resolve();
+  expect(loadGraphData).not.toHaveBeenCalled();
+  expect(location.href).toBe('http://localhost:8188/loras');
+});
+it('画布地址写成 /index.html 时桥接照常工作', async () => {
+  const loadGraphData = vi.fn().mockResolvedValue({});
+  const app = { graph: {}, canvas: {}, extensionManager: { workflow: { activeWorkflow: {} } }, loadGraphData };
+  const location = { origin: 'http://localhost:8188', href: 'http://localhost:8188/index.html' };
+  vm.runInNewContext(bridge, {
+    window: { comfyAPI: { app: { app } } }, location, document: { readyState: 'complete' },
+    request: { origin: location.origin, base: 'http://localhost:8188/index.html', name: '人物', workflow: { nodes: [] } },
+    URL, encodeURIComponent, setTimeout: (cb: () => void) => queueMicrotask(cb),
+  });
+  for (let i = 0; i < 40; i++) await Promise.resolve();
+  expect(loadGraphData).toHaveBeenCalled();
+  expect(location.href).toBe('suxing-workflow://loaded');
+});
+
+it('面板页的子路由同样不会被桥接接管', async () => {
+  const loadGraphData = vi.fn();
+  const app = { graph: {}, canvas: {}, extensionManager: { workflow: { activeWorkflow: {} } }, loadGraphData };
+  const location = { origin: 'http://localhost:8188', href: 'http://localhost:8188/loras/detail/9' };
+  vm.runInNewContext(bridge, {
+    window: { comfyAPI: { app: { app } } }, location, document: { readyState: 'complete' },
+    request: { origin: location.origin, base: 'http://localhost:8188/', name: '人物', workflow: { nodes: [] } },
+    URL, encodeURIComponent, setTimeout: (cb: () => void) => queueMicrotask(cb),
+  });
+  for (let i = 0; i < 40; i++) await Promise.resolve();
+  expect(loadGraphData).not.toHaveBeenCalled();
+});

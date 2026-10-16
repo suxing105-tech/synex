@@ -1,4 +1,14 @@
-if (location.origin === request.origin) {
+// 只在 ComfyUI 画布文档里干活。插件页面（LoRA 管理器的 /loras 等）和画布同源，
+// 但那里不是 ComfyUI 画布：老写法会在插件页面里继续兜底 import scripts/app.js，
+// 拿不到 app 也算事，后面还会空转 40 秒重试、最后把页面导航到 suxing-workflow://。
+// 桥接只该认画布文档，其他同源页面一律不碰。
+const trimSlash = (value) => String(value || '').replace(/\/+$/, '');
+const docPath = (raw, fallback) => {
+  try { return trimSlash(new URL(raw || fallback, fallback).pathname.replace(/\/index\.html$/, '/')); } catch (err) { return ''; }
+};
+const canvasPath = docPath(request.base, request.origin + '/');
+const pagePath = docPath(location.href || request.base, request.origin + '/');
+if (location.origin === request.origin && pagePath === canvasPath) {
   (async () => {
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     let app;

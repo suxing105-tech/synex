@@ -17,10 +17,10 @@ function fakeStorage(initial: Record<string, string> = {}) {
 
 const COMFYUI = 'http://127.0.0.1:8188';
 
-function run(storage: ReturnType<typeof fakeStorage>, name: string, origin = COMFYUI) {
+function run(storage: ReturnType<typeof fakeStorage>, name: string, origin = COMFYUI, href = '') {
   const listeners: Record<string, () => void> = {};
   const window = { addEventListener: (event: string, handler: () => void) => { listeners[event] = handler; } };
-  vm.runInNewContext(tabs, { window, localStorage: storage, location: { origin }, request: { origin: COMFYUI, name } });
+  vm.runInNewContext(tabs, { window, URL, localStorage: storage, location: { origin, href: origin + href }, request: { origin: COMFYUI, name } });
   return { fire: (event: string) => listeners[event]?.(), listeners };
 }
 
@@ -73,6 +73,16 @@ it('页面不是 ComfyUI 自己时什么都不做', () => {
   const storage = fakeStorage({ 'Comfy.Workflow.OpenPaths:personal': '[]' });
   const before = JSON.stringify(storage);
   run(storage, '某张图', 'http://example.com');
+  expect(JSON.stringify(storage)).toBe(before);
+});
+
+it('插件页面（/loras）不碰 ComfyUI 的标签键', () => {
+  const storage = fakeStorage({
+    'Comfy.Workflow.OpenPaths:personal': JSON.stringify(['workflows/一采_00083_.json']),
+    [TRACKED]: JSON.stringify(['一采_00083_.json']),
+  });
+  const before = JSON.stringify(storage);
+  run(storage, '某张图', COMFYUI, '/loras');
   expect(JSON.stringify(storage)).toBe(before);
 });
 

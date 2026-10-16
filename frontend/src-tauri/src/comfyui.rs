@@ -68,8 +68,8 @@ fn popup_title(url: &Url) -> String {
     }
 }
 
-/// 打开当前窗口内的面板。脚本没装好（页面没加载完 / 被插件覆盖）就返回 false，
-/// 让调用方退回独立窗口，不要出现「点了什么都不知道」。
+/// 把当前工作流窗口切到面板页面（同窗口页面模式，不再开新窗口）。
+/// 脚本没注入成功或 webview 已经死了就返回 false，调用方回退到另开窗口。
 fn open_panel_in_window(app: &tauri::AppHandle, label: &str, url: &Url) -> bool {
     let Some(window) = app.get_webview_window(label) else {
         return false;
@@ -337,6 +337,18 @@ mod tests {
         assert!(BRIDGE_JS.contains("location.origin === request.origin"));
         let combined = format!("{PANEL_JS}{BRIDGE_JS}");
         assert!(combined.find("__seekxPanel").unwrap() < combined.find("comfyAPI").unwrap());
+    }
+
+    #[test]
+    fn bridge_and_tabs_only_take_over_the_canvas_document() {
+        // 插件页面（/loras 等）与画布同源：桥接和标签清理都必须先确认自己在画布文档里，
+        // 否则会把插件的初始化链 / localStorage 标签列表一起带坏（LoRA 管理器点了没反应）
+        assert!(BRIDGE_JS.contains("pagePath === canvasPath"));
+        assert!(TABS_JS.contains("onCanvas"));
+        assert!(!PANEL_JS.contains("loadGraphData"));
+        // 页面模式的返回靠这两个键，键名撞车会让返回地址被深度值覆盖
+        assert!(PANEL_JS.contains("RETURN_KEY = \"SeekX.PanelReturn\""));
+        assert!(PANEL_JS.contains("DEPTH_KEY = \"SeekX.PanelDepth\""));
     }
 
     #[test]

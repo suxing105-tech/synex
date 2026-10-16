@@ -223,6 +223,13 @@ pub async fn open_external_url(url: String) -> Result<(), String> {
     open_in_default_browser(parsed.as_str())
 }
 
+/// 打开工作流的应用内窗口标题。
+/// 工作流名仍然会传给 ComfyUI（写进工作流名称），但不再进标题：
+/// 用户会同时开多个工作流窗口，任务栏 / Alt-Tab 里统一显示 ComfyUI 更好认。
+fn workflow_window_title(_workflow_name: &str) -> String {
+    "ComfyUI".to_string()
+}
+
 #[tauri::command]
 pub async fn open_comfy_workflow(app: tauri::AppHandle, url: String, name: String, workflow: serde_json::Value) -> Result<(), String> {
     let target: tauri::Url = url.parse().map_err(|_| "ComfyUI 地址无效")?;
@@ -241,7 +248,7 @@ pub async fn open_comfy_workflow(app: tauri::AppHandle, url: String, name: Strin
     let opener = target.clone();
     let panel_label = label.clone();
     let window = WebviewWindowBuilder::new(&app, label, WebviewUrl::External(target))
-        .title(format!("ComfyUI \u{00b7} {}", name))
+        .title(workflow_window_title(&name))
         .theme(Some(tauri::Theme::Dark))
         .visible(false)
         .inner_size(1280.0, 900.0)
@@ -350,5 +357,13 @@ mod tests {
     fn popup_title_uses_last_path_segment() {
         assert_eq!(popup_title(&url("http://127.0.0.1:8188/loras")), "ComfyUI \u{00b7} loras");
         assert_eq!(popup_title(&url("http://127.0.0.1:8188/")), "127.0.0.1");
+    }
+
+    #[test]
+    fn workflow_window_title_is_always_comfyui() {
+        // 用户要求：无论从哪个缩略图打开工作流，标题统一显示 ComfyUI
+        assert_eq!(workflow_window_title("一采_00083_"), "ComfyUI");
+        assert_eq!(workflow_window_title("高清_00019_"), "ComfyUI");
+        assert_eq!(workflow_window_title(""), "ComfyUI");
     }
 }

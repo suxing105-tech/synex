@@ -5,9 +5,10 @@ use tauri::webview::{NewWindowFeatures, NewWindowResponse};
 use tauri::{Manager, Url, WebviewUrl, WebviewWindowBuilder};
 static NEXT_WINDOW: AtomicUsize = AtomicUsize::new(1);
 
-/// 注入 ComfyUI 窗口的两段脚本：面板宿主 + 工作流加载桥。
+/// 注入 ComfyUI 工作流窗口的三段脚本：标签页清理 + 面板宿主 + 工作流加载桥。
 const PANEL_JS: &str = include_str!("comfyui_panel.js");
 const BRIDGE_JS: &str = include_str!("comfyui_bridge.js");
+const TABS_JS: &str = include_str!("comfyui_tabs.js");
 
 /// 已经开出来的独立弹窗：去重键 -> 窗口 label。
 /// 只有插件显式要求独立窗口（window.open 带尺寸，如 LoRA 管理器 Shift+点）才会走到这里。
@@ -244,7 +245,7 @@ pub async fn open_comfy_workflow(app: tauri::AppHandle, url: String, name: Strin
     }
     let request = serde_json::json!({ "origin": target.origin().ascii_serialization(), "base": target.as_str(), "name": name, "workflow": workflow });
     // 面板宿主 + 工作流桥共用同一个 request 作用域；面板必须在前。
-    let script = format!("(() => {{ const request = {}; {PANEL_JS} {BRIDGE_JS} }})();", request);
+    let script = format!("(() => {{ const request = {}; {TABS_JS} {PANEL_JS} {BRIDGE_JS} }})();", request);
     let (sender, receiver) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let sender = Arc::new(Mutex::new(Some(sender)));
     let label = format!("comfy-workflow-{}", NEXT_WINDOW.fetch_add(1, Ordering::Relaxed));
@@ -386,5 +387,20 @@ mod tests {
         let clipboard = source.matches("\n        .enable_clipboard_access()\n").count();
         assert_eq!(drops, 2, "ComfyUI 窗口丢了 disable_drag_drop_handler");
         assert_eq!(clipboard, 2, "ComfyUI 窗口丢了 enable_clipboard_access");
+    }
+
+    #[test]
+    fn tab_cleanup_runs_before_the_loader() {
+        // 清理必须排在桥接之前：ComfyUI 启动时就会读 localStorage 恢复标签，
+        // 晚于它加载就等于这一轮清理白做。
+        assert!(TABS_JS.contains("SeekX.OpenedWorkflowTabs"));
+        assert!(TABS_JS.contains("pagehide"));
+        // 注入顺序必须是 清理 -> 面板 -> 桥接，清理要赶在 ComfyUI 恢复标签之前跑完
+        let source = include_str!("comfyui.rs");
+        assert!(source.contains("{TABS_JS} {PANEL_JS} {BRIDGE_JS}"));
+        let combined = format!("{TABS_JS}{PANEL_JS}{BRIDGE_JS}");
+        let cleanup = combined.find("SeekX.OpenedWorkflowTabs").unwrap();
+        let loader = combined.find("loadGraphData(request.workflow").unwrap();
+        assert!(cleanup < loader, "标签清理跑在加载工作流之后了");
     }
 }

@@ -2,8 +2,8 @@
 
 要点：
 - WAL 模式 + ``synchronous=NORMAL``，平衡写入吞吐与崩溃安全。
-- FTS5 虚拟表 ``images_fts`` 与 ``images`` 表通过 ``rowid`` 同步。
-- 删除 / 更新图片时同步维护 FTS，避免搜索悬挂。
+- FTS5 虚拟表 ``images_fts`` 是 **外部内容表**（``content='images'``）：正文只存在
+  ``images`` 里，索引由 ``images`` 上的触发器维护，所以随时能从 ``images`` 重建。
 - ``images.path`` 加唯一索引，防止同一路径重复入库。
 - 所有 DDL 幂等，可在已有库上安全跑。
 
@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+import logging
 import sqlite3
 import threading
 from collections.abc import Iterator
@@ -23,6 +24,8 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from .config import db_path
+
+logger = logging.getLogger(__name__)
 
 
 SCHEMA = r"""
@@ -93,7 +96,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS images_fts USING fts5(
     negative_prompt,
     filename,
     model,
-    content='',
+    content='images',
+    content_rowid='id',
     tokenize='unicode61 remove_diacritics 1'
 );
 CREATE TABLE IF NOT EXISTS meta (
@@ -151,6 +155,13 @@ class ConnectionPool:
             initialize_reverse_prompts(self._main)
             migrate_system_folders(self._main)
             migrate_media_kind(self._main)
+            # 搜索索引必须在任何线程写 images 之前修好：老库的 contentless 索引是坏过的
+            # （见 migrate_fts），而触发器也依赖 images_fts 存在。
+            try:
+                migrate_fts(self._main)
+                ensure_fts_triggers(self._main)
+            except sqlite3.Error as exc:
+                logger.warning("搜索索引维护失败，搜索将退回模糊匹配：%s", exc)
             self._initialized = True
             self._ready_event.set()
 
@@ -234,43 +245,105 @@ def transaction() -> Iterator[sqlite3.Connection]:
         conn.execute("COMMIT")
 
 
-def fts_sync(conn: sqlite3.Connection, image_id: int, op: str) -> None:
-    """op in {insert, delete, update}。"""
-    if op == "delete":
-        # contentless FTS5 必须用 special "delete-rowid" 命令
-        conn.execute(
-            "INSERT INTO images_fts(images_fts, rowid, positive_prompt, negative_prompt, filename, model) "
-            "VALUES('delete', ?, '', '', '', '')",
-            (image_id,),
-        )
-        return
+# ---------- 搜索索引（FTS5）维护 ----------
+#
+# 索引是 ``images`` 的派生数据，一律由 ``images`` 上的触发器维护。
+# 外部内容表自己不存正文，FTS5 的 'delete' 命令必须拿到**被删行的旧值**才能把
+# 倒排表改对。以前这里手写 fts_sync()：调用方先 DELETE 再同步、旧值还一律写成
+# 空串，倒排表被越改越乱，最后 MATCH 直接抛 "database disk image is malformed"
+# —— 表现为搜索框输入没反应（/api/images?q= 返回 500）。
+# 换成触发器后不存在顺序问题，也不可能写错旧值；索引坏了还能从 images 重建。
+
+FTS_CREATE = (
+    "CREATE VIRTUAL TABLE IF NOT EXISTS images_fts USING fts5("
+    "positive_prompt, negative_prompt, filename, model, "
+    "content='images', content_rowid='id', "
+    "tokenize='unicode61 remove_diacritics 1')"
+)
+
+FTS_TRIGGERS = r"""
+CREATE TRIGGER IF NOT EXISTS images_fts_ai AFTER INSERT ON images BEGIN
+  INSERT INTO images_fts(rowid, positive_prompt, negative_prompt, filename, model)
+  VALUES (new.id, new.positive_prompt, new.negative_prompt, new.filename, COALESCE(new.model, ''));
+END;
+CREATE TRIGGER IF NOT EXISTS images_fts_ad AFTER DELETE ON images BEGIN
+  INSERT INTO images_fts(images_fts, rowid, positive_prompt, negative_prompt, filename, model)
+  VALUES ('delete', old.id, old.positive_prompt, old.negative_prompt, old.filename,
+          COALESCE(old.model, ''));
+END;
+CREATE TRIGGER IF NOT EXISTS images_fts_au AFTER UPDATE ON images BEGIN
+  INSERT INTO images_fts(images_fts, rowid, positive_prompt, negative_prompt, filename, model)
+  VALUES ('delete', old.id, old.positive_prompt, old.negative_prompt, old.filename,
+          COALESCE(old.model, ''));
+  INSERT INTO images_fts(rowid, positive_prompt, negative_prompt, filename, model)
+  VALUES (new.id, new.positive_prompt, new.negative_prompt, new.filename, COALESCE(new.model, ''));
+END;
+"""
+
+
+def _fts_ddl(conn: sqlite3.Connection) -> str | None:
+    """返回 images_fts 的建表语句；表不存在时返回 None。"""
     row = conn.execute(
-        "SELECT positive_prompt, negative_prompt, filename, model FROM images WHERE id = ?",
-        (image_id,),
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'images_fts'"
     ).fetchone()
     if row is None:
-        return
-    pos = row["positive_prompt"]
-    neg = row["negative_prompt"]
-    filename = row["filename"]
-    model = row["model"]
-    if op == "insert":
+        return None
+    return row["sql"] or ""
+
+
+def _fts_populate(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "INSERT INTO images_fts(rowid, positive_prompt, negative_prompt, filename, model) "
+        "SELECT id, positive_prompt, negative_prompt, filename, COALESCE(model, '') FROM images"
+    )
+
+
+def fts_is_healthy(conn: sqlite3.Connection) -> bool:
+    """跑一条一定搜不到的查询：索引结构坏了会在这里抛 malformed。"""
+    try:
         conn.execute(
-            "INSERT INTO images_fts(rowid, positive_prompt, negative_prompt, filename, model) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (image_id, pos, neg, filename, model or ""),
-        )
-    elif op == "update":
-        conn.execute(
-            "INSERT INTO images_fts(images_fts, rowid, positive_prompt, negative_prompt, filename, model) "
-            "VALUES('delete', ?, '', '', '', '')",
-            (image_id,),
-        )
-        conn.execute(
-            "INSERT INTO images_fts(rowid, positive_prompt, negative_prompt, filename, model) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (image_id, pos, neg, filename, model or ""),
-        )
+            "SELECT rowid FROM images_fts WHERE images_fts MATCH ? LIMIT 1",
+            ('"suxing_fts_health_probe"*',),
+        ).fetchall()
+        return True
+    except sqlite3.Error as exc:
+        logger.warning("搜索索引探测失败，准备重建：%s", exc)
+        return False
+
+
+def ensure_fts_triggers(conn: sqlite3.Connection) -> None:
+    conn.executescript(FTS_TRIGGERS)
+
+
+def migrate_fts(conn: sqlite3.Connection) -> str:
+    """把遗留的 contentless 索引换成外部内容索引，并顺手治好已经坏掉的索引。
+
+    返回本次做的事：created / migrated / rebuilt / recreated / ok。
+    历史库用 ``content=''`` + 手写同步，索引里既有指向已删图片的残留，也有被
+    写坏的倒排表；这种索引不可信，直接删表按 images 重建，用户图片数据不受影响。
+    """
+    ddl = _fts_ddl(conn)
+    if ddl is None:
+        conn.execute(FTS_CREATE)
+        return "created"
+    if "content=''" in ddl:
+        conn.execute("DROP TABLE images_fts")
+        conn.execute(FTS_CREATE)
+        _fts_populate(conn)
+        logger.warning("搜索索引已从 contentless 迁移为外部内容表并按 images 重建")
+        return "migrated"
+    if fts_is_healthy(conn):
+        return "ok"
+    try:
+        conn.execute("INSERT INTO images_fts(images_fts) VALUES('rebuild')")
+        logger.warning("搜索索引已按 images 重建")
+        return "rebuilt"
+    except sqlite3.Error as exc:
+        logger.warning("搜索索引 rebuild 失败，改为删表重建：%s", exc)
+        conn.execute("DROP TABLE images_fts")
+        conn.execute(FTS_CREATE)
+        _fts_populate(conn)
+        return "recreated"
 
 
 def migrate_system_folders(conn: sqlite3.Connection) -> None:

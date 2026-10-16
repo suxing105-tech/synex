@@ -33,7 +33,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from .config import Config, load_config, save_config
-from .db import fts_sync, get_pool, transaction
+from .db import get_pool, transaction
 from .parser import SUPPORTED_EXTS, parse_metadata, parse_video_metadata, classify
 from . import repository
 
@@ -205,7 +205,6 @@ class Indexer:
                         return None
                     image_id = row["id"]
                     conn.execute("DELETE FROM images WHERE id = ?", (image_id,))
-                    fts_sync(conn, image_id, "delete")
                 return {"type": "image_removed", "id": image_id, "path": path_str}
             return None
         if not path.exists() or path.suffix.lower() not in SUPPORTED_EXTS:
@@ -308,7 +307,6 @@ class Indexer:
                         ),
                     )
                     image_id = cur.lastrowid
-                fts_sync(c, image_id, "update" if row else "insert")
             # system folder 挂载（在写锁内同一线程；幂等且不阻塞）
             self._assign_system_folder(image_id, path)
         return {

@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from collections.abc import Iterable
 from pathlib import Path
 
-from .db import fts_sync, get_pool, transaction
+from .db import get_pool, transaction
 from .parser import is_playable_video, parse_video_metadata
 from .texts import serialized
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -541,7 +544,6 @@ def rename_image(image_id: int, new_filename: str) -> dict:
                 "UPDATE images SET filename = ?, mtime = ? WHERE id = ?",
                 (final_name, float(stat.st_mtime), image_id),
             )
-            fts_sync(c, image_id, "update")
         updated = conn.execute(
             "SELECT * FROM images WHERE id = ?", (image_id,)
         ).fetchone()
@@ -560,7 +562,6 @@ def rename_image(image_id: int, new_filename: str) -> dict:
             "UPDATE images SET path = ?, filename = ?, mtime = ? WHERE id = ?",
             (str(new_path), final_name, new_mtime, image_id),
         )
-        fts_sync(c, image_id, "update")
     updated = conn.execute(
         "SELECT * FROM images WHERE id = ?", (image_id,)
     ).fetchone()
@@ -694,12 +695,17 @@ def feed(
     fts_ids: list[int] | None = None
     if q:
         like = f"%{q}%"
-        # 同时走 FTS（prompts/filename/model）和 filename 模糊
-        rows = conn.execute(
-            "SELECT rowid FROM images_fts WHERE images_fts MATCH ? ORDER BY rank LIMIT 5000",
-            (_build_fts_query(q),),
-        ).fetchall()
-        fts_ids = [r["rowid"] for r in rows]
+        # 同时走 FTS（prompts/filename/model）和 filename 模糊。
+        # 索引不可用（损坏 / 缺表）时只降级成 LIKE —— 搜索框绝不能因为索引坏了就整条 500。
+        try:
+            rows = conn.execute(
+                "SELECT rowid FROM images_fts WHERE images_fts MATCH ? ORDER BY rank LIMIT 5000",
+                (_build_fts_query(q),),
+            ).fetchall()
+            fts_ids = [r["rowid"] for r in rows]
+        except sqlite3.Error as exc:
+            logger.warning("FTS 搜索失败，本次退回模糊匹配：%s", exc)
+            fts_ids = None
         if fts_ids:
             placeholders = ",".join("?" * len(fts_ids))
             where.append(

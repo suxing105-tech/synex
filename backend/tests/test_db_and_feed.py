@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from app import repository
-from app.db import fts_sync, get_pool, init_pool, transaction
+from app.db import ensure_fts_triggers, fts_is_healthy, get_pool, init_pool, migrate_fts, transaction
 from app.indexer import Indexer
 
 from .conftest import make_comfy_prompt, make_png
@@ -101,15 +101,86 @@ def test_folder_tree_includes_recursive_count(seeded_db):
     assert inspiration["recursive_count"] >= 3
 
 
-def test_fts_sync_keeps_in_sync(seeded_db):
-    conn = get_pool().main()
-    # 删掉一张图，fts 行也必须被删
-    target = conn.execute("SELECT id FROM images WHERE filename='a.png'").fetchone()["id"]
-    fts_sync(conn, target, "delete")
-    conn.execute("DELETE FROM images WHERE id = ?", (target,))
-    cnt = conn.execute("SELECT COUNT(*) AS c FROM images_fts WHERE rowid = ?", (target,)).fetchone()["c"]
-    assert cnt == 0
+def test_fts_index_is_derived_from_images(seeded_db):
+    """索引由 images 上的触发器维护：删图不用手动同步，也不留已删图片的残留。
 
+    回归背景：手写 fts_sync() 在 DELETE 之后才跑、旧值又一律写空串，把倒排表写坏了。
+    """
+    conn = get_pool().main()
+    before = conn.execute("SELECT COUNT(*) AS c FROM images_fts").fetchone()["c"]
+    target = conn.execute("SELECT id FROM images WHERE filename='a.png'").fetchone()["id"]
+    conn.execute("DELETE FROM images WHERE id = ?", (target,))
+    assert conn.execute("SELECT COUNT(*) AS c FROM images_fts WHERE rowid = ?", (target,)).fetchone()["c"] == 0
+    assert conn.execute("SELECT COUNT(*) AS c FROM images_fts").fetchone()["c"] == before - 1
+    assert conn.execute("SELECT COUNT(*) AS c FROM images_fts").fetchone()["c"] == \
+        conn.execute("SELECT COUNT(*) AS c FROM images").fetchone()["c"]
+    assert fts_is_healthy(conn)
+
+
+def test_feed_search_filters_by_query(seeded_db):
+    """搜索框输入必须真的过滤结果。曾经的故障是 /api/images?q= 直接 500，界面上毫无反应。"""
+    items, total = repository.feed(q="blue")
+    assert total == 1
+    assert items[0]["filename"] == "b.png"
+    items, total = repository.feed(q="png")
+    assert total == 5
+    items, total = repository.feed(q="nothingmatchesthis")
+    assert total == 0
+
+
+def test_feed_search_survives_broken_index(seeded_db):
+    """索引不可用时搜索降级成模糊匹配，而不是整条请求失败。"""
+    conn = get_pool().main()
+    conn.execute("DROP TABLE images_fts")
+    conn.execute("CREATE TABLE images_fts (not_an_fts_table INTEGER)")
+    items, total = repository.feed(q="c.png")
+    assert total == 1
+    assert items[0]["filename"] == "c.png"
+
+
+LEGACY_FTS = (
+    "CREATE VIRTUAL TABLE images_fts USING fts5("
+    "positive_prompt, negative_prompt, filename, model, "
+    "content='', tokenize='unicode61 remove_diacritics 1')"
+)
+
+
+def test_legacy_contentless_index_is_migrated(seeded_db):
+    """老库的 contentless 索引（含写坏的残留）在启动维护时换成派生索引。"""
+    conn = get_pool().main()
+    conn.execute("DROP TABLE images_fts")
+    conn.execute(LEGACY_FTS)
+    conn.execute(
+        "INSERT INTO images_fts(rowid, positive_prompt, negative_prompt, filename, model) "
+        "SELECT id, positive_prompt, negative_prompt, filename, COALESCE(model, '') FROM images"
+    )
+    # 复现线上状态：删图后索引里留着指向已删图片的残留（用户库 852 行 vs 510 张图）
+    conn.execute(
+        "INSERT INTO images_fts(rowid, positive_prompt, negative_prompt, filename, model) "
+        "VALUES (999999, 'ghost', 'ghost', 'ghost.png', 'ghost')"
+    )
+    fts_rows = conn.execute("SELECT COUNT(*) AS c FROM images_fts").fetchone()["c"]
+    img_rows = conn.execute("SELECT COUNT(*) AS c FROM images").fetchone()["c"]
+    assert fts_rows == img_rows + 1
+
+    assert migrate_fts(conn) == "migrated"
+    ensure_fts_triggers(conn)
+    assert fts_is_healthy(conn)
+    assert conn.execute("SELECT COUNT(*) AS c FROM images_fts").fetchone()["c"] == \
+        conn.execute("SELECT COUNT(*) AS c FROM images").fetchone()["c"]
+    items, total = repository.feed(q="png")
+    assert total == img_rows
+
+
+def test_unusable_index_is_recreated(seeded_db):
+    """索引对象本身坏了（连 rebuild 都救不了）时，删表按 images 重建。"""
+    conn = get_pool().main()
+    conn.execute("DROP TABLE images_fts")
+    conn.execute("CREATE TABLE images_fts (not_an_fts_table INTEGER)")
+    assert migrate_fts(conn) == "recreated"
+    assert fts_is_healthy(conn)
+    items, total = repository.feed(q="forest")
+    assert total == 1
 
 def test_tags_round_trip(seeded_db):
     img_id = get_pool().main().execute("SELECT id FROM images ORDER BY id LIMIT 1").fetchone()["id"]

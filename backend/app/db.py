@@ -153,6 +153,8 @@ class ConnectionPool:
             initialize_texts(self._main)
             from .reverse_prompts import initialize as initialize_reverse_prompts
             initialize_reverse_prompts(self._main)
+            from .video_prompts import initialize as initialize_video_prompts
+            initialize_video_prompts(self._main)
             migrate_system_folders(self._main)
             migrate_media_kind(self._main)
             # 搜索索引必须在任何线程写 images 之前修好：老库的 contentless 索引是坏过的

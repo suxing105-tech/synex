@@ -615,6 +615,10 @@ def delete_image_files(image_id: int) -> dict:
             except (OSError, FileNotFoundError):
                 pass
 
+    # 视频反推的参考帧缓存 {id}_vp*.jpg（延迟导入，避免和 video_prompts 形成导入环）
+    from .video_prompts import purge_video_frame_files
+    cleaned += purge_video_frame_files(image_id)
+
     conn.execute("DELETE FROM images WHERE id = ?", (image_id,))
     return {"id": image_id, "removed_file": removed_file, "cleaned_previews": cleaned}
 

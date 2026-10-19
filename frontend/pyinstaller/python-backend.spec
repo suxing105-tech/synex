@@ -42,6 +42,8 @@ a = Analysis(
         "app.routes.tags",
         "app.routes.reverse_prompts",
         "app.reverse_prompts",
+        "app.routes.video_prompts",
+        "app.video_prompts",
         "httpx",
         "httpcore",
         "certifi",

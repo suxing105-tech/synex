@@ -262,17 +262,23 @@ def parse_text(text):
     return "", "", "unstructured"
 
 
-async def request_model(config, key, data_url, instruction):
+async def request_model(config, key, content, instruction, output_rule=OUTPUT_RULE):
+    """content 为图片 data URL 字符串，或已拼好的多模态 content 数组（视频多帧）。
+
+    output_rule 单独传入：视频反推要求的是另一套 JSON 结构，不能沿用图片的中英双字段。
+    """
     provider = config.get("provider") if config else None
     fmt = providers.PRESETS[provider]["format"] if provider in providers.PRESETS else "openai"
     if fmt != "openai":
         raise HTTPException(422, "该服务商暂不支持，请改用自定义 OpenAI 兼容地址")
     url = normalize_url(config["base_url"]) + "/chat/completions"
     headers = {"Authorization": f"Bearer {key}"} if key else {}
+    if isinstance(content, str):
+        content = [{"type": "text", "text": "请反推这张图片的中英双语生图提示词。"},
+                   {"type": "image_url", "image_url": {"url": content}}]
     payload = {"model": config["model"], "stream": False, "messages": [
-        {"role": "system", "content": instruction + OUTPUT_RULE},
-        {"role": "user", "content": [{"type": "text", "text": "请反推这张图片的中英双语生图提示词。"},
-                                     {"type": "image_url", "image_url": {"url": data_url}}]},
+        {"role": "system", "content": instruction + output_rule},
+        {"role": "user", "content": content},
     ]}
     try:
         # No redirects: credentials must not follow a server to a different host.

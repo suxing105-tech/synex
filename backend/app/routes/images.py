@@ -211,6 +211,8 @@ def delete_image(image_id: int, remove_file: bool = True):
                     cleaned += 1
                 except OSError:
                     pass
+        from ..video_prompts import purge_video_frame_files
+        cleaned += purge_video_frame_files(image_id)
         conn.execute("DELETE FROM images WHERE id = ?", (image_id,))
         return {"ok": True, "id": image_id, "removed_file": False, "cleaned_previews": cleaned}
 

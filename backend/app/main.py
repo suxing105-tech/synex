@@ -34,6 +34,7 @@ from .routes import images as images_route
 from .routes import settings as settings_route
 from .routes import tags as tags_route
 from .routes import reverse_prompts as reverse_prompts_route
+from .routes import video_prompts as video_prompts_route
 from .routes import videos as videos_route
 from .routes import texts as texts_route
 
@@ -156,6 +157,7 @@ app.include_router(folders_route.router)
 app.include_router(tags_route.router)
 app.include_router(settings_route.router)
 app.include_router(reverse_prompts_route.router)
+app.include_router(video_prompts_route.router)
 app.include_router(videos_route.router)
 app.include_router(texts_route.router)
 

@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import { modelConfigs, reverseSettings, refreshReverseConfig, refreshProviderPresets, providerPresets, reverseApi, errorMessage } from "../lib/reverse-prompts";
   import type { ModelConfig, ModelDraft, ReverseSettings } from "../lib/reverse-prompts";
+import { videoPromptApi, videoPromptSettings, refreshVideoPromptSettings } from "../lib/video-prompts";
+import type { VideoPromptSettings } from "../lib/video-prompts";
   const CUSTOM = "custom";
   const blank = (): ModelDraft => ({ name: "", base_url: "", model: "", timeout: 120, provider: CUSTOM });
   let draft = $state<ModelDraft>(blank());
@@ -15,6 +17,7 @@
   let testingText = $state("");
   let confirmDelete = $state(false);
   let preferences = $state<ReverseSettings | null>(null);
+  let videoPrefs = $state<VideoPromptSettings | null>(null);
   const providers = $derived($providerPresets);
   const isPreset = $derived(!!draft.provider && draft.provider !== CUSTOM);
   const preset = $derived($providerPresets.find(p => p.id === draft.provider));
@@ -26,6 +29,10 @@
       await refreshProviderPresets();
       await refreshReverseConfig();
       preferences = $reverseSettings ? { ...$reverseSettings } : null;
+      videoPrefs = $videoPromptSettings ? { ...$videoPromptSettings } : null;
+      refreshVideoPromptSettings()
+        .then(() => { videoPrefs = $videoPromptSettings ? { ...$videoPromptSettings } : null; })
+        .catch(() => { videoPrefs = null; });
       if (!editingId && draft.provider === CUSTOM && $providerPresets.length) {
         applyProvider($providerPresets[0].id);
       }
@@ -149,6 +156,47 @@
         <button onclick={() => { if (preferences) preferences.instruction = preferences.default_instruction; }}>恢复默认指令</button>
         <button onclick={() => run(async () => { if (preferences) { preferences = await reverseApi.saveSettings(preferences); await refreshReverseConfig(); notice = "反推偏好已保存"; } })}>保存反推偏好</button>
       </div>
+    </fieldset>
+  {/if}
+  {#if videoPrefs}
+    <fieldset disabled={busy} class="space-y-3 border-t border-border pt-4">
+      <legend class="text-sm mb-2">视频反推（Seedance 2.0 / MiniMax H3）</legend>
+      <label>默认模型<select aria-label="视频反推默认模型" bind:value={videoPrefs.default_model_id}>
+        <option value={null}>跟随图片反推默认模型</option>
+        {#each $modelConfigs as model}<option value={model.id}>{model.name} · {model.model}</option>{/each}
+      </select></label>
+      <label>默认 H3 模式<select aria-label="默认 H3 模式" bind:value={videoPrefs.default_h3_mode}>
+        <option value="t2va">T2VA 纯文本</option>
+        <option value="i2va">I2VA 首帧图</option>
+        <option value="fl2va">FL2VA 首尾帧</option>
+      </select></label>
+      <div class="grid grid-cols-3 gap-2">
+        <label>帧数上限<input aria-label="视频帧数上限" type="number" min="4" max="16" bind:value={videoPrefs.frame_limit} /></label>
+        <label>单元时长上限（秒）<input aria-label="单元时长上限" type="number" min="5" max="15" bind:value={videoPrefs.max_unit_seconds} /></label>
+        <label>单元数上限<input aria-label="单元数上限" type="number" min="1" max="24" bind:value={videoPrefs.max_units} /></label>
+      </div>
+      <p class="text-xs text-muted">每段按镜头切点装箱，不超单元时长上限；超过单元数上限会要求缩小区间或调大设置。帧数越多越贵。</p>
+      <label>分镜方案指令
+        <textarea aria-label="分镜方案指令" rows="4" bind:value={videoPrefs.instruction_plan}></textarea>
+      </label>
+      <button class="restore-plan" onclick={() => { if (videoPrefs) videoPrefs.instruction_plan = videoPrefs.defaults.instruction_plan; }}>恢复默认（分镜方案）</button>
+      <label>Seedance 2.0 指令
+        <textarea aria-label="Seedance 指令" rows="5" bind:value={videoPrefs.instruction_seedance}></textarea>
+      </label>
+      <button class="restore-seedance" onclick={() => { if (videoPrefs) videoPrefs.instruction_seedance = videoPrefs.defaults.instruction_seedance; }}>恢复默认（Seedance）</button>
+      <label>MiniMax H3 指令
+        <textarea aria-label="H3 指令" rows="5" bind:value={videoPrefs.instruction_h3}></textarea>
+      </label>
+      <button class="restore-h3" onclick={() => { if (videoPrefs) videoPrefs.instruction_h3 = videoPrefs.defaults.instruction_h3; }}>恢复默认（H3）</button>
+      <div class="flex gap-2">
+        <button onclick={() => run(async () => {
+          if (!videoPrefs) return;
+          videoPrefs = await videoPromptApi.saveSettings(videoPrefs);
+          await refreshVideoPromptSettings();
+          notice = "视频反推偏好已保存";
+        })}>保存视频反推偏好</button>
+      </div>
+      <p class="text-xs text-muted">两种格式的正文各自独立保存，互不覆盖；正文语言由上面的指令决定。</p>
     </fieldset>
   {/if}
   {#if busy}<p class="text-xs text-muted" role="status">处理中…</p>{/if}

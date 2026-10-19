@@ -32,6 +32,7 @@
   import Icon from "./Icon.svelte";
   import PromptCard from "./PromptCard.svelte";
   import ReversePromptPanel from "./ReversePromptPanel.svelte";
+import VideoPromptPanel from "./VideoPromptPanel.svelte";
   import ParamsCard from "./ParamsCard.svelte";
   import MetadataCard from "./MetadataCard.svelte";
   import FolderPickerModal from "./FolderPickerModal.svelte";
@@ -495,6 +496,11 @@
             {/each}
           </dl>
         </section>
+
+        <!-- AI 反推视频提示词（Seedance 2.0 / MiniMax H3） -->
+        {#key d.id}
+          <VideoPromptPanel videoId={d.id} filename={d.filename} durationSeconds={d.duration_seconds} />
+        {/key}
 
         <!-- 文件夹（视频不做标签） -->
         <section>

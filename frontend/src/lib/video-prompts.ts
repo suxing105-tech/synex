@@ -4,11 +4,14 @@ import { errorMessage } from "./reverse-prompts";
 
 export type PromptTarget = "seedance2" | "h3";
 export type FrameEdge = "first" | "last";
-export type H3Mode = "t2va" | "i2va" | "fl2va";
+export type H3Mode = "t2va" | "i2va" | "fl2va" | "ref2va";
 export type TranslationLanguage = "zh" | "en";
 export const TARGETS: PromptTarget[] = ["seedance2", "h3"];
 export const TARGET_LABELS: Record<PromptTarget, string> = { seedance2: "Seedance 2.0", h3: "MiniMax H3" };
-export const H3_MODES: H3Mode[] = ["t2va", "i2va", "fl2va"];
+export const H3_MODES: H3Mode[] = ["t2va", "i2va", "fl2va", "ref2va"];
+export const H3_MODE_LABELS: Record<H3Mode, string> = {
+  t2va: "T2VA 纯文本", i2va: "I2VA 首帧图", fl2va: "FL2VA 首尾帧", ref2va: "Ref2VA 参考生视频",
+};
 export const TRANSLATION_LABELS: Record<TranslationLanguage, string> = { zh: "中文", en: "英文" };
 
 /** 服务端按版本存的一条译文；正文本身不受影响。 */
@@ -32,6 +35,14 @@ export interface SegmentRecord {
   created_at: string; video_changed: boolean;
   /** 当前版本的译文，没有则 null。只在阅读时替换正文显示。 */
   translation: PromptTranslation | null;
+  /** 正文引用了哪些参考素材；T2VA 这类不引用图片的正文是空表。 */
+  references: PromptReference[];
+}
+/** 正文里的一条引用：label 照抄，what 说清要上传什么，frame 是本工具能直接给的对照帧。 */
+export interface PromptReference {
+  label: string; what: string;
+  frame: { index: number; edge: FrameEdge } | null;
+  warn: string | null;
 }
 export interface PromptShot { start_ms: number; end_ms: number; synthetic: boolean }
 export interface PromptUnit {
@@ -196,7 +207,6 @@ export function unitFrameAt(unit: PromptUnit, edge: FrameEdge): number {
   return edge === "first" ? unit.start_ms / 1000 : Math.max(0, (unit.end_ms - 250) / 1000);
 }
 
-/** 这张图在提示词里是谁、该喂给谁。链式续接时诚实说明它只是对照。 */
 // ---------- 译文：一键中英互译，只用于阅读 ----------
 
 export type TranslationJob = { running: boolean; error?: string; value?: PromptTranslation };
@@ -238,17 +248,43 @@ export async function translatePrompt(videoId: number, runId: number, index: num
   }
 }
 
-export function frameUsage(target: PromptTarget, mode: H3Mode, index: number, edge: FrameEdge): string {
+/** 把 <Picture 1> / @图片 1 变成能放进文件名的标记，导出图片时一眼看出它是哪个槽位。 */
+export function refFileTag(label: string): string {
+  return label.replace(/\s+/g, "").replace(/[^0-9A-Za-z\u4e00-\u9fff]/g, "");
+}
+
+function frameReference(unit: PromptUnit, edge: FrameEdge): PromptReference["frame"] {
+  return { index: unit.index, edge };
+}
+
+/**
+ * 还没生成正文时，按当前格式与模式先告诉用户这段要备哪些参考。
+ * 生成之后一律以服务端从正文解析出的 record.references 为准。
+ * T2VA 与 Ref2VA 在这里返回空表：前者不引用图片，后者要什么参考得看正文的 subject_definitions。
+ */
+export function plannedReferences(target: PromptTarget, mode: H3Mode, unit: PromptUnit): PromptReference[] {
+  const chain = unit.index > 1;
   if (target === "seedance2") {
-    if (edge === "last") return "本段末帧，用作下一段衔接的对照";
-    return index === 1 ? "@图片 1 作为首帧上传" : "正文靠 将@视频 1 续接，本帧只是备用首帧";
+    return chain
+      ? [{
+        label: "@视频 1", what: "上一段生成结果的视频成品，正文用「将@视频 1 延长」续接",
+        frame: null, warn: "本工具不生成视频：需要先跑完上一段并导出成片",
+      }]
+      : [{ label: "@图片 1", what: "作为本段首帧上传", frame: frameReference(unit, "first"), warn: null }];
   }
-  if (mode === "t2va") return "参考帧（T2VA 正文不引用图片）";
-  if (edge === "last") {
-    return mode === "fl2va" ? "Picture 2 = 本段末帧" : "本段末帧，即下一段的 <Picture 1>";
+  if (mode === "t2va" || mode === "ref2va") return [];
+  const items: PromptReference[] = [{
+    label: "<Picture 1>",
+    what: chain ? "上一段生成结果的末帧，作为本段首帧上传" : "原片首帧，直接上传这一张",
+    frame: frameReference(unit, "first"),
+    warn: chain ? "下面这张是原片对照帧；真正要上传的是上一段生成结果的最后一帧" : null,
+  }];
+  if (mode === "fl2va") {
+    items.push({
+      label: "<Picture 2>",
+      what: `本段末帧，正文把它对齐到 ${wholeSecond((unit.end_ms - unit.start_ms) / 1000)} 秒`,
+      frame: frameReference(unit, "last"), warn: null,
+    });
   }
-  if (index === 1) return mode === "fl2va" ? "Picture 1 = 视频真实首帧" : "<Picture 1> = 视频真实首帧";
-  return mode === "fl2va"
-    ? "Picture 1 请改用上一段生成结果的末帧（此帧仅作对照）"
-    : "<Picture 1> 请改用上一段生成结果的末帧（此帧仅作对照）";
+  return items;
 }

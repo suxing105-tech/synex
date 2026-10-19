@@ -239,7 +239,7 @@ def test_settings_expose_three_instructions_and_defaults(client):
     assert payload["instruction_seedance"] == service.DEFAULT_SEEDANCE_INSTRUCTION
     assert payload["instruction_h3"] == service.DEFAULT_H3_INSTRUCTION
     assert payload["defaults"]["max_unit_seconds"] == 15 and payload["defaults"]["max_units"] == 12
-    assert set(service.H3_MODES) == {"t2va", "i2va", "fl2va"}
+    assert set(service.H3_MODES) == {"t2va", "i2va", "fl2va", "ref2va"}
 
 
 def test_settings_roundtrip_and_validation(client):
@@ -914,3 +914,121 @@ async def test_translation_conflict_while_running(client, video_id, monkeypatch)
     assert conflict.value.status_code == 409
     finish.set()
     assert (await pending)["language"] == "zh"
+
+
+# ---------- 本段需要哪些参考素材 ----------
+
+
+REF2VA_OK = (
+    "subject_definitions:\n"
+    "<Subject 1> is the green-haired young woman, referenced from reference image 1: "
+    "front-facing full-body view.\n"
+    "<Picture 1> is the first frame of this segment, the last frame of the previously "
+    "generated segment.\n\n"
+    "summary: [reference generation] <Subject 1> appears in every shot, <Picture 9> is unused.\n\n"
+    "retention_analysis: <Subject 1> is fully preserved.\n\n"
+    "detailed_description: [Shot 1] Static Shot at slow speed, <Subject 1> raises her hand.\n\n"
+    "overall_soundscape: Wind ambience and cloth rustle.\n\n"
+    "non_diegetic_music: N/A"
+)
+
+UNIT_FIRST = {"index": 1, "start_ms": 0, "end_ms": 15000, "shots": []}
+UNIT_FOLLOW = {"index": 2, "start_ms": 15000, "end_ms": 20000, "shots": []}
+
+
+def test_references_for_seedance_labels():
+    refs = service.references_for("【参考】@图片 1 作为首帧，@音频 2 是配乐",
+                                  target="seedance2", h3_mode=None, unit=UNIT_FIRST)
+    assert [item["label"] for item in refs] == ["@图片 1", "@音频 2"]
+    assert refs[0]["frame"] == {"index": 1, "edge": "first"} and refs[1]["frame"] is None
+    follow = service.references_for("将@视频 1 延长 5 秒\n\n【参考】@视频 1 为上一段生成结果",
+                                    target="seedance2", h3_mode=None, unit=UNIT_FOLLOW)
+    assert [item["label"] for item in follow] == ["@视频 1"]
+    assert follow[0]["frame"] is None and "上一段" in follow[0]["warn"]
+    # 正文没写【参考】时也要给出该上传什么
+    bare = service.references_for("【风格】写实风格，15 秒，16:9", target="seedance2",
+                                  h3_mode=None, unit=UNIT_FIRST)
+    assert [item["label"] for item in bare] == ["@图片 1"]
+
+
+def test_references_for_h3_only_t2va_is_empty():
+    assert service.references_for("x", target="h3", h3_mode="t2va", unit=UNIT_FIRST) == []
+    first = service.references_for("x", target="h3", h3_mode="i2va", unit=UNIT_FIRST)
+    assert [item["label"] for item in first] == ["<Picture 1>"]
+    assert first[0]["frame"] == {"index": 1, "edge": "first"} and first[0]["warn"] is None
+    chain = service.references_for("x", target="h3", h3_mode="i2va", unit=UNIT_FOLLOW)
+    assert chain[0]["frame"] == {"index": 2, "edge": "first"}
+    assert "上一段生成结果的最后一帧" in chain[0]["warn"]
+    fl2va = service.references_for("x", target="h3", h3_mode="fl2va", unit=UNIT_FOLLOW)
+    assert [item["label"] for item in fl2va] == ["<Picture 1>", "<Picture 2>"]
+    assert fl2va[1]["frame"] == {"index": 2, "edge": "last"}
+    assert "对齐到 5 秒" in fl2va[1]["what"]
+
+
+def test_references_for_ref2va_follows_the_prompt_definitions():
+    refs = service.references_for(REF2VA_OK, target="h3", h3_mode="ref2va", unit=UNIT_FOLLOW)
+    assert [item["label"] for item in refs] == ["<Subject 1>", "<Picture 1>"]
+    assert "front-facing full-body view" in refs[0]["what"] and refs[0]["frame"] is None
+    assert refs[1]["frame"] == {"index": 2, "edge": "first"}
+    assert "上一段生成结果的最后一帧" in refs[1]["warn"]
+    # 只在 subject_definitions 里声明的才算素材；summary 顺带提到的 <Picture 9> 不进清单
+    assert not any(item["label"] == "<Picture 9>" for item in refs)
+    prose = service.references_for("<Video 1> is the source clip, kept as-is", target="h3",
+                                   h3_mode="ref2va", unit=UNIT_FIRST)
+    assert [item["label"] for item in prose] == ["<Video 1>"]
+    assert "source clip" in prose[0]["what"]
+    loose = service.references_for("detailed_description: <Subject 1> waves at the camera.",
+                                   target="h3", h3_mode="ref2va", unit=UNIT_FIRST)
+    assert [item["label"] for item in loose] == ["<Subject 1>"]
+    assert "没写" in loose[0]["what"]
+
+
+def test_segment_h3_ref2va_contract_and_t2va_lists_nothing(client, video_id, monkeypatch):
+    run = seed_plan(client, monkeypatch, video_id)
+    captured = []
+    stub_model(monkeypatch, {"prompt": REF2VA_OK, "risk_terms": []}, captured)
+    record = generate(client, video_id, run["id"], 1, "h3", "ref2va")
+    assert record["status"] == "complete"
+    assert record["prompt"].splitlines()[0] == "subject_definitions:"
+    assert "Ref2VA (full-reference generation)" in captured[0]["instruction"]
+    assert [item["label"] for item in record["references"]] == ["<Subject 1>", "<Picture 1>"]
+    stub_model(monkeypatch, {"prompt": H3_OK, "risk_terms": []}, captured)
+    plain = generate(client, video_id, run["id"], 2, "h3", "t2va")
+    assert plain["references"] == []
+    assert "Ref2VA" not in captured[1]["instruction"]
+
+
+def test_segment_ref2va_warns_when_sections_are_missing(client, video_id, monkeypatch):
+    run = seed_plan(client, monkeypatch, video_id)
+    stub_model(monkeypatch, {"prompt": REF2VA_OK.replace("retention_analysis:", "retention notes:"),
+                             "risk_terms": []})
+    record = generate(client, video_id, run["id"], 1, "h3", "ref2va")
+    assert record["status"] == "format_warning"
+
+
+def test_history_versions_and_edits_carry_references(client, video_id, monkeypatch):
+    run = seed_plan(client, monkeypatch, video_id)
+    stub_model(monkeypatch, {"prompt": SEEDANCE_OK, "risk_terms": []})
+    first = generate(client, video_id, run["id"], 1, "seedance2")
+    stub_model(monkeypatch, {"prompt": H3_OK, "risk_terms": []})
+    generate(client, video_id, run["id"], 1, "h3", "i2va")
+    history = client.get(plan_url(video_id)).json()
+    unit = history["runs"][0]["units"][0]
+    assert [item["label"] for item in unit["current"]["seedance2"]["references"]] == ["@图片 1"]
+    assert [item["label"] for item in unit["current"]["h3"]["references"]] == ["<Picture 1>"]
+    versions = client.get(segment_url(video_id, run["id"], 1) + "/records?target=seedance2").json()["records"]
+    assert versions[0]["references"][0]["frame"] == {"index": 1, "edge": "first"}
+    edited = client.post(segment_url(video_id, run["id"], 1) + "/edits", json={
+        "target": "seedance2",
+        "prompt": "【风格】写实，15 秒，16:9\n\n【时间轴】\n0-15 秒：远景，推镜头，人走来，云动，硬切，风声\n\n"
+                  "【声音】无\n\n【参考】@图片 1 作为首帧，@图片 2 作为末帧"}).json()
+    assert [item["label"] for item in edited["references"]] == ["@图片 1", "@图片 2"]
+    assert edited["references"][1]["frame"] == {"index": 1, "edge": "last"}
+    assert first["references"][1:] == []
+
+
+def test_settings_accept_ref2va_as_default_h3_mode(client):
+    saved = client.put("/api/video-prompt-settings",
+                       json=settings_payload(default_h3_mode="ref2va")).json()
+    assert saved["default_h3_mode"] == "ref2va"
+

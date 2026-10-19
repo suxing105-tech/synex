@@ -2,15 +2,17 @@
   import { onMount } from "svelte";
   import { modelConfigs, refreshReverseConfig } from "../lib/reverse-prompts";
   import {
-    TARGETS, TARGET_LABELS, TRANSLATION_LABELS, errorMessage, generatePlan, generateSegments, planKey,
+    H3_MODES, H3_MODE_LABELS, TARGETS, TARGET_LABELS, TRANSLATION_LABELS, errorMessage, generatePlan,
+    generateSegments, planKey,
     refreshVideoPromptSettings, secondText, secondsInputToMs, secondsRangeText, segmentKey, segmentQueue,
     translatePrompt, translationJobs, translationKey, translationOf, videoPromptApi, videoPromptJobs,
     videoPromptSettings, wholeSecond,
   } from "../lib/video-prompts";
-  import type { H3Mode, PromptRun, PromptTarget, SegmentRecord } from "../lib/video-prompts";
+  import type { H3Mode, PromptRun, PromptTarget, PromptUnit, SegmentRecord } from "../lib/video-prompts";
+  import type { PromptReference } from "../lib/video-prompts";
   import { copyText } from "../lib/ws";
   import VideoFrameThumb from "./VideoFrameThumb.svelte";
-  import { frameUsage, unitFrameAt } from "../lib/video-prompts";
+  import { plannedReferences, refFileTag, unitFrameAt } from "../lib/video-prompts";
   import { pushToast } from "../lib/toast";
 
   let { videoId, filename = "", durationSeconds = null }:
@@ -180,6 +182,15 @@
     if (value) shownTranslation[key] = true;
   }
 
+  /**
+   * 这段要备哪些参考：正文的模式和当前选中的模式一致时按正文解析出的清单，
+   * 换了模式（或还没正文）就按当前模式给计划——用户切模式时想知道"这样生成要备什么"。
+   */
+  function referencesOf(record: SegmentRecord | undefined, unit: PromptUnit): PromptReference[] {
+    const matches = !record || record.target !== "h3" || record.h3_mode === h3Mode;
+    return matches && record ? record.references : plannedReferences(tab, h3Mode, unit);
+  }
+
   async function toggleVersions(record: SegmentRecord) {
     const key = segmentKey(run!.id, record.segment_index, record.target);
     if (versionsKey === key) { versionsKey = null; versions = []; return; }
@@ -275,22 +286,27 @@
           <label class="flex items-center gap-2 text-[11px] text-muted">H3 模式
             <select class="vp-field inline w-auto" aria-label="H3 模式" value={h3Mode} disabled={running}
               onchange={(e) => h3Mode = (e.currentTarget as HTMLSelectElement).value as H3Mode}>
-              <option value="t2va">T2VA 纯文本</option>
-              <option value="i2va">I2VA 首帧图</option>
-              <option value="fl2va">FL2VA 首尾帧</option>
+              {#each H3_MODES as mode}
+                <option value={mode}>{H3_MODE_LABELS[mode]}</option>
+              {/each}
             </select>
           </label>
           <p class="text-[10px] text-muted">
             {#if h3Mode === "t2va"}
-              段与段靠锚点文字衔接；链式续接时把上一段末帧自行喂给下一段。
+              纯文本：正文不引用任何图片或视频，段与段只靠锚点文字衔接。因此下面不列出参考素材。
             {:else if h3Mode === "i2va"}
               每段首行自动写成 <code>&lt;Picture 1&gt;</code> 对齐句：第 1 段用视频真实首帧，第 2 段起用上一段生成结果的末帧。
-            {:else}
+            {:else if h3Mode === "fl2va"}
               每段首行列出首帧与末帧两个 Picture 及其对齐时间，末帧取自上一段生成结果。
+            {:else}
+              全参考模式：正文改成六段式（subject_definitions / summary / retention_analysis / detailed_description /
+              overall_soundscape / non_diegetic_music）。你需要自备这些参考——① 每个出镜角色一张清晰形象图（正脸+全身最好）；
+              ② 场景或环境图（多场景各一张）；③ 关键道具、服装或 Logo 图（可选）；④ 从第 2 段起续接时，上一段生成结果的末帧。
+              生成后每段下方会逐条列出正文实际声明的 <code>&lt;Subject N&gt;</code> 与 <code>&lt;Picture N&gt;</code>，照单准备即可。
             {/if}
           </p>
           {#if h3Mode !== "t2va"}
-            <p class="text-[10px] text-muted">每段下方的「参考帧」就是正文引用的那两张图，可直接复制图片或存成 `{baseName}-P02-last.jpg` 再上传。</p>
+            <p class="text-[10px] text-muted">每段下方「本段需要的参考」列出正文引用的每一项；带图的就是本工具能直接给的帧，可复制或存成 `{baseName}-Picture1-P02-first.jpg` 再上传。</p>
           {/if}
         </div>
       {/if}
@@ -301,6 +317,7 @@
           {@const job = jobFor(unit.index, tab)}
           {@const tag = `P${String(unit.index).padStart(2, "0")}`}
           {@const framesKey = `${run.id}:` + unit.index}
+          {@const refs = referencesOf(record, unit)}
           {@const framesOpen = openFrames[framesKey] ?? !!record}
           <article class="rounded border border-border bg-surface p-2 space-y-2">
             <div class="flex items-start justify-between gap-2">
@@ -325,27 +342,34 @@
               </div>
             </div>
 
-            <details class="vp-frames" open={framesOpen}
-              ontoggle={(e) => openFrames[framesKey] = (e.currentTarget as HTMLDetailsElement).open}>
-              <summary class="vp-frames-summary">
-                参考帧 · 首帧 @{wholeSecond(unitFrameAt(unit, "first"))} 秒 ｜ 末帧 @{wholeSecond(unitFrameAt(unit, "last"))} 秒
-              </summary>
-              {#if framesOpen}
-                <div class="flex gap-2 flex-wrap pt-1">
-                  <VideoFrameThumb {videoId} runId={run.id} index={unit.index} edge="first"
-                    at={unitFrameAt(unit, "first")} fileBase={baseName}
-                    usage={frameUsage(tab, h3Mode, unit.index, "first")} />
-                  <VideoFrameThumb {videoId} runId={run.id} index={unit.index} edge="last"
-                    at={unitFrameAt(unit, "last")} fileBase={baseName}
-                    usage={frameUsage(tab, h3Mode, unit.index, "last")} />
-                </div>
-                {#if tab === "h3" && h3Mode !== "t2va" && unit.index > 1}
-                  <p class="text-[10px] text-amber-400">
-                    链式续接真正要上传的是上一段「生成结果」的末帧。本工具不生成视频，拿不到生成后的画面，上面这两张只是原片对照帧。
-                  </p>
+            {#if refs.length}
+              <details class="vp-frames" open={framesOpen}
+                ontoggle={(e) => openFrames[framesKey] = (e.currentTarget as HTMLDetailsElement).open}>
+                <summary class="vp-frames-summary">
+                  本段需要的参考（{refs.length}）· 原片帧 @{wholeSecond(unitFrameAt(unit, "first"))}–@{wholeSecond(unitFrameAt(unit, "last"))} 秒
+                </summary>
+                {#if framesOpen}
+                  <ul class="mt-1 space-y-2">
+                    {#each refs as ref}
+                      <li class="vp-ref" aria-label={`${tag} ${ref.label}`} data-testid={`ref-${unit.index}-${ref.label}`}>
+                        <div class="flex items-baseline gap-2 flex-wrap">
+                          <code class="vp-ref-label">{ref.label}</code>
+                          <span class="text-[10px] text-muted">{ref.what}</span>
+                        </div>
+                        {#if ref.frame}
+                          <VideoFrameThumb {videoId} runId={run.id} index={ref.frame.index} edge={ref.frame.edge}
+                            at={unitFrameAt(unit, ref.frame.edge)} fileBase={baseName + "-" + refFileTag(ref.label)}
+                            usage={refFileTag(ref.label)} />
+                        {:else}
+                          <p class="text-[10px] text-muted">需要自备素材：本工具拿不到这张图，按上面的说明准备后上传。</p>
+                        {/if}
+                        {#if ref.warn}<p class="text-[10px] text-amber-400">{ref.warn}</p>{/if}
+                      </li>
+                    {/each}
+                  </ul>
                 {/if}
-              {/if}
-            </details>
+              </details>
+            {/if}
 
             {#if job?.running}
               <p class="text-[11px] text-muted" role="status">正在生成 {TARGET_LABELS[tab]} 正文…</p>
@@ -490,6 +514,11 @@
   .vp-warn { color: #fbbf24; border-color: #78500f; }
   .vp-frames { border: 1px solid #2e2e33; border-radius: 5px; background: #121215; padding: 6px 8px; }
   .vp-frames-summary { font-size: 10px; color: #a1a1aa; cursor: pointer; user-select: none; }
+  .vp-ref { display: flex; flex-direction: column; gap: 4px; }
+  .vp-ref-label {
+    font-size: 10px; padding: 1px 6px; border-radius: 4px; color: #fbbf24;
+    background: #1f1a10; border: 1px solid #4a3a12; width: fit-content;
+  }
   .vp-body {
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: 11.5px; line-height: 1.7; white-space: pre-wrap; word-break: break-word;

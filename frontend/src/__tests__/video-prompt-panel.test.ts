@@ -4,7 +4,7 @@ import VideoPromptPanel from "../components/VideoPromptPanel.svelte";
 import ModelSettings from "../components/ModelSettings.svelte";
 import { modelConfigs, reverseApi, reverseSettings } from "../lib/reverse-prompts";
 import { segmentQueue, translationJobs, videoPromptApi, videoPromptJobs, videoPromptSettings } from "../lib/video-prompts";
-import type { PromptRun, SegmentRecord, VideoPromptHistory, VideoPromptSettings } from "../lib/video-prompts";
+import type { H3Mode, PromptReference, PromptRun, SegmentRecord, VideoPromptHistory, VideoPromptSettings } from "../lib/video-prompts";
 import { copyText } from "../lib/ws";
 
 vi.mock("../lib/ws", () => ({ copyText: vi.fn().mockResolvedValue(true) }));
@@ -27,12 +27,13 @@ const prefs: VideoPromptSettings = {
     default_h3_mode: "t2va", frame_limit: 12, max_unit_seconds: 15, max_units: 12 },
 };
 
-function seg(id: number, index: number, target: "seedance2" | "h3", prompt: string): SegmentRecord {
+function seg(id: number, index: number, target: "seedance2" | "h3", prompt: string,
+             references: PromptReference[] = [], mode: H3Mode = "t2va"): SegmentRecord {
   return {
-    id, segment_index: index, target, h3_mode: target === "h3" ? "t2va" : null, prompt,
+    id, segment_index: index, target, h3_mode: target === "h3" ? mode : null, prompt,
     risk_terms: ["真人 → 写实风格"], raw_text: "", status: "complete", source: "generated", parent_id: null,
     model_name: "视觉模型", model: "vision", created_at: "2026-10-19T01:00:00Z", video_changed: false,
-    translation: null,
+    translation: null, references,
   };
 }
 
@@ -46,10 +47,17 @@ function makeRun(overrides: Partial<PromptRun> = {}): PromptRun {
       { index: 1, start_ms: 0, end_ms: 15000, shots: [{ start_ms: 0, end_ms: 8000, synthetic: false },
         { start_ms: 8000, end_ms: 15000, synthetic: false }], role: "女主播走进画面", warn: null,
         frames: { first: { at: 0 }, last: { at: 14.75 } },
-        current: { seedance2: seg(11, 1, "seedance2", "【风格】写实，15 秒，16:9"), h3: seg(12, 1, "h3", "integrated_multimodal_description: a host") } },
+        current: {
+          seedance2: seg(11, 1, "seedance2", "【风格】写实，15 秒，16:9", [
+            { label: "@图片 1", what: "作为本段首帧上传", frame: { index: 1, edge: "first" }, warn: null }]),
+          h3: seg(12, 1, "h3", "integrated_multimodal_description: a host") } },
       { index: 2, start_ms: 15000, end_ms: 22000, shots: [], role: "产品特写收尾", warn: "短于 4 秒",
         frames: { first: { at: 15 }, last: { at: 21.75 } },
-        current: { seedance2: seg(13, 2, "seedance2", "将@视频 1 延长 7 秒"), h3: seg(14, 2, "h3", "integrated_multimodal_description: close-up") } },
+        current: {
+          seedance2: seg(13, 2, "seedance2", "将@视频 1 延长 7 秒", [
+            { label: "@视频 1", what: "上一段生成结果的视频成品，正文用「将@视频 1 延长」续接",
+              frame: null, warn: "本工具不生成视频：需要先跑完上一段并导出成片" }]),
+          h3: seg(14, 2, "h3", "integrated_multimodal_description: close-up") } },
     ],
     ...overrides,
   };
@@ -115,35 +123,61 @@ describe("视频反推面板", () => {
     expect(panel.getByText("【风格】写实，15 秒，16:9")).toBeTruthy();
   });
 
-  it("每段显示参考帧缩略图，可复制图片与存盘", async () => {
+  it("按正文声明给参考：有图的能复制与存盘，没图的写清要自备什么", async () => {
     const ref = vi.mocked(videoPromptApi.referenceFrame);
     const panel = render(VideoPromptPanel, { videoId: 5, filename: "clip.mp4", durationSeconds: 30 });
     await waitFor(() => expect(panel.getByLabelText("复制P01 首帧")).toBeTruthy());
-    expect(panel.getByText(/参考帧 · 首帧 @0 秒 ｜ 末帧 @15 秒/)).toBeTruthy();
-    expect(panel.getByText(/参考帧 · 首帧 @15 秒 ｜ 末帧 @22 秒/)).toBeTruthy();
-    expect(panel.getAllByText("复制图")).toHaveLength(4);
-    expect(panel.getByText(/@0 秒 · @图片 1 作为首帧上传/)).toBeTruthy();
-    expect(panel.getAllByText(/本段末帧，用作下一段衔接的对照/)).toHaveLength(2);
+    expect(panel.getByText(/本段需要的参考（1）· 原片帧 @0–@15 秒/)).toBeTruthy();
+    expect(panel.getByText(/本段需要的参考（1）· 原片帧 @15–@22 秒/)).toBeTruthy();
+    expect(panel.getByText("@图片 1")).toBeTruthy();
+    expect(panel.getByText("作为本段首帧上传")).toBeTruthy();
+    expect(panel.getAllByText("复制图")).toHaveLength(1);
+    expect(panel.getByText("需要自备素材：本工具拿不到这张图，按上面的说明准备后上传。")).toBeTruthy();
     expect(ref).toHaveBeenCalledWith(5, 7, 1, "first");
-    await fireEvent.click(panel.getByLabelText("复制P02 末帧"));
-    expect(copyDataUrlImage).toHaveBeenLastCalledWith("data:image/jpeg;base64,QUJD");
-    await fireEvent.click(panel.getByLabelText("下载P02 末帧"));
-    expect(downloadBlob).toHaveBeenLastCalledWith(expect.any(Blob), "clip-P02-last.jpg");
+    expect(ref).not.toHaveBeenCalledWith(5, 7, 2, "last");
+    await fireEvent.click(panel.getByLabelText("下载P01 首帧"));
+    expect(downloadBlob).toHaveBeenLastCalledWith(expect.any(Blob), "clip-图片1-P01-first.jpg");
   });
 
-  it("H3 链式模式说清 Picture 1 该用上一段生成结果的末帧", async () => {
+  it("T2VA 不列参考也不显示图，切到 I2VA 才列出 Picture 1", async () => {
     const panel = render(VideoPromptPanel, { videoId: 5, filename: "clip.mp4", durationSeconds: 30 });
     await waitFor(() => expect(panel.getByText("MiniMax H3")).toBeTruthy());
     await fireEvent.click(panel.getByText("MiniMax H3"));
-    await waitFor(() => expect(panel.getAllByText(/参考帧（T2VA 正文不引用图片）/)).toHaveLength(4));
+    await waitFor(() => expect(panel.queryByText(/本段需要的参考/)).toBeNull());
+    expect(panel.queryByLabelText("复制P01 首帧")).toBeNull();
+    expect(panel.getByText(/纯文本：正文不引用任何图片或视频/)).toBeTruthy();
     const mode = panel.container.querySelector<HTMLSelectElement>('select[aria-label="H3 模式"]')!;
     mode.value = "i2va";
     await fireEvent.change(mode, { target: { value: "i2va" } });
-    await waitFor(() => expect(panel.getByText(/第 2 段起用上一段生成结果的末帧/)).toBeTruthy());
-    expect(panel.getByText(/<Picture 1> = 视频真实首帧/)).toBeTruthy();
-    expect(panel.getByText(/<Picture 1> 请改用上一段生成结果的末帧（此帧仅作对照）/)).toBeTruthy();
-    expect(panel.getAllByText(/本段末帧，即下一段的 <Picture 1>/)).toHaveLength(2);
-    expect(panel.getAllByText(/只是原片对照帧/)).toHaveLength(1);
+    await waitFor(() => expect(panel.getAllByTestId(/ref-\d+-<Picture 1>/)).toHaveLength(2));
+    expect(panel.getByText("原片首帧，直接上传这一张")).toBeTruthy();
+    expect(panel.getByLabelText("复制P01 首帧")).toBeTruthy();
+    expect(panel.getByText("上一段生成结果的末帧，作为本段首帧上传")).toBeTruthy();
+    expect(panel.getAllByText(/真正要上传的是上一段生成结果的最后一帧/)).toHaveLength(1);
+    expect(panel.getByText(/第 2 段起用上一段生成结果的末帧/)).toBeTruthy();
+  });
+
+  it("Ref2VA 说明要自备哪些参考，并按正文声明逐条列出", async () => {
+    const run = makeRun();
+    run.units[0].current.h3 = seg(21, 1, "h3", "subject_definitions:", [
+      { label: "<Subject 1>", what: "is the green-haired young woman, front-facing full-body view",
+        frame: null, warn: null },
+      { label: "<Picture 1>", what: "is the first frame of this segment",
+        frame: { index: 1, edge: "first" }, warn: null },
+    ], "ref2va");
+    vi.mocked(videoPromptApi.history).mockResolvedValue(history([run]));
+    const panel = render(VideoPromptPanel, { videoId: 5, filename: "clip.mp4", durationSeconds: 30 });
+    await waitFor(() => expect(panel.getByText("MiniMax H3")).toBeTruthy());
+    await fireEvent.click(panel.getByText("MiniMax H3"));
+    const mode = panel.container.querySelector<HTMLSelectElement>('select[aria-label="H3 模式"]')!;
+    expect(mode.querySelector('option[value="ref2va"]')).toBeTruthy();
+    mode.value = "ref2va";
+    await fireEvent.change(mode, { target: { value: "ref2va" } });
+    await waitFor(() => expect(panel.getByText("<Subject 1>")).toBeTruthy());
+    expect(panel.getByText("<Picture 1>")).toBeTruthy();
+    expect(panel.getByText(/每个出镜角色一张清晰形象图/)).toBeTruthy();
+    expect(panel.getByText("需要自备素材：本工具拿不到这张图，按上面的说明准备后上传。")).toBeTruthy();
+    expect(panel.getByLabelText("复制P01 首帧")).toBeTruthy();
   });
 
   it("逐段生成失败标红，可单独重试并刷新列表", async () => {

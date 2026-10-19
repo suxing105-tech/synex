@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { modelConfigs, reverseSettings, refreshReverseConfig, refreshProviderPresets, providerPresets, reverseApi, errorMessage } from "../lib/reverse-prompts";
   import type { ModelConfig, ModelDraft, ReverseSettings } from "../lib/reverse-prompts";
-import { videoPromptApi, videoPromptSettings, refreshVideoPromptSettings } from "../lib/video-prompts";
+import { H3_MODES, H3_MODE_LABELS, videoPromptApi, videoPromptSettings, refreshVideoPromptSettings } from "../lib/video-prompts";
 import type { VideoPromptSettings } from "../lib/video-prompts";
   const CUSTOM = "custom";
   const blank = (): ModelDraft => ({ name: "", base_url: "", model: "", timeout: 120, provider: CUSTOM });
@@ -166,9 +166,7 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
         {#each $modelConfigs as model}<option value={model.id}>{model.name} · {model.model}</option>{/each}
       </select></label>
       <label>默认 H3 模式<select aria-label="默认 H3 模式" bind:value={videoPrefs.default_h3_mode}>
-        <option value="t2va">T2VA 纯文本</option>
-        <option value="i2va">I2VA 首帧图</option>
-        <option value="fl2va">FL2VA 首尾帧</option>
+        {#each H3_MODES as mode}<option value={mode}>{H3_MODE_LABELS[mode]}</option>{/each}
       </select></label>
       <div class="grid grid-cols-3 gap-2">
         <label>帧数上限<input aria-label="视频帧数上限" type="number" min="4" max="16" bind:value={videoPrefs.frame_limit} /></label>

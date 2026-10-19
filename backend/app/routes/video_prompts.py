@@ -166,6 +166,8 @@ async def generate_segment(video_id: int, run_id: int, index: int, payload: Segm
     key = reverse_prompts.key_for(config)
     instruction = (settings["instruction_seedance"] if target == "seedance2" else settings["instruction_h3"])
     instruction += service.TIME_RULE
+    if target == "h3" and h3_mode == "ref2va":
+        instruction += service.REF2VA_RULE
     if key:
         instruction = instruction.replace(key, "[已隐藏密钥]")
     units = service.run_units(run)
@@ -188,7 +190,7 @@ async def generate_segment(video_id: int, run_id: int, index: int, payload: Segm
                                        risk_terms=terms, raw_text=raw, status=status, source="generated",
                                        parent_id=None, instruction=instruction + service.SEGMENT_OUTPUT_RULE,
                                        config=config, frames=relative)
-        return service.public_record_for(record, video_id)
+        return service.public_record_for(record, video_id, unit)
     finally:
         service.release_segment(run_id, index, target)
 
@@ -197,10 +199,10 @@ async def generate_segment(video_id: int, run_id: int, index: int, payload: Segm
 def edit_segment(video_id: int, run_id: int, index: int, payload: EditInput):
     target = _resolve_target(payload.target)
     run = service.get_run(run_id, video_id)
-    service.find_unit(run, index)
+    unit = service.find_unit(run, index)
     record = service.edit_record(run, segment_index=index, target=target,
                                  prompt=payload.prompt, parent_id=payload.parent_id)
-    return service.public_record_for(record, video_id)
+    return service.public_record_for(record, video_id, unit)
 
 
 # ---------- 译文：中英文一键切换 ----------

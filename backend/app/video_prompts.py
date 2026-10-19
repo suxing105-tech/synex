@@ -38,7 +38,7 @@ MIN_UNIT_MS = MIN_UNIT_SECONDS * 1000
 TAIL_MARGIN_SECONDS = 0.25
 FRAME_RETRY_OFFSETS = (0.0, 0.25, 0.75, 1.5, 3.0)  # Seedance 手册的最短 4 秒，尽力满足
 TARGETS = ("seedance2", "h3")
-H3_MODES = ("t2va", "i2va", "fl2va")
+H3_MODES = ("t2va", "i2va", "fl2va", "ref2va")
 DEFAULT_FRAME_LIMIT = 12
 DEFAULT_MAX_UNIT_SECONDS = 15
 DEFAULT_MAX_UNITS = 12
@@ -122,6 +122,44 @@ TIME_RULE = (
     "MiniMax H3 keeps its required timestamp syntax, but the values must be whole seconds: "
     "At MM:SS.000 (for example At 00:03.000) and the S.SS-second mark (for example 11.00-second)."
 )
+
+
+# Ref2VA（全参考生视频）的正文结构与 T2VA/I2VA/FL2VA 完全不同：六段式，引用写在
+# subject_definitions 里而不是首行对齐句。它作为附加规则只在 ref2va 模式下拼接，
+# 所以用户自定义的 H3 指令不需要改，也不需要动内置默认值。
+REF2VA_SECTIONS = ("subject_definitions:", "summary:", "retention_analysis:",
+                   "detailed_description:", "overall_soundscape:", "non_diegetic_music:")
+
+REF2VA_RULE = (
+    "\n[Ref2VA (full-reference generation) overrides the layout above]\n"
+    "Use these six sections in this exact order, each key at the start of its own line, one blank line "
+    "between sections, and nothing before the first key:\n"
+    "subject_definitions:\n\nsummary:\n\nretention_analysis:\n\n"
+    "detailed_description:\n\noverall_soundscape:\n\nnon_diegetic_music:\n"
+    "- subject_definitions: one line per referenced item. Use <Subject N> for reusable visible content "
+    "(person, creature, object, scene, environment, costume, prop, style, action), <Picture N> only when a "
+    "reference image is itself a concrete frame anchor, <Video N> only for a source video that is edited or "
+    "continued, <Audio N> only for an audio asset. Number each category from 1 upward, never renumber an "
+    "assigned label, and keep the same label meaning in every later section. Labels only have to be "
+    "self-consistent inside this one segment, because every segment is generated as its own job.\n"
+    "- Every <Subject N> line must state what reference asset the user has to upload and what that asset must "
+    "show, for example: <Subject 1> is the green-haired young woman, referenced from reference image 1: "
+    "front-facing full-body view, long green hair, white-and-black gold-trimmed outfit. Only define subjects "
+    "for content actually visible in the frames.\n"
+    "- Define <Picture 1> as the first frame of this segment: for segment 1 it is the first frame of the source "
+    "video, for any later segment it is the last frame of the previously generated segment that the user uploads. "
+    "Add a standalone <Picture 2> for the last frame only when the motion must converge onto it.\n"
+    "- summary: one short paragraph starting with a bracketed task type such as [reference generation], or a "
+    "combination like [video continuation + keyframe completion], naming the defined labels and their roles.\n"
+    "- retention_analysis: one short line per referenced item saying where it appears and whether it is fully "
+    "preserved, partially preserved, transferred or reused.\n"
+    "- detailed_description: the shot-by-shot audiovisual description in playback order, following every shot, "
+    "camera, speaker and dialogue rule above, and naming the label at the exact point where each referenced item "
+    "takes effect. Never reduce it to a plot summary or a list of reference relationships.\n"
+    "- Do not define <Video N> or <Audio N>: this task only hands the user reference images plus, from segment "
+    "2 onward, the previously generated segment."
+)
+
 
 TRANSLATION_INSTRUCTION = (
     "你是视频生成提示词的专业译者。用户给出一段提示词正文，请把它翻译成指定语言，只做翻译这一件事。\n"
@@ -535,6 +573,9 @@ def alignment_line(target: str, h3_mode: str, unit: dict) -> str | None:
     if h3_mode == "i2va":
         return ("For the target video, at 0.00 seconds into the target video, "
                 "<Picture 1> (from [Shot 1]) is fully referenced.")
+    if h3_mode == "ref2va":
+        # Ref2VA 的引用写在 subject_definitions 段里，没有单独的首行对齐句。
+        return None
     last_shot = max(1, len(unit["shots"]))
     return ("How the reference pictures align with the target video — Picture 1 (from Shot 1) "
             f"aligns with the 0.00-second mark of the target video; Picture 2 (from Shot {last_shot}) "
@@ -553,6 +594,12 @@ def continuity_note(target: str, h3_mode: str, unit: dict) -> str:
     if h3_mode == "i2va":
         source = "本段首帧" if unit["index"] == 1 else "上一段的最后一帧（用户会把它作为首帧上传）"
         return f"衔接：Picture 1 = {source}。正文要先锚定它的风格、主体、构图与空间关系，再向后续发展。"
+    if h3_mode == "ref2va":
+        if unit["index"] == 1:
+            return ("衔接：本段走 Ref2VA 全参考模式。在 subject_definitions 里把 <Picture 1> 定义为本段首帧"
+                    "（原片首帧），帧里每个出镜主体各给一个 <Subject N>，并写清用户要上传什么样的参考图。")
+        return ("衔接：本段走 Ref2VA 全参考模式，且不是第一段。<Picture 1> 必须定义为用户上传的“上一段生成结果的"
+                "末帧”（也就是本段首帧）；参考图仍由用户自备，编号只要在本段内自洽即可。")
     return ("衔接：Picture 1 = 本段首帧（首段为视频首帧，其余为上一段末帧），"
             "Picture 2 = 本段末帧。描述必须从首帧连续收敛到末帧。")
 
@@ -668,6 +715,8 @@ def apply_alignment(prompt: str, target: str, h3_mode: str, unit: dict) -> str:
 def valid_prompt(prompt: str, target: str, h3_mode: str) -> bool:
     if target == "seedance2":
         return "【风格】" in prompt and "【时间轴】" in prompt and bool(TIMELINE_LINE.search(prompt))
+    if h3_mode == "ref2va":
+        return all(label in prompt for label in REF2VA_SECTIONS)
     for label in ("integrated_multimodal_description:", "overall_soundscape:", "non_diegetic_music:"):
         if label not in prompt:
             return False
@@ -789,11 +838,11 @@ def data_url(raw: bytes) -> str:
     return _data_url(raw)
 
 
-def public_record_for(record, video_id):
-    return _public_record(record, current_fingerprint(video_id), get_translation(record["id"]))
+def public_record_for(record, video_id, unit=None):
+    return _public_record(record, current_fingerprint(video_id), get_translation(record["id"]), unit)
 
 
-def _public_record(record, fingerprint, translation=None):
+def _public_record(record, fingerprint, translation=None, unit=None):
     try:
         terms = json.loads(record["risk_terms"] or "[]")
     except ValueError:
@@ -805,13 +854,15 @@ def _public_record(record, fingerprint, translation=None):
         "parent_id": record["parent_id"], "model_name": record["model_name"], "model": record["model"],
         "created_at": record["created_at"],
         "translation": public_translation(translation),
+        "references": references_for(record["prompt"] or record["raw_text"], target=record["target"],
+                                     h3_mode=record["h3_mode"], unit=unit) if unit else [],
         "video_changed": bool(fingerprint) and record["fingerprint"] != fingerprint,
     }
 
 
 def record_versions(run, segment_index: int, target: str, limit: int = 50, offset: int = 0):
     """某段某格式的全部版本，最新在前；编辑写新记录，所以 id 即版本号。"""
-    find_unit(run, segment_index)
+    unit = find_unit(run, segment_index)
     if target not in TARGETS:
         raise HTTPException(422, "未知的目标格式")
     conn = db.get_pool().main()
@@ -824,7 +875,7 @@ def record_versions(run, segment_index: int, target: str, limit: int = 50, offse
         " ORDER BY id DESC LIMIT ? OFFSET ?",
         (run["id"], segment_index, target, limit, offset)).fetchall()
     translations = _translations_for(conn, [r["id"] for r in rows])
-    return {"records": [_public_record(dict(r), fingerprint, translations.get(r["id"])) for r in rows],
+    return {"records": [_public_record(dict(r), fingerprint, translations.get(r["id"]), unit) for r in rows],
             "total": total, "limit": limit, "offset": offset}
 
 
@@ -914,8 +965,10 @@ def listing(video_id, limit: int, offset: int):
             "(SELECT max(id) FROM video_prompt_records WHERE run_id=? GROUP BY segment_index, target) "
             "ORDER BY segment_index, target", (run["id"], run["id"])).fetchall()
         translations = _translations_for(conn, [r["id"] for r in records])
+        unit_by_index = {unit["index"]: unit for unit in run_units(run)}
         current = {f"{r['segment_index']}:{r['target']}": _public_record(
-                       dict(r), fingerprint, translations.get(r["id"])) for r in records}
+                       dict(r), fingerprint, translations.get(r["id"]),
+                       unit_by_index.get(r["segment_index"])) for r in records}
         versions = {target: conn.execute(
             "SELECT count(*) FROM video_prompt_records WHERE run_id=? AND target=?",
             (run["id"], target)).fetchone()[0] for target in TARGETS}
@@ -941,6 +994,104 @@ def listing(video_id, limit: int, offset: int):
     return {"runs": runs, "total": total, "limit": limit, "offset": offset,
             "running": busy["plan"] or bool(busy["segments"]), "running_plan": busy["plan"],
             "running_segments": busy["segments"]}
+
+
+# ---------- 本段需要哪些参考素材：正文里的每个引用都能对上一张图或一句准备说明 ----------
+
+
+SEEDANCE_REF = re.compile(r"@(图片|视频|音频)\s*(\d+)")
+H3_REF = re.compile(r"<(Subject|Picture|Video|Audio)\s*(\d+)>")
+H3_DEFINITION = re.compile(r"^<(Subject|Picture|Video|Audio)\s*(\d+)>[\s:：-]*(.*)$")
+
+
+def _ref(label: str, what: str, frame=None, warn=None) -> dict:
+    return {"label": label, "what": what, "frame": frame, "warn": warn}
+
+
+def _seedance_references(prompt: str, unit: dict) -> list[dict]:
+    """Seedance 正文里的 @图片 N / @视频 N / @音频 N，逐个说明去哪取、取哪一张。"""
+    index = unit["index"]
+    labels: list[str] = []
+    for kind, number in SEEDANCE_REF.findall(prompt or ""):
+        label = f"@{kind} {number}"
+        if label not in labels:
+            labels.append(label)
+    if not labels:
+        labels = ["@图片 1"] if index == 1 else ["@视频 1"]
+    items = []
+    for label in labels:
+        kind, number = SEEDANCE_REF.match(label).groups()
+        if kind == "视频":
+            items.append(_ref(label, "上一段生成结果的视频成品，正文用「将@视频 1 延长」续接", None,
+                              None if index == 1 else "本工具不生成视频：需要先跑完上一段并导出成片"))
+        elif kind == "音频":
+            items.append(_ref(label, "按正文【参考】里写的用途上传音频", None, None))
+        elif number == "1":
+            items.append(_ref(label, "作为本段首帧上传", {"index": index, "edge": "first"},
+                              None if index == 1 else "本段正文靠 将@视频 1 续接，这张只是备用首帧"))
+        elif number == "2":
+            items.append(_ref(label, "作为本段末帧或关键帧上传", {"index": index, "edge": "last"}, None))
+        else:
+            items.append(_ref(label, "按正文【参考】里写的用途自行准备", None, None))
+    return items
+
+
+def _ref2va_references(prompt: str, unit: dict) -> list[dict]:
+    """Ref2VA 要的参考 = 正文 subject_definitions 逐条定义，模型写什么就要用户备什么。"""
+    text = prompt or ""
+    body = text
+    start = text.find("subject_definitions")
+    if start != -1:
+        rest = text[start + len("subject_definitions"):]
+        stops = [rest.index("\n" + key) for key in REF2VA_SECTIONS[1:] if "\n" + key in rest]
+        if stops:
+            body = rest[:min(stops)]
+    items, seen = [], set()
+    for line in body.splitlines():
+        matched = H3_DEFINITION.match(line.strip())
+        if not matched:
+            continue
+        kind, number, definition = matched.groups()
+        label = f"<{kind} {number}>"
+        if label in seen:
+            continue
+        seen.add(label)
+        frame = None
+        warn = None
+        if kind == "Picture" and number == "1":
+            frame = {"index": unit["index"], "edge": "first"}
+            if unit["index"] > 1:
+                warn = "下面这张是原片对照帧；真正要上传的是上一段生成结果的最后一帧"
+        items.append(_ref(label, definition.strip().rstrip("。.").strip() or "正文没写要什么样的素材", frame, warn))
+    if items:
+        return items
+    for kind, number in H3_REF.findall(text):  # 模型没按格式写定义行时，至少把标签列出来
+        label = f"<{kind} {number}>"
+        if label not in seen:
+            seen.add(label)
+            items.append(_ref(label, "正文没写要什么样的素材，可在正文里补一句", None, None))
+    return items
+
+
+def references_for(prompt, *, target: str, h3_mode, unit: dict) -> list[dict]:
+    """正文引用的参考素材清单。T2VA 与不引用图片的正文返回空表，界面就不再显示图。"""
+    if target == "seedance2":
+        return _seedance_references(prompt or "", unit)
+    if h3_mode in (None, "t2va"):
+        return []
+    if h3_mode == "ref2va":
+        return _ref2va_references(prompt or "", unit)
+    index = unit["index"]
+    chain = index > 1
+    items = [_ref("<Picture 1>",
+                  "上一段生成结果的末帧，作为本段首帧上传" if chain else "原片首帧，直接上传这一张",
+                  {"index": index, "edge": "first"},
+                  "下面这张是原片对照帧；真正要上传的是上一段生成结果的最后一帧" if chain else None)]
+    if h3_mode == "fl2va":
+        items.append(_ref("<Picture 2>",
+                          f"本段末帧，正文把它对齐到 {sec_text(unit['end_ms'] - unit['start_ms'])} 秒",
+                          {"index": index, "edge": "last"}, None))
+    return items
 
 
 # ---------- 段首尾参考帧：提示词里的 @图片 1 / <Picture 1> 到底是哪张图 ----------

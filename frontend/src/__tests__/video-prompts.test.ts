@@ -5,9 +5,9 @@ vi.mock("../lib/api", () => ({ http: vi.fn() }));
 
 import { http } from "../lib/api";
 import {
-  expandSegments, frameUsage, generatePlan, generateSegments, planKey, secondText, secondsInputToMs,
-  secondsRangeText, segmentKey, segmentQueue, translatePrompt, translationJobs, translationKey,
-  translationOf, unitFrameAt, videoPromptApi, videoPromptJobs, wholeSecond,
+  expandSegments, generatePlan, generateSegments, plannedReferences, planKey, refFileTag, secondText,
+  secondsInputToMs, secondsRangeText, segmentKey, segmentQueue, translatePrompt, translationJobs,
+  translationKey, translationOf, unitFrameAt, videoPromptApi, videoPromptJobs, wholeSecond,
 } from "../lib/video-prompts";
 import type { PromptRun, PromptTranslation, SegmentRecord } from "../lib/video-prompts";
 
@@ -18,7 +18,7 @@ function record(id: number, index: number, target: "seedance2" | "h3"): SegmentR
     id, segment_index: index, target, h3_mode: target === "h3" ? "t2va" : null, prompt: `正文 ${id}`,
     risk_terms: [], raw_text: "", status: "complete", source: "generated", parent_id: null,
     model_name: "视觉", model: "vision", created_at: "2026-10-19T01:00:00Z", video_changed: false,
-    translation: null,
+    translation: null, references: [],
   };
 }
 
@@ -55,13 +55,28 @@ describe("参考帧", () => {
     expect(unitFrameAt(run.units[1], "last")).toBeCloseTo(29.75, 2);
   });
 
-  it("说清这张图在提示词里是谁", () => {
-    expect(frameUsage("seedance2", "t2va", 1, "first")).toContain("@图片 1");
-    expect(frameUsage("seedance2", "t2va", 2, "first")).toContain("备用首帧");
-    expect(frameUsage("h3", "i2va", 1, "first")).toContain("视频真实首帧");
-    expect(frameUsage("h3", "i2va", 2, "first")).toContain("仅作对照");
-    expect(frameUsage("h3", "fl2va", 1, "last")).toContain("Picture 2");
-    expect(frameUsage("h3", "t2va", 1, "first")).toContain("不引用图片");
+  it("未生成正文时按计划列出这段要备哪些参考", () => {
+    expect(plannedReferences("h3", "t2va", run.units[0])).toEqual([]);
+    expect(plannedReferences("h3", "ref2va", run.units[0])).toEqual([]);
+    const seed = plannedReferences("seedance2", "t2va", run.units[0]);
+    expect(seed.map(item => item.label)).toEqual(["@图片 1"]);
+    expect(seed[0].frame).toEqual({ index: 1, edge: "first" });
+    const chain = plannedReferences("seedance2", "t2va", run.units[1]);
+    expect(chain.map(item => item.label)).toEqual(["@视频 1"]);
+    expect(chain[0].frame).toBeNull();
+    const first = plannedReferences("h3", "i2va", run.units[0]);
+    expect(first.map(item => item.label)).toEqual(["<Picture 1>"]);
+    expect(first[0].warn).toBeNull();
+    expect(plannedReferences("h3", "i2va", run.units[1])[0].warn).toContain("上一段生成结果的最后一帧");
+    const fl = plannedReferences("h3", "fl2va", run.units[1]);
+    expect(fl.map(item => item.label)).toEqual(["<Picture 1>", "<Picture 2>"]);
+    expect(fl[1].what).toContain("对齐到 15 秒");
+    expect(fl[1].frame).toEqual({ index: 2, edge: "last" });
+  });
+
+  it("参考标签能当文件名用", () => {
+    expect(refFileTag("<Picture 1>")).toBe("Picture1");
+    expect(refFileTag("@图片 1")).toBe("图片1");
   });
 });
 

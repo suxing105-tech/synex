@@ -49,14 +49,15 @@ function makeRun(overrides: Partial<PromptRun> = {}): PromptRun {
         frames: { first: { at: 0 }, last: { at: 14.75 } },
         current: {
           seedance2: seg(11, 1, "seedance2", "【风格】写实，15 秒，16:9", [
-            { label: "@图片 1", what: "作为本段首帧上传", frame: { index: 1, edge: "first" }, warn: null }]),
+            { label: "@图片 1", what: "作为本段首帧上传", frame: { index: 1, edge: "first" }, warn: null,
+              slot: "picture" }]),
           h3: seg(12, 1, "h3", "integrated_multimodal_description: a host") } },
       { index: 2, start_ms: 15000, end_ms: 22000, shots: [], role: "产品特写收尾", warn: "短于 4 秒",
         frames: { first: { at: 15 }, last: { at: 21.75 } },
         current: {
           seedance2: seg(13, 2, "seedance2", "将@视频 1 延长 7 秒", [
             { label: "@视频 1", what: "上一段生成结果的视频成品，正文用「将@视频 1 延长」续接",
-              frame: null, warn: "本工具不生成视频：需要先跑完上一段并导出成片" }]),
+              frame: null, warn: "本工具不生成视频：需要先跑完上一段并导出成片", slot: "video" }]),
           h3: seg(14, 2, "h3", "integrated_multimodal_description: close-up") } },
     ],
     ...overrides,
@@ -127,12 +128,12 @@ describe("视频反推面板", () => {
     const ref = vi.mocked(videoPromptApi.referenceFrame);
     const panel = render(VideoPromptPanel, { videoId: 5, filename: "clip.mp4", durationSeconds: 30 });
     await waitFor(() => expect(panel.getByLabelText("复制P01 首帧")).toBeTruthy());
-    expect(panel.getByText(/本段需要的参考（1）· 原片帧 @0–@15 秒/)).toBeTruthy();
-    expect(panel.getByText(/本段需要的参考（1）· 原片帧 @15–@22 秒/)).toBeTruthy();
+    expect(panel.getByText(/本段需要的参考（图 1 · 视频 0 · 音频 0） · 原片帧 @0–@15 秒/)).toBeTruthy();
+    expect(panel.getByText(/本段需要的参考（图 0 · 视频 1 · 音频 0） · 原片帧 @15–@22 秒/)).toBeTruthy();
     expect(panel.getByText("@图片 1")).toBeTruthy();
     expect(panel.getByText("作为本段首帧上传")).toBeTruthy();
     expect(panel.getAllByText("复制图")).toHaveLength(1);
-    expect(panel.getByText("需要自备素材：本工具拿不到这张图，按上面的说明准备后上传。")).toBeTruthy();
+    expect(panel.getByText("需要自备视频：本工具不生成视频，按上面的说明导出成品后按这个编号上传。")).toBeTruthy();
     expect(ref).toHaveBeenCalledWith(5, 7, 1, "first");
     expect(ref).not.toHaveBeenCalledWith(5, 7, 2, "last");
     await fireEvent.click(panel.getByLabelText("下载P01 首帧"));
@@ -160,10 +161,12 @@ describe("视频反推面板", () => {
   it("Ref2VA 说明要自备哪些参考，并按正文声明逐条列出", async () => {
     const run = makeRun();
     run.units[0].current.h3 = seg(21, 1, "h3", "subject_definitions:", [
-      { label: "<Subject 1>", what: "is the green-haired young woman, front-facing full-body view",
-        frame: null, warn: null },
-      { label: "<Picture 1>", what: "is the first frame of this segment",
-        frame: { index: 1, edge: "first" }, warn: null },
+      { label: "<Picture 1>", what: "is reference image 1 to upload: the first frame of this segment",
+        frame: { index: 1, edge: "first" }, warn: null, slot: "picture" },
+      { label: "<Picture 2>", what: "is reference image 2 to upload: front-facing view of the host",
+        frame: null, warn: null, slot: "picture" },
+      { label: "<Audio 1>", what: "is reference audio 1 to upload: the voice timbre of the host",
+        frame: null, warn: null, slot: "audio" },
     ], "ref2va");
     vi.mocked(videoPromptApi.history).mockResolvedValue(history([run]));
     const panel = render(VideoPromptPanel, { videoId: 5, filename: "clip.mp4", durationSeconds: 30 });
@@ -173,11 +176,33 @@ describe("视频反推面板", () => {
     expect(mode.querySelector('option[value="ref2va"]')).toBeTruthy();
     mode.value = "ref2va";
     await fireEvent.change(mode, { target: { value: "ref2va" } });
-    await waitFor(() => expect(panel.getByText("<Subject 1>")).toBeTruthy());
-    expect(panel.getByText("<Picture 1>")).toBeTruthy();
-    expect(panel.getByText(/每个出镜角色一张清晰形象图/)).toBeTruthy();
-    expect(panel.getByText("需要自备素材：本工具拿不到这张图，按上面的说明准备后上传。")).toBeTruthy();
+    await waitFor(() => expect(panel.getByText("<Picture 2>")).toBeTruthy());
+    // <Subject N> 是正文标签、不是文件，不进待上传清单
+    expect(panel.queryByText(/^<Subject 1>$/)).toBeNull();
+    expect(panel.getByText(/图片最多/)).toBeTruthy();
+    expect(panel.getByText(/只是正文里的内容标签、不是文件/)).toBeTruthy();
+    expect(panel.getByText(/本段需要的参考（图 2 · 视频 0 · 音频 1）/)).toBeTruthy();
+    expect(panel.getByText("需要自备图片：本工具拿不到这张图，按上面的说明准备后按这个编号上传。")).toBeTruthy();
+    expect(panel.getByText("需要自备音频：按上面的说明准备音频文件后按这个编号上传。")).toBeTruthy();
     expect(panel.getByLabelText("复制P01 首帧")).toBeTruthy();
+  });
+
+  it("素材编号超过 MiniMax 上限时红字提示合并", async () => {
+    const run = makeRun();
+    const many = Array.from({ length: 7 }, (_, i) => ({
+      label: `<Picture ${i + 1}>`, what: `reference image ${i + 1}`,
+      frame: null, warn: null, slot: "picture" as const,
+    }));
+    run.units[0].current.h3 = seg(31, 1, "h3", "subject_definitions:", many, "ref2va");
+    vi.mocked(videoPromptApi.history).mockResolvedValue(history([run]));
+    const panel = render(VideoPromptPanel, { videoId: 5, filename: "clip.mp4", durationSeconds: 30 });
+    await waitFor(() => expect(panel.getByText("MiniMax H3")).toBeTruthy());
+    await fireEvent.click(panel.getByText("MiniMax H3"));
+    const mode = panel.container.querySelector<HTMLSelectElement>('select[aria-label="H3 模式"]')!;
+    mode.value = "ref2va";
+    await fireEvent.change(mode, { target: { value: "ref2va" } });
+    await waitFor(() => expect(panel.getByRole("alert").textContent.replace(/\s+/g, ""))
+      .toBe("图7个超过MiniMax上限（图6/视频3/音频3），请合并素材后编辑正文。"));
   });
 
   it("逐段生成失败标红，可单独重试并刷新列表", async () => {

@@ -921,12 +921,13 @@ async def test_translation_conflict_while_running(client, video_id, monkeypatch)
 
 REF2VA_OK = (
     "subject_definitions:\n"
-    "<Subject 1> is the green-haired young woman, referenced from reference image 1: "
-    "front-facing full-body view.\n"
-    "<Picture 1> is the first frame of this segment, the last frame of the previously "
-    "generated segment.\n\n"
+    "<Picture 1> is reference image 1 to upload: the last frame of the previously generated "
+    "segment, used as the first frame of this segment.\n"
+    "<Picture 2> is reference image 2 to upload: front-facing full-body view of the green-haired "
+    "young woman on a plain background, used by <Subject 1>.\n"
+    "<Subject 1> the green-haired young woman, referenced from <Picture 2>.\n\n"
     "summary: [reference generation] <Subject 1> appears in every shot, <Picture 9> is unused.\n\n"
-    "retention_analysis: <Subject 1> is fully preserved.\n\n"
+    "retention_analysis: <Picture 2> is fully preserved.\n\n"
     "detailed_description: [Shot 1] Static Shot at slow speed, <Subject 1> raises her hand.\n\n"
     "overall_soundscape: Wind ambience and cloth rustle.\n\n"
     "non_diegetic_music: N/A"
@@ -940,10 +941,12 @@ def test_references_for_seedance_labels():
     refs = service.references_for("【参考】@图片 1 作为首帧，@音频 2 是配乐",
                                   target="seedance2", h3_mode=None, unit=UNIT_FIRST)
     assert [item["label"] for item in refs] == ["@图片 1", "@音频 2"]
+    assert [item["slot"] for item in refs] == ["picture", "audio"]
     assert refs[0]["frame"] == {"index": 1, "edge": "first"} and refs[1]["frame"] is None
     follow = service.references_for("将@视频 1 延长 5 秒\n\n【参考】@视频 1 为上一段生成结果",
                                     target="seedance2", h3_mode=None, unit=UNIT_FOLLOW)
     assert [item["label"] for item in follow] == ["@视频 1"]
+    assert follow[0]["slot"] == "video"
     assert follow[0]["frame"] is None and "上一段" in follow[0]["warn"]
     # 正文没写【参考】时也要给出该上传什么
     bare = service.references_for("【风格】写实风格，15 秒，16:9", target="seedance2",
@@ -955,6 +958,7 @@ def test_references_for_h3_only_t2va_is_empty():
     assert service.references_for("x", target="h3", h3_mode="t2va", unit=UNIT_FIRST) == []
     first = service.references_for("x", target="h3", h3_mode="i2va", unit=UNIT_FIRST)
     assert [item["label"] for item in first] == ["<Picture 1>"]
+    assert first[0]["slot"] == "picture"
     assert first[0]["frame"] == {"index": 1, "edge": "first"} and first[0]["warn"] is None
     chain = service.references_for("x", target="h3", h3_mode="i2va", unit=UNIT_FOLLOW)
     assert chain[0]["frame"] == {"index": 2, "edge": "first"}
@@ -965,22 +969,64 @@ def test_references_for_h3_only_t2va_is_empty():
     assert "对齐到 5 秒" in fl2va[1]["what"]
 
 
-def test_references_for_ref2va_follows_the_prompt_definitions():
+def test_references_for_ref2va_lists_only_upload_slots():
     refs = service.references_for(REF2VA_OK, target="h3", h3_mode="ref2va", unit=UNIT_FOLLOW)
-    assert [item["label"] for item in refs] == ["<Subject 1>", "<Picture 1>"]
-    assert "front-facing full-body view" in refs[0]["what"] and refs[0]["frame"] is None
-    assert refs[1]["frame"] == {"index": 2, "edge": "first"}
-    assert "上一段生成结果的最后一帧" in refs[1]["warn"]
-    # 只在 subject_definitions 里声明的才算素材；summary 顺带提到的 <Picture 9> 不进清单
+    assert [item["label"] for item in refs] == ["<Picture 1>", "<Picture 2>"]
+    assert [item["slot"] for item in refs] == ["picture", "picture"]
+    assert "front-facing full-body view" in refs[1]["what"] and refs[1]["frame"] is None
+    assert refs[0]["frame"] == {"index": 2, "edge": "first"}
+    assert "上一段生成结果的最后一帧" in refs[0]["warn"]
+    # <Subject N> 是正文里的内容标签、不是文件；summary 顺带提到的编号也不算素材
+    assert not any(item["label"].startswith("<Subject") for item in refs)
     assert not any(item["label"] == "<Picture 9>" for item in refs)
+
+
+def test_references_for_ref2va_orders_slots_and_recovers_loose_prose():
+    mixed = ("subject_definitions:\n"
+             "<Audio 1> is reference audio 1 to upload: the voice timbre of the speaker.\n"
+             "<Video 1> is reference video 1 to upload: the previously generated segment.\n"
+             "<Picture 1> is reference image 1 to upload: the first frame of this segment.\n"
+             "<Subject 1> the diver, referenced from <Picture 1>.\n\n"
+             "summary: [video continuation] x\n\nretention_analysis: y\n\n"
+             "detailed_description: z\n\noverall_soundscape: N/A\n\nnon_diegetic_music: N/A")
+    refs = service.references_for(mixed, target="h3", h3_mode="ref2va", unit=UNIT_FOLLOW)
+    assert [item["label"] for item in refs] == ["<Picture 1>", "<Video 1>", "<Audio 1>"]
+    assert [item["slot"] for item in refs] == ["picture", "video", "audio"]
+    assert refs[0]["frame"] == {"index": 2, "edge": "first"}
+    assert refs[1]["frame"] is None and "上一段" in refs[1]["warn"]
+    assert refs[2]["frame"] is None and refs[2]["warn"] is None
     prose = service.references_for("<Video 1> is the source clip, kept as-is", target="h3",
                                    h3_mode="ref2va", unit=UNIT_FIRST)
     assert [item["label"] for item in prose] == ["<Video 1>"]
     assert "source clip" in prose[0]["what"]
-    loose = service.references_for("detailed_description: <Subject 1> waves at the camera.",
+    loose = service.references_for("detailed_description: follow reference image 2 closely.",
                                    target="h3", h3_mode="ref2va", unit=UNIT_FIRST)
-    assert [item["label"] for item in loose] == ["<Subject 1>"]
-    assert "没写" in loose[0]["what"]
+    assert [item["label"] for item in loose] == ["<Picture 2>"]
+    assert "没写用途" in loose[0]["what"]
+    assert service.references_for("detailed_description: <Subject 1> waves.", target="h3",
+                                  h3_mode="ref2va", unit=UNIT_FIRST) == []
+
+
+@pytest.mark.parametrize("extra,slot,total", [
+    ("<Picture 3> x\n<Picture 4> x\n<Picture 5> x\n<Picture 6> x\n<Picture 7> x", "picture", 7),
+    ("<Video 1> x\n<Video 2> x\n<Video 3> x\n<Video 4> x", "video", 4),
+    ("<Audio 1> x\n<Audio 2> x\n<Audio 3> x\n<Audio 4> x", "audio", 4),
+])
+def test_ref2va_slot_counts_beyond_the_limit_are_rejected(extra, slot, total):
+    prompt = REF2VA_OK.replace("<Subject 1> the green-haired",
+                               extra + "\n<Subject 1> the green-haired")
+    assert service.valid_prompt(prompt, "h3", "ref2va") is False
+    # 超限的清单仍然列全，用户才能看出要合并哪几个编号
+    listed = service.references_for(prompt, target="h3", h3_mode="ref2va", unit=UNIT_FIRST)
+    assert len([item for item in listed if item["slot"] == slot]) == total
+
+
+def test_ref2va_slot_counts_at_the_limit_are_accepted():
+    extra = "\n".join(f"<Picture {n}> is a reference image" for n in range(3, 7))
+    prompt = REF2VA_OK.replace("<Subject 1> the green-haired",
+                               extra + "\n<Subject 1> the green-haired")
+    assert service.valid_prompt(prompt, "h3", "ref2va") is True
+
 
 
 def test_segment_h3_ref2va_contract_and_t2va_lists_nothing(client, video_id, monkeypatch):
@@ -991,7 +1037,7 @@ def test_segment_h3_ref2va_contract_and_t2va_lists_nothing(client, video_id, mon
     assert record["status"] == "complete"
     assert record["prompt"].splitlines()[0] == "subject_definitions:"
     assert "Ref2VA (full-reference generation)" in captured[0]["instruction"]
-    assert [item["label"] for item in record["references"]] == ["<Subject 1>", "<Picture 1>"]
+    assert [item["label"] for item in record["references"]] == ["<Picture 1>", "<Picture 2>"]
     stub_model(monkeypatch, {"prompt": H3_OK, "risk_terms": []}, captured)
     plain = generate(client, video_id, run["id"], 2, "h3", "t2va")
     assert plain["references"] == []

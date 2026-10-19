@@ -5,11 +5,12 @@ vi.mock("../lib/api", () => ({ http: vi.fn() }));
 
 import { http } from "../lib/api";
 import {
-  expandSegments, generatePlan, generateSegments, plannedReferences, planKey, refFileTag, secondText,
-  secondsInputToMs, secondsRangeText, segmentKey, segmentQueue, translatePrompt, translationJobs,
-  translationKey, translationOf, unitFrameAt, videoPromptApi, videoPromptJobs, wholeSecond,
+  countSlots, expandSegments, generatePlan, generateSegments, overSlots, plannedReferences, planKey,
+  refFileTag, secondText, secondsInputToMs, secondsRangeText, segmentKey, segmentQueue, SLOT_LIMITS,
+  translatePrompt, translationJobs, translationKey, translationOf, unitFrameAt, videoPromptApi,
+  videoPromptJobs, wholeSecond,
 } from "../lib/video-prompts";
-import type { PromptRun, PromptTranslation, SegmentRecord } from "../lib/video-prompts";
+import type { PromptReference, PromptRun, PromptTranslation, SegmentRecord } from "../lib/video-prompts";
 
 const call = vi.mocked(http);
 
@@ -61,9 +62,11 @@ describe("参考帧", () => {
     const seed = plannedReferences("seedance2", "t2va", run.units[0]);
     expect(seed.map(item => item.label)).toEqual(["@图片 1"]);
     expect(seed[0].frame).toEqual({ index: 1, edge: "first" });
+    expect(seed[0].slot).toBe("picture");
     const chain = plannedReferences("seedance2", "t2va", run.units[1]);
     expect(chain.map(item => item.label)).toEqual(["@视频 1"]);
     expect(chain[0].frame).toBeNull();
+    expect(chain[0].slot).toBe("video");
     const first = plannedReferences("h3", "i2va", run.units[0]);
     expect(first.map(item => item.label)).toEqual(["<Picture 1>"]);
     expect(first[0].warn).toBeNull();
@@ -72,6 +75,21 @@ describe("参考帧", () => {
     expect(fl.map(item => item.label)).toEqual(["<Picture 1>", "<Picture 2>"]);
     expect(fl[1].what).toContain("对齐到 15 秒");
     expect(fl[1].frame).toEqual({ index: 2, edge: "last" });
+  });
+
+  it("清单按图/视频/音频计数，超过 MiniMax 上限才报警", () => {
+    const refs: PromptReference[] = [
+      { label: "<Picture 1>", what: "first frame", frame: null, warn: null, slot: "picture" },
+      { label: "<Picture 2>", what: "the host", frame: null, warn: null, slot: "picture" },
+      { label: "<Audio 1>", what: "voice timbre", frame: null, warn: null, slot: "audio" },
+    ];
+    expect(countSlots(refs)).toEqual({ picture: 2, video: 0, audio: 1 });
+    expect(overSlots(refs)).toEqual([]);
+    const many = Array.from({ length: 7 }, (_, i) => ({
+      label: `<Picture ${i + 1}>`, what: "", frame: null, warn: null, slot: "picture" as const,
+    }));
+    expect(overSlots(many)).toEqual(["picture"]);
+    expect(SLOT_LIMITS).toEqual({ picture: 6, video: 3, audio: 3 });
   });
 
   it("参考标签能当文件名用", () => {

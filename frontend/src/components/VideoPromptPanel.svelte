@@ -12,7 +12,7 @@
   import type { PromptReference } from "../lib/video-prompts";
   import { copyText } from "../lib/ws";
   import VideoFrameThumb from "./VideoFrameThumb.svelte";
-  import { plannedReferences, refFileTag, unitFrameAt } from "../lib/video-prompts";
+  import { countSlots, overSlots, plannedReferences, refFileTag, SLOT_LABELS, SLOT_LIMITS, unitFrameAt } from "../lib/video-prompts";
   import { pushToast } from "../lib/toast";
 
   let { videoId, filename = "", durationSeconds = null }:
@@ -191,6 +191,9 @@
     return matches && record ? record.references : plannedReferences(tab, h3Mode, unit);
   }
 
+  const slotCounts = countSlots;
+  const tooMany = overSlots;
+
   async function toggleVersions(record: SegmentRecord) {
     const key = segmentKey(run!.id, record.segment_index, record.target);
     if (versionsKey === key) { versionsKey = null; versions = []; return; }
@@ -300,9 +303,11 @@
               每段首行列出首帧与末帧两个 Picture 及其对齐时间，末帧取自上一段生成结果。
             {:else}
               全参考模式：正文改成六段式（subject_definitions / summary / retention_analysis / detailed_description /
-              overall_soundscape / non_diegetic_music）。你需要自备这些参考——① 每个出镜角色一张清晰形象图（正脸+全身最好）；
-              ② 场景或环境图（多场景各一张）；③ 关键道具、服装或 Logo 图（可选）；④ 从第 2 段起续接时，上一段生成结果的末帧。
-              生成后每段下方会逐条列出正文实际声明的 <code>&lt;Subject N&gt;</code> 与 <code>&lt;Picture N&gt;</code>，照单准备即可。
+              overall_soundscape / non_diegetic_music）。要上传的素材只有三种编号：<code>&lt;Picture N&gt;</code> 图片最多
+              {SLOT_LIMITS.picture} 张、<code>&lt;Video N&gt;</code> 视频最多 {SLOT_LIMITS.video} 个、
+              <code>&lt;Audio N&gt;</code> 音频最多 {SLOT_LIMITS.audio} 个；够用就行，以图片为主，音频只在必须锁音色或配乐时加一条。
+              <code>&lt;Subject N&gt;</code> 只是正文里的内容标签、不是文件，不用为它准备任何东西。
+              生成后每段下方按编号列出「这个编号要放什么」，能直接给的帧带缩略图，照单上传即可。
             {/if}
           </p>
           {#if h3Mode !== "t2va"}
@@ -346,7 +351,8 @@
               <details class="vp-frames" open={framesOpen}
                 ontoggle={(e) => openFrames[framesKey] = (e.currentTarget as HTMLDetailsElement).open}>
                 <summary class="vp-frames-summary">
-                  本段需要的参考（{refs.length}）· 原片帧 @{wholeSecond(unitFrameAt(unit, "first"))}–@{wholeSecond(unitFrameAt(unit, "last"))} 秒
+                  本段需要的参考（图 {slotCounts(refs).picture} · 视频 {slotCounts(refs).video} · 音频 {slotCounts(refs).audio}）
+                  · 原片帧 @{wholeSecond(unitFrameAt(unit, "first"))}–@{wholeSecond(unitFrameAt(unit, "last"))} 秒
                 </summary>
                 {#if framesOpen}
                   <ul class="mt-1 space-y-2">
@@ -361,12 +367,23 @@
                             at={unitFrameAt(unit, ref.frame.edge)} fileBase={baseName + "-" + refFileTag(ref.label)}
                             usage={refFileTag(ref.label)} />
                         {:else}
-                          <p class="text-[10px] text-muted">需要自备素材：本工具拿不到这张图，按上面的说明准备后上传。</p>
+                          <p class="text-[10px] text-muted">
+                            {#if ref.slot === "video"}需要自备视频：本工具不生成视频，按上面的说明导出成品后按这个编号上传。
+                            {:else if ref.slot === "audio"}需要自备音频：按上面的说明准备音频文件后按这个编号上传。
+                            {:else}需要自备图片：本工具拿不到这张图，按上面的说明准备后按这个编号上传。{/if}
+                          </p>
                         {/if}
                         {#if ref.warn}<p class="text-[10px] text-amber-400">{ref.warn}</p>{/if}
                       </li>
                     {/each}
                   </ul>
+                  {#if tooMany(refs).length}
+                    <p class="mt-1 text-[10px] text-danger" role="alert">
+                      {tooMany(refs).map((slot) => `${SLOT_LABELS[slot]} ${slotCounts(refs)[slot]} 个`).join("、")}
+                      超过 MiniMax 上限（图 {SLOT_LIMITS.picture} / 视频 {SLOT_LIMITS.video} / 音频 {SLOT_LIMITS.audio}），
+                      请合并素材后编辑正文。
+                    </p>
+                  {/if}
                 {/if}
               </details>
             {/if}

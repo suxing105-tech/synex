@@ -127,8 +127,13 @@ TIME_RULE = (
 # Ref2VA（全参考生视频）的正文结构与 T2VA/I2VA/FL2VA 完全不同：六段式，引用写在
 # subject_definitions 里而不是首行对齐句。它作为附加规则只在 ref2va 模式下拼接，
 # 所以用户自定义的 H3 指令不需要改，也不需要动内置默认值。
+#
+# 产品口径（用户定的）：要上传的素材只有 Picture/Video/Audio 三种编号，上限 6/3/3；
+# <Subject N> 是正文内部的内容标签、不是文件。清单只回答"传哪几个文件、每个编号干什么"。
 REF2VA_SECTIONS = ("subject_definitions:", "summary:", "retention_analysis:",
                    "detailed_description:", "overall_soundscape:", "non_diegetic_music:")
+REF2VA_SLOTS = ("Picture", "Video", "Audio")
+REF2VA_SLOT_LIMITS = {"Picture": 6, "Video": 3, "Audio": 3}
 
 REF2VA_RULE = (
     "\n[Ref2VA (full-reference generation) overrides the layout above]\n"
@@ -136,19 +141,26 @@ REF2VA_RULE = (
     "between sections, and nothing before the first key:\n"
     "subject_definitions:\n\nsummary:\n\nretention_analysis:\n\n"
     "detailed_description:\n\noverall_soundscape:\n\nnon_diegetic_music:\n"
-    "- subject_definitions: one line per referenced item. Use <Subject N> for reusable visible content "
-    "(person, creature, object, scene, environment, costume, prop, style, action), <Picture N> only when a "
-    "reference image is itself a concrete frame anchor, <Video N> only for a source video that is edited or "
-    "continued, <Audio N> only for an audio asset. Number each category from 1 upward, never renumber an "
-    "assigned label, and keep the same label meaning in every later section. Labels only have to be "
-    "self-consistent inside this one segment, because every segment is generated as its own job.\n"
-    "- Every <Subject N> line must state what reference asset the user has to upload and what that asset must "
-    "show, for example: <Subject 1> is the green-haired young woman, referenced from reference image 1: "
-    "front-facing full-body view, long green hair, white-and-black gold-trimmed outfit. Only define subjects "
-    "for content actually visible in the frames.\n"
-    "- Define <Picture 1> as the first frame of this segment: for segment 1 it is the first frame of the source "
-    "video, for any later segment it is the last frame of the previously generated segment that the user uploads. "
-    "Add a standalone <Picture 2> for the last frame only when the motion must converge onto it.\n"
+    "- Upload slots are the only assets the user attaches: <Picture N> reference images (at most 6), "
+    "<Video N> reference videos (at most 3), <Audio N> reference audio (at most 3). Number each category "
+    "from 1 upward, consecutively, no gaps, and never exceed 6 images, 3 videos or 3 audio files. "
+    "One slot means exactly one uploaded file.\n"
+    "- Use the fewest slots that carry this segment. Images are the main channel; add one <Audio N> only when "
+    "a speaker's voice timbre or the background music must be locked to a file the user owns; use <Video N> "
+    "only to continue from the previously generated segment or to copy its camera movement and cuts. Never "
+    "invent a slot just to fill the budget, and prefer reusing one image for several subjects over adding a "
+    "redundant image.\n"
+    "- In subject_definitions, give every upload slot its own line that states the number and its purpose, in "
+    "this shape: <Picture 2> is reference image 2 to upload: front-facing full-body view of the green-haired "
+    "young woman on a plain background, used by <Subject 1>. Name what the file must contain and which subjects "
+    "or shots consume it, so the user knows what to prepare for that exact number.\n"
+    "- <Subject N> lines label reusable content inside the prompt (a person, creature, scene, costume, prop or "
+    "style); they are not files. Every <Subject N> must be tied to the slot that provides it, written as "
+    "\"referenced from <Picture 2>\", and must not create an extra slot. Only define subjects for content "
+    "actually visible in the frames.\n"
+    "- For segment 1 define <Picture 1> as the first frame of the source video. From segment 2 onward, pick one "
+    "continuation route and say it in the summary task type: either <Picture 1> is the last frame of the "
+    "previously generated segment, or <Video 1> is the previously generated segment continued from its end.\n"
     "- summary: one short paragraph starting with a bracketed task type such as [reference generation], or a "
     "combination like [video continuation + keyframe completion], naming the defined labels and their roles.\n"
     "- retention_analysis: one short line per referenced item saying where it appears and whether it is fully "
@@ -156,8 +168,9 @@ REF2VA_RULE = (
     "- detailed_description: the shot-by-shot audiovisual description in playback order, following every shot, "
     "camera, speaker and dialogue rule above, and naming the label at the exact point where each referenced item "
     "takes effect. Never reduce it to a plot summary or a list of reference relationships.\n"
-    "- Do not define <Video N> or <Audio N>: this task only hands the user reference images plus, from segment "
-    "2 onward, the previously generated segment."
+    "- Do not introduce <Video N> or <Audio N> in the later sections unless they were defined in "
+    "subject_definitions first.\n"
+    "- Keep every label meaning stable across all six sections."
 )
 
 
@@ -596,10 +609,13 @@ def continuity_note(target: str, h3_mode: str, unit: dict) -> str:
         return f"衔接：Picture 1 = {source}。正文要先锚定它的风格、主体、构图与空间关系，再向后续发展。"
     if h3_mode == "ref2va":
         if unit["index"] == 1:
-            return ("衔接：本段走 Ref2VA 全参考模式。在 subject_definitions 里把 <Picture 1> 定义为本段首帧"
-                    "（原片首帧），帧里每个出镜主体各给一个 <Subject N>，并写清用户要上传什么样的参考图。")
-        return ("衔接：本段走 Ref2VA 全参考模式，且不是第一段。<Picture 1> 必须定义为用户上传的“上一段生成结果的"
-                "末帧”（也就是本段首帧）；参考图仍由用户自备，编号只要在本段内自洽即可。")
+            return ("衔接：本段走 Ref2VA 全参考模式。在 subject_definitions 里给每个要上传的编号独占一行："
+                    "<Picture 1> 定义为本段首帧（原片首帧），需要额外参考图就继续 <Picture 2>、<Picture 3> 并写清文件里要有什么。"
+                    "<Subject N> 只是正文里的内容标签、不是文件，每个都要写 referenced from <Picture N>。"
+                    "素材够用就行：以图片为主，只有在必须锁定说话人音色或背景音乐时才加一条 <Audio N>。")
+        return ("衔接：本段走 Ref2VA 全参考模式，且不是第一段。二选一并在 summary 的任务类型里说明："
+                "<Picture 1> = 用户上传的上一段生成结果末帧（即本段首帧）；或 <Video 1> = 上一段生成结果的成品，从它的结尾续接。"
+                "编号在本段内各自从 1 连续编号，上限图 6 / 视频 3 / 音频 3。")
     return ("衔接：Picture 1 = 本段首帧（首段为视频首帧，其余为上一段末帧），"
             "Picture 2 = 本段末帧。描述必须从首帧连续收敛到末帧。")
 
@@ -716,7 +732,14 @@ def valid_prompt(prompt: str, target: str, h3_mode: str) -> bool:
     if target == "seedance2":
         return "【风格】" in prompt and "【时间轴】" in prompt and bool(TIMELINE_LINE.search(prompt))
     if h3_mode == "ref2va":
-        return all(label in prompt for label in REF2VA_SECTIONS)
+        if not all(label in prompt for label in REF2VA_SECTIONS):
+            return False
+        # 上传槽位是硬上限：超了这段提示词就传不进去，标成格式不完整让用户先合并
+        counts: dict[str, int] = {}
+        for kind, number in H3_REF.findall(_subject_definitions(prompt)):
+            if kind in REF2VA_SLOTS:
+                counts[kind] = max(counts.get(kind, 0), int(number))
+        return all(counts.get(kind, 0) <= limit for kind, limit in REF2VA_SLOT_LIMITS.items())
     for label in ("integrated_multimodal_description:", "overall_soundscape:", "non_diegetic_music:"):
         if label not in prompt:
             return False
@@ -1004,8 +1027,11 @@ H3_REF = re.compile(r"<(Subject|Picture|Video|Audio)\s*(\d+)>")
 H3_DEFINITION = re.compile(r"^<(Subject|Picture|Video|Audio)\s*(\d+)>[\s:：-]*(.*)$")
 
 
-def _ref(label: str, what: str, frame=None, warn=None) -> dict:
-    return {"label": label, "what": what, "frame": frame, "warn": warn}
+SLOT_SLOTS = {"Picture": "picture", "Video": "video", "Audio": "audio"}
+
+
+def _ref(label: str, what: str, frame=None, warn=None, slot="picture") -> dict:
+    return {"label": label, "what": what, "frame": frame, "warn": warn, "slot": slot}
 
 
 def _seedance_references(prompt: str, unit: dict) -> list[dict]:
@@ -1021,56 +1047,77 @@ def _seedance_references(prompt: str, unit: dict) -> list[dict]:
     items = []
     for label in labels:
         kind, number = SEEDANCE_REF.match(label).groups()
+        slot = {"图片": "picture", "视频": "video", "音频": "audio"}[kind]
         if kind == "视频":
             items.append(_ref(label, "上一段生成结果的视频成品，正文用「将@视频 1 延长」续接", None,
-                              None if index == 1 else "本工具不生成视频：需要先跑完上一段并导出成片"))
+                              None if index == 1 else "本工具不生成视频：需要先跑完上一段并导出成片", slot))
         elif kind == "音频":
-            items.append(_ref(label, "按正文【参考】里写的用途上传音频", None, None))
+            items.append(_ref(label, "按正文【参考】里写的用途上传音频", None, None, slot))
         elif number == "1":
             items.append(_ref(label, "作为本段首帧上传", {"index": index, "edge": "first"},
-                              None if index == 1 else "本段正文靠 将@视频 1 续接，这张只是备用首帧"))
+                              None if index == 1 else "本段正文靠 将@视频 1 续接，这张只是备用首帧", slot))
         elif number == "2":
-            items.append(_ref(label, "作为本段末帧或关键帧上传", {"index": index, "edge": "last"}, None))
+            items.append(_ref(label, "作为本段末帧或关键帧上传", {"index": index, "edge": "last"}, None, slot))
         else:
-            items.append(_ref(label, "按正文【参考】里写的用途自行准备", None, None))
+            items.append(_ref(label, "按正文【参考】里写的用途自行准备", None, None, slot))
     return items
+
+
+def _subject_definitions(prompt: str) -> str:
+    text = prompt or ""
+    start = text.find("subject_definitions")
+    if start == -1:
+        return text
+    rest = text[start + len("subject_definitions"):]
+    stops = [rest.index("\n" + key) for key in REF2VA_SECTIONS[1:] if "\n" + key in rest]
+    return rest[:min(stops)] if stops else rest
+
+
+def _slot_frame(kind: str, number: str, unit: dict) -> tuple[dict | None, str | None]:
+    """本工具只有原视频的帧能给；Picture 1 之外（以及视频、音频）只能由用户自备。"""
+    if kind != "Picture":
+        return None, ("本工具拿不到生成结果：需要先跑完上一段，导出成品后按这个编号上传"
+                      if kind == "Video" and unit["index"] > 1 else None)
+    if number != "1":
+        return None, None
+    if unit["index"] > 1:
+        return ({"index": unit["index"], "edge": "first"},
+                "下面这张是原片对照帧；真正要上传的是上一段生成结果的最后一帧")
+    return {"index": unit["index"], "edge": "first"}, None
 
 
 def _ref2va_references(prompt: str, unit: dict) -> list[dict]:
-    """Ref2VA 要的参考 = 正文 subject_definitions 逐条定义，模型写什么就要用户备什么。"""
-    text = prompt or ""
-    body = text
-    start = text.find("subject_definitions")
-    if start != -1:
-        rest = text[start + len("subject_definitions"):]
-        stops = [rest.index("\n" + key) for key in REF2VA_SECTIONS[1:] if "\n" + key in rest]
-        if stops:
-            body = rest[:min(stops)]
-    items, seen = [], set()
+    """Ref2VA 要上传的素材 = 正文声明的 Picture / Video / Audio 编号。
+
+    <Subject N> 是正文内部的内容标签、不是文件，所以不进清单；但会用它把正文里
+    只写成“reference image 1 / 参考图 2”这类散装说法还原成编号，老提示词也能读出清单。
+    """
+    body = _subject_definitions(prompt)
+    found: dict[tuple[int, int], dict] = {}
+
+    def note(kind: str, number: str, what: str) -> None:
+        if kind not in REF2VA_SLOTS:
+            return
+        order = REF2VA_SLOTS.index(kind)
+        key = (order, int(number))
+        if key in found:
+            return
+        frame, warn = _slot_frame(kind, number, unit)
+        found[key] = _ref(f"<{kind} {number}>", what, frame, warn, slot=SLOT_SLOTS[kind])
+
     for line in body.splitlines():
         matched = H3_DEFINITION.match(line.strip())
-        if not matched:
-            continue
-        kind, number, definition = matched.groups()
-        label = f"<{kind} {number}>"
-        if label in seen:
-            continue
-        seen.add(label)
-        frame = None
-        warn = None
-        if kind == "Picture" and number == "1":
-            frame = {"index": unit["index"], "edge": "first"}
-            if unit["index"] > 1:
-                warn = "下面这张是原片对照帧；真正要上传的是上一段生成结果的最后一帧"
-        items.append(_ref(label, definition.strip().rstrip("。.").strip() or "正文没写要什么样的素材", frame, warn))
-    if items:
-        return items
-    for kind, number in H3_REF.findall(text):  # 模型没按格式写定义行时，至少把标签列出来
-        label = f"<{kind} {number}>"
-        if label not in seen:
-            seen.add(label)
-            items.append(_ref(label, "正文没写要什么样的素材，可在正文里补一句", None, None))
-    return items
+        if matched:
+            kind, number, definition = matched.groups()
+            note(kind, number, definition.strip().rstrip("。.").strip() or "正文没写这个编号要放什么")
+    if not found:
+        for kind, number in H3_REF.findall(prompt or ""):
+            note(kind, number, "正文没写这个编号要放什么，可在 subject_definitions 里补一句")
+        for number in re.findall(r"reference image\s*(\d+)", prompt or "", flags=re.IGNORECASE):
+            note("Picture", number, "正文只写了 reference image，没写用途；建议在 subject_definitions 里补清")
+        for number in re.findall(r"参考图\s*(\d+)", prompt or ""):
+            note("Picture", number, "正文只写了参考图编号，没写用途；建议在 subject_definitions 里补清")
+    return list(found[key] for key in sorted(found))
 
 
 def references_for(prompt, *, target: str, h3_mode, unit: dict) -> list[dict]:
@@ -1086,11 +1133,12 @@ def references_for(prompt, *, target: str, h3_mode, unit: dict) -> list[dict]:
     items = [_ref("<Picture 1>",
                   "上一段生成结果的末帧，作为本段首帧上传" if chain else "原片首帧，直接上传这一张",
                   {"index": index, "edge": "first"},
-                  "下面这张是原片对照帧；真正要上传的是上一段生成结果的最后一帧" if chain else None)]
+                  "下面这张是原片对照帧；真正要上传的是上一段生成结果的最后一帧" if chain else None,
+                  "picture")]
     if h3_mode == "fl2va":
         items.append(_ref("<Picture 2>",
                           f"本段末帧，正文把它对齐到 {sec_text(unit['end_ms'] - unit['start_ms'])} 秒",
-                          {"index": index, "edge": "last"}, None))
+                          {"index": index, "edge": "last"}, None, "picture"))
     return items
 
 

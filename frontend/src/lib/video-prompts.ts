@@ -38,11 +38,30 @@ export interface SegmentRecord {
   /** 正文引用了哪些参考素材；T2VA 这类不引用图片的正文是空表。 */
   references: PromptReference[];
 }
+/** 素材类型：只有这三类是要上传的文件，<Subject N> 是正文里的内容标签。 */
+export type ReferenceSlot = "picture" | "video" | "audio";
+/** MiniMax H3 参考生视频的上传上限。 */
+export const SLOT_LIMITS: Record<ReferenceSlot, number> = { picture: 6, video: 3, audio: 3 };
+export const SLOT_LABELS: Record<ReferenceSlot, string> = { picture: "图", video: "视频", audio: "音频" };
+
 /** 正文里的一条引用：label 照抄，what 说清要上传什么，frame 是本工具能直接给的对照帧。 */
 export interface PromptReference {
   label: string; what: string;
   frame: { index: number; edge: FrameEdge } | null;
   warn: string | null;
+  /** 要上传的文件类型；决定缩略图、导出文件名与上限计数。 */
+  slot: ReferenceSlot;
+}
+/** 每类素材各要几个，用于清单标题与超限告警。 */
+export function countSlots(refs: PromptReference[]): Record<ReferenceSlot, number> {
+  const counts: Record<ReferenceSlot, number> = { picture: 0, video: 0, audio: 0 };
+  refs.forEach((item) => { counts[item.slot] += 1; });
+  return counts;
+}
+/** 超出 MiniMax 上限的素材类型，前端据此红字提示。 */
+export function overSlots(refs: PromptReference[]): ReferenceSlot[] {
+  const counts = countSlots(refs);
+  return (Object.keys(SLOT_LIMITS) as ReferenceSlot[]).filter((slot) => counts[slot] > SLOT_LIMITS[slot]);
 }
 export interface PromptShot { start_ms: number; end_ms: number; synthetic: boolean }
 export interface PromptUnit {
@@ -268,9 +287,9 @@ export function plannedReferences(target: PromptTarget, mode: H3Mode, unit: Prom
     return chain
       ? [{
         label: "@视频 1", what: "上一段生成结果的视频成品，正文用「将@视频 1 延长」续接",
-        frame: null, warn: "本工具不生成视频：需要先跑完上一段并导出成片",
-      }]
-      : [{ label: "@图片 1", what: "作为本段首帧上传", frame: frameReference(unit, "first"), warn: null }];
+        frame: null, warn: "本工具不生成视频：需要先跑完上一段并导出成片", slot: "video",
+      } as PromptReference]
+      : [{ label: "@图片 1", what: "作为本段首帧上传", frame: frameReference(unit, "first"), warn: null, slot: "picture" }];
   }
   if (mode === "t2va" || mode === "ref2va") return [];
   const items: PromptReference[] = [{
@@ -278,12 +297,13 @@ export function plannedReferences(target: PromptTarget, mode: H3Mode, unit: Prom
     what: chain ? "上一段生成结果的末帧，作为本段首帧上传" : "原片首帧，直接上传这一张",
     frame: frameReference(unit, "first"),
     warn: chain ? "下面这张是原片对照帧；真正要上传的是上一段生成结果的最后一帧" : null,
+    slot: "picture",
   }];
   if (mode === "fl2va") {
     items.push({
       label: "<Picture 2>",
       what: `本段末帧，正文把它对齐到 ${wholeSecond((unit.end_ms - unit.start_ms) / 1000)} 秒`,
-      frame: frameReference(unit, "last"), warn: null,
+      frame: frameReference(unit, "last"), warn: null, slot: "picture",
     });
   }
   return items;

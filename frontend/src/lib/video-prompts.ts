@@ -1,6 +1,7 @@
 import { writable } from "svelte/store";
 import { http } from "./api";
 import { errorMessage } from "./reverse-prompts";
+import { dismissToast, pushToast, updateToast } from "./toast";
 
 export type PromptTarget = "seedance2" | "h3";
 export type FrameEdge = "first" | "last";
@@ -74,6 +75,13 @@ export function overSlots(refs: PromptReference[]): ReferenceSlot[] {
   const counts = countSlots(refs);
   return (Object.keys(SLOT_LIMITS) as ReferenceSlot[]).filter((slot) => counts[slot] > SLOT_LIMITS[slot]);
 }
+/** 已等待秒数（整秒，超过一分钟带分）。没有起点就返回空串，界面不显示时间。 */
+export function elapsedText(startedAt: number | undefined, now: number): string {
+  if (startedAt == null || now < startedAt) return "";
+  const seconds = Math.floor((now - startedAt) / 1000);
+  if (seconds < 60) return `${seconds} 秒`;
+  return `${Math.floor(seconds / 60)} 分 ${String(seconds % 60).padStart(2, "0")} 秒`;
+}
 export interface PromptShot { start_ms: number; end_ms: number; synthetic: boolean }
 export interface PromptUnit {
   index: number; start_ms: number; end_ms: number; shots: PromptShot[]; role: string;
@@ -139,7 +147,12 @@ export async function refreshVideoPromptSettings() {
   videoPromptSettings.set(await videoPromptApi.settings());
 }
 
-export type VideoPromptJob = { running: boolean; error?: string; result?: SegmentRecord; run?: PromptRun };
+export type VideoPromptJob = {
+  running: boolean;
+  /** 本次调用在前端开始的时间戳，用来显示"已等待多少秒"；服务端触发的任务没有。 */
+  startedAt?: number;
+  error?: string; result?: SegmentRecord; run?: PromptRun;
+};
 export const videoPromptJobs = writable<Record<string, VideoPromptJob>>({});
 /** 串行队列的整体进度（全部生成时用），null = 没有队列在跑。 */
 export const segmentQueue = writable<{ total: number; done: number } | null>(null);
@@ -160,18 +173,48 @@ function setJob(key: string, value: VideoPromptJob) {
   videoPromptJobs.update(jobs => ({ ...jobs, [key]: value }));
 }
 
+/**
+ * 把长驻的进度 Toast 原地换成结果。
+ * updateToast 只改字段、不会重排自动消失的定时器（progress 的 ttl 是 0），
+ * 所以这里自己补一个 timeout，否则结果条会一直堆在右下角。
+ */
+function finishToast(id: number, kind: "success" | "error", message: string, ttl: number) {
+  updateToast(id, { kind, message, progress: undefined });
+  if (ttl > 0) setTimeout(() => dismissToast(id), ttl);
+}
+
+/** 卡片标题与 Toast 共用段号：P01 / P02。 */
+export function unitTag(index: number): string {
+  return `P${String(index).padStart(2, "0")}`;
+}
+
+/** 生成中的 Toast 文案：一段时报格式名，多段时报当前第几项。 */
+function segmentToastText(job: { index: number; target: PromptTarget }, position: number, total: number): string {
+  const label = TARGET_LABELS[job.target];
+  return total > 1
+    ? `正在生成 ${unitTag(job.index)} · ${label}（第 ${position}/${total} 项）`
+    : `正在生成 ${label} 正文 · ${unitTag(job.index)}`;
+}
+
 /** 阶段一：分镜方案。与目标格式无关，结果落在 job.run。 */
 export async function generatePlan(videoId: number, body: PlanRequest): Promise<PromptRun | null> {
   const key = planKey(videoId);
   if (active.has(key)) return null;
   active.add(key);
-  setJob(key, { running: true });
+  setJob(key, { running: true, startedAt: Date.now() });
+  // 一次模型调用十几到几十秒，没有可上报的百分比，所以先在角落挂一条长驻进度，
+  // 结束时原地换成成功/失败——面板滚到哪一段都能看见"还在跑"。
+  const toastId = pushToast("正在反推分镜方案：切点已算好，模型正在写锚点与每段职责…",
+    { kind: "progress", progress: 0 });
   try {
     const run = await videoPromptApi.plan(videoId, body);
     setJob(key, { running: false, run });
+    finishToast(toastId, "success", `分镜方案已生成：${run.units.length} 段`, 2600);
     return run;
   } catch (error) {
-    setJob(key, { running: false, error: errorMessage(error) });
+    const reason = errorMessage(error);
+    setJob(key, { running: false, error: reason });
+    finishToast(toastId, "error", `分镜方案失败：${reason}`, 6000);
     return null;
   } finally {
     active.delete(key);
@@ -188,11 +231,21 @@ export async function generateSegments(
   for (const job of queue) active.add(segmentKey(runId, job.index, job.target));
   segmentQueue.set({ total: queue.length, done: 0 });
   const failures: string[] = [];
+  const first = queue[0];
+  const toastId = first
+    ? pushToast(segmentToastText(first, 1, queue.length), { kind: "progress", progress: 0 })
+    : 0;
   try {
     let done = 0;
     for (const job of queue) {
       const key = segmentKey(runId, job.index, job.target);
-      setJob(key, { running: true });
+      if (queue.length > 1) {
+        updateToast(toastId, {
+          message: segmentToastText(job, done + 1, queue.length),
+          progress: (done / queue.length) * 100,
+        });
+      }
+      setJob(key, { running: true, startedAt: Date.now() });
       try {
         const result = await videoPromptApi.segment(videoId, runId, job.index, {
           target: job.target,
@@ -210,6 +263,16 @@ export async function generateSegments(
     }
   } finally {
     segmentQueue.set(null);
+    if (first) {
+      const ok = queue.length - failures.length;
+      finishToast(toastId, failures.length ? "error" : "success",
+        failures.length
+          ? `正文生成结束：成功 ${ok} 段，失败 ${failures.length} 段，可在段卡片上单独重试`
+          : queue.length > 1
+            ? `${queue.length} 段正文已全部生成`
+            : `${TARGET_LABELS[first.target]} 正文已生成`,
+        failures.length ? 6000 : 2600);
+    }
   }
   return failures;
 }

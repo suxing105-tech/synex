@@ -8,7 +8,7 @@ import type { H3Mode, PromptReference, PromptRun, SegmentRecord, VideoPromptHist
 import { copyText } from "../lib/ws";
 
 vi.mock("../lib/ws", () => ({ copyText: vi.fn().mockResolvedValue(true) }));
-vi.mock("../lib/toast", () => ({ pushToast: vi.fn() }));
+vi.mock("../lib/toast", () => ({ pushToast: vi.fn(() => 1), updateToast: vi.fn(), dismissToast: vi.fn() }));
 vi.mock("../lib/image-clipboard", () => ({
   copyDataUrlImage: vi.fn().mockResolvedValue(undefined),
   dataUrlToBlob: vi.fn(() => new Blob(["x"], { type: "image/jpeg" })),
@@ -319,6 +319,68 @@ describe("视频反推面板", () => {
     await fireEvent.click(retry[0]);
     await waitFor(() => expect(segment).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(panel.getByText("【风格】新生成的第 2 段")).toBeTruthy());
+  });
+
+  it("生成中有看得见的进度：转圈、走秒、骨架线与队列位置", async () => {
+    segmentQueue.set({ total: 5, done: 2 });
+    videoPromptJobs.set({ "7:1:h3": { running: true, startedAt: Date.now() - 8000 } });
+    const panel = render(VideoPromptPanel, { videoId: 5, filename: "clip.mp4", durationSeconds: 30 });
+    await waitFor(() => expect(panel.getByText("MiniMax H3")).toBeTruthy());
+    await fireEvent.click(panel.getByText("MiniMax H3"));
+    await waitFor(() => expect(panel.getByTestId("progress-1-h3")).toBeTruthy());
+    const card = panel.getByTestId("progress-1-h3");
+    expect(card.textContent).toContain("正在生成 MiniMax H3 正文");
+    expect(card.textContent).toContain("已等 8 秒");
+    expect(card.textContent).toContain("队列第 3/5 项");
+    expect(card.textContent).toContain("本段 15 秒");
+    expect(card.querySelectorAll(".vp-spin").length).toBeGreaterThan(0);
+    expect(card.querySelectorAll(".vp-skeleton i")).toHaveLength(3);
+    // 顶部队列条是真百分比：2/5 = 40%
+    const queue = panel.getByTestId("queue-progress");
+    expect(queue.textContent).toContain("串行生成 2/5");
+    expect(queue.querySelector("i")?.getAttribute("style")).toMatch(/width:\s*40%/);
+    // 只有正在生成的那一段亮边，另一段不受影响
+    expect(panel.container.querySelectorAll('article[data-running="true"]')).toHaveLength(1);
+    expect(panel.getAllByText("H3")[0].closest("button")?.querySelector(".vp-spin")).toBeTruthy();
+  });
+
+  it("点「全部生成」的那颗按钮亮着转圈，另一颗不受影响，跑完恢复", async () => {
+    let calls = 0;
+    let finish!: (value: SegmentRecord) => void;
+    vi.spyOn(videoPromptApi, "segment").mockImplementation(() => {
+      calls += 1;
+      if (calls > 1) return Promise.resolve(seg(22, 2, "seedance2", "【风格】排队的第二段"));
+      return new Promise(resolve => { finish = resolve; });
+    });
+    const panel = render(VideoPromptPanel, { videoId: 5, filename: "clip.mp4", durationSeconds: 30 });
+    await waitFor(() => expect(panel.getByText("【风格】写实，15 秒，16:9")).toBeTruthy());
+    const all = panel.getByRole("button", { name: "全部生成（Seedance 2.0）" });
+    const both = panel.getByRole("button", { name: "全部生成（两种）" });
+    await fireEvent.click(all);
+    await waitFor(() => expect(all.querySelector(".vp-spin")).toBeTruthy());
+    expect(all.getAttribute("data-busy")).toBe("true");
+    expect(all.hasAttribute("disabled")).toBe(true);   // 期间不能再点，但按钮保持亮着
+    expect(both.querySelector(".vp-spin")).toBeNull();
+    expect(both.hasAttribute("data-busy")).toBe(false);
+    expect(panel.getByTestId("queue-progress").textContent).toContain("串行生成 0/2");
+    finish(seg(21, 1, "seedance2", "【风格】跑完的第一段"));
+    await waitFor(() => expect(panel.queryByTestId("queue-progress")).toBeNull());
+    expect(all.hasAttribute("data-busy")).toBe(false);
+    expect(calls).toBe(2);
+  });
+
+  it("反推分镜方案时给出等待卡片与已等秒数", async () => {
+    videoPromptJobs.set({ "plan:5": { running: true, startedAt: Date.now() - 3000 } });
+    vi.mocked(videoPromptApi.history).mockResolvedValue(history([]));
+    const panel = render(VideoPromptPanel, { videoId: 5, filename: "clip.mp4", durationSeconds: 30 });
+    await waitFor(() => expect(panel.getByTestId("plan-progress")).toBeTruthy());
+    const card = panel.getByTestId("plan-progress");
+    expect(card.textContent).toContain("正在反推分镜方案");
+    expect(card.textContent).toContain("已等 3 秒");
+    expect(card.textContent).toContain("1 次模型调用");
+    const button = panel.getByRole("button", { name: /拆分镜方案/ });
+    expect(button.hasAttribute("disabled")).toBe(true);
+    expect(button.querySelector(".vp-spin")).toBeTruthy();
   });
 
   it("服务端在跑时禁用生成按钮", async () => {

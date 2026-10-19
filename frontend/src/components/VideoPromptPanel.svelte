@@ -2,8 +2,8 @@
   import { onMount } from "svelte";
   import { modelConfigs, refreshReverseConfig } from "../lib/reverse-prompts";
   import {
-    H3_MODES, H3_MODE_LABELS, H3_MODE_HINTS, TARGETS, TARGET_LABELS, TRANSLATION_LABELS, errorMessage,
-    generatePlan,
+    H3_MODES, H3_MODE_LABELS, H3_MODE_HINTS, TARGETS, TARGET_LABELS, TRANSLATION_LABELS, elapsedText,
+    errorMessage, generatePlan,
     generateSegments, planKey,
     refreshVideoPromptSettings, secondText, secondsInputToMs, secondsRangeText, segmentKey, segmentQueue,
     translatePrompt, translationJobs, translationKey, translationOf, videoPromptApi, videoPromptJobs,
@@ -46,18 +46,22 @@
   let openFrames = $state<Record<string, boolean>>({});
   /** H3 模式说明收在问号里：悬停/聚焦自动展开，点一下也能打开（触屏没有 hover）。 */
   let modeHelpOpen = $state(false);
+  /** 队列在跑时被点的是哪个"全部生成"，让那个按钮自己亮起来转圈。 */
+  let allScope = $state<"tab" | "both" | null>(null);
   /** 每段每种格式各自决定看不看译文，切段切格式互不影响。 */
   let shownTranslation = $state<Record<string, boolean>>({});
   let loadSequence = 0;
 
   const prefs = $derived($videoPromptSettings);
   const planJob = $derived($videoPromptJobs[planKey(videoId)]);
+  const planRunning = $derived(!!planJob?.running);
   const queue = $derived($segmentQueue);
   const run = $derived(runs.find(item => item.id === activeRunId) ?? runs[0] ?? null);
   const units = $derived(run?.units ?? []);
   const running = $derived(!!planJob?.running || !!queue || serverRunning);
   const planError = $derived(error || planJob?.error || (run && run.status === "failed" ? run.error : ""));
-  const queueText = $derived(queue && queue.total > 1 ? `${queue.done}/${queue.total}` : "");
+  /** 等待计时靠这个 tick 走（只在有任务在跑时启动定时器），界面才知道"没卡住"。 */
+  let now = $state(Date.now());
   const secondsText = $derived(durationSeconds ? `时长 ${secondText(durationSeconds * 1000)} 秒` : "整段视频");
   const baseName = $derived(filename.replace(/\.[^.]+$/, "") || `视频${videoId}`);
 
@@ -77,6 +81,12 @@
   $effect(() => {
     const fresh = planJob?.run;
     if (fresh && fresh.id !== activeRunId) { activeRunId = fresh.id; void loadHistory(videoId); }
+  });
+  $effect(() => {
+    if (!running) return;
+    now = Date.now();
+    const timer = setInterval(() => { now = Date.now(); }, 250);
+    return () => clearInterval(timer);
   });
   $effect(() => {
     if (!serverRunning) return;
@@ -123,6 +133,17 @@
 
   function jobFor(index: number, target: PromptTarget) {
     return run ? $videoPromptJobs[segmentKey(run.id, index, target)] : undefined;
+  }
+  /** 这一段这个格式是不是正在生成（按钮上的小转圈与卡片高亮都看它）。 */
+  function busyFor(index: number, target: PromptTarget) {
+    return !!jobFor(index, target)?.running;
+  }
+  function elapsedOf(startedAt?: number) {
+    return elapsedText(startedAt, now);
+  }
+  /** 串行队列里当前是第几项：已完成数 + 1，就是正在跑的那一项。 */
+  function queuePosition() {
+    return queue && queue.total > 1 ? Math.min(queue.done + 1, queue.total) : 0;
   }
   function recordFor(index: number, target: PromptTarget): SegmentRecord | undefined {
     const unit = units.find(item => item.index === index);
@@ -176,9 +197,9 @@
     finally { deletingId = null; }
   }
 
-  async function generate(indexes: number[], targets: PromptTarget[]) {
+  async function generate(indexes: number[], targets: PromptTarget[], scope: "tab" | "both" | null = null) {
     if (!run || !modelId) return;
-    error = "";
+    error = ""; allScope = scope;
     const failures = await generateSegments(videoId, run.id, indexes, targets, {
       h3_mode: h3Mode, model_config_id: modelId,
     });
@@ -287,9 +308,23 @@
       <label class="block text-[11px] text-muted">听到的声音 / 台词原文（选填，避免猜错口型与配乐）
         <textarea class="vp-field" aria-label="声音与台词" rows="2" placeholder="例：女声普通话说「……」，无背景音乐" bind:value={soundNote} disabled={running}></textarea>
       </label>
-      <button class="vp-button vp-primary" disabled={running || !modelId} onclick={buildPlan}>
-        {planJob?.running ? "正在拆分镜方案…" : "反推分镜方案"}
+      <button class="vp-button vp-primary" disabled={running || !modelId}
+        data-busy={planRunning ? "true" : undefined} onclick={buildPlan}>
+        {#if planRunning}<span class="vp-spin vp-spin-sm" aria-hidden="true"></span>{/if}
+        {planRunning ? "正在拆分镜方案…" : "反推分镜方案"}
       </button>
+      {#if planRunning}
+        <div class="vp-progress" role="status" aria-live="polite" data-testid="plan-progress">
+          <div class="vp-progress-top">
+            <span class="vp-spin" aria-hidden="true"></span>
+            <span class="vp-progress-title">正在反推分镜方案</span>
+            {#if elapsedOf(planJob?.startedAt)}<span class="vp-progress-time">已等 {elapsedOf(planJob?.startedAt)}</span>{/if}
+          </div>
+          <p class="vp-progress-note">镜头切点已由本机 ffmpeg 算好，模型正在写全局锚点与每段职责——这是 1 次模型调用，通常十几到几十秒。</p>
+          <span class="vp-bar" aria-hidden="true"><i></i></span>
+          <span class="vp-skeleton" aria-hidden="true"><i style="width:86%"></i><i style="width:64%"></i></span>
+        </div>
+      {/if}
       <p class="text-[10px] text-muted">
         方案与格式无关：1 次调用；之后每段正文每种格式各 1 次调用。画面按镜头切点自动分段，每段不超 {prefs?.max_unit_seconds ?? 15} 秒。
       </p>
@@ -333,10 +368,20 @@
           {/each}
         </div>
         <button class="vp-button" disabled={running || !units.length || !modelId}
-          onclick={() => generate(units.map(u => u.index), [tab])}>全部生成（{TARGET_LABELS[tab]}）</button>
+          data-busy={queue && allScope === "tab" ? "true" : undefined}
+          onclick={() => generate(units.map(u => u.index), [tab], "tab")}>{#if queue && allScope === "tab"}<span class="vp-spin vp-spin-sm" aria-hidden="true"></span>{/if}全部生成（{TARGET_LABELS[tab]}）</button>
         <button class="vp-button" disabled={running || !units.length || !modelId}
-          onclick={() => generate(units.map(u => u.index), ["seedance2", "h3"])}>全部生成（两种）</button>
-        {#if queueText}<span class="text-[10px] text-muted" role="status">串行 {queueText}</span>{/if}
+          data-busy={queue && allScope === "both" ? "true" : undefined}
+          onclick={() => generate(units.map(u => u.index), ["seedance2", "h3"], "both")}>{#if queue && allScope === "both"}<span class="vp-spin vp-spin-sm" aria-hidden="true"></span>{/if}全部生成（两种）</button>
+        {#if queue && queue.total > 1}
+          <div class="vp-queue" role="status" aria-live="polite" data-testid="queue-progress">
+            <span class="vp-spin" aria-hidden="true"></span>
+            <span class="vp-queue-text">串行生成 {queue.done}/{queue.total}</span>
+            <span class="vp-queue-bar" aria-hidden="true">
+              <i style="width:{Math.round((queue.done / Math.max(1, queue.total)) * 100)}%"></i>
+            </span>
+          </div>
+        {/if}
       </div>
 
       {#if tab === "h3"}
@@ -375,7 +420,8 @@
           {@const framesKey = `${run.id}:` + unit.index}
           {@const refs = referencesOf(record, unit)}
           {@const framesOpen = openFrames[framesKey] ?? !!record}
-          <article class="rounded border border-border bg-surface p-2 space-y-2">
+          <article class="rounded border border-border bg-surface p-2 space-y-2"
+            data-running={job?.running ? "true" : undefined}>
             <div class="flex items-start justify-between gap-2">
               <div class="min-w-0">
                 <div class="text-[11px] font-semibold">
@@ -390,11 +436,18 @@
               </div>
               <div class="flex gap-1 shrink-0">
                 <button class="vp-button" disabled={running || !modelId}
-                  onclick={() => generate([unit.index], ["seedance2"])}>Seedance</button>
+                  data-busy={busyFor(unit.index, "seedance2") ? "true" : undefined}
+                  onclick={() => generate([unit.index], ["seedance2"])}>
+                  {#if busyFor(unit.index, "seedance2")}<span class="vp-spin vp-spin-sm" aria-hidden="true"></span>{/if}Seedance</button>
                 <button class="vp-button" disabled={running || !modelId}
-                  onclick={() => generate([unit.index], ["h3"])}>H3</button>
+                  data-busy={busyFor(unit.index, "h3") ? "true" : undefined}
+                  onclick={() => generate([unit.index], ["h3"])}>
+                  {#if busyFor(unit.index, "h3")}<span class="vp-spin vp-spin-sm" aria-hidden="true"></span>{/if}H3</button>
                 <button class="vp-button" disabled={running || !modelId}
-                  onclick={() => generate([unit.index], ["seedance2", "h3"])}>两种都要</button>
+                  data-busy={busyFor(unit.index, "seedance2") || busyFor(unit.index, "h3") ? "true" : undefined}
+                  onclick={() => generate([unit.index], ["seedance2", "h3"])}>
+                  {#if busyFor(unit.index, "seedance2") || busyFor(unit.index, "h3")}
+                    <span class="vp-spin vp-spin-sm" aria-hidden="true"></span>{/if}两种都要</button>
               </div>
             </div>
 
@@ -442,7 +495,22 @@
             {/if}
 
             {#if job?.running}
-              <p class="text-[11px] text-muted" role="status">正在生成 {TARGET_LABELS[tab]} 正文…</p>
+              <div class="vp-progress" role="status" aria-live="polite" data-testid={`progress-${unit.index}-${tab}`}>
+                <div class="vp-progress-top">
+                  <span class="vp-spin" aria-hidden="true"></span>
+                  <span class="vp-progress-title">正在生成 {TARGET_LABELS[tab]} 正文</span>
+                  {#if elapsedOf(job.startedAt)}<span class="vp-progress-time">已等 {elapsedOf(job.startedAt)}</span>{/if}
+                </div>
+                <p class="vp-progress-note">
+                  {#if queuePosition()}队列第 {queuePosition()}/{queue?.total} 项 · {/if}
+                  本段 {secondText(unit.end_ms - unit.start_ms)} 秒 · 1 次模型调用，通常十几到几十秒 ·
+                  其余段排队中，可以切到另一种格式先做别的
+                </p>
+                <span class="vp-bar" aria-hidden="true"><i></i></span>
+                <span class="vp-skeleton" aria-hidden="true">
+                  <i style="width:92%"></i><i style="width:78%"></i><i style="width:52%"></i>
+                </span>
+              </div>
             {:else if job?.error && !record}
               <div class="flex items-center gap-2 text-[11px] text-danger">
                 <span>{job.error}</span>
@@ -524,6 +592,7 @@
                         <text x="7.5" y="11.6" text-anchor="middle" font-size="8" fill="currentColor" stroke="none">中</text>
                         <text x="16.5" y="19.6" text-anchor="middle" font-size="8" fill="currentColor" stroke="none">A</text>
                       </svg>
+                      {#if trJob(record)?.running}<span class="vp-spin vp-spin-sm" aria-hidden="true"></span>{/if}
                       <span>{trJob(record)?.running ? "翻译中" : showing ? "原文" : "译文"}</span>
                     </button>
                   </div>
@@ -607,6 +676,10 @@
     font-size: 11px; padding: 5px 8px; border: 1px solid #3f3f46; border-radius: 5px; background: #202024;
   }
   .vp-button:disabled { opacity: .5; cursor: default; }
+  /* 正在跑的那颗按钮不变灰，反而亮起来：一眼看出"你点的这一下确实开始了"。 */
+  .vp-button[data-busy="true"]:disabled {
+    opacity: 1; color: #fda4a4; border-color: #f24e4e; background: #241416;
+  }
   .vp-primary:enabled:hover, .vp-primary:enabled:focus-visible {
     background-color: #f24e4e; color: #0e0e10; border-color: #f24e4e;
   }
@@ -644,6 +717,45 @@
   .vp-ref-label {
     font-size: 10px; padding: 1px 6px; border-radius: 4px; color: #fbbf24;
     background: #1f1a10; border: 1px solid #4a3a12; width: fit-content;
+  }
+  /* 生成中的反馈：转圈 + 走秒 + 进度条 + 骨架线。一次模型调用没有可上报的百分比，
+     所以"仍在推进"的证据靠动画与计时，队列进度条才是真百分比。 */
+  .vp-spin {
+    width: 12px; height: 12px; flex: none; display: inline-block; border-radius: 999px;
+    border: 2px solid rgba(242, 78, 78, .22); border-top-color: #f24e4e;
+    animation: vp-spin .7s linear infinite; vertical-align: -2px;
+  }
+  .vp-spin-sm { width: 10px; height: 10px; border-width: 1.5px; }
+  @keyframes vp-spin { to { transform: rotate(360deg); } }
+  .vp-progress {
+    display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 6px;
+    border: 1px solid #5d3a1a; background: linear-gradient(180deg, #1c1510, #14110f);
+  }
+  .vp-progress-top { display: flex; align-items: center; gap: 6px; }
+  .vp-progress-title { font-size: 11px; font-weight: 600; color: #fda4a4; }
+  .vp-progress-time { margin-left: auto; font-size: 10px; color: #a1a1aa; font-variant-numeric: tabular-nums; }
+  .vp-progress-note { font-size: 10px; line-height: 1.5; color: #a1a1aa; }
+  .vp-bar { position: relative; display: block; height: 3px; border-radius: 999px; background: #2a2a30; overflow: hidden; }
+  .vp-bar i {
+    position: absolute; top: 0; bottom: 0; left: 0; width: 34%; border-radius: 999px;
+    background: linear-gradient(90deg, transparent, #f24e4e, transparent);
+    animation: vp-sweep 1.2s ease-in-out infinite;
+  }
+  @keyframes vp-sweep { 0% { transform: translateX(-110%); } 100% { transform: translateX(320%); } }
+  .vp-skeleton { display: flex; flex-direction: column; gap: 4px; }
+  .vp-skeleton i {
+    height: 8px; border-radius: 3px; background: linear-gradient(90deg, #1d1d21 0%, #2e2e36 50%, #1d1d21 100%);
+    background-size: 200% 100%; animation: vp-shimmer 1.4s linear infinite;
+  }
+  @keyframes vp-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+  .vp-queue { display: flex; align-items: center; gap: 6px; flex: 1 1 160px; min-width: 150px; }
+  .vp-queue-text { font-size: 10px; color: #fda4a4; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .vp-queue-bar { flex: 1; height: 3px; border-radius: 999px; background: #2a2a30; overflow: hidden; }
+  .vp-queue-bar i { display: block; height: 100%; background: #f24e4e; transition: width .25s ease; }
+  article[data-running="true"] { border-color: #f24e4e; animation: vp-breathe 1.7s ease-in-out infinite; }
+  @keyframes vp-breathe { 0%, 100% { box-shadow: 0 0 0 0 rgba(242, 78, 78, .22); } 50% { box-shadow: 0 0 0 3px rgba(242, 78, 78, .1); } }
+  @media (prefers-reduced-motion: reduce) {
+    .vp-spin, .vp-bar i, .vp-skeleton i, article[data-running="true"] { animation: none; }
   }
   .vp-body {
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;

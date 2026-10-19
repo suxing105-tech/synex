@@ -2,10 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { get } from "svelte/store";
 
 vi.mock("../lib/api", () => ({ http: vi.fn() }));
+vi.mock("../lib/toast", () => ({
+  pushToast: vi.fn(() => 1), updateToast: vi.fn(), dismissToast: vi.fn(),
+}));
 
 import { http } from "../lib/api";
+import { dismissToast, pushToast, updateToast } from "../lib/toast";
 import {
-  countSlots, expandSegments, generatePlan, generateSegments, overSlots, plannedReferences, planKey,
+  countSlots, elapsedText, expandSegments, generatePlan, generateSegments, overSlots, plannedReferences,
+  planKey,
   refFileTag, secondText, secondsInputToMs, secondsRangeText, segmentKey, segmentQueue, SLOT_LIMITS,
   translatePrompt, translationJobs, translationKey, translationOf, unitFrameAt, videoPromptApi,
   videoPromptJobs, wholeSecond,
@@ -33,8 +38,15 @@ const run: PromptRun = {
   ],
 };
 
+const say = vi.mocked(pushToast);
+const sayUpdate = vi.mocked(updateToast);
+const sayDone = vi.mocked(dismissToast);
+
 beforeEach(() => {
   call.mockReset();
+  say.mockClear();
+  sayUpdate.mockClear();
+  sayDone.mockClear();
   videoPromptJobs.set({});
   translationJobs.set({});
   segmentQueue.set(null);
@@ -195,6 +207,60 @@ describe("分镜方案请求", () => {
   });
 });
 
+describe("生成反馈 Toast", () => {
+  it("多段串行时逐段报第几项，结束时换成成功", async () => {
+    call.mockImplementation(async (_path: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { target: "seedance2" | "h3" };
+      return record(1, 1, body.target);
+    });
+    await generateSegments(5, 7, [1, 2], ["h3"]);
+    expect(say).toHaveBeenCalledTimes(1);
+    expect(say.mock.calls[0][1]?.kind).toBe("progress");
+    const messages = sayUpdate.mock.calls.map(c => c[1].message ?? "");
+    expect(messages[0]).toContain("P01 · MiniMax H3（第 1/2 项）");
+    expect(messages[1]).toContain("P02 · MiniMax H3（第 2/2 项）");
+    expect(messages.at(-1)).toBe("2 段正文已全部生成");
+    expect(sayUpdate.mock.calls.at(-1)?.[1].kind).toBe("success");
+    expect(sayUpdate.mock.calls.at(-1)?.[1].progress).toBeUndefined();
+  });
+
+  it("单段也报格式名，失败时说清成功几段失败几段", async () => {
+    call.mockRejectedValue({ detail: "模型超时" });
+    await generateSegments(5, 7, [1], ["seedance2"]);
+    expect(say.mock.calls[0][0]).toBe("正在生成 Seedance 2.0 正文 · P01");
+    const last = sayUpdate.mock.calls.at(-1);
+    expect(last?.[1].kind).toBe("error");
+    expect(last?.[1].message).toContain("成功 0 段，失败 1 段");
+  });
+
+  it("结果条会自己消失，不会堆在右下角", async () => {
+    vi.useFakeTimers();
+    try {
+      call.mockResolvedValue(run);
+      await generatePlan(5, {});
+      expect(sayDone).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(2599);
+      expect(sayDone).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(sayDone).toHaveBeenCalledWith(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("分镜方案：先挂进度，结束时报段数或失败原因", async () => {
+    call.mockResolvedValue(run);
+    await generatePlan(5, { model_config_id: 1 });
+    expect(say.mock.calls[0][0]).toContain("正在反推分镜方案");
+    expect(say.mock.calls[0][1]?.kind).toBe("progress");
+    expect(sayUpdate.mock.calls.at(-1)?.[1].message).toBe("分镜方案已生成：2 段");
+    say.mockClear(); sayUpdate.mockClear();
+    call.mockRejectedValue({ detail: "模型超时" });
+    await generatePlan(5, {});
+    expect(sayUpdate.mock.calls.at(-1)?.[1].message).toBe("分镜方案失败：模型超时");
+  });
+});
+
 describe("整数秒口径", () => {
   it("秒数一律四舍五入成整数", () => {
     expect(secondText(15116)).toBe("15");
@@ -202,6 +268,13 @@ describe("整数秒口径", () => {
     expect(secondText(11300)).toBe("11");
     expect(secondsRangeText(0, 15116)).toBe("0–15 秒");
     expect(wholeSecond(14.75)).toBe(15);
+  });
+
+  it("等待秒数只在有起点时显示，超过一分钟带分", () => {
+    expect(elapsedText(undefined, 5000)).toBe("");
+    expect(elapsedText(1000, 500)).toBe("");            // 时钟回拨也不显示负数
+    expect(elapsedText(0, 8_000)).toBe("8 秒");
+    expect(elapsedText(0, 65_000)).toBe("1 分 05 秒");
   });
 
   it("区间输入只认整数秒", () => {

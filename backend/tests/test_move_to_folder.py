@@ -223,6 +223,54 @@ def test_single_failure_does_not_block_batch(tmp_data_dir):
     assert (Path(folder["path"]) / "good.png").is_file()
 
 
+def test_cross_volume_move_falls_back_to_copy(tmp_data_dir, monkeypatch):
+    """跨磁盘（例如 F: 监听目录 → C: 图库目录）：复制后删源，不留 .moving 残留。"""
+    init_pool()
+    source = make_png(tmp_data_dir / "far.png")
+    image_id = _index(source)
+    folder = folder_storage.create_folder("HOF", None)
+    real_rename = Path.rename
+    state = {"first": True}
+
+    def fake_rename(self, target):
+        if state["first"]:
+            state["first"] = False
+            error = OSError("cross-device link")
+            error.winerror = 17
+            raise error
+        return real_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", fake_rename)
+
+    result = folder_storage.move_images([image_id], folder["id"])
+
+    assert [item["id"] for item in result["moved"]] == [image_id]
+    assert (Path(folder["path"]) / "far.png").is_file()
+    assert not source.exists()
+    assert [p.name for p in Path(folder["path"]).iterdir()] == ["far.png"]
+
+
+def test_locked_file_fails_only_itself(tmp_data_dir, monkeypatch):
+    """文件被占用：中文原因，且不改索引、不搬文件。"""
+    init_pool()
+    source = make_png(tmp_data_dir / "busy.png")
+    image_id = _index(source)
+    folder = folder_storage.create_folder("HOF", None)
+
+    def deny(self, target):
+        raise PermissionError(13, "denied")
+
+    monkeypatch.setattr(Path, "rename", deny)
+
+    result = folder_storage.move_images([image_id], folder["id"])
+
+    assert result["moved"] == []
+    assert "占用" in result["failed"][0]["error"]
+    assert source.is_file()
+    assert _db_path(image_id) == folder_storage.repository._normalize_path(source.resolve())
+    assert _folders_of(image_id) == set()
+
+
 # ---------- 文件监听抑制 ----------
 
 

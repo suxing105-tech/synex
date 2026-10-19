@@ -973,7 +973,9 @@ def test_references_for_ref2va_lists_only_upload_slots():
     refs = service.references_for(REF2VA_OK, target="h3", h3_mode="ref2va", unit=UNIT_FOLLOW)
     assert [item["label"] for item in refs] == ["<Picture 1>", "<Picture 2>"]
     assert [item["slot"] for item in refs] == ["picture", "picture"]
-    assert "front-facing full-body view" in refs[1]["what"] and refs[1]["frame"] is None
+    # 界面上不能出现英文说明：中文缺失时用服务端兜底，英文原文只留在 what_en 里做悬停提示
+    assert "自备" in refs[1]["what"] and "front-facing full-body view" in refs[1]["what_en"]
+    assert refs[1]["frame"] is None
     assert refs[0]["frame"] == {"index": 2, "edge": "first"}
     assert "上一段生成结果的最后一帧" in refs[0]["warn"]
     # <Subject N> 是正文里的内容标签、不是文件；summary 顺带提到的编号也不算素材
@@ -998,7 +1000,7 @@ def test_references_for_ref2va_orders_slots_and_recovers_loose_prose():
     prose = service.references_for("<Video 1> is the source clip, kept as-is", target="h3",
                                    h3_mode="ref2va", unit=UNIT_FIRST)
     assert [item["label"] for item in prose] == ["<Video 1>"]
-    assert "source clip" in prose[0]["what"]
+    assert "source clip" in prose[0]["what_en"] and "上一段" in prose[0]["what"]
     loose = service.references_for("detailed_description: follow reference image 2 closely.",
                                    target="h3", h3_mode="ref2va", unit=UNIT_FIRST)
     assert [item["label"] for item in loose] == ["<Picture 2>"]
@@ -1042,6 +1044,9 @@ def test_segment_h3_ref2va_contract_and_t2va_lists_nothing(client, video_id, mon
     plain = generate(client, video_id, run["id"], 2, "h3", "t2va")
     assert plain["references"] == []
     assert "Ref2VA" not in captured[1]["instruction"]
+    # 只有 Ref2VA 才向模型索要中文素材说明，其它模式的说法由服务端固定生成
+    assert "reference_notes" in captured[0]["system"]
+    assert "reference_notes" not in captured[1]["system"]
 
 
 def test_segment_ref2va_warns_when_sections_are_missing(client, video_id, monkeypatch):
@@ -1071,6 +1076,48 @@ def test_history_versions_and_edits_carry_references(client, video_id, monkeypat
     assert [item["label"] for item in edited["references"]] == ["@图片 1", "@图片 2"]
     assert edited["references"][1]["frame"] == {"index": 1, "edge": "last"}
     assert first["references"][1:] == []
+
+
+def test_only_ref2va_asks_the_model_for_chinese_slot_notes():
+    assert "reference_notes" in service.segment_output_rule("h3", "ref2va")
+    assert service.segment_output_rule("h3", "ref2va") != service.SEGMENT_OUTPUT_RULE
+    for mode in ("t2va", "i2va", "fl2va"):
+        assert service.segment_output_rule("h3", mode) == service.SEGMENT_OUTPUT_RULE
+    assert service.segment_output_rule("seedance2", None) == service.SEGMENT_OUTPUT_RULE
+
+
+def test_ref2va_notes_prefer_model_chinese_and_keep_english_as_hint():
+    notes = [{"slot": "<Picture 2>", "zh": "绿发少女正面全身立绘，纯色背景，给 <Subject 1> 用"},
+             {"slot": "picture 1", "zh": "上一段成品视频的最后一帧"},
+             {"slot": "<Subject 2>", "zh": "不是上传编号，应被忽略"},
+             {"slot": "<Picture 1>", "zh": "   "}]
+    refs = service.references_for(REF2VA_OK, target="h3", h3_mode="ref2va", unit=UNIT_FOLLOW, notes=notes)
+    assert [item["what"] for item in refs] == [
+        "上一段成品视频的最后一帧", "绿发少女正面全身立绘，纯色背景，给 <Subject 1> 用"]
+    assert refs[1]["what_en"].startswith("is reference image 2")
+    assert refs[0]["what_en"].startswith("is reference image 1")
+
+
+def test_ref2va_without_notes_never_shows_english_as_main_text():
+    refs = service.references_for(REF2VA_OK, target="h3", h3_mode="ref2va", unit=UNIT_FOLLOW)
+    assert refs and all(re.search(r"[\u4e00-\u9fff]", item["what"]) for item in refs)
+    assert all(item["what_en"] for item in refs)   # 英文原文留着做悬停提示
+
+
+def test_ref2va_slot_notes_are_stored_and_survive_edits(client, video_id, monkeypatch):
+    run = seed_plan(client, monkeypatch, video_id)
+    captured = []
+    stub_model(monkeypatch, {"prompt": REF2VA_OK, "risk_terms": [], "reference_notes": [
+        {"slot": "<Picture 1>", "zh": "上一段成品视频的最后一帧"},
+        {"slot": "<Picture 2>", "zh": "绿发少女正面全身立绘，纯色背景"}]}, captured)
+    record = generate(client, video_id, run["id"], 1, "h3", "ref2va")
+    notes = {item["label"]: item for item in record["references"]}
+    assert notes["<Picture 2>"]["what"] == "绿发少女正面全身立绘，纯色背景"
+    assert "front-facing full-body view" in notes["<Picture 2>"]["what_en"]
+    edited = client.post(segment_url(video_id, run["id"], 1) + "/edits",
+                         json={"target": "h3", "prompt": REF2VA_OK + "\n"}).json()
+    assert {item["label"]: item["what"] for item in edited["references"]}[
+        "<Picture 2>"] == "绿发少女正面全身立绘，纯色背景"
 
 
 def test_settings_accept_ref2va_as_default_h3_mode(client):

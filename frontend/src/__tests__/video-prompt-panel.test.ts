@@ -147,7 +147,7 @@ describe("视频反推面板", () => {
     await fireEvent.click(panel.getByText("MiniMax H3"));
     await waitFor(() => expect(panel.queryByText(/本段需要的参考/)).toBeNull());
     expect(panel.queryByLabelText("复制P01 首帧")).toBeNull();
-    expect(panel.getByText(/纯文本：正文不引用任何图片或视频/)).toBeTruthy();
+    expect(panel.getByText(/纯文本：正文不引用图片或视频/)).toBeTruthy();
     const mode = panel.container.querySelector<HTMLSelectElement>('select[aria-label="H3 模式"]')!;
     mode.value = "i2va";
     await fireEvent.change(mode, { target: { value: "i2va" } });
@@ -159,14 +159,34 @@ describe("视频反推面板", () => {
     expect(panel.getByText(/第 2 段起用上一段生成结果的末帧/)).toBeTruthy();
   });
 
+  it("H3 模式说明收进问号浮层，四种模式各一行", async () => {
+    const panel = render(VideoPromptPanel, { videoId: 5, filename: "clip.mp4", durationSeconds: 30 });
+    await waitFor(() => expect(panel.getByText("MiniMax H3")).toBeTruthy());
+    await fireEvent.click(panel.getByText("MiniMax H3"));
+    const card = panel.getByTestId("h3-mode-hints");
+    expect(card.textContent).toContain("纯文本：正文不引用图片或视频");
+    expect(card.textContent).toContain("首帧图：每段首行写");
+    expect(card.textContent).toContain("首尾帧：每段首行列出首帧与末帧");
+    expect(card.textContent).toContain("全参考：正文改成六段式");
+    expect(card.textContent).toContain("<Subject N> 只是正文里的内容标签");
+    // 悬停靠 CSS，触屏没有 hover，所以点一下也要能展开
+    const help = panel.container.querySelector(".vp-help")!;
+    expect(help.className).not.toContain("open");
+    await fireEvent.click(panel.getByLabelText("H3 模式说明"));
+    expect(help.className).toContain("open");
+  });
+
   it("Ref2VA 说明要自备哪些参考，并按正文声明逐条列出", async () => {
     const run = makeRun();
     run.units[0].current.h3 = seg(21, 1, "h3", "subject_definitions:", [
-      { label: "<Picture 1>", what: "is reference image 1 to upload: the first frame of this segment",
+      { label: "<Picture 1>", what: "本段首帧，本工具能直接给：用下方缩略图复制或存盘后按这个编号上传",
+        what_en: "is reference image 1 to upload: the first frame of this segment",
         frame: { index: 1, edge: "first" }, warn: null, slot: "picture" },
-      { label: "<Picture 2>", what: "is reference image 2 to upload: front-facing view of the host",
+      { label: "<Picture 2>", what: "绿发少女正面全身立绘，纯色背景",
+        what_en: "is reference image 2 to upload: front-facing view of the host",
         frame: null, warn: null, slot: "picture" },
-      { label: "<Audio 1>", what: "is reference audio 1 to upload: the voice timbre of the host",
+      { label: "<Audio 1>", what: "一段自备音频：锁说话人音色或背景配乐，按这个编号上传",
+        what_en: "is reference audio 1 to upload: the voice timbre of the host",
         frame: null, warn: null, slot: "audio" },
     ], "ref2va");
     vi.mocked(videoPromptApi.history).mockResolvedValue(history([run]));
@@ -180,8 +200,11 @@ describe("视频反推面板", () => {
     await waitFor(() => expect(panel.getByText("<Picture 2>")).toBeTruthy());
     // <Subject N> 是正文标签、不是文件，不进待上传清单
     expect(panel.queryByText(/^<Subject 1>$/)).toBeNull();
-    expect(panel.getByText(/图片最多/)).toBeTruthy();
-    expect(panel.getByText(/只是正文里的内容标签、不是文件/)).toBeTruthy();
+    // 清单说明一律中文，正文里的英文原文只在悬停提示里
+    expect(panel.getByText("绿发少女正面全身立绘，纯色背景")).toBeTruthy();
+    expect(panel.queryByText(/is reference image 2/)).toBeNull();
+    expect(panel.getByText("绿发少女正面全身立绘，纯色背景").getAttribute("title"))
+      .toBe("is reference image 2 to upload: front-facing view of the host");
     expect(panel.getByText(/本段需要的参考（图 2 · 视频 0 · 音频 1）/)).toBeTruthy();
     expect(panel.getByText("需要自备图片：本工具拿不到这张图，按上面的说明准备后按这个编号上传。")).toBeTruthy();
     expect(panel.getByText("需要自备音频：按上面的说明准备音频文件后按这个编号上传。")).toBeTruthy();

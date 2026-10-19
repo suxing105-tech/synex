@@ -183,13 +183,15 @@ async def generate_segment(video_id: int, run_id: int, index: int, payload: Segm
                                          anchors=run["anchors_text"], role=unit.get("role", ""),
                                          frames=relative, sound_note=run["sound_note"],
                                          total_units=len(units))
+        output_rule = service.segment_output_rule(target, h3_mode)
         text = await reverse_prompts.request_model(config, key, content, instruction,
-                                         output_rule=service.SEGMENT_OUTPUT_RULE)
-        prompt, terms, raw, status = service.parse_segment(text, target=target, h3_mode=h3_mode or "t2va", unit=unit)
+                                         output_rule=output_rule)
+        prompt, terms, raw, status, notes = service.parse_segment(
+            text, target=target, h3_mode=h3_mode or "t2va", unit=unit)
         record = service.create_record(run, segment_index=index, target=target, h3_mode=h3_mode, prompt=prompt,
                                        risk_terms=terms, raw_text=raw, status=status, source="generated",
-                                       parent_id=None, instruction=instruction + service.SEGMENT_OUTPUT_RULE,
-                                       config=config, frames=relative)
+                                       parent_id=None, instruction=instruction + output_rule,
+                                       config=config, frames=relative, notes=notes)
         return service.public_record_for(record, video_id, unit)
     finally:
         service.release_segment(run_id, index, target)

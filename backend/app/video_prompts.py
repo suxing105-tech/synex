@@ -109,6 +109,22 @@ SEGMENT_OUTPUT_RULE = (
     "仅返回 JSON 对象：{\"prompt\":\"完整提示词正文\",\"risk_terms\":[\"原词 → 建议词\"]}。"
     "prompt 不得为空，不得包含任何解释、前后缀或 Markdown 代码围栏。"
 )
+
+# Ref2VA 的「这个编号要放什么」是模型写在正文里的英文，界面不能把英文甩给用户，所以只有
+# 这一种模式在同一次调用里多要一份中文素材说明；其它模式的说明由服务端固定生成，不问模型。
+REF2VA_OUTPUT_EXTRA = (
+    ' 同时返回 "reference_notes":[{"slot":"<Picture 1>","zh":"这个编号要上传什么文件"}]：'
+    "为正文引用的每个上传编号（<Picture N> / <Video N> / <Audio N>）各写一条中文说明，"
+    "说清该文件是什么、画面内容要点、给哪些 <Subject N> 与镜头使用；slot 照抄正文里的编号写法，"
+    "zh 只写中文，中文不得出现在 prompt 正文里。"
+)
+
+
+def segment_output_rule(target, h3_mode) -> str:
+    """段正文的返回契约：只有 Ref2VA 需要额外索要中文素材说明。"""
+    if target == "h3" and h3_mode == "ref2va":
+        return SEGMENT_OUTPUT_RULE + REF2VA_OUTPUT_EXTRA
+    return SEGMENT_OUTPUT_RULE
 PLAN_OUTPUT_RULE = (
     "仅返回 JSON 对象：{\"anchors\":\"中文全局锚点\",\"unit_roles\":[{\"index\":1,\"role\":\"一句话职责\"}],"
     "\"risk_terms\":[\"原词 → 建议词\"]}。anchors 不得为空。"
@@ -214,6 +230,7 @@ CREATE TABLE IF NOT EXISTS video_prompt_records (
  status TEXT NOT NULL, source TEXT NOT NULL, parent_id INTEGER REFERENCES video_prompt_records(id) ON DELETE SET NULL,
  model_name TEXT NOT NULL DEFAULT '', model TEXT NOT NULL DEFAULT '', instruction TEXT NOT NULL DEFAULT '',
  frames_json TEXT NOT NULL DEFAULT '[]', fingerprint TEXT NOT NULL DEFAULT '',
+ notes_json TEXT NOT NULL DEFAULT '[]',
  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 CREATE TABLE IF NOT EXISTS video_prompt_translations (
@@ -241,8 +258,16 @@ def _defaults():
     }
 
 
+def _migrate_records(conn):
+    """老库补 notes_json：Ref2VA 的中文素材说明只有模型给的那一份，必须随版本存下来。"""
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(video_prompt_records)").fetchall()}
+    if "notes_json" not in cols:
+        conn.execute("ALTER TABLE video_prompt_records ADD COLUMN notes_json TEXT NOT NULL DEFAULT '[]'")
+
+
 def initialize(conn):
     conn.executescript(SCHEMA)
+    _migrate_records(conn)
     conn.execute(
         "INSERT OR IGNORE INTO video_prompt_settings(id,instruction_plan,instruction_seedance,instruction_h3,"
         "default_h3_mode,frame_limit,max_unit_seconds,max_units) VALUES(1,?,?,?,?,?,?,?)",
@@ -644,7 +669,7 @@ def segment_request(target: str, h3_mode: str, unit: dict, *, meta, anchors: str
     parts.extend(_image_parts(frames))
     if sound_note:
         parts.append({"type": "text", "text": "用户提供的真实声音信息（必须原样采信，不要改写台词原文）：" + sound_note})
-    parts.append({"type": "text", "text": SEGMENT_OUTPUT_RULE})
+    parts.append({"type": "text", "text": segment_output_rule(target, h3_mode)})
     return parts
 
 
@@ -678,6 +703,21 @@ def _risk_terms(value) -> list[str]:
         return []
     terms = [str(item).strip() for item in value if str(item).strip()]
     return terms[:20]
+
+
+def _notes(value) -> list[dict]:
+    """模型另给的中文素材说明 {"slot":"<Picture 2>","zh":"…"}，字段不齐的直接丢。"""
+    if not isinstance(value, list):
+        return []
+    notes: list[dict] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        slot = str(item.get("slot") or "").strip()
+        zh = str(item.get("zh") or "").strip()
+        if slot and zh:
+            notes.append({"slot": slot[:60], "zh": zh[:300]})
+    return notes[:20]
 
 
 def parse_plan(text, units):
@@ -750,13 +790,15 @@ def valid_prompt(prompt: str, target: str, h3_mode: str) -> bool:
 
 
 def parse_segment(text, *, target: str, h3_mode: str, unit: dict):
+    """返回 (正文, 风险词, 原文兜底, 状态, 中文素材说明)。"""
     parsed = _json_object(text)
     prompt = parsed.get("prompt") if parsed else None
     if not isinstance(prompt, str) or not prompt.strip():
-        return "", [], (text or "").strip(), "unstructured"
+        return "", [], (text or "").strip(), "unstructured", []
     prompt = apply_alignment(prompt.strip(), target, h3_mode, unit)
     status = "complete" if valid_prompt(prompt, target, h3_mode) else "format_warning"
-    return prompt, _risk_terms(parsed.get("risk_terms")), "", status
+    return (prompt, _risk_terms(parsed.get("risk_terms")), "", status,
+            _notes(parsed.get("reference_notes")))
 
 # ---------- 落库与读取 ----------
 
@@ -806,17 +848,18 @@ def find_unit(run, index: int) -> dict:
 
 
 def create_record(run, *, segment_index, target, h3_mode, prompt, risk_terms, raw_text, status,
-                  source, parent_id, instruction, config, frames):
+                  source, parent_id, instruction, config, frames, notes=()):
     with db.transaction() as conn:
         if not conn.execute("SELECT 1 FROM video_prompt_runs WHERE id=?", (run["id"],)).fetchone():
             raise HTTPException(404, "分镜方案已不存在")
         record_id = conn.execute(
             "INSERT INTO video_prompt_records(run_id,segment_index,target,h3_mode,prompt,risk_terms,raw_text,"
-            "status,source,parent_id,model_name,model,instruction,frames_json,fingerprint) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "status,source,parent_id,model_name,model,instruction,frames_json,fingerprint,notes_json) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (run["id"], segment_index, target, h3_mode, prompt, json.dumps(risk_terms, ensure_ascii=False),
              raw_text, status, source, parent_id, config["name"], config["model"], instruction,
-             json.dumps([ts for ts, _ in frames]), run["fingerprint"]),
+             json.dumps([ts for ts, _ in frames]), run["fingerprint"],
+             json.dumps(list(notes), ensure_ascii=False)),
         ).lastrowid
     return get_record(record_id)
 
@@ -848,11 +891,12 @@ def edit_record(run, *, segment_index, target, prompt, parent_id):
     with db.transaction() as conn:
         record_id = conn.execute(
             "INSERT INTO video_prompt_records(run_id,segment_index,target,h3_mode,prompt,risk_terms,raw_text,"
-            "status,source,parent_id,model_name,model,instruction,frames_json,fingerprint) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "status,source,parent_id,model_name,model,instruction,frames_json,fingerprint,notes_json) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            # 人工编辑不改素材编号，中文说明跟着上一版走；正文里新增的编号走兜底说明
             (run["id"], segment_index, target, parent["h3_mode"], prompt, "[]", "", "complete", "edited",
              parent["id"], parent["model_name"], parent["model"], parent["instruction"],
-             parent["frames_json"], parent["fingerprint"]),
+             parent["frames_json"], parent["fingerprint"], parent.get("notes_json") or "[]"),
         ).lastrowid
     return get_record(record_id)
 
@@ -890,6 +934,15 @@ def public_record_for(record, video_id, unit=None):
     return _public_record(record, current_fingerprint(video_id), get_translation(record["id"]), unit)
 
 
+def _record_notes(record) -> list[dict]:
+    """存下来的中文素材说明。老版本没有这一列时按空处理，界面会走兜底说明。"""
+    try:
+        raw = record["notes_json"]
+    except (IndexError, KeyError):
+        return []
+    return _notes(_safe_json(raw, []))
+
+
 def _public_record(record, fingerprint, translation=None, unit=None):
     try:
         terms = json.loads(record["risk_terms"] or "[]")
@@ -903,7 +956,8 @@ def _public_record(record, fingerprint, translation=None, unit=None):
         "created_at": record["created_at"],
         "translation": public_translation(translation),
         "references": references_for(record["prompt"] or record["raw_text"], target=record["target"],
-                                     h3_mode=record["h3_mode"], unit=unit) if unit else [],
+                                     h3_mode=record["h3_mode"], unit=unit,
+                                     notes=_record_notes(record)) if unit else [],
         "video_changed": bool(fingerprint) and record["fingerprint"] != fingerprint,
     }
 
@@ -1061,8 +1115,10 @@ H3_DEFINITION = re.compile(r"^<(Subject|Picture|Video|Audio)\s*(\d+)>[\s:：-]*(
 SLOT_SLOTS = {"Picture": "picture", "Video": "video", "Audio": "audio"}
 
 
-def _ref(label: str, what: str, frame=None, warn=None, slot="picture") -> dict:
-    return {"label": label, "what": what, "frame": frame, "warn": warn, "slot": slot}
+def _ref(label: str, what: str, frame=None, warn=None, slot="picture", what_en: str = "") -> dict:
+    """一条素材说明。what 一律中文（界面直接显示），what_en 是正文里的英文原文，只做悬停提示。"""
+    return {"label": label, "what": what, "frame": frame, "warn": warn, "slot": slot,
+            "what_en": what_en}
 
 
 def _seedance_references(prompt: str, unit: dict) -> list[dict]:
@@ -1117,13 +1173,50 @@ def _slot_frame(kind: str, number: str, unit: dict) -> tuple[dict | None, str | 
     return {"index": unit["index"], "edge": "first"}, None
 
 
-def _ref2va_references(prompt: str, unit: dict) -> list[dict]:
+_CJK = re.compile("[\\u4e00-\\u9fff]")
+
+# 模型没给中文说明时的兜底说法：至少讲清「这个编号去哪儿拿文件」，不把英文甩给用户。
+REF2VA_FALLBACKS = {
+    "Video": "上一段生成结果的视频成品，按这个编号上传，正文用它续接画面",
+    "Audio": "一段自备音频：锁说话人音色或背景配乐，按这个编号上传",
+}
+REF2VA_PICTURE_FALLBACK = {
+    True: "本段首帧，本工具能直接给：用下方缩略图复制或存盘后按这个编号上传",
+    False: "一张自备的参考图：画面内容看英文原文（把鼠标停在说明上）",
+}
+
+
+def _ref2va_fallback(kind: str, frame) -> str:
+    if kind != "Picture":
+        return REF2VA_FALLBACKS[kind]
+    return REF2VA_PICTURE_FALLBACK[bool(frame)]
+
+
+def _note_table(notes) -> dict[tuple[int, int], str]:
+    """模型给的中文素材说明按 (类型, 编号) 建索引；slot 写法不规范也能对上。"""
+    table: dict[tuple[int, int], str] = {}
+    for item in notes or []:
+        if not isinstance(item, dict):
+            continue
+        zh = str(item.get("zh") or "").strip()
+        matched = re.search(r"(Picture|Video|Audio)\s*(\d+)", str(item.get("slot") or ""),
+                            flags=re.IGNORECASE)
+        if not zh or not matched:
+            continue
+        kind = matched.group(1).title()
+        if kind in REF2VA_SLOTS:
+            table[(REF2VA_SLOTS.index(kind), int(matched.group(2)))] = zh
+    return table
+
+
+def _ref2va_references(prompt: str, unit: dict, notes=None) -> list[dict]:
     """Ref2VA 要上传的素材 = 正文声明的 Picture / Video / Audio 编号。
 
     <Subject N> 是正文内部的内容标签、不是文件，所以不进清单；但会用它把正文里
     只写成“reference image 1 / 参考图 2”这类散装说法还原成编号，老提示词也能读出清单。
     """
     body = _subject_definitions(prompt)
+    table = _note_table(notes)
     found: dict[tuple[int, int], dict] = {}
 
     def note(kind: str, number: str, what: str) -> None:
@@ -1134,7 +1227,11 @@ def _ref2va_references(prompt: str, unit: dict) -> list[dict]:
         if key in found:
             return
         frame, warn = _slot_frame(kind, number, unit)
-        found[key] = _ref(f"<{kind} {number}>", what, frame, warn, slot=SLOT_SLOTS[kind])
+        # 优先模型另给的中文；正文本来就是中文（兜底句）就照用；纯英文才退回服务端固定说法
+        english = "" if _CJK.search(what) else what
+        text = table.get(key) or (what if not english else _ref2va_fallback(kind, frame))
+        found[key] = _ref(f"<{kind} {number}>", text, frame, warn, slot=SLOT_SLOTS[kind],
+                          what_en=english)
 
     for line in body.splitlines():
         matched = H3_DEFINITION.match(line.strip())
@@ -1151,14 +1248,14 @@ def _ref2va_references(prompt: str, unit: dict) -> list[dict]:
     return list(found[key] for key in sorted(found))
 
 
-def references_for(prompt, *, target: str, h3_mode, unit: dict) -> list[dict]:
+def references_for(prompt, *, target: str, h3_mode, unit: dict, notes=None) -> list[dict]:
     """正文引用的参考素材清单。T2VA 与不引用图片的正文返回空表，界面就不再显示图。"""
     if target == "seedance2":
         return _seedance_references(prompt or "", unit)
     if h3_mode in (None, "t2va"):
         return []
     if h3_mode == "ref2va":
-        return _ref2va_references(prompt or "", unit)
+        return _ref2va_references(prompt or "", unit, notes)
     index = unit["index"]
     chain = index > 1
     items = [_ref("<Picture 1>",

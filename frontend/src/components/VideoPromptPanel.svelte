@@ -2,7 +2,8 @@
   import { onMount } from "svelte";
   import { modelConfigs, refreshReverseConfig } from "../lib/reverse-prompts";
   import {
-    H3_MODES, H3_MODE_LABELS, TARGETS, TARGET_LABELS, TRANSLATION_LABELS, errorMessage, generatePlan,
+    H3_MODES, H3_MODE_LABELS, H3_MODE_HINTS, TARGETS, TARGET_LABELS, TRANSLATION_LABELS, errorMessage,
+    generatePlan,
     generateSegments, planKey,
     refreshVideoPromptSettings, secondText, secondsInputToMs, secondsRangeText, segmentKey, segmentQueue,
     translatePrompt, translationJobs, translationKey, translationOf, videoPromptApi, videoPromptJobs,
@@ -43,6 +44,8 @@
   let confirmKey = $state<string | null>(null);
   let deletingId = $state<number | null>(null);
   let openFrames = $state<Record<string, boolean>>({});
+  /** H3 模式说明收在问号里：悬停/聚焦自动展开，点一下也能打开（触屏没有 hover）。 */
+  let modeHelpOpen = $state(false);
   /** 每段每种格式各自决定看不看译文，切段切格式互不影响。 */
   let shownTranslation = $state<Record<string, boolean>>({});
   let loadSequence = 0;
@@ -337,35 +340,29 @@
       </div>
 
       {#if tab === "h3"}
-        <div class="rounded border border-border bg-surface p-2 space-y-1">
-          <div class="flex items-center gap-2">
-            <span class="vp-label">H3 模式</span>
-            <select class="vp-field vp-field-inline min-w-0 flex-1" aria-label="H3 模式" value={h3Mode} disabled={running}
-              onchange={(e) => h3Mode = (e.currentTarget as HTMLSelectElement).value as H3Mode}>
+        <div class="flex items-center gap-2">
+          <span class="vp-label">H3 模式</span>
+          <select class="vp-field vp-field-inline min-w-0 flex-1" aria-label="H3 模式" value={h3Mode} disabled={running}
+            onchange={(e) => h3Mode = (e.currentTarget as HTMLSelectElement).value as H3Mode}>
+            {#each H3_MODES as mode}
+              <option value={mode}>{H3_MODE_LABELS[mode]}</option>
+            {/each}
+          </select>
+          <span class="vp-help" class:open={modeHelpOpen}>
+            <button class="vp-help-button" type="button" aria-label="H3 模式说明"
+              onclick={() => modeHelpOpen = !modeHelpOpen} onpointerleave={() => modeHelpOpen = false}>?</button>
+            <span class="vp-help-card" role="tooltip" data-testid="h3-mode-hints">
               {#each H3_MODES as mode}
-                <option value={mode}>{H3_MODE_LABELS[mode]}</option>
+                <span class="vp-help-row" data-testid={`mode-hint-${mode}`}>
+                  <b>{H3_MODE_LABELS[mode]}</b>
+                  <span>{H3_MODE_HINTS[mode]}</span>
+                </span>
               {/each}
-            </select>
-          </div>
-          <p class="text-[10px] text-muted">
-            {#if h3Mode === "t2va"}
-              纯文本：正文不引用任何图片或视频，段与段只靠锚点文字衔接。因此下面不列出参考素材。
-            {:else if h3Mode === "i2va"}
-              每段首行自动写成 <code>&lt;Picture 1&gt;</code> 对齐句：第 1 段用视频真实首帧，第 2 段起用上一段生成结果的末帧。
-            {:else if h3Mode === "fl2va"}
-              每段首行列出首帧与末帧两个 Picture 及其对齐时间，末帧取自上一段生成结果。
-            {:else}
-              全参考模式：正文改成六段式（subject_definitions / summary / retention_analysis / detailed_description /
-              overall_soundscape / non_diegetic_music）。要上传的素材只有三种编号：<code>&lt;Picture N&gt;</code> 图片最多
-              {SLOT_LIMITS.picture} 张、<code>&lt;Video N&gt;</code> 视频最多 {SLOT_LIMITS.video} 个、
-              <code>&lt;Audio N&gt;</code> 音频最多 {SLOT_LIMITS.audio} 个；够用就行，以图片为主，音频只在必须锁音色或配乐时加一条。
-              <code>&lt;Subject N&gt;</code> 只是正文里的内容标签、不是文件，不用为它准备任何东西。
-              生成后每段下方按编号列出「这个编号要放什么」，能直接给的帧带缩略图，照单上传即可。
-            {/if}
-          </p>
-          {#if h3Mode !== "t2va"}
-            <p class="text-[10px] text-muted">每段下方「本段需要的参考」列出正文引用的每一项；带图的就是本工具能直接给的帧，可复制或存成 `{baseName}-Picture1-P02-first.jpg` 再上传。</p>
-          {/if}
+              {#if h3Mode !== "t2va"}
+                <span class="vp-help-note">每段下方「本段需要的参考」按编号列出要上传的素材；带缩略图的帧本工具能直接给，复制或存成 <code>{baseName}-Picture1-P02-first.jpg</code> 这类文件名再上传。</span>
+              {/if}
+            </span>
+          </span>
         </div>
       {/if}
 
@@ -414,7 +411,9 @@
                       <li class="vp-ref" aria-label={`${tag} ${ref.label}`} data-testid={`ref-${unit.index}-${ref.label}`}>
                         <div class="flex items-baseline gap-2 flex-wrap">
                           <code class="vp-ref-label">{ref.label}</code>
-                          <span class="text-[10px] text-muted">{ref.what}</span>
+                          <!-- 说明一律中文；正文里的英文原文收进悬停提示，不让英文占据清单 -->
+                          <span class="text-[10px] text-muted {ref.what_en ? "cursor-help" : ""}"
+                            title={ref.what_en || undefined}>{ref.what}</span>
                         </div>
                         {#if ref.frame}
                           <VideoFrameThumb {videoId} runId={run.id} index={ref.frame.index} edge={ref.frame.edge}
@@ -619,6 +618,26 @@
   .vp-translate { display: inline-flex; align-items: center; gap: 4px; }
   .vp-icon { width: 15px; height: 15px; flex: none; }
   .vp-warn { color: #fbbf24; border-color: #78500f; }
+  /* H3 模式说明：一个问号 + 悬停浮层，四种模式各一行，不再占一整块正文 */
+  .vp-help { position: relative; display: inline-flex; flex: none; }
+  .vp-help-button {
+    width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid #3f3f46; border-radius: 999px; background: #202024; color: #a1a1aa;
+    font-size: 11px; font-weight: 600; line-height: 1;
+  }
+  .vp-help-button:hover, .vp-help-button:focus-visible { border-color: #f24e4e; color: #fda4a4; }
+  .vp-help-card {
+    position: absolute; top: calc(100% + 6px); right: 0; z-index: 40; width: 268px;
+    display: flex; flex-direction: column; gap: 6px; padding: 8px; background: #0e0e10;
+    border: 1px solid #3f3f46; border-radius: 6px; box-shadow: 0 10px 28px rgba(0, 0, 0, .55);
+    opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .12s ease;
+  }
+  .vp-help:hover .vp-help-card, .vp-help:focus-within .vp-help-card, .vp-help.open .vp-help-card {
+    opacity: 1; visibility: visible; pointer-events: auto;
+  }
+  .vp-help-row { display: flex; flex-direction: column; gap: 1px; font-size: 10px; line-height: 1.5; color: #a1a1aa; }
+  .vp-help-row b { color: #e4e4e7; }
+  .vp-help-note { font-size: 10px; line-height: 1.5; color: #71717a; }
   .vp-frames { border: 1px solid #2e2e33; border-radius: 5px; background: #121215; padding: 6px 8px; }
   .vp-frames-summary { font-size: 10px; color: #a1a1aa; cursor: pointer; user-select: none; }
   .vp-ref { display: flex; flex-direction: column; gap: 4px; }

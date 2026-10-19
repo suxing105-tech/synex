@@ -43,6 +43,15 @@ export type ReferenceSlot = "picture" | "video" | "audio";
 /** MiniMax H3 参考生视频的上传上限。 */
 export const SLOT_LIMITS: Record<ReferenceSlot, number> = { picture: 6, video: 3, audio: 3 };
 export const SLOT_LABELS: Record<ReferenceSlot, string> = { picture: "图", video: "视频", audio: "音频" };
+/** 问号弹层里的一句话说明：四种模式各一行，界面上不再占一整块正文。 */
+export const H3_MODE_HINTS: Record<H3Mode, string> = {
+  t2va: "纯文本：正文不引用图片或视频，段与段只靠锚点文字衔接，所以不列参考素材。",
+  i2va: "首帧图：每段首行写 <Picture 1> 对齐句——第 1 段用原片首帧，第 2 段起用上一段生成结果的末帧。",
+  fl2va: "首尾帧：每段首行列出首帧与末帧两个 Picture 及其对齐时间，末帧取自上一段生成结果。",
+  ref2va: `全参考：正文改成六段式（subject_definitions / summary / …）。要上传的素材只有三种编号：`
+    + `<Picture N> 最多 ${SLOT_LIMITS.picture} 张、<Video N> 最多 ${SLOT_LIMITS.video} 个、`
+    + `<Audio N> 最多 ${SLOT_LIMITS.audio} 个，够用就行、以图片为主。<Subject N> 只是正文里的内容标签，不用为它准备文件。`,
+};
 
 /** 正文里的一条引用：label 照抄，what 说清要上传什么，frame 是本工具能直接给的对照帧。 */
 export interface PromptReference {
@@ -51,6 +60,8 @@ export interface PromptReference {
   warn: string | null;
   /** 要上传的文件类型；决定缩略图、导出文件名与上限计数。 */
   slot: ReferenceSlot;
+  /** 正文里的英文原文，只用于悬停提示；界面显示的是中文 what。 */
+  what_en?: string;
 }
 /** 每类素材各要几个，用于清单标题与超限告警。 */
 export function countSlots(refs: PromptReference[]): Record<ReferenceSlot, number> {

@@ -1,4 +1,5 @@
 import { backendUrl } from "./backend-url";
+import type { MoveResult } from "./move-result";
 import type {
   ComfyuiConfigUpdate,
   ComfyuiStatus,
@@ -79,17 +80,29 @@ export const imagesApi = {
       body: JSON.stringify({ tags }),
     });
   },
-  assignFolder(id: number, folder_id: number | null): Promise<{ id: number; folder_id: number | null }> {
+  /** 真实移动磁盘文件 + 同步归类；moved=false 时只改了归类。 */
+  assignFolder(
+    id: number,
+    folder_id: number | null,
+  ): Promise<{
+    id: number;
+    folder_id: number | null;
+    moved: boolean;
+    renamed: boolean;
+    path: string | null;
+    kept: boolean;
+  }> {
     return http(`/api/images/${id}/folder`, {
       method: "POST",
       body: JSON.stringify({ folder_id }),
     });
   },
 
+  /** 批量真实移动；单个文件失败进 failed，不影响同批其它文件。 */
   bulkAssignFolder(
     image_ids: number[],
     folder_id: number | null,
-  ): Promise<{ ids: number[]; folder_id: number | null }> {
+  ): Promise<MoveResult> {
     return http(`/api/images/bulk-assign-folder`, {
       method: "POST",
       body: JSON.stringify({ image_ids, folder_id }),

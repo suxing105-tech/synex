@@ -78,6 +78,13 @@ class Indexer:
         self._pending: set[str] = set()
         self._pending_lock = threading.Lock()
         self._flush_timer: threading.Timer | None = None
+        # 应用自己移动文件时，watchdog 看到的是「旧路径删除 + 新路径新建」。
+        # 调用方已经在事务里把 images.path 改好了，让 watcher 再跑一遍会：
+        #   1) 先处理新路径 → 插一条重复行并换 id（收藏/标签/提示词历史全丢）
+        #   2) 再处理旧路径 → 把刚改好的行删掉
+        # 因此对涉及的精确路径开一个短抑制窗口，只跳过这些路径的 watcher 事件。
+        self._suppress: dict[str, float] = {}
+        self._suppress_lock = threading.Lock()
 
     # ----- 配置 -----
 
@@ -442,12 +449,39 @@ class Indexer:
         self._stopping = False
         await self.start_watching(asyncio.get_running_loop())
 
+    def suppress_events(self, paths: "list[Path | str] | tuple[Path | str, ...]", *, seconds: float = 5.0) -> None:
+        """在一段时间内忽略这些精确路径上的 watchdog 事件。
+
+        只给应用自己发起的文件移动用：DB 已由调用方在事务里改好，
+        watcher 的「删旧 + 建新」会换 id 或删掉正确的行。
+        """
+        until = time.monotonic() + max(0.0, seconds)
+        with self._suppress_lock:
+            now = time.monotonic()
+            for stale in [key for key, value in self._suppress.items() if value <= now]:
+                self._suppress.pop(stale, None)
+            for item in paths:
+                self._suppress[self._normalize(item)] = until
+
+    def _suppressed(self, normalized: str) -> bool:
+        with self._suppress_lock:
+            until = self._suppress.get(normalized)
+            if until is None:
+                return False
+            if until > time.monotonic():
+                return True
+            self._suppress.pop(normalized, None)
+            return False
+
     def enqueue(self, kind: str, path: Path | str) -> None:
         if self._stopping:
             return
         path = Path(path)
+        normalized = self._normalize(path)
+        if self._suppressed(normalized):
+            return
         with self._pending_lock:
-            self._pending.add(self._normalize(path))
+            self._pending.add(normalized)
             if self._flush_timer is not None:
                 self._flush_timer.cancel()
             # 防抖：300ms 内的同路径事件合并

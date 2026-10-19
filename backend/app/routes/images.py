@@ -12,7 +12,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Upload
 
 from .. import repository
 from ..config import inbox_dir
-from ..folder_storage import target_directory
+from ..folder_storage import move_image, move_images, target_directory
 
 log = logging.getLogger(__name__)
 from ..db import get_pool
@@ -248,7 +248,14 @@ def update_tags(image_id: int, payload: dict):
 
 @router.post("/{image_id}/folder")
 def update_folder(image_id: int, payload: dict):
+    """把图片/视频移动到目标文件夹：真实移动磁盘文件 + 同步索引与归属。
+
+    返回 moved/renamed/kept：moved=false 表示只改了归类（外部监听目录里的文件
+    不会被应用搬走，或文件本来就在目标目录）。
+    """
     folder_id = payload.get("folder_id")
+    if folder_id is not None and (not isinstance(folder_id, int) or isinstance(folder_id, bool)):
+        raise HTTPException(400, "folder_id 必须为 int 或 null")
     if not repository.image_detail(image_id):
         raise HTTPException(404, "图片不存在")
     if folder_id is not None:
@@ -257,8 +264,19 @@ def update_folder(image_id: int, payload: dict):
         exists = conn.execute("SELECT id FROM folders WHERE id = ?", (folder_id,)).fetchone()
         if not exists:
             raise HTTPException(404, "文件夹不存在")
-    repository.assign_folder(image_id, folder_id)
-    return {"id": image_id, "folder_id": folder_id}
+    try:
+        result = move_image(image_id, folder_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    moved = result["moved"][0] if result["moved"] else None
+    return {
+        "id": image_id,
+        "folder_id": folder_id,
+        "moved": bool(moved),
+        "renamed": bool(moved and moved["renamed"]),
+        "path": moved["path"] if moved else None,
+        "kept": bool(result["kept"])
+    }
 
 
 @router.post("/bulk-assign-folder")
@@ -267,8 +285,10 @@ def bulk_update_folder(payload: dict):
 
     body: ``{"image_ids": [int, ...], "folder_id": int | null}``
 
-    - folder_id=null：把图从所有 user folder 移出（保留 system folder 自动挂的归属）
-    - folder_id=int：必须存在且 is_system=0
+    - folder_id=null：把图从所有 user folder 移出（保留 system folder 自动挂的归属）；
+      文件本来就在应用自己的目录里时搬回收件箱，外部监听目录里的文件保持原位
+    - folder_id=int：必须存在且 is_system=0，文件真实搬进该夹的磁盘目录
+    - 单个文件失败（被占用等）进 failed，不影响同批其它文件
     """
     image_ids = payload.get("image_ids") or []
     if not isinstance(image_ids, list) or not image_ids:
@@ -283,10 +303,16 @@ def bulk_update_folder(payload: dict):
     if folder_id is not None and (not isinstance(folder_id, int) or isinstance(folder_id, bool)):
         raise HTTPException(400, "folder_id 必须为 int 或 null")
     try:
-        repository.bulk_assign_folder(cleaned_ids, folder_id)
+        result = move_images(cleaned_ids, folder_id)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
-    return {"ids": cleaned_ids, "folder_id": folder_id}
+    return {
+        "ids": result["ids"],
+        "folder_id": folder_id,
+        "moved": result["moved"],
+        "kept": result["kept"],
+        "failed": result["failed"]
+    }
 
 
 @router.patch("/{image_id}/filename")

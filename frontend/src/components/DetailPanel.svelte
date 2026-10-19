@@ -37,6 +37,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
   import MetadataCard from "./MetadataCard.svelte";
   import FolderPickerModal from "./FolderPickerModal.svelte";
   import VideoCoverModal from "./VideoCoverModal.svelte";
+  import { moveSummary } from "../lib/move-result";
 
   // ---------- 通知（全局 toast） ----------
   async function copy(text: string, label: string) {
@@ -115,13 +116,22 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
     const d = $selectedDetail;
     if (!d) return;
     const fid = node?.id ?? null;
-    await imagesApi.assignFolder(d.id, fid);
-    selectedDetail.set({
-      ...d,
-      folder_ids: fid === null ? [] : [fid],
-    });
-    await refreshFolders();
-    notify(node ? `已切换到「${node.name}」` : "已移出文件夹");
+    try {
+      const r = await imagesApi.assignFolder(d.id, fid);
+      selectedDetail.set({
+        ...d,
+        folder_ids: fid === null ? [] : [fid],
+      });
+      await refreshFolders();
+      notify(moveSummary({ moved: r.moved ? 1 : 0, kept: r.kept ? 1 : 0, failed: [] }, node ? node.name : null));
+      // 文件真的换了目录 → 重拉 detail，path/filename 才不会停留在旧位置
+      if (r.moved) {
+        const fresh = await imagesApi.detail(d.id);
+        if ($selectedDetail?.id === fresh.id) selectedDetail.set(fresh);
+      }
+    } catch (e) {
+      notify(`移动失败：${(e as Error).message}`);
+    }
   }
 
   // ---------- 收藏 ----------

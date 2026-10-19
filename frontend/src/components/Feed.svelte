@@ -4,6 +4,7 @@
   import { subscribeClipboardPaste } from "../lib/clipboard-paste";
   import { beginOriginalDrag } from "../lib/original-drag";
   import FolderPickerModal from "./FolderPickerModal.svelte";
+  import { moveStats, moveSummary } from "../lib/move-result";
   import GallerySearch from "./GallerySearch.svelte";
   import ContentSwitcher from "./ContentSwitcher.svelte";
   import { copyOriginalImage } from "../lib/image-clipboard";
@@ -515,16 +516,15 @@
     return [...walk($folders), { kind: "sep" }, { label: "从文件夹移出", onClick: () => choose(null) }];
   }
 
-  // 实际执行批量移动：folder=null 表示从 user folder 移出（保留 system folder 自动挂的）
+  // 实际执行批量移动：真实搬文件；folder=null 时只搬应用自己目录里的文件，
+  // 外部监听目录里的文件保持原位（后端决定，这里只负责把结果说清楚）
   async function moveToFolder(folder: { id: number; name: string } | null) {
     if (movePickerIds.length === 0) return;
     const ids = movePickerIds;
-    const count = movePickerCount;
     try {
       const r = await imagesApi.bulkAssignFolder(ids, folder ? folder.id : null);
-      const ok = r.ids.length;
-      const where = folder ? `「${folder.name}」` : "无文件夹";
-      notify(ok === 1 ? `已移动到 ${where}` : `已移动 ${ok} 张到 ${where}`);
+      // 后端会真的搬文件：moved=已换目录，kept=只改归类（外部目录的文件不动）
+      notify(moveSummary(moveStats(r), folder ? folder.name : null));
       // 刷新 folders（image_count 变化）+ feed（folder_ids 变化）
       await Promise.all([refreshFolders(), refreshFeed()]);
     } catch (e) {

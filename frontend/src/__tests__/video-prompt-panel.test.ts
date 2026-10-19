@@ -51,7 +51,8 @@ function makeRun(overrides: Partial<PromptRun> = {}): PromptRun {
           seedance2: seg(11, 1, "seedance2", "【风格】写实，15 秒，16:9", [
             { label: "@图片 1", what: "作为本段首帧上传", frame: { index: 1, edge: "first" }, warn: null,
               slot: "picture" }]),
-          h3: seg(12, 1, "h3", "integrated_multimodal_description: a host") } },
+          h3: seg(12, 1, "h3", "integrated_multimodal_description: a host") },
+        versions: { seedance2: 2, h3: 1 } },
       { index: 2, start_ms: 15000, end_ms: 22000, shots: [], role: "产品特写收尾", warn: "短于 4 秒",
         frames: { first: { at: 15 }, last: { at: 21.75 } },
         current: {
@@ -203,6 +204,70 @@ describe("视频反推面板", () => {
     await fireEvent.change(mode, { target: { value: "ref2va" } });
     await waitFor(() => expect(panel.getByRole("alert").textContent.replace(/\s+/g, ""))
       .toBe("图7个超过MiniMax上限（图6/视频3/音频3），请合并素材后编辑正文。"));
+  });
+
+  it("历史版本可点选查看，正文与提示跟着那一版走", async () => {
+    const run = makeRun();
+    const current = run.units[0].current.seedance2!;
+    const old = seg(41, 1, "seedance2", "【风格】旧版正文，15 秒，16:9");
+    vi.mocked(videoPromptApi.versions).mockResolvedValue({ records: [current, old], total: 2, limit: 50, offset: 0 });
+    const panel = render(VideoPromptPanel, { videoId: 5, filename: "clip.mp4", durationSeconds: 30 });
+    await waitFor(() => expect(panel.getByText("【风格】写实，15 秒，16:9")).toBeTruthy());
+    await fireEvent.click(panel.getByLabelText("查看 P01 Seedance 2.0 历史版本"));
+    await waitFor(() => expect(panel.getByLabelText("P01 历史版本")).toBeTruthy());
+    await fireEvent.click(panel.getByText(/^#41/));
+    await waitFor(() => expect(panel.getByText("【风格】旧版正文，15 秒，16:9")).toBeTruthy());
+    expect(panel.getByText(/正在看历史版本 #41/)).toBeTruthy();
+    expect(panel.getByText(/当前版本 #11/)).toBeTruthy();
+    expect(panel.getByText("译文只针对当前版本")).toBeTruthy();
+    await fireEvent.click(panel.getByText("回到当前版本"));
+    await waitFor(() => expect(panel.getByText("【风格】写实，15 秒，16:9")).toBeTruthy());
+  });
+
+  it("删除某段的一个版本：先确认再删，删完刷新该段版本列表", async () => {
+    const run = makeRun();
+    const current = run.units[0].current.seedance2!;
+    const old = seg(41, 1, "seedance2", "【风格】旧版正文，15 秒，16:9");
+    let records = [current, old];
+    vi.mocked(videoPromptApi.versions).mockImplementation(async () => ({
+      records, total: records.length, limit: 50, offset: 0 }));
+    const remove = vi.spyOn(videoPromptApi, "removeRecord").mockImplementation(async (_v, _r, _i, _t, recordId) => {
+      records = records.filter(item => item.id !== recordId);
+      return { deleted: recordId, segment_index: 1, target: "seedance2", current: records[0]?.id ?? null };
+    });
+    const panel = render(VideoPromptPanel, { videoId: 5, filename: "clip.mp4", durationSeconds: 30 });
+    await waitFor(() => expect(panel.getByText("【风格】写实，15 秒，16:9")).toBeTruthy());
+    await fireEvent.click(panel.getByLabelText("查看 P01 Seedance 2.0 历史版本"));
+    await waitFor(() => expect(panel.getByLabelText("P01 历史版本")).toBeTruthy());
+    await fireEvent.click(panel.getByLabelText("删除 P01 版本 41"));
+    expect(remove).not.toHaveBeenCalled();
+    expect(panel.getByText("删除这版？")).toBeTruthy();
+    await fireEvent.click(panel.getByLabelText("确认删除这一版"));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith(5, 7, 1, "seedance2", 41));
+    await waitFor(() => expect(panel.queryByText(/^#41/)).toBeNull());
+    expect(panel.getByText(/^#11/)).toBeTruthy();
+  });
+
+  it("删光某段的所有版本后回到「还没有正文」", async () => {
+    const run = makeRun();
+    const current = run.units[0].current.seedance2!;
+    let records = [current];
+    vi.mocked(videoPromptApi.versions).mockImplementation(async () => ({
+      records, total: records.length, limit: 50, offset: 0 }));
+    vi.mocked(videoPromptApi.history).mockImplementation(async () => history([run]));
+    vi.spyOn(videoPromptApi, "removeRecord").mockImplementation(async (_v, _r, _i, _t, recordId) => {
+      records = records.filter(item => item.id !== recordId);
+      run.units[0].current = { h3: run.units[0].current.h3! };   // 服务端：这一段该格式没版本了
+      run.units[0].versions = { seedance2: 0, h3: 1 };
+      return { deleted: recordId, segment_index: 1, target: "seedance2", current: null };
+    });
+    const panel = render(VideoPromptPanel, { videoId: 5, filename: "clip.mp4", durationSeconds: 30 });
+    await waitFor(() => expect(panel.getByLabelText("查看 P01 Seedance 2.0 历史版本")).toBeTruthy());
+    await fireEvent.click(panel.getByLabelText("查看 P01 Seedance 2.0 历史版本"));
+    await waitFor(() => expect(panel.getByLabelText("P01 历史版本")).toBeTruthy());
+    await fireEvent.click(panel.getByLabelText("删除 P01 版本 11"));
+    await fireEvent.click(panel.getByLabelText("确认删除这一版"));
+    await waitFor(() => expect(panel.getByText("该段还没有 Seedance 2.0 正文。")).toBeTruthy());
   });
 
   it("逐段生成失败标红，可单独重试并刷新列表", async () => {

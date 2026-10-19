@@ -17,6 +17,9 @@
   let editZh = $state(""); let editEn = $state("");
   let saving = $state(false);
   let serverRunning = $state(false);
+  /** 删除要二次确认：confirmId 记着"哪一条已经点过一次删除"。 */
+  let confirmId = $state<number | null>(null);
+  let removing = $state<number | null>(null);
   let loadSequence = 0;
   const job = $derived($reverseJobs[imageId]);
   const running = $derived(job?.running || serverRunning);
@@ -27,6 +30,7 @@
   $effect(() => {
     const id = imageId;
     records = []; total = 0; editing = false; selectedVersion = null; historyOpen = false; serverRunning = false;
+    confirmId = null; removing = null;
     void loadHistory(id);
   });
   $effect(() => {
@@ -54,6 +58,19 @@
   }
   async function copy(text: string) {
     const ok = await copyText(text); pushToast(ok ? "提示词已复制" : "复制失败", { kind: ok ? "success" : "error" });
+  }
+  async function removeVersion(record: ReverseRecord) {
+    if (confirmId !== record.id) { confirmId = record.id; return; }
+    const id = imageId;
+    removing = record.id; error = "";
+    try {
+      await reverseApi.remove(id, record.id);
+      if (imageId !== id) return;
+      if (selectedVersion === record.id) selectedVersion = null;  // 回到最新版
+      confirmId = null;
+      await loadHistory(id);
+    } catch (e) { if (imageId === id) error = errorMessage(e); }
+    finally { removing = null; }
   }
   async function saveEdit() {
     if (!current) return;
@@ -110,9 +127,20 @@
     {#if historyOpen && !editing}
       <div class="space-y-1 max-h-48 overflow-auto" aria-label="历史版本">
         {#each records as record}
-          <button class="block w-full text-left" aria-pressed={current.id === record.id} onclick={() => selectedVersion = record.id}>
-            {new Date(record.created_at).toLocaleString()} · {record.source === "edited" ? "手动编辑" : "模型生成"} · {record.model_name}
-          </button>
+          <div class="flex items-center gap-1">
+            <button class="block min-w-0 flex-1 text-left truncate" aria-pressed={current.id === record.id}
+              onclick={() => selectedVersion = record.id}>
+              {new Date(record.created_at).toLocaleString()} · {record.source === "edited" ? "手动编辑" : "模型生成"} · {record.model_name}
+            </button>
+            {#if confirmId === record.id}
+              <span class="text-[10px] text-amber-400 whitespace-nowrap">删除这版？</span>
+              <button class="danger" aria-label="确认删除这一版" disabled={removing !== null} onclick={() => removeVersion(record)}>确认删除</button>
+              <button onclick={() => confirmId = null}>取消</button>
+            {:else}
+              <button title="删除这一版提示词" aria-label={`删除版本 ${record.id}`} disabled={removing !== null}
+                onclick={() => removeVersion(record)}>删除</button>
+            {/if}
+          </div>
         {/each}
         {#if records.length < total}<button disabled={loading} onclick={() => loadHistory(imageId, true)}>加载更多</button>{/if}
       </div>
@@ -131,5 +159,7 @@
     border-color: #f24e4e;
   }
   button:disabled { opacity: .5; cursor: default; }
+  /* 删除是不可逆的，按钮与二次确认都要压成红色，别和"选择版本"混在一起 */
+  button.danger { color: #f87171; border-color: #7f1d1d; background: #2a1414; }
   textarea { display: block; width: 100%; margin-top: 6px; padding: 8px; font-size: 12px; color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 5px; }
 </style>

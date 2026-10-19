@@ -258,6 +258,15 @@ def segment_records(video_id: int, run_id: int, index: int, target: str,
     return service.record_versions(run, index, _resolve_target(target), limit, offset)
 
 
+@router.delete("/videos/{video_id}/video-prompts/runs/{run_id}/segments/{index}/records/{record_id}")
+def delete_segment_record(video_id: int, run_id: int, index: int, record_id: int, target: str):
+    """删除某段某格式的一个历史版本。删的正好是最新版时，当前版本自动退回次新一版。"""
+    run = service.get_run(run_id, video_id)
+    service.find_unit(run, index)
+    return service.delete_record(run, record_id=record_id, segment_index=index,
+                                 target=_resolve_target(target))
+
+
 @router.get("/videos/{video_id}/video-prompts")
 def history(video_id: int, limit: int = Query(10, ge=1, le=50), offset: int = Query(0, ge=0)):
     service.video_row(video_id)

@@ -67,6 +67,8 @@ export interface PromptShot { start_ms: number; end_ms: number; synthetic: boole
 export interface PromptUnit {
   index: number; start_ms: number; end_ms: number; shots: PromptShot[]; role: string;
   warn: string | null; current: Partial<Record<PromptTarget, SegmentRecord>>;
+  /** 这一段每种格式各有几个版本——"版本（N）"按钮说的是这一段，不是整个方案。 */
+  versions?: Record<PromptTarget, number>;
   /** 服务端已落盘的本段首/末帧秒数，即提示词引用的那张图。 */
   frames?: Partial<Record<FrameEdge, { at: number }>>;
 }
@@ -108,6 +110,11 @@ export const videoPromptApi = {
     http<SegmentRecord>(`${base(videoId)}/runs/${runId}/segments/${index}/edits`, json("POST", body)),
   versions: (videoId: number, runId: number, index: number, target: PromptTarget) =>
     http<VersionList>(`${base(videoId)}/runs/${runId}/segments/${index}/records?target=${target}`),
+  /** 删掉一个历史版本；删的正好是最新版时后端把 current 回退成次新一版。 */
+  removeRecord: (videoId: number, runId: number, index: number, target: PromptTarget, recordId: number) =>
+    http<{ deleted: number; segment_index: number; target: PromptTarget; current: number | null }>(
+      `${base(videoId)}/runs/${runId}/segments/${index}/records/${recordId}?target=${target}`,
+      { method: "DELETE" }),
   frame: (videoId: number, at: number) => http<FrameResponse>(`/api/videos/${videoId}/frame?at=${at}`),
   referenceFrame: (videoId: number, runId: number, index: number, edge: FrameEdge) =>
     http<ReferenceFrame>(`${base(videoId)}/runs/${runId}/segments/${index}/frame?which=${edge}`),

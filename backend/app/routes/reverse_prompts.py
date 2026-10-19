@@ -186,6 +186,27 @@ def history(image_id: int, limit: int = Query(20, ge=1, le=100), offset: int = Q
             "total": total, "limit": limit, "offset": offset, "running": busy}
 
 
+@router.delete("/images/{image_id}/reverse-prompts/{record_id}")
+def delete_record(image_id: int, record_id: int):
+    """删除一个历史版本。删的正好是最新版时，面板自动退回次新一版；一条不剩就回到"尚无记录"。
+
+    在这版基础上编辑出来的新版本不会因为删它而消失（parent_id 置空）。
+    """
+    conn = db.get_pool().main()
+    row = conn.execute("SELECT id FROM reverse_prompts WHERE id=? AND image_id=?",
+                       (record_id, image_id)).fetchone()
+    if row is None:
+        raise HTTPException(404, "该版本不存在，或已被删除")
+    with _busy_lock:
+        if image_id in _busy:
+            raise HTTPException(409, "这张图片正在反推，请等待完成再删除")
+    with db.transaction() as tx:
+        tx.execute("DELETE FROM reverse_prompts WHERE id=?", (record_id,))
+        rest = tx.execute("SELECT id FROM reverse_prompts WHERE image_id=? ORDER BY id DESC LIMIT 1",
+                          (image_id,)).fetchone()
+    return {"deleted": record_id, "current": rest["id"] if rest else None}
+
+
 @router.post("/images/{image_id}/reverse-prompts/edits")
 def edit(image_id: int, payload: EditInput):
     row = db.get_pool().main().execute("SELECT * FROM reverse_prompts WHERE id=? AND image_id=?",

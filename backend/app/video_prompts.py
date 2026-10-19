@@ -857,6 +857,31 @@ def edit_record(run, *, segment_index, target, prompt, parent_id):
     return get_record(record_id)
 
 
+def delete_record(run, *, record_id: int, segment_index: int, target: str) -> dict:
+    """删掉某段某格式的一个版本；删的正好是最新版时，当前版本自动退回次新一版。
+
+    该版本的译文随外键级联删掉；由它派生的编辑版保留，parent_id 置空——
+    删的是"我没用的那一版"，不该顺手毁掉在它基础上改出来的成品。
+    """
+    if target not in TARGETS:
+        raise HTTPException(422, "未知的目标格式")
+    conn = db.get_pool().main()
+    row = conn.execute("SELECT * FROM video_prompt_records WHERE id=? AND run_id=? AND segment_index=?"
+                       " AND target=?", (record_id, run["id"], segment_index, target)).fetchone()
+    if row is None:
+        raise HTTPException(404, "该版本不存在，或已被删除")
+    index = segment_index
+    if segment_busy(run["id"], index, target):
+        raise HTTPException(409, "该段的这个格式正在生成，请等待完成再删除")
+    with db.transaction() as tx:
+        tx.execute("DELETE FROM video_prompt_records WHERE id=?", (record_id,))
+        rest = tx.execute(
+            "SELECT id FROM video_prompt_records WHERE run_id=? AND segment_index=? AND target=? "
+            "ORDER BY id DESC LIMIT 1", (run["id"], index, target)).fetchone()
+    return {"deleted": record_id, "segment_index": index, "target": target,
+            "current": rest["id"] if rest else None}
+
+
 def data_url(raw: bytes) -> str:
     return _data_url(raw)
 
@@ -995,6 +1020,11 @@ def listing(video_id, limit: int, offset: int):
         versions = {target: conn.execute(
             "SELECT count(*) FROM video_prompt_records WHERE run_id=? AND target=?",
             (run["id"], target)).fetchone()[0] for target in TARGETS}
+        # 每段各自的版本数：界面上"版本（N）"说的是这一段，不是整个方案
+        unit_versions: dict[int, dict[str, int]] = {}
+        for row in conn.execute("SELECT segment_index, target, count(*) AS n FROM video_prompt_records "
+                                "WHERE run_id=? GROUP BY segment_index, target", (run["id"],)).fetchall():
+            unit_versions.setdefault(row["segment_index"], {})[row["target"]] = row["n"]
         units = run_units(run)
         overview = frames_overview(run["video_id"], run["id"], units, frame_cache)
         public_units = [{
@@ -1003,6 +1033,7 @@ def listing(video_id, limit: int, offset: int):
             "frames": overview.get(unit["index"], {}),
             "current": {target: current[f"{unit['index']}:{target}"]
                         for target in TARGETS if f"{unit['index']}:{target}" in current},
+            "versions": {target: unit_versions.get(unit["index"], {}).get(target, 0) for target in TARGETS},
         } for unit in units]
         runs.append({
             "id": run["id"], "status": run["status"], "error": run["error"], "created_at": run["created_at"],
@@ -1299,6 +1330,11 @@ def acquire_segment(run_id: int, index: int, target: str, video_id: int):
 def release_segment(run_id: int, index: int, target: str):
     with _lock:
         _segment_busy.pop(segment_key(run_id, index, target), None)
+
+
+def segment_busy(run_id: int, index: int, target: str) -> bool:
+    with _lock:
+        return segment_key(run_id, index, target) in _segment_busy
 
 
 def acquire_translation(record_id: int):

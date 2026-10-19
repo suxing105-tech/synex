@@ -37,6 +37,11 @@
   let saving = $state(false);
   let versionsKey = $state<string | null>(null);
   let versions = $state<SegmentRecord[]>([]);
+  /** 正在看某段的历史版本：key → 那一版。没有就是看当前版。整表刷新后清空，不会停在被删掉的版本上。 */
+  let viewed = $state<Record<string, SegmentRecord>>({});
+  /** 删除要二次确认，记的是"哪一段的哪一版已经点过一次删除"。 */
+  let confirmKey = $state<string | null>(null);
+  let deletingId = $state<number | null>(null);
   let openFrames = $state<Record<string, boolean>>({});
   /** 每段每种格式各自决定看不看译文，切段切格式互不影响。 */
   let shownTranslation = $state<Record<string, boolean>>({});
@@ -63,7 +68,7 @@
     const id = videoId;
     runs = []; total = 0; activeRunId = null; error = ""; runsOpen = false; openFrames = {};
     editingKey = null; versionsKey = null; versions = []; serverRunning = false;
-    shownTranslation = {};
+    shownTranslation = {}; viewed = {}; confirmKey = null; deletingId = null;
     void loadHistory(id);
   });
   $effect(() => {
@@ -92,6 +97,7 @@
       if (videoId !== id || sequence !== loadSequence) return;
       runs = more ? [...runs, ...result.runs] : result.runs;
       total = result.total; serverRunning = result.running;
+      if (!more) { viewed = {}; confirmKey = null; }  // 列表换了一批，停看的旧版本不再有效
       if (activeRunId === null || !runs.some(item => item.id === activeRunId)) activeRunId = runs[0]?.id ?? null;
     } catch (e) {
       if (videoId === id && sequence === loadSequence) error = errorMessage(e);
@@ -120,6 +126,51 @@
     const stored = unit?.current?.[target];
     const job = jobFor(index, target);
     return stored ?? job?.result;
+  }
+  function keyOf(index: number, target: PromptTarget): string {
+    return run ? segmentKey(run.id, index, target) : "";
+  }
+  /** 正在看的历史版本，没有就返回 undefined（看当前版）。 */
+  function viewedOf(index: number, target: PromptTarget): SegmentRecord | undefined {
+    const key = keyOf(index, target);
+    return key ? viewed[key] : undefined;
+  }
+  /** 面板显示的正文：点了历史版本就显示那一版，否则显示当前版。 */
+  function shownRecord(index: number, target: PromptTarget): SegmentRecord | undefined {
+    return viewedOf(index, target) ?? recordFor(index, target);
+  }
+  function toggleView(version: SegmentRecord) {
+    const key = keyOf(version.segment_index, version.target);
+    if (!key) return;
+    // 点的就是当前版：回到当前版；再点自己一次也是回到当前版
+    if (viewed[key]?.id === version.id || recordFor(version.segment_index, version.target)?.id === version.id) {
+      delete viewed[key];
+    } else {
+      viewed[key] = version;
+    }
+  }
+  function backToCurrent(index: number, target: PromptTarget) {
+    const key = keyOf(index, target);
+    if (key) delete viewed[key];
+  }
+  /** 删一个版本：第一次点击只进入确认态，第二次真删，然后刷新这段的版本与当前版。 */
+  async function removeVersion(version: SegmentRecord) {
+    if (!run) return;
+    const key = keyOf(version.segment_index, version.target);
+    const armed = `${key}:${version.id}`;
+    if (confirmKey !== armed) { confirmKey = armed; return; }
+    const runId = run.id;
+    deletingId = version.id; error = "";
+    try {
+      await videoPromptApi.removeRecord(videoId, runId, version.segment_index, version.target, version.id);
+      if (viewed[key]?.id === version.id) delete viewed[key];
+      confirmKey = null;
+      const rest = await videoPromptApi.versions(videoId, runId, version.segment_index, version.target);
+      versions = rest.records;
+      if (!rest.records.length) versionsKey = null;
+      await loadHistory(videoId);
+    } catch (e) { error = errorMessage(e); }
+    finally { deletingId = null; }
   }
 
   async function generate(indexes: number[], targets: PromptTarget[]) {
@@ -196,6 +247,7 @@
 
   async function toggleVersions(record: SegmentRecord) {
     const key = segmentKey(run!.id, record.segment_index, record.target);
+    confirmKey = null;
     if (versionsKey === key) { versionsKey = null; versions = []; return; }
     versionsKey = key; versions = [];
     try { versions = (await videoPromptApi.versions(videoId, run!.id, record.segment_index, record.target)).records; }
@@ -286,14 +338,15 @@
 
       {#if tab === "h3"}
         <div class="rounded border border-border bg-surface p-2 space-y-1">
-          <label class="flex items-center gap-2 text-[11px] text-muted">H3 模式
-            <select class="vp-field inline w-auto" aria-label="H3 模式" value={h3Mode} disabled={running}
+          <div class="flex items-center gap-2">
+            <span class="vp-label">H3 模式</span>
+            <select class="vp-field vp-field-inline min-w-0 flex-1" aria-label="H3 模式" value={h3Mode} disabled={running}
               onchange={(e) => h3Mode = (e.currentTarget as HTMLSelectElement).value as H3Mode}>
               {#each H3_MODES as mode}
                 <option value={mode}>{H3_MODE_LABELS[mode]}</option>
               {/each}
             </select>
-          </label>
+          </div>
           <p class="text-[10px] text-muted">
             {#if h3Mode === "t2va"}
               纯文本：正文不引用任何图片或视频，段与段只靠锚点文字衔接。因此下面不列出参考素材。
@@ -318,7 +371,8 @@
 
       <div class="space-y-2">
         {#each units as unit}
-          {@const record = recordFor(unit.index, tab)}
+          {@const record = shownRecord(unit.index, tab)}
+          {@const viewing = viewedOf(unit.index, tab)}
           {@const job = jobFor(unit.index, tab)}
           {@const tag = `P${String(unit.index).padStart(2, "0")}`}
           {@const framesKey = `${run.id}:` + unit.index}
@@ -397,6 +451,15 @@
               </div>
             {:else if record}
               <div class="space-y-1.5">
+                {#if viewing}
+                  <div class="flex items-center gap-2 flex-wrap text-[10px] text-amber-400">
+                    <span>
+                      正在看历史版本 #{viewing.id}（{new Date(viewing.created_at).toLocaleString()}），
+                      当前版本 #{recordFor(unit.index, tab)?.id}。复制与编辑都针对这一版；编辑会存成新版本。
+                    </span>
+                    <button class="vp-button" onclick={() => backToCurrent(unit.index, tab)}>回到当前版本</button>
+                  </div>
+                {/if}
                 <div class="flex items-center gap-2 flex-wrap text-[10px] text-muted">
                   <span>{record.model_name} · {record.model}</span>
                   <span>{record.source === "edited" ? "手动编辑" : "模型生成"}</span>
@@ -442,13 +505,18 @@
                       <button class="vp-button" onclick={() => copy(record?.raw_text ?? "", "原文已")}>复制原文</button>
                     {/if}
                     <button class="vp-button" disabled={running} onclick={() => record && startEdit(record)}>编辑</button>
-                    <button class="vp-button" onclick={() => record && toggleVersions(record)}>
-                      版本（{run.versions[record.target]}）
+                    <button class="vp-button" aria-label={`查看 ${tag} ${TARGET_LABELS[tab]} 历史版本`}
+                      onclick={() => record && toggleVersions(record)}>
+                      版本（{unit.versions?.[record.target] ?? run.versions[record.target]}）
                     </button>
                     <button class="vp-button" disabled={running} onclick={() => generate([unit.index], [tab])}>重跑本段</button>
+                    {#if viewing}
+                      <span class="text-[10px] text-muted self-center">译文只针对当前版本</span>
+                    {/if}
                     <button class="vp-button vp-translate" aria-pressed={showing}
                       aria-label={`${showing ? "显示原文" : "翻译"} ${tag} ${TARGET_LABELS[tab]}`}
                       title="中英互译：译文只用于阅读，复制走的仍是原文"
+                      hidden={!!viewing}
                       disabled={running || !original.trim() || !!trJob(record)?.running}
                       onclick={() => toggleTranslation(record)}>
                       <svg class="vp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
@@ -468,11 +536,27 @@
                   {/if}
                 {/if}
                 {#if versionsKey === segmentKey(run.id, unit.index, tab)}
-                  <div class="space-y-1 max-h-40 overflow-auto" aria-label={`${tag} 历史版本`}>
+                  <div class="space-y-1 max-h-48 overflow-auto" aria-label={`${tag} 历史版本`}>
+                    <p class="text-[10px] text-muted">点某一版就地查看它的正文；不需要的可以直接删除，删掉最新版会自动退回次新一版。</p>
                     {#each versions as version}
-                      <div class="text-[10px] text-muted">
-                        #{version.id} {new Date(version.created_at).toLocaleString()} ·
-                        {version.source === "edited" ? "手动编辑" : "模型生成"} · {version.model_name}
+                      {@const armed = `${segmentKey(run.id, unit.index, tab)}:${version.id}`}
+                      <div class="flex items-center gap-1">
+                        <button class="vp-version min-w-0 flex-1 text-left" aria-pressed={record?.id === version.id}
+                          title="查看这一版正文" onclick={() => toggleView(version)}>
+                          #{version.id} {new Date(version.created_at).toLocaleString()} ·
+                          {version.source === "edited" ? "手动编辑" : "模型生成"} · {version.model_name}
+                          {#if version.id === recordFor(unit.index, tab)?.id}<span class="vp-badge">当前</span>{/if}
+                        </button>
+                        {#if confirmKey === armed}
+                          <span class="text-[10px] text-amber-400 whitespace-nowrap">删除这版？</span>
+                          <button class="vp-button vp-danger" aria-label="确认删除这一版"
+                            disabled={deletingId !== null} onclick={() => removeVersion(version)}>确认删除</button>
+                          <button class="vp-button" onclick={() => confirmKey = null}>取消</button>
+                        {:else}
+                          <button class="vp-button" title="删除这一版" aria-label={`删除 ${tag} 版本 ${version.id}`}
+                            disabled={deletingId !== null || running || job?.running}
+                            onclick={() => removeVersion(version)}>{deletingId === version.id ? "删除中…" : "删除"}</button>
+                        {/if}
                       </div>
                     {/each}
                   </div>
@@ -514,6 +598,12 @@
     display: block; width: 100%; margin-top: 4px; padding: 6px 8px; font-size: 11px;
     color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 5px;
   }
+  /* 与标签同行时去掉 margin-top 与 100% 宽，否则"H3 模式"会被挤成两行 */
+  .vp-field-inline { display: inline-block; width: auto; margin-top: 0; }
+  .vp-label { font-size: 11px; color: #a1a1aa; flex: none; white-space: nowrap; }
+  .vp-version { font-size: 10px; padding: 4px 6px; border: 1px solid #3f3f46; border-radius: 5px; background: #18181b; }
+  .vp-version[aria-pressed="true"] { border-color: #f24e4e; color: #fda4a4; }
+  .vp-danger { color: #f87171; border-color: #7f1d1d; background: #2a1414; }
   .vp-button {
     font-size: 11px; padding: 5px 8px; border: 1px solid #3f3f46; border-radius: 5px; background: #202024;
   }

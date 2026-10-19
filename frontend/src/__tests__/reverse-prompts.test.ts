@@ -71,6 +71,38 @@ describe("reverse prompts", () => {
     await fireEvent.click(panel.getByText("历史版本（1）"));
     expect(panel.getByLabelText("历史版本")).toBeTruthy();
   });
+  it("删除历史版本要先确认一次，确认后刷新列表", async () => {
+    const older = { ...record, id: 10, prompt_zh: "旧版花朵" };
+    const newer = { ...record, id: 11, prompt_zh: "新版花朵" };
+    vi.mocked(reverseApi.history).mockResolvedValue({ items: [newer, older], total: 2, running: false });
+    const remove = vi.spyOn(reverseApi, "remove").mockResolvedValue({ deleted: 10, current: 11 });
+    const panel = render(ReversePromptPanel, { imageId: 1 });
+    await waitFor(() => expect(panel.getByText("历史版本（2）")).toBeTruthy());
+    await fireEvent.click(panel.getByText("历史版本（2）"));
+    await fireEvent.click(panel.getByLabelText("删除版本 10"));
+    expect(remove).not.toHaveBeenCalled();
+    expect(panel.getByText("删除这版？")).toBeTruthy();
+    await fireEvent.click(panel.getByLabelText("确认删除这一版"));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith(1, 10));
+    expect(vi.mocked(reverseApi.history).mock.calls.length).toBeGreaterThan(1);
+  });
+  it("删掉屏幕上正看的那一版后自动回到最新版", async () => {
+    const older = { ...record, id: 10, prompt_zh: "旧版花朵" };
+    const newer = { ...record, id: 11, prompt_zh: "新版花朵" };
+    let items = [newer, older];
+    vi.mocked(reverseApi.history).mockImplementation(async () => ({ items, total: items.length, running: false }));
+    vi.spyOn(reverseApi, "remove").mockImplementation(async (imageId, recordId) => {
+      items = items.filter(item => item.id !== recordId);
+      return { deleted: recordId, current: items[0]?.id ?? null };
+    });
+    const panel = render(ReversePromptPanel, { imageId: 1 });
+    await waitFor(() => expect(panel.getByText("历史版本（2）")).toBeTruthy());
+    await fireEvent.click(panel.getByText("历史版本（2）"));
+    await fireEvent.click(panel.getByLabelText("删除版本 11"));
+    await fireEvent.click(panel.getByLabelText("确认删除这一版"));
+    await waitFor(() => expect(panel.queryByText("新版花朵")).toBeNull());
+    expect(panel.getByText("旧版花朵")).toBeTruthy();
+  });
   it("copies the selected language or both without changing history", async () => {
     vi.mocked(reverseApi.history).mockResolvedValue({ items: [record], total: 1, running: false });
     const panel = render(ReversePromptPanel, { imageId: 1 });

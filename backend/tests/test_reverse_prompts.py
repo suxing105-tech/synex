@@ -34,6 +34,17 @@ def image_id(init_db, tmp_path):
     ).lastrowid
 
 
+@pytest.fixture
+def other_image_id(init_db, tmp_path):
+    """另一张图：用来证明删除只能动本图的版本。"""
+    path = tmp_path / "other.png"
+    Image.new("RGBA", (32, 16), (0, 255, 0, 100)).save(path)
+    return init_db.main().execute(
+        "INSERT INTO images(path,filename,mtime,size_bytes) VALUES(?,?,?,?)",
+        (str(path), path.name, path.stat().st_mtime, path.stat().st_size),
+    ).lastrowid
+
+
 def draft(**kwargs):
     return {"name": "视觉模型", "base_url": "https://example.com/api/v1/", "model": "vision", "timeout": 120, **kwargs}
 
@@ -205,6 +216,56 @@ def test_history_edit_rescan_and_model_deletion(client, image_id, init_db, monke
     assert client.get(url).json()["items"][0]["image_changed"]
     service.initialize(init_db.main())
     assert client.get(url).json()["total"] == 2
+
+
+
+
+def test_delete_history_version_keeps_the_newest_usable(client, image_id, init_db, monkeypatch):
+    client.post("/api/model-configs", json=draft())
+
+    async def response(*args):
+        return '```json\n{"prompt_zh":"红色","prompt_en":"red"}\n'
+
+    monkeypatch.setattr(service, "request_model", response)
+    url = f"/api/images/{image_id}/reverse-prompts"
+    first = client.post(url, json={}).json()
+    second = client.post(url + "/edits", json={"parent_id": first["id"], "prompt_zh": "深红",
+                                               "prompt_en": "dark red"}).json()
+    third = client.post(url + "/edits", json={"parent_id": second["id"], "prompt_zh": "暗红",
+                                              "prompt_en": "dim red"}).json()
+    # 删中间那一版： newest 不变，由它派生的那一版还在（parent 置空）
+    assert client.delete(f"{url}/{second['id']}").json() == {"deleted": second["id"], "current": third["id"]}
+    history = client.get(url).json()
+    assert [item["id"] for item in history["items"]] == [third["id"], first["id"]]
+    assert history["items"][0]["parent_id"] is None
+    # 删掉最新一版：当前版退回次新一版
+    assert client.delete(f"{url}/{third['id']}").json() == {"deleted": third["id"], "current": first["id"]}
+    assert client.get(url).json()["total"] == 1
+    # 全删完回到"尚无记录"
+    assert client.delete(f"{url}/{first['id']}").json()["current"] is None
+    assert client.get(url).json() == {"items": [], "total": 0, "limit": 20, "offset": 0, "running": False}
+
+
+def test_delete_history_version_validates_owner_and_busy_state(client, image_id, other_image_id, monkeypatch):
+    client.post("/api/model-configs", json=draft())
+
+    async def response(*args):
+        return '{"prompt_zh":"红色","prompt_en":"red"}'
+
+    monkeypatch.setattr(service, "request_model", response)
+    url = f"/api/images/{image_id}/reverse-prompts"
+    record = client.post(url, json={}).json()
+    assert client.delete(f"{url}/99999").status_code == 404
+    assert client.delete(f"/api/images/{other_image_id}/reverse-prompts/{record['id']}").status_code == 404
+    assert client.get(url).json()["total"] == 1
+    from app.routes import reverse_prompts as routes
+    routes._busy.add(image_id)
+    try:
+        conflict = client.delete(f"{url}/{record['id']}")
+    finally:
+        routes._busy.discard(image_id)
+    assert conflict.status_code == 409
+    assert client.get(url).json()["total"] == 1
 
 
 def test_unstructured_and_failure_keep_history(client, image_id, monkeypatch):

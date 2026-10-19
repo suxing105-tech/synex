@@ -30,6 +30,9 @@ export const reverseApi = {
   history: (id: number, offset = 0) => http<History>(`/api/images/${id}/reverse-prompts?offset=${offset}`),
   generate: (id: number, model: number) => http<ReverseRecord>(`/api/images/${id}/reverse-prompts`, json("POST", { model_config_id: model })),
   edit: (id: number, parent_id: number, prompt_zh: string, prompt_en: string) => http<ReverseRecord>(`/api/images/${id}/reverse-prompts/edits`, json("POST", { parent_id, prompt_zh, prompt_en })),
+  /** 删掉一个历史版本；删的正好是最新版时 current 回退成次新一版，全删完回 null。 */
+  remove: (id: number, recordId: number) => http<{ deleted: number; current: number | null }>(
+    `/api/images/${id}/reverse-prompts/${recordId}`, { method: "DELETE" }),
 };
 export const modelConfigs = writable<ModelConfig[]>([]);
 export const reverseSettings = writable<ReverseSettings | null>(null);

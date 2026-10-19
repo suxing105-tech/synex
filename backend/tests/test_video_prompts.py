@@ -11,7 +11,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app import reverse_prompts
+from app import db, reverse_prompts
 from app import video_prompts as service
 from app.routes.reverse_prompts import router as model_router
 from app.routes.video_prompts import router
@@ -1077,4 +1077,108 @@ def test_settings_accept_ref2va_as_default_h3_mode(client):
     saved = client.put("/api/video-prompt-settings",
                        json=settings_payload(default_h3_mode="ref2va")).json()
     assert saved["default_h3_mode"] == "ref2va"
+
+
+# ---------- 历史版本：能选、能删 ----------
+
+
+def record_url(video_id, run_id, index, target, record_id):
+    return segment_url(video_id, run_id, index) + "/records/" + str(record_id) + "?target=" + target
+
+
+def test_version_delete_falls_back_to_previous_version(client, video_id, monkeypatch):
+    run = seed_plan(client, monkeypatch, video_id)
+    stub_model(monkeypatch, {"prompt": SEEDANCE_OK, "risk_terms": []})
+    first = generate(client, video_id, run["id"], 1, "seedance2")
+    edited = client.post(segment_url(video_id, run["id"], 1) + "/edits",
+                         json={"target": "seedance2", "prompt": SEEDANCE_OK + " 补充"}).json()
+    assert edited["id"] > first["id"]
+
+    def current_id():
+        return client.get(plan_url(video_id)).json()["runs"][0]["units"][0]["current"]["seedance2"]["id"]
+
+    assert current_id() == edited["id"]
+    # 删旧版不影响当前版
+    gone = client.delete(record_url(video_id, run["id"], 1, "seedance2", first["id"]))
+    assert gone.status_code == 200, gone.text
+    assert gone.json()["current"] == edited["id"]
+    assert current_id() == edited["id"]
+    # 删掉最新版自动退回次新一版
+    newest = client.post(segment_url(video_id, run["id"], 1) + "/edits",
+                         json={"target": "seedance2", "prompt": SEEDANCE_OK + " 再改"}).json()["id"]
+    assert client.delete(record_url(video_id, run["id"], 1, "seedance2", newest)).json()["current"] == edited["id"]
+    assert current_id() == edited["id"]
+
+
+def test_version_delete_only_touches_that_segment_and_target(client, video_id, monkeypatch):
+    run = seed_plan(client, monkeypatch, video_id)
+    stub_model(monkeypatch, {"prompt": SEEDANCE_OK, "risk_terms": []})
+    seedance = generate(client, video_id, run["id"], 1, "seedance2")
+    other_segment = generate(client, video_id, run["id"], 2, "seedance2")
+    stub_model(monkeypatch, {"prompt": H3_OK, "risk_terms": []})
+    h3 = generate(client, video_id, run["id"], 1, "h3", "i2va")
+    answer = client.delete(record_url(video_id, run["id"], 1, "seedance2", seedance["id"]))
+    assert answer.json() == {"deleted": seedance["id"], "segment_index": 1, "target": "seedance2", "current": None}
+    units = client.get(plan_url(video_id)).json()["runs"][0]["units"]
+    assert "seedance2" not in units[0]["current"]
+    assert units[0]["current"]["h3"]["id"] == h3["id"]
+    assert units[1]["current"]["seedance2"]["id"] == other_segment["id"]
+    # 删完这段该格式就没有版本了，另一段/另一格式各算各的
+    assert units[0]["versions"] == {"seedance2": 0, "h3": 1}
+    assert units[1]["versions"] == {"seedance2": 1, "h3": 0}
+
+
+def test_version_delete_validates_target_segment_and_owner(client, video_id, monkeypatch):
+    run = seed_plan(client, monkeypatch, video_id)
+    stub_model(monkeypatch, {"prompt": SEEDANCE_OK, "risk_terms": []})
+    record = generate(client, video_id, run["id"], 1, "seedance2")
+    assert client.delete(record_url(video_id, run["id"], 2, "seedance2", record["id"])).status_code == 404
+    assert client.delete(record_url(video_id, run["id"], 1, "h3", record["id"])).status_code == 404
+    assert client.delete(record_url(video_id, run["id"], 1, "seedance2", 99999)).status_code == 404
+    assert client.delete(record_url(video_id, run["id"], 1, "bogus", record["id"])).status_code == 422
+    assert client.delete("/api/videos/%d/video-prompts/runs/%d/segments/1/records/%d?target=seedance2"
+                         % (video_id + 7000, run["id"], record["id"])).status_code == 404
+    assert client.get(record_url(video_id, run["id"], 1, "seedance2", record["id"]) + "&x=1").status_code != 404
+
+
+def test_version_delete_while_generating_is_refused(client, video_id, monkeypatch):
+    run = seed_plan(client, monkeypatch, video_id)
+    stub_model(monkeypatch, {"prompt": SEEDANCE_OK, "risk_terms": []})
+    record = generate(client, video_id, run["id"], 1, "seedance2")
+    service.acquire_segment(run["id"], 1, "seedance2", video_id)
+    try:
+        conflict = client.delete(record_url(video_id, run["id"], 1, "seedance2", record["id"]))
+    finally:
+        service.release_segment(run["id"], 1, "seedance2")
+    assert conflict.status_code == 409
+    assert "正在生成" in conflict.json()["detail"]
+
+
+def test_version_delete_takes_its_translation_with_it(client, video_id, monkeypatch):
+    run = seed_plan(client, monkeypatch, video_id)
+    stub_model(monkeypatch, {"prompt": SEEDANCE_OK, "risk_terms": []})
+    record = generate(client, video_id, run["id"], 1, "seedance2")
+    stub_model(monkeypatch, "This is a close-up portrait.")
+    translated = client.post(translation_url(video_id, run["id"], 1), json={"target": "seedance2"}).json()
+    assert translated["source"] == "model"
+    pool = db.get_pool()
+    assert pool.main().execute("SELECT 1 FROM video_prompt_translations WHERE record_id=?",
+                               (record["id"],)).fetchone()
+    client.delete(record_url(video_id, run["id"], 1, "seedance2", record["id"]))
+    assert not pool.main().execute("SELECT 1 FROM video_prompt_translations WHERE record_id=?",
+                                   (record["id"],)).fetchone()
+
+
+def test_listing_reports_versions_per_segment(client, video_id, monkeypatch):
+    run = seed_plan(client, monkeypatch, video_id)
+    stub_model(monkeypatch, {"prompt": SEEDANCE_OK, "risk_terms": []})
+    generate(client, video_id, run["id"], 1, "seedance2")
+    client.post(segment_url(video_id, run["id"], 1) + "/edits",
+                json={"target": "seedance2", "prompt": SEEDANCE_OK + " 改"})
+    stub_model(monkeypatch, {"prompt": H3_OK, "risk_terms": []})
+    generate(client, video_id, run["id"], 2, "h3", "t2va")
+    units = client.get(plan_url(video_id)).json()["runs"][0]["units"]
+    assert units[0]["versions"] == {"seedance2": 2, "h3": 0}
+    assert units[1]["versions"] == {"seedance2": 0, "h3": 1}
+
 

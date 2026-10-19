@@ -271,6 +271,31 @@ def test_locked_file_fails_only_itself(tmp_data_dir, monkeypatch):
     assert _folders_of(image_id) == set()
 
 
+def test_rename_to_taken_name_then_move_into_same_folder(tmp_data_dir):
+    init_pool()
+    first = make_png(tmp_data_dir / "clash-a.png")
+    second = make_png(tmp_data_dir / "clash-b.png")
+    id_first = _index(first)
+    id_second = _index(second)
+    folder = folder_storage.create_folder("验收A", None)
+
+    moved_first = folder_storage.move_images([id_first], folder["id"])
+    assert moved_first["moved"][0]["renamed"] is False
+
+    repository.rename_image(id_second, "clash-a.png")
+    result = folder_storage.move_images([id_second], folder["id"])
+
+    assert result["failed"] == [], result["failed"]
+    assert result["moved"][0]["renamed"] is True
+    assert sorted(p.name for p in Path(folder["path"]).iterdir()) == ["clash-a.png", "clash-a_1.png"]
+    conn = get_pool().main()
+    rows = conn.execute("SELECT id, path FROM images WHERE id IN (?, ?)", (id_first, id_second)).fetchall()
+    assert len(rows) == 2, rows
+    assert sorted(Path(r["path"]).name for r in rows) == ["clash-a.png", "clash-a_1.png"]
+    assert (tmp_data_dir / "clash-b.png").exists() is False
+    assert not (tmp_data_dir / "clash-a.png").exists()
+
+
 # ---------- 文件监听抑制 ----------
 
 

@@ -22,6 +22,21 @@ function RunNative([scriptblock]$sb, [string]$log) {
   return $LASTEXITCODE
 }
 
+# Get-FileHash has repeatedly come back as "not recognized" when this script is
+# started through Start-Process, so fall back to certutil instead of losing the run.
+function Get-Sha256([string]$path) {
+  $cmd = Get-Command Get-FileHash -CommandType Cmdlet -ErrorAction SilentlyContinue
+  if ($cmd) {
+    try { return (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash } catch { }
+  }
+  $out = @(& certutil -hashfile $path SHA256)
+  foreach ($line in $out) {
+    $trimmed = $line.Trim()
+    if ($trimmed -match '^[0-9A-Fa-f]{64}$') { return $trimmed.ToUpper() }
+  }
+  throw ('cannot hash ' + $path)
+}
+
 try {
   $step = 'prepare'
   foreach ($d in @($Out, (Join-Path $Out 'build'), (Join-Path $Out 'app'))) {
@@ -79,7 +94,7 @@ try {
     [pscustomobject]@{
       file   = $_
       bytes  = (Get-Item -LiteralPath $p).Length
-      sha256 = (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash
+      sha256 = Get-Sha256 $p
     }
   }
   $artifacts | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Out 'artifacts.json') -Encoding utf8

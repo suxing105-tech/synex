@@ -203,7 +203,7 @@
             </section>
             <section id="settings-comfyui" class="settings-section" aria-labelledby="settings-comfyui-title">
               <h3 id="settings-comfyui-title">ComfyUI</h3>
-              <p class="section-description">连接本地 ComfyUI，从图库打开图片中的工作流。</p>
+              <p class="section-description">连接本地 ComfyUI，从图库打开图片或视频中的工作流。</p>
               <div class="setting-group">
                 <h4>服务地址</h4>
                 <div class="directory-add">
@@ -215,7 +215,7 @@
               <div class="setting-group">
                 <h4>工作流集成</h4>
                 <label class="setting-check"><input type="checkbox" bind:checked={comfyuiEnabledLocal} /><span>启用工作流一键打开</span></label>
-                <p class="setting-description">ComfyUI 运行时，带有工作流的图片会显示打开按钮。</p>
+                <p class="setting-description">ComfyUI 运行时，带有工作流的图片或视频会显示打开按钮。</p>
               </div>
               <div class="section-actions"><button class="setting-button bg-accent text-bg" onclick={saveComfyui}>保存 ComfyUI 设置</button></div>
             </section>

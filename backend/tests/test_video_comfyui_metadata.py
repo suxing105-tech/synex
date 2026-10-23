@@ -143,6 +143,43 @@ def test_resolves_prompt_behind_a_link(samples):
     assert meta["seed"] == 99
 
 
+def test_local_wan_video_prompt_key():
+    """本地 Wan（KJNodes）工作流：提示词在 WanVideoTextEncodeCached.positive_prompt。
+
+    实测本机 影驰数字人 那批 InfiniteTalk/Wan2.1 视频就是这样，14/191 个文件；
+    只认 prompt / text 时这批视频的提示词会全空。
+    """
+    api = {
+        "122": {
+            "class_type": "WanVideoModelLoader",
+            "inputs": {"model": "InfiniteTalk\\wan2.1-i2v-14b-480p-Q8_0.gguf"},
+        },
+        "241": {
+            "class_type": "WanVideoTextEncodeCached",
+            "inputs": {
+                "positive_prompt": "A reporter delivering news to the camera",
+                "negative_prompt": "bright tones, overexposed, static",
+            },
+        },
+        "128": {
+            "class_type": "WanVideoSampler",
+            "inputs": {"seed": 415630178572760, "text_embeds": ["241", 0]},
+        },
+    }
+    tags = {
+        "comment": json.dumps(
+            {"prompt": json.dumps(api, ensure_ascii=False), "workflow": UI_WORKFLOW},
+            ensure_ascii=False,
+        )
+    }
+    out = extract_video_comfyui_metadata(tags)
+    assert out["positive_prompt"] == "A reporter delivering news to the camera"
+    assert out["negative_prompt"] == "bright tones, overexposed, static"
+    assert out["seed"] == 415630178572760
+    assert out["workflow_source"] == "comment"
+    assert out["model"] == "wan2.1-i2v-14b-480p-Q8_0", "WanVideoModelLoader 也要能出模型名"
+
+
 def test_prompt_only_is_not_a_workflow(samples):
     meta = parse_video_metadata(samples["prompt_only"])
     assert meta["workflow"] == "", "API prompt 没有 nodes 数组，进不了画布"

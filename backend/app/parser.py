@@ -822,11 +822,14 @@ _VIDEO_MODEL_INPUT_KEYS = {
     "UnetLoaderGGUFAdvanced": "unet_name",
     "CheckpointLoaderSimple": "checkpoint_name",
     "CheckpointLoader": "config_name",
+    # 本地 Wan（KJNodes）工作流的模型入口，键名就叫 model
+    "WanVideoModelLoader": "model",
 }
 # 提示词的实际落点。视频/API 节点（MiniMaxH3ImageToVideo、ComfyCloudMiniMaxH3*、
 # KlingImage2VideoNode、ByteDance2*…）用 ``prompt``；图片那套是 CLIPTextEncode.text，
 # 由 _extract_comfyui_prompts 负责，这里只当兜底。
-_VIDEO_PROMPT_KEYS = ("prompt",)
+# 本地 Wan 工作流（KJNodes）把正面提示词放在 WanVideoTextEncodeCached.positive_prompt
+_VIDEO_PROMPT_KEYS = ("prompt", "positive_prompt")
 _VIDEO_PROMPT_FALLBACK_KEYS = ("text",)
 _VIDEO_NEGATIVE_KEYS = ("negative_prompt", "negative")
 # 连线来源节点里可能放正文的键，按优先级

@@ -103,6 +103,42 @@
     if (expected && !shown) throw new Error('ComfyUI 已收到工作流，但画布上一个节点都没有');
     // 回传成功后不松手：ComfyUI 自己的恢复/自动保存可能晚几秒把图覆盖掉，
     // 只要用户还停在我们的标签上就把图放回去；用户自己切走标签就不再插手。
+    // 载入完把图缩放到窗口正中：ComfyUI 的 loadGraphData 不保证 fit，节点尺寸也是
+    // 异步算好的，所以连打三次；用户这期间一动（拖动/滚轮/按键）就立刻不再抢视角。
+    const FIT_COMMAND = 'Comfy.Canvas.FitView';
+    const fitOnce = () => {
+      try {
+        const cm = app.commandManager || (app.ui && app.ui.commandManager);
+        if (cm && typeof cm.execute === 'function') { cm.execute(FIT_COMMAND, app); return true; }
+      } catch (err) {}
+      const c = app.canvas;
+      if (!c) return false;
+      try { if (typeof c.zoomToFit === 'function') { c.zoomToFit(); return true; } } catch (err) {}
+      try { if (c.ds && typeof c.ds.zoomToFit === 'function') { c.ds.zoomToFit(); if (typeof c.setDirty === 'function') c.setDirty(true); return true; } } catch (err) {}
+      try { if (typeof c.centerOnView === 'function') { c.centerOnView(); return true; } } catch (err) {}
+      // 最后兜底：走 ComfyUI 自己的快捷键（. = 适应视图），命令接口在改版中间可能不在
+      try {
+        const host = document.getElementById('graph-canvas-container') || document.getElementById('graph-canvas');
+        if (host) { host.dispatchEvent(new KeyboardEvent('keydown', { key: '.', code: 'Period', bubbles: true, cancelable: true })); return true; }
+      } catch (err) {}
+      return false;
+    };
+    let touched = false;
+    const markTouched = () => { touched = true; };
+    const TOUCH_EVENTS = ['pointerdown', 'wheel', 'keydown'];
+    const autoFit = async () => {
+      TOUCH_EVENTS.forEach((type) => window.addEventListener(type, markTouched, { passive: true }));
+      try {
+        for (const delay of [80, 400, 1200]) {
+          await sleep(delay);
+          if (touched) return;
+          fitOnce();
+        }
+      } finally {
+        TOUCH_EVENTS.forEach((type) => window.removeEventListener(type, markTouched));
+      }
+    };
+
     const guard = async () => {
       const mine = () => !store || !store.activeWorkflow || tabName(store.activeWorkflow) === TAB_NAME;
       let replays = 0;
@@ -112,9 +148,11 @@
         if (replays >= 2) break;
         replays += 1;
         try { await app.loadGraphData(state, true, true, tab); } catch (err) {}
+        if (!touched) fitOnce();
       }
     };
     location.href = 'suxing-workflow://loaded';
+    autoFit().catch(() => {});
     guard().catch(() => {});
   })().catch((error) => {
     location.href = 'suxing-workflow://failed?message=' + encodeURIComponent(error?.message || String(error));

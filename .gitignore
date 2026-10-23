@@ -89,3 +89,8 @@ outputs/**/smoke-data/
 outputs/**/test-data/
 outputs/tauri-m0f-e2e/run/
 outputs/tauri-m0f-e2e/run-nosidecar/
+
+# One-off splash patches and captured API payloads (never part of the app)
+apply_splash.cjs
+extract_splash.cjs
+detail.json

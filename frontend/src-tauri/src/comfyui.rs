@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Mutex, OnceLock};
 use tauri::webview::{NewWindowFeatures, NewWindowResponse};
 use tauri::{Manager, Url, WebviewUrl, WebviewWindowBuilder};
 static NEXT_WINDOW: AtomicUsize = AtomicUsize::new(1);
@@ -14,6 +14,105 @@ const BRIDGE_JS: &str = include_str!("comfyui_bridge.js");
 fn popup_registry() -> &'static Mutex<HashMap<String, String>> {
     static POPUPS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
     POPUPS.get_or_init(Default::default)
+}
+
+/// 同一个 ComfyUI 服务只开一个窗口：工作流在窗口内部当成标签来切，
+/// 不再「每开一张图就多一个窗口」（表现和浏览器一致）。
+fn workflow_windows() -> &'static Mutex<HashMap<String, String>> {
+    static WINDOWS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+    WINDOWS.get_or_init(Default::default)
+}
+
+/// 每次「把某个工作流装进窗口」都要等窗口里的脚本回执，键是请求 id。
+fn pending_loads() -> &'static Mutex<HashMap<u64, tokio::sync::oneshot::Sender<Result<(), String>>>> {
+    static PENDING: OnceLock<Mutex<HashMap<u64, tokio::sync::oneshot::Sender<Result<(), String>>>>> = OnceLock::new();
+    PENDING.get_or_init(Default::default)
+}
+
+static NEXT_LOAD_ID: AtomicU64 = AtomicU64::new(1);
+
+fn next_load_id() -> u64 {
+    NEXT_LOAD_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+fn lock<T>(slot: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn register_load(id: u64) -> tokio::sync::oneshot::Receiver<Result<(), String>> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    lock(pending_loads()).insert(id, sender);
+    receiver
+}
+
+fn resolve_load(id: u64, result: Result<(), String>) {
+    if let Some(sender) = lock(pending_loads()).remove(&id) {
+        let _ = sender.send(result);
+    }
+}
+
+fn clear_load(id: u64) {
+    lock(pending_loads()).remove(&id);
+}
+
+/// 窗口里的脚本用自定义协议回传结果（外部页面的 JS 拿不到 Tauri IPC）：
+/// `suxing-workflow://loaded?id=7` / `suxing-workflow://failed?id=7&message=…`。
+pub(crate) fn parse_ping(location: &Url) -> Option<(u64, Result<(), String>)> {
+    if location.scheme() != "suxing-workflow" {
+        return None;
+    }
+    let id = location
+        .query_pairs()
+        .find(|(key, _)| key == "id")
+        .and_then(|(_, value)| value.parse::<u64>().ok())
+        .unwrap_or(0);
+    let result = match location.host_str() {
+        Some("loaded") => Ok(()),
+        _ => Err(location
+            .query_pairs()
+            .find(|(key, _)| key == "message")
+            .map(|(_, value)| value.into_owned())
+            .unwrap_or_else(|| "工作流加载失败".to_string())),
+    };
+    Some((id, result))
+}
+
+/// 窗口按 ComfyUI 服务（origin）复用，不按工作流：换工作流只是换标签。
+pub(crate) fn workflow_window_key(url: &Url) -> String {
+    url.origin().ascii_serialization()
+}
+
+/// 拿到可复用的窗口；记录已经失效就顺手清掉。
+fn reusable_window(app: &tauri::AppHandle, key: &str) -> Option<tauri::WebviewWindow> {
+    let label = {
+        let mut windows = lock(workflow_windows());
+        match windows.get(key) {
+            Some(label) if app.get_webview_window(label).is_some() => label.clone(),
+            _ => {
+                windows.remove(key);
+                return None;
+            }
+        }
+    };
+    app.get_webview_window(&label)
+}
+
+/// 记住这个 origin 的窗口，同地址以后都回到这里。
+fn remember_window(app: &tauri::AppHandle, key: &str, window: &tauri::WebviewWindow) {
+    if app.get_webview_window(window.label()).is_some() {
+        lock(workflow_windows()).insert(key.to_string(), window.label().to_string());
+    }
+}
+
+/// 等窗口里的脚本回执。`secs` 秒没人回话就报超时（ComfyUI 冷启动很慢，别调太短）。
+async fn await_load(id: u64, receiver: tokio::sync::oneshot::Receiver<Result<(), String>>, secs: u64) -> Result<(), String> {
+    tokio::time::timeout(std::time::Duration::from_secs(secs), receiver)
+        .await
+        .map_err(|_| {
+            clear_load(id);
+            "ComfyUI 加载超时，请确认服务已启动".to_string()
+        })?
+        .map_err(|_| "ComfyUI 窗口已关闭".to_string())?
 }
 
 /// ComfyUI 页面要开新页面时的落点。
@@ -226,6 +325,39 @@ pub async fn open_external_url(url: String) -> Result<(), String> {
     open_in_default_browser(parsed.as_str())
 }
 
+/// 把另一个工作流塞进已经开着的窗口。页面还没准备好（比如正停在 LoRA 管理器那种
+/// 插件页面）就返回 Err，让调用方改走新建窗口，别把用户晾在原地。
+fn push_workflow_to_window(
+    window: &tauri::WebviewWindow,
+    id: u64,
+    name: &str,
+    workflow: &serde_json::Value,
+) -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, String> {
+    let receiver = register_load(id);
+    let payload = serde_json::json!({ "id": id, "name": name, "workflow": workflow });
+    let script = serde_json::to_string(&payload).map_err(|e| e.to_string())?;
+    // 页面正在跳转时控制器可能还没挂上，这种情况给用户一句能照着做的话，
+    // 而不是把 JS 内部的 TypeError 甩到界面上。
+    let js = format!(
+        "(() => {{ const payload = {script}; const ctrl = window.__seekxWorkflow; \
+           if (ctrl && typeof ctrl.load === 'function') {{ \
+             try {{ ctrl.load(payload); return; }} catch (error) {{ \
+               location.href = 'suxing-workflow://failed?id=' + payload.id + '&message=' \
+                 + encodeURIComponent(String((error && error.message) || error)); \
+               return; \
+             }} \
+           }} \
+           location.href = 'suxing-workflow://failed?id=' + payload.id + '&message=' \
+             + encodeURIComponent('ComfyUI 页面还没准备好，请再点一次'); \
+         }})();"
+    );
+    if let Err(e) = window.eval(&js) {
+        clear_load(id);
+        return Err(e.to_string());
+    }
+    Ok(receiver)
+}
+
 /// 打开工作流的应用内窗口标题。
 /// 工作流名仍然会传给 ComfyUI（写进工作流名称），但不再进标题：
 /// 用户会同时开多个工作流窗口，任务栏 / Alt-Tab 里统一显示 ComfyUI 更好认。
@@ -242,11 +374,38 @@ pub async fn open_comfy_workflow(app: tauri::AppHandle, url: String, name: Strin
     if !workflow.get("nodes").is_some_and(|n| n.is_array()) {
         return Err("图片没有可加载的 ComfyUI 画布工作流".into());
     }
-    let request = serde_json::json!({ "origin": target.origin().ascii_serialization(), "base": target.as_str(), "name": name, "workflow": workflow });
+    let key = workflow_window_key(&target);
+    // 先复用同地址的窗口：第二个工作流应该变成窗口里的新标签，不是第二个窗口。
+    if let Some(window) = reusable_window(&app, &key) {
+        let id = next_load_id();
+        let label = window.label().to_string();
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+        match push_workflow_to_window(&window, id, &name, &workflow) {
+            Ok(receiver) => return await_load(id, receiver, 60).await,
+            Err(e) => {
+                log::warn!("[comfyui] reuse {label} failed ({e}); opening a new window");
+                lock(workflow_windows()).remove(&key);
+            }
+        }
+    }
+    open_workflow_window(app, target, key, name, workflow).await
+}
+
+/// 首次打开：建窗口 + 默认最大化 + 等首次装载回执。
+async fn open_workflow_window(
+    app: tauri::AppHandle,
+    target: tauri::Url,
+    key: String,
+    name: String,
+    workflow: serde_json::Value,
+) -> Result<(), String> {
+    let id = next_load_id();
+    let receiver = register_load(id);
+    let request = serde_json::json!({ "id": id, "origin": target.origin().ascii_serialization(), "base": target.as_str(), "name": name, "workflow": workflow });
     // 面板宿主 + 工作流桥共用同一个 request 作用域；面板必须在前。
     let script = format!("(() => {{ const request = {}; {PANEL_JS} {BRIDGE_JS} }})();", request);
-    let (sender, receiver) = tokio::sync::oneshot::channel::<Result<(), String>>();
-    let sender = Arc::new(Mutex::new(Some(sender)));
     let label = format!("comfy-workflow-{}", NEXT_WINDOW.fetch_add(1, Ordering::Relaxed));
     let opener = target.clone();
     let panel_label = label.clone();
@@ -259,26 +418,26 @@ pub async fn open_comfy_workflow(app: tauri::AppHandle, url: String, name: Strin
         .title(workflow_window_title(&name))
         .theme(Some(tauri::Theme::Dark))
         .visible(false)
+        // 画布工作流是「看着大图摆节点」的东西，小窗打开每次都要手动最大化，
+        // 所以默认就铺满工作区。
+        .maximized(true)
         .disable_drag_drop_handler()
         .enable_clipboard_access()
         .inner_size(1280.0, 900.0)
         .initialization_script(&script)
         .on_new_window(new_window_policy(app.clone(), opener, Some(panel_label)))
-        .on_navigation(move |location| {
-            if location.scheme() == "suxing-workflow" {
-                let result = if location.host_str() == Some("loaded") { Ok(()) } else {
-                    Err(location.query_pairs().find(|(key, _)| key == "message").map(|(_, value)| value.into_owned()).unwrap_or("工作流加载失败".into()))
-                };
-                if let Some(send) = sender.lock().unwrap().take() { let _ = send.send(result); }
+        .on_navigation(move |location| match parse_ping(location) {
+            Some((ping_id, result)) => {
+                resolve_load(ping_id, result);
                 false
-            } else { true }
+            }
+            None => true,
         })
-        .build().map_err(|e| e.to_string())?;
+        .build().map_err(|e| { clear_load(id); e.to_string() })?;
     crate::window_style::apply(&window);
     window.show().map_err(|e| e.to_string())?;
-    tokio::time::timeout(std::time::Duration::from_secs(90), receiver).await
-        .map_err(|_| "ComfyUI 加载超时，请确认服务已启动".to_string())?
-        .map_err(|_| "ComfyUI 窗口已关闭".to_string())?
+    remember_window(&app, &key, &window);
+    await_load(id, receiver, 90).await
 }
 
 #[cfg(test)]
@@ -318,6 +477,45 @@ mod tests {
         let opener = url("http://127.0.0.1:8188/");
         assert_eq!(popup_target(&opener, &url("file:///C:/Windows/win.ini"), false), PopupTarget::Deny);
         assert_eq!(popup_target(&opener, &url("javascript:alert(1)"), true), PopupTarget::Deny);
+    }
+
+    #[test]
+    fn one_window_per_comfyui_service_keyed_by_origin() {
+        assert_eq!(workflow_window_key(&url("http://127.0.0.1:8188/?t=1")), "http://127.0.0.1:8188");
+        assert_eq!(workflow_window_key(&url("http://127.0.0.1:8188/loras")), "http://127.0.0.1:8188");
+        // 端口不同就是另一台 ComfyUI，该各开一个窗口
+        assert_ne!(workflow_window_key(&url("http://127.0.0.1:8188/")), workflow_window_key(&url("http://127.0.0.1:8189/")));
+    }
+
+    #[test]
+    fn ping_carries_the_request_id() {
+        let loaded = parse_ping(&url("suxing-workflow://loaded?id=7")).unwrap();
+        assert_eq!(loaded.0, 7);
+        assert!(loaded.1.is_ok());
+
+        let failed = parse_ping(&url("suxing-workflow://failed?id=9&message=%E7%BC%BA%E8%8A%82%E7%82%B9")).unwrap();
+        assert_eq!(failed.0, 9);
+        assert_eq!(failed.1.unwrap_err(), "缺节点");
+
+        // 老格式（没有 id）仍然算首次装载的回执
+        let legacy = parse_ping(&url("suxing-workflow://loaded")).unwrap();
+        assert_eq!(legacy.0, 0);
+        assert!(legacy.1.is_ok());
+    }
+
+    #[test]
+    fn ordinary_navigation_is_left_alone() {
+        assert!(parse_ping(&url("http://127.0.0.1:8188/loras")).is_none());
+    }
+
+    #[test]
+    fn every_load_gets_its_own_id() {
+        let first = next_load_id();
+        let second = next_load_id();
+        assert_ne!(first, second);
+        let (id, result) = parse_ping(&url(&format!("suxing-workflow://failed?id={second}&message=x"))).unwrap();
+        assert_eq!(id, second);
+        assert_eq!(result.unwrap_err(), "x");
     }
 
     #[test]
@@ -435,13 +633,36 @@ mod tests {
     }
 
     #[test]
-    fn workflow_tab_is_fixed_name_and_never_waits_for_a_tab() {
+    fn bridge_loads_every_requested_workflow_in_one_window() {
+        // 一台 ComfyUI 一个窗口：桌面壳复用窗口，桥接把每个请求变成窗口里的一个标签。
+        assert!(BRIDGE_JS.contains(r#"window.__seekxWorkflow = { load: (payload) => deliver(payload) };"#));
+        // 标签名用媒体名，用户才能在标签条上认出是哪张图；全空才退回 ComfyUI
+        assert!(BRIDGE_JS.contains("const FALLBACK_TAB = 'ComfyUI';"));
+        assert!(BRIDGE_JS.contains("const tabFileName = (raw) => {"));
+        // 回话必须带请求 id，否则复用窗口时桌面壳分不清是哪一次装载的回执
+        assert!(BRIDGE_JS.contains("'suxing-workflow://loaded?id=' + id"));
+        assert!(BRIDGE_JS.contains("'suxing-workflow://failed?id=' + id"));
+        // 停在插件页（/loras）时不能碰 app.js：存一份待载请求，跳回画布再装
+        assert!(BRIDGE_JS.contains("const PENDING_KEY = 'SeekX.Request';"));
+        assert!(BRIDGE_JS.contains("write(session, PENDING_KEY, JSON.stringify(task))"));
+        // 每次导航都会重跑注入脚本，当前工作流以 SeekX.Active 为准，别把第一个糊回去
+        assert!(BRIDGE_JS.contains("const ACTIVE_KEY = 'SeekX.Active';"));
+        assert!(BRIDGE_JS.contains("readJson(session, ACTIVE_KEY) || request"));
+        // 控制器不在位时要有中文提示，不能把 JS 报错甩给用户
+        let source = include_str!("comfyui.rs");
+        assert!(source.contains("ComfyUI 页面还没准备好，请再点一次"));
+    }
+
+    #[test]
+    fn workflow_tab_never_waits_for_a_restored_tab() {
         // 「工作流不见了」的成因：桥接把「已有活动工作流标签」当成前提，
         // 而 ComfyUI 的标签恢复一旦被我们留下的野路径带坏就永远等不到标签。
-        // 现在只等画布可用、标签名固定成 ComfyUI，持久化里永远只有那一条。
-        assert!(BRIDGE_JS.contains("const TAB_NAME = 'ComfyUI';"));
+        // 现在只等画布可用，标签我们自己开，同名复用。
+        assert!(BRIDGE_JS.contains("const FALLBACK_TAB = 'ComfyUI';"));
+        assert!(BRIDGE_JS.contains("const existing = (store.openWorkflows || []).find("));
         assert!(BRIDGE_JS.contains("if (app.canvas && app.graph && !app.configuringGraph) break;"));
         assert!(BRIDGE_JS.contains("createNewTemporary"));
+        assert!(BRIDGE_JS.contains("const tab = existing || store.createNewTemporary(fileName);"));
         // 不再改 ComfyUI 的标签持久化键，除了「有记录却一个标签都没恢复出来」时的自愈
         assert!(!BRIDGE_JS.contains("localStorage.setItem"));
         let source = include_str!("comfyui.rs");

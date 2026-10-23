@@ -14,7 +14,7 @@ const rust = readFileSync(`${SRC}/comfyui.rs`, 'utf8');
 const ORIGIN = 'http://127.0.0.1:8188';
 
 function combined() {
-  const request = JSON.stringify({ origin: ORIGIN, base: `${ORIGIN}/`, name: '某张图', workflow: { nodes: [{}, {}] } });
+  const request = JSON.stringify({ id: 11, origin: ORIGIN, base: `${ORIGIN}/`, name: '某张图', workflow: { nodes: [{}, {}] } });
   return `(() => { const request = ${request}; ${panel} ${bridge} })();`;
 }
 
@@ -78,10 +78,10 @@ it('拼起来之后两段脚本都真的在画布上跑起来了', async () => {
   });
   for (let i = 0; i < 600; i++) await Promise.resolve();
 
-  // bridge：装进我们自己那个固定名字的标签，并且回报完成
+  // bridge：装进以媒体名命名的标签，并带着请求 id 回报完成
   expect(calls.length).toBe(1);
-  expect(calls[0][3]).toBe('ComfyUI.json');
-  expect(location.href).toBe('suxing-workflow://loaded');
+  expect(calls[0][3]).toBe('某张图.json');
+  expect(location.href).toBe('suxing-workflow://loaded?id=11');
   // 用户正在用的标签和 ComfyUI 的标签持久化都不该被动过
   expect(app.extensionManager.workflow.activeWorkflow.filename).toBe('我的工作流');
   expect(local.bag['Comfy.Workflow.LastOpenPaths:personal']).toBeDefined();

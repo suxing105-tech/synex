@@ -50,4 +50,22 @@ describe('revealLocation', () => {
     invoke.mockRejectedValue(new Error('文件已经不在这个位置了，可能被移动或删除'));
     await expect(revealLocation('D:\\gone.png', true)).rejects.toThrow('已经不在这个位置');
   });
+
+  // Tauri 命令失败时 reject 的是 Rust 那侧的字符串，不是 Error：
+  // 直接取 error.message 会得到 undefined，界面上就是「打开所在文件夹失败：undefined」
+  it('桌面壳 reject 字符串时也要有可读原因', async () => {
+    invoke.mockRejectedValue('资源管理器打不开这个位置（0x800401f0）');
+    await expect(revealLocation('D:\\a\\b.png', true)).rejects.toThrow('资源管理器打不开这个位置');
+  });
+
+  it('reject 的东西完全没信息时用兜底文案，绝不显示 undefined', async () => {
+    invoke.mockRejectedValue(undefined);
+    await expect(revealLocation('D:\\a\\b.png', true)).rejects.toThrow('打开所在文件夹失败');
+  });
+
+  it('后端接口失败同样包成 Error', async () => {
+    delete (window as any).__TAURI__;
+    const fallback = vi.fn().mockRejectedValue('没有权限');
+    await expect(revealLocation('D:\\a\\b.png', true, fallback)).rejects.toThrow('没有权限');
+  });
 });

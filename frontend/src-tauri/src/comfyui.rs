@@ -336,6 +336,9 @@ mod tests {
         assert!(BRIDGE_JS.contains("centerOnView"));
         // 只在载入后自动 fit；用户一动手就不再抢视角
         assert!(BRIDGE_JS.contains("pointerdown"));
+        // 兜底靠模拟「.」快捷键，绑定目标必须是画布容器
+        assert!(BRIDGE_JS.contains("graph-canvas-container"));
+        assert!(BRIDGE_JS.contains("app.canvasContainer"));
         let load_at = BRIDGE_JS.find("if (!(await load()))").expect("load step");
         let fit_at = BRIDGE_JS.find("const fitOnce").expect("fit helper");
         let loaded_at = BRIDGE_JS.find("suxing-workflow://loaded").expect("loaded ping");

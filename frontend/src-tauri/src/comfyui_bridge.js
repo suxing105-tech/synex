@@ -118,8 +118,11 @@
       try { if (typeof c.centerOnView === 'function') { c.centerOnView(); return true; } } catch (err) {}
       // 最后兜底：走 ComfyUI 自己的快捷键（. = 适应视图），命令接口在改版中间可能不在
       try {
-        const host = document.getElementById('graph-canvas-container') || document.getElementById('graph-canvas');
-        if (host) { host.dispatchEvent(new KeyboardEvent('keydown', { key: '.', code: 'Period', bubbles: true, cancelable: true })); return true; }
+        const combo = { key: '.', code: 'Period', bubbles: true, cancelable: true };
+        const hosts = [app.canvasContainer, document.getElementById('graph-canvas-container'), document]
+          .filter((host, index, all) => host && all.indexOf(host) === index);
+        for (const host of hosts) host.dispatchEvent(new KeyboardEvent('keydown', combo));
+        return hosts.length > 0;
       } catch (err) {}
       return false;
     };

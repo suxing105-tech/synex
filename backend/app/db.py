@@ -414,6 +414,7 @@ def get_int_meta(key: str, default: int = 0) -> int:
 def set_meta(key: str, value: object) -> None:
     get_pool().main().execute(
         "INSERT INTO meta(key, value) VALUES(?, ?) "
-        "ON CONFLICT(key) DO UPDATE SET value = excluded",
+        # 注意是 excluded.value：光写 excluded 是表名，SQLite 会报 no such column
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         (key, str(value)),
     )

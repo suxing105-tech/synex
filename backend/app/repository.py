@@ -416,6 +416,19 @@ def image_detail(image_id: int) -> dict | None:
     return _row_to_detail(row)
 
 
+# 列表/搜索用的列清单。**不要退回 SELECT images.***：ComfyUI 的 workflow JSON
+# 单条就有 25–100KB（视频更是整份画布），一页 200 行白白读十几 MB，
+# 而列表只需要知道"有没有工作流"。用 length() 派生列代替。
+_SUMMARY_SELECT = (
+    "images.id, images.path, images.filename, images.kind, images.width, "
+    "images.height, images.mtime, images.size_bytes, images.duration_seconds, "
+    "images.video_codec, images.audio_codec, images.fps, images.favorite, "
+    "images.model, images.seed, images.thumb_path, images.cover_path, "
+    "images.format, images.indexed_at, "
+    "length(COALESCE(images.workflow, '')) > 0 AS has_workflow"
+)
+
+
 def _row_to_summary(row: sqlite3.Row) -> dict:
     folder_ids = [
         r["folder_id"]
@@ -456,7 +469,13 @@ def _row_to_summary(row: sqlite3.Row) -> dict:
         "model": row["model"],
         "seed": row["seed"],
         "new": False,
-        "has_workflow": bool(row["workflow"]),
+        # 列表查询只带 length(workflow)>0 这个派生列（见 _SUMMARY_SELECT）；
+        # 单条查询走 SELECT *，这里回落到整列。
+        "has_workflow": (
+            bool(row["has_workflow"])
+            if "has_workflow" in row.keys()
+            else bool(row["workflow"])
+        ),
     }
 
 
@@ -726,7 +745,7 @@ def feed(
         f"SELECT COUNT(*) AS c FROM images {where_clause}", params
     ).fetchone()["c"]
     rows = conn.execute(
-        f"SELECT images.* FROM images {where_clause} "
+        f"SELECT {_SUMMARY_SELECT} FROM images {where_clause} "
         f"ORDER BY images.mtime DESC LIMIT ? OFFSET ?",
         (*params, limit, offset),
     ).fetchall()
@@ -920,6 +939,72 @@ def prune_missing_system_folders(watch_dirs: list[Path]) -> int:
         placeholders = ",".join("?" * len(to_delete))
         c.execute(f"DELETE FROM folders WHERE id IN ({placeholders})", to_delete)
     return len(to_delete)
+
+
+# 视频容器元数据（ComfyUI 工作流 / 提示词）的解析器版本。
+# 老库里视频的 workflow 全是空的（那时 parse_video_metadata 不读容器 tag），
+# 版本号写进 meta 表做一次性回填门控；以后再加解析形态就把它 +1。
+VIDEO_METADATA_SCHEMA_VERSION = 1
+
+
+def backfill_video_metadata() -> int:
+    """给已入库的视频补读 ComfyUI 写进容器的工作流与提示词。返回更新的行数。
+
+    为什么需要：「在 ComfyUI 中打开」按钮的开关是 ``has_workflow``，而旧解析器把
+    视频那一列永远写成空串，所以老库里的视频永远出不了按钮。新导入的视频由
+    indexer 直接解析，不依赖这里。
+
+    两条硬规则：
+    - **只写不擦**：某个字段这次没解析出来就不进 UPDATE，绝不把已有的值清掉；
+    - **一次性的例外**：跑完把版本写进 meta，下次启动直接 0 行返回；
+      解析失败（文件不在了 / ffprobe 挂了）跳过该行，但门控照样落下，
+      不然每次启动都要把整库 ffprobe 一遍。
+    """
+    from .db import get_int_meta, set_meta
+
+    conn = get_pool().main()
+    if get_int_meta("video_metadata_schema", 0) >= VIDEO_METADATA_SCHEMA_VERSION:
+        return 0
+    rows = conn.execute(
+        "SELECT id, path FROM images WHERE kind = 'video' ORDER BY id"
+    ).fetchall()
+    updated = 0
+    for row in rows:
+        path = row["path"]
+        if not isinstance(path, str) or not path.strip():
+            continue
+        p = Path(path)
+        if not p.exists():
+            continue
+        try:
+            meta = parse_video_metadata(p)
+        except Exception:  # noqa: BLE001 - 单个文件解析失败不影响整批
+            continue
+        updates: dict[str, object] = {}
+        if meta.get("workflow"):
+            updates["workflow"] = meta["workflow"]
+        if meta.get("positive_prompt"):
+            updates["positive_prompt"] = meta["positive_prompt"]
+        if meta.get("negative_prompt"):
+            updates["negative_prompt"] = meta["negative_prompt"]
+        if meta.get("parameters"):
+            updates["parameters"] = json.dumps(meta["parameters"], ensure_ascii=False)
+        if meta.get("seed") is not None:
+            updates["seed"] = meta["seed"]
+        if meta.get("model"):
+            updates["model"] = meta["model"]
+        if not updates:
+            continue
+        assignments = ", ".join(f"{col} = ?" for col in updates)
+        conn.execute(
+            f"UPDATE images SET {assignments} WHERE id = ?",
+            (*updates.values(), row["id"]),
+        )
+        updated += 1
+    conn.commit()
+    set_meta("video_metadata_schema", VIDEO_METADATA_SCHEMA_VERSION)
+    conn.commit()
+    return updated
 
 
 def backfill_system_folders(watch_dirs: list[Path]) -> int:

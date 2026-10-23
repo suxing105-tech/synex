@@ -2,7 +2,7 @@
 
 设计要点：
 - 探测独立于图片，仅需 ComfyUI URL；前端可手动触发重探测。
-- open_workflow 需要图片存在 + 携带 workflow；写临时文件后由前端负责
+- open_workflow 需要媒体（图片或视频）存在且携带 workflow；写临时文件后由前端负责
   打开 / 复用 ComfyUI 浏览器标签页（统一窗口名，浏览器自动复用）。
   后端不再调用 ``webbrowser.open``，避免 ``new=2`` 每次都新开标签页。
 """
@@ -70,10 +70,10 @@ def update_config(payload: ComfyuiConfigUpdate, request: Request) -> ComfyuiStat
 
 @router.post("/open_workflow/{image_id}", response_model=OpenWorkflowResult)
 def open_workflow(image_id: int) -> OpenWorkflowResult:
-    """把图片的 workflow 写到 ``data/comfyui_temp/<image_filename>.json``。
+    """把媒体（图片或视频）的 workflow 写到 ``data/comfyui_temp/<filename>.json``。
 
-    - 图片不存在 → 404
-    - 图片无 workflow → 400 ``no_workflow``
+    - 媒体不存在 → 404
+    - 没携带 workflow → 400 ``no_workflow``
     - 集成未启用 → 403 ``disabled``
 
     注意：浏览器标签页的「打开 / 复用」由前端负责（统一 ``suxing_comfyui``
@@ -88,7 +88,7 @@ def open_workflow(image_id: int) -> OpenWorkflowResult:
         "SELECT id, filename, workflow FROM images WHERE id = ?", (image_id,)
     ).fetchone()
     if not row:
-        raise HTTPException(404, f"图片 {image_id} 不存在")
+        raise HTTPException(404, f"媒体 {image_id} 不存在")
     image_filename = row["filename"] or f"image_{image_id}"
     workflow_json = row["workflow"] or ""
     if not workflow_json.strip():
@@ -99,7 +99,7 @@ def open_workflow(image_id: int) -> OpenWorkflowResult:
         if not isinstance(workflow, dict):
             raise ValueError("工作流格式无效")
     except (ValueError, TypeError) as e:
-        raise HTTPException(400, "图片工作流 JSON 无效") from e
+        raise HTTPException(400, "工作流 JSON 无效") from e
     target = write_workflow_temp(image_filename, workflow_json)
     if not target:
         # 二次保险：上面已经判过空，这里只是兜底

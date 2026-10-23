@@ -18,6 +18,7 @@
 import { isTauri } from "./tauri";
 
 const WINDOW_NAME = "suxing_comfyui";
+const DEFAULT_COMFYUI_URL = "http://127.0.0.1:8188";
 
 let comfyuiWindow: Window | null = null;
 
@@ -63,10 +64,35 @@ export async function loadComfyWorkflow(id: number, filename: string): Promise<v
   const { comfyuiApi } = await import('./api');
   if (!isTauri()) throw new Error('自动加载工作流请使用桌面版');
   const result = await comfyuiApi.openWorkflow(id);
-  if (!result.workflow) throw new Error('图片没有可加载的工作流');
+  if (!result.workflow) throw new Error('该媒体没有可加载的工作流');
   await (window as any).__TAURI__.core.invoke('open_comfy_workflow', {
     url: result.comfyui_url,
     name: filename.replace(/\.[^.]+$/, ''),
     workflow: result.workflow,
   });
+}
+
+/**
+ * 打开媒体的 ComfyUI 工作流：图片和视频同一条路。
+ *
+ * - 桌面版：后端把 workflow 落到临时文件，Rust 开应用内 ComfyUI 窗口并注入
+ *   ``loadGraphData``，用户不需要再 File → Open。
+ * - 浏览器版：没有 Rust 壳，只能复用标签页 + 落临时文件，用户自己打开。
+ *   ``window.open`` 必须在点击手势的同步段调用，所以这里先开标签再 await。
+ *
+ * @returns 给 toast 用的提示语
+ */
+export async function openWorkflowForMedia(
+  id: number,
+  filename: string,
+  comfyuiUrl: string,
+): Promise<string> {
+  if (!isTauri()) {
+    openOrReuseComfyuiTab(comfyuiUrl || DEFAULT_COMFYUI_URL);
+    const { comfyuiApi } = await import("./api");
+    const r = await comfyuiApi.openWorkflow(id);
+    return `${r.workflow_name}.json 已写入 ${r.file_path}，在 ComfyUI 里 File → Open 加载`;
+  }
+  await loadComfyWorkflow(id, filename);
+  return "已在 ComfyUI 中打开工作流";
 }

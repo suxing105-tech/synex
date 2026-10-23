@@ -803,6 +803,212 @@ def parse_metadata(path: Path) -> dict[str, Any]:
     return result
 
 
+# ---------- ComfyUI 视频容器元数据 ----------
+#
+# ComfyUI 存视频时会把和 PNG 同一套工作流写进容器元数据。本机 v0.16.4（前端 0.33.0）
+# 的 output 目录 191 个 mp4 全量 ffprobe，实测有两种落法：
+#   1) 顶层 tag：``workflow`` = UI 工作流 JSON 字符串，``prompt`` = API prompt JSON 字符串；
+#   2) 只有一个 ``comment`` tag，整体是 JSON：
+#      ``{"prompt": "<API prompt JSON 字符串>", "workflow": {…UI 工作流 dict…}}``，
+#      注意 workflow 那一层是 **dict 不是字符串**。
+# 两种加起来覆盖 185/191；剩下的是只有 API prompt（没法进画布）或被第三方
+# 二次编码洗掉元数据（Topaz 那批带 ``te_is_reencode``），取不到就是取不到，
+# 不做任何猜测式关联。
+# 用 ``-movflags use_metadata_tags`` 生成的 mp4 可以复现第 1 种，测试就靠它。
+
+_VIDEO_MODEL_INPUT_KEYS = {
+    "UNETLoader": "unet_name",
+    "UnetLoaderGGUF": "unet_name",
+    "UnetLoaderGGUFAdvanced": "unet_name",
+    "CheckpointLoaderSimple": "checkpoint_name",
+    "CheckpointLoader": "config_name",
+}
+# 提示词的实际落点。视频/API 节点（MiniMaxH3ImageToVideo、ComfyCloudMiniMaxH3*、
+# KlingImage2VideoNode、ByteDance2*…）用 ``prompt``；图片那套是 CLIPTextEncode.text，
+# 由 _extract_comfyui_prompts 负责，这里只当兜底。
+_VIDEO_PROMPT_KEYS = ("prompt",)
+_VIDEO_PROMPT_FALLBACK_KEYS = ("text",)
+_VIDEO_NEGATIVE_KEYS = ("negative_prompt", "negative")
+# 连线来源节点里可能放正文的键，按优先级
+_VIDEO_LINK_TEXT_KEYS = ("value", "text", "prompt", "string")
+# 这些节点的 prompt/text 不是提示词（LoadText 读文件、SaveAnimatedWEBP 之类是路径前缀）
+_VIDEO_SKIP_NODE_HINTS = ("loader", "save", "preview", "load text", "loadimage", "load image")
+
+
+def _json_object(value: object) -> dict | None:
+    """把"已经是 dict 或者是 JSON 对象字符串"统一成 dict；否则 None。"""
+    obj = value
+    if isinstance(obj, str):
+        text = obj.strip()
+        if not text.startswith("{"):
+            return None
+        try:
+            obj = json.loads(text)
+        except ValueError:
+            return None
+    return obj if isinstance(obj, dict) else None
+
+
+def _ui_workflow_text(value: object) -> str:
+    """规范成 UI 工作流 JSON 字符串；不是合法 UI 工作流就返回空串。
+
+    UI 工作流的判据是 ``nodes`` 为数组（ComfyUI 前端导出格式）。API prompt 那种
+    ``{"1": {...}, "12": {...}}`` 没有 ``nodes``，塞进 ``loadGraphData`` 只会得到空画布，
+    所以必须挡掉。本来就是字符串且合法时原样保留，不重新序列化（保持字节忠实）。
+    """
+    if isinstance(value, str):
+        obj = _json_object(value)
+        return value.strip() if obj is not None and isinstance(obj.get("nodes"), list) else ""
+    if isinstance(value, dict) and isinstance(value.get("nodes"), list):
+        return json.dumps(value, ensure_ascii=False)
+    return ""
+
+
+def _video_model_name(prompt_obj: dict) -> str | None:
+    """从 UNETLoader / CheckpointLoaderSimple 取模型名，去目录去扩展名。"""
+    for node in prompt_obj.values():
+        if not isinstance(node, dict):
+            continue
+        key = _VIDEO_MODEL_INPUT_KEYS.get(str(node.get("class_type") or ""))
+        if not key:
+            continue
+        value = (node.get("inputs") or {}).get(key)
+        if isinstance(value, str) and value.strip():
+            base = value.strip().replace("\\", "/").rsplit("/", 1)[-1]
+            return base.rsplit(".", 1)[0] if "." in base else base
+    return None
+
+
+def _resolve_link_text(prompt_obj: dict, link: object) -> str:
+    """把 API prompt 里的连线输入 ``[节点id, 输出口]`` 解析成来源节点携带的字符串。
+
+    实测视频工作流常把提示词放在 ``PrimitiveStringMultiline.value`` 里，再连进生成节点的
+    ``prompt`` 输入（本机 影驰数字人 那批就是这样，24 节点里唯一那段 4.2KB 提示词在 404 号节点上）。
+    不解析连线就只能拿到空提示词。
+    """
+    if not isinstance(link, list) or not link:
+        return ""
+    target = prompt_obj.get(str(link[0]))
+    if not isinstance(target, dict):
+        return ""
+    inputs = target.get("inputs")
+    if not isinstance(inputs, dict):
+        return ""
+    for key in _VIDEO_LINK_TEXT_KEYS:
+        value = inputs.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _video_prompt_texts(prompt_obj: dict) -> tuple[str, str, int | None]:
+    """从 API prompt JSON 抽正向 / 反向提示词与 seed（视频工作流专用兜底）。
+
+    只认键名恰好是 prompt / text / negative_prompt / negative 的字符串输入，
+    且跳过 Loader / Save 类节点 —— 实测这样才能避开 ``unet_name``、
+    ``ComfyMathExpression.expression`` 这类又长又不是提示词的字符串。
+    """
+    def collect(keys: tuple[str, ...]) -> list[str]:
+        found: list[str] = []
+        for node in prompt_obj.values():
+            if not isinstance(node, dict):
+                continue
+            class_type = str(node.get("class_type") or "").lower()
+            if any(hint in class_type for hint in _VIDEO_SKIP_NODE_HINTS):
+                continue
+            inputs = node.get("inputs")
+            if not isinstance(inputs, dict):
+                continue
+            for key in keys:
+                value = inputs.get(key)
+                if isinstance(value, list):
+                    # 连线上游是文本节点时，取上游正文
+                    value = _resolve_link_text(prompt_obj, value)
+                if isinstance(value, str) and value.strip() and value.strip() not in found:
+                    found.append(value.strip())
+        return found
+
+    positives = collect(_VIDEO_PROMPT_KEYS)
+    if not positives:
+        positives = collect(_VIDEO_PROMPT_FALLBACK_KEYS)
+    negatives = collect(_VIDEO_NEGATIVE_KEYS)
+    seed: int | None = None
+    for node in prompt_obj.values():
+        if not isinstance(node, dict):
+            continue
+        class_type = str(node.get("class_type") or "").lower()
+        if any(hint in class_type for hint in _VIDEO_SKIP_NODE_HINTS):
+            continue
+        value = (node.get("inputs") or {}).get("seed")
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int):
+            seed = value
+            break
+        if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+            seed = int(value.strip())
+            break
+    return "\n\n".join(positives), "\n\n".join(negatives), seed
+
+
+def extract_video_comfyui_metadata(tags: object) -> dict:
+    """从 ffprobe 的 ``format.tags`` 里取 ComfyUI 写进视频容器的工作流与提示词。
+
+    返回 ``{workflow, positive_prompt, negative_prompt, seed, model, parameters,
+    workflow_source}``；``workflow_source`` 是 ``workflow`` / ``comment`` / ``""``，
+    用来说明工作流是从哪种 tag 形态读出来的。任何形态解析失败都只是"没有工作流"，
+    绝不抛错 —— 元数据解析失败不该影响索引。
+    """
+    out: dict = {
+        "workflow": "",
+        "positive_prompt": "",
+        "negative_prompt": "",
+        "seed": None,
+        "model": None,
+        "parameters": {},
+        "workflow_source": "",
+    }
+    if not isinstance(tags, dict):
+        return out
+
+    workflow = _ui_workflow_text(tags.get("workflow"))
+    prompt_obj = _json_object(tags.get("prompt"))
+    if workflow:
+        out["workflow_source"] = "workflow"
+    else:
+        wrapper = _json_object(tags.get("comment"))
+        if wrapper is not None:
+            workflow = _ui_workflow_text(wrapper.get("workflow"))
+            if workflow:
+                out["workflow_source"] = "comment"
+            if prompt_obj is None:
+                prompt_obj = _json_object(wrapper.get("prompt"))
+
+    out["workflow"] = workflow
+
+    if prompt_obj:
+        pos, neg, params = _extract_comfyui_prompts(prompt_obj)
+        seed: int | None = None
+        if params.get("seed") is not None:
+            try:
+                seed = int(str(params["seed"]).strip())
+            except (TypeError, ValueError):
+                seed = None
+        if not pos:
+            pos, neg2, fallback_seed = _video_prompt_texts(prompt_obj)
+            if not neg:
+                neg = neg2
+            if seed is None:
+                seed = fallback_seed
+        out["positive_prompt"] = pos
+        out["negative_prompt"] = neg
+        out["seed"] = seed
+        out["model"] = _video_model_name(prompt_obj)
+    if out["workflow_source"]:
+        out["parameters"] = {"comfyui_metadata": out["workflow_source"]}
+    return out
+
+
 def parse_video_metadata(path: Path) -> dict[str, Any]:
     """解析视频元数据（ffprobe 子进程）。返回统一结构，失败时返回空字段。
 
@@ -812,7 +1018,8 @@ def parse_video_metadata(path: Path) -> dict[str, Any]:
     - ``video_codec`` / ``audio_codec``：视频/音频编码名
     - ``fps``：帧率
     - ``format``：容器名（ffprobe ``format_name``，缺失时回退扩展名大写）
-    其它图片专属字段保持空。
+    其它图片专属字段里，ComfyUI 自己导出的视频会带出 ``workflow`` / 提示词 /
+    ``seed`` / ``model``（见 ``extract_video_comfyui_metadata``）。
 
     不会抛出异常。
     """
@@ -887,6 +1094,19 @@ def parse_video_metadata(path: Path) -> dict[str, Any]:
                     pass
         elif s.get("codec_type") == "audio":
             result["audio_codec"] = s.get("codec_name")
+
+    # ComfyUI 写进容器的工作流 / 提示词（没有就是空，不影响上面的基础字段）
+    try:
+        comfy = extract_video_comfyui_metadata(fmt.get("tags"))
+    except Exception:  # noqa: BLE001 - 元数据解析永不影响索引
+        comfy = {}
+    for key in ("workflow", "positive_prompt", "negative_prompt", "parameters", "workflow_source"):
+        if key in comfy:
+            result[key] = comfy[key]
+    if comfy.get("seed") is not None:
+        result["seed"] = comfy["seed"]
+    if comfy.get("model"):
+        result["model"] = comfy["model"]
     return result
 
 # ---------- 辅助：EXIF UserComment ----------

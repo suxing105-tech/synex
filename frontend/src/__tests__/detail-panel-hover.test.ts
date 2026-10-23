@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve, dirname } from "node:path";
 
-// 回归：详情面板（DetailPanel.svelte + MetadataCard.svelte）中所有交互按钮 / chip
+// 回归：详情面板（DetailPanel.svelte + MetadataCard.svelte + WorkflowCard.svelte）
+// 中所有交互按钮 / chip
 // 的 hover 效果必须改为底色变化（hover:bg-*），不能再用 hover:border-accent
 // 高亮边框。用户反馈边框高亮在视觉上太突兀，参考 PromptCard 复制按钮
 // （commit 834e0e1）已统一改为 hover:bg-surface-3。
@@ -11,8 +12,10 @@ import { resolve, dirname } from "node:path";
 const here = dirname(fileURLToPath(import.meta.url));
 const detailPanelPath = resolve(here, "..", "components", "DetailPanel.svelte");
 const metadataCardPath = resolve(here, "..", "components", "MetadataCard.svelte");
+const workflowCardPath = resolve(here, "..", "components", "WorkflowCard.svelte");
 const detailPanelRaw = readFileSync(detailPanelPath, "utf8");
 const metadataCardRaw = readFileSync(metadataCardPath, "utf8");
+const workflowCardRaw = readFileSync(workflowCardPath, "utf8");
 
 // 通过「位于按钮内部」的唯一标识符定位按钮起始标签 \<button\，再从
 // 该起始位置起 300 字符内抓取第一个 class="..."。这种方式可以跨多行 +
@@ -33,11 +36,15 @@ function findOpenTagClass(raw: string, anchor: RegExp, openTag: "<button" | "<sp
 const detailPanelTargets: Array<{ name: string; anchor: RegExp }> = [
   { name: "Header 缩略图按钮", anchor: /title="查看大图"/ },
   { name: "收藏按钮", anchor: /aria-pressed=\{d\.favorite\}/ },
-  { name: "ComfyUI 打开按钮", anchor: /title="在 ComfyUI 中打开"/ },
+  { name: "ComfyUI 打开按钮", anchor: /aria-label="在 ComfyUI 中打开工作流"/ },
   { name: "更多菜单按钮", anchor: /aria-haspopup="menu"/ },
-  { name: "Workflow 复制按钮", anchor: /copy\(d\.workflow, "Workflow JSON"\)/ },
-  { name: "Workflow 格式化并复制按钮", anchor: /JSON\.stringify/ },
-  { name: "Workflow 下载按钮", anchor: /Blob\(\[d\.workflow\]/ },
+];
+
+// Workflow JSON 卡片已抽成 WorkflowCard.svelte（图片与视频共用），hover 设计锁跟着搬。
+const workflowCardTargets: Array<{ name: string; anchor: RegExp }> = [
+  { name: "Workflow 复制按钮", anchor: /copy\(workflow, "Workflow JSON"\)/ },
+  { name: "Workflow 格式化并复制按钮", anchor: /onclick=\{copyFormatted\}/ },
+  { name: "Workflow 下载按钮", anchor: /onclick=\{download\}/ },
 ];
 
 const metadataCardTarget: { name: string; anchor: RegExp } = {
@@ -70,6 +77,36 @@ describe("详情面板 hover 行为（参考 PromptCard 834e0e1）", () => {
       it(name + "：hover 不再高亮边框（不应出现 hover:border-*）", () => {
         const classAttr = findOpenTagClass(detailPanelRaw, anchor, "<button");
         expect(classAttr, name + " 必须能在 DetailPanel.svelte 中匹配到").toBeTruthy();
+        expect(
+          /hover:border-/.test(classAttr!),
+          name + " 不应使用 hover:border-* 高亮边框，实际类：" + classAttr,
+        ).toBe(false);
+      });
+    }
+  });
+
+  describe("WorkflowCard.svelte 各按钮 hover 行为", () => {
+    it("文件中不应再出现 hover:border-accent", () => {
+      const matches = workflowCardRaw.match(/hover:border-accent/g) || [];
+      expect(
+        matches.length,
+        "WorkflowCard.svelte 还残留 " + matches.length + " 处 hover:border-accent",
+      ).toBe(0);
+    });
+
+    for (const { name, anchor } of workflowCardTargets) {
+      it(name + "：hover 时底色变化（hover:bg-*）", () => {
+        const classAttr = findOpenTagClass(workflowCardRaw, anchor, "<button");
+        expect(classAttr, name + " 必须能在 WorkflowCard.svelte 中匹配到").toBeTruthy();
+        expect(
+          /hover:bg-/.test(classAttr!),
+          name + " 应使用 hover:bg-* 改变底色，实际类：" + classAttr,
+        ).toBe(true);
+      });
+
+      it(name + "：hover 不再高亮边框（不应出现 hover:border-*）", () => {
+        const classAttr = findOpenTagClass(workflowCardRaw, anchor, "<button");
+        expect(classAttr, name + " 必须能在 WorkflowCard.svelte 中匹配到").toBeTruthy();
         expect(
           /hover:border-/.test(classAttr!),
           name + " 不应使用 hover:border-* 高亮边框，实际类：" + classAttr,

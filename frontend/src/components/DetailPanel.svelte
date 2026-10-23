@@ -34,6 +34,7 @@
   import ReversePromptPanel from "./ReversePromptPanel.svelte";
 import VideoPromptPanel from "./VideoPromptPanel.svelte";
   import ParamsCard from "./ParamsCard.svelte";
+  import WorkflowCard from "./WorkflowCard.svelte";
   import MetadataCard from "./MetadataCard.svelte";
   import FolderPickerModal from "./FolderPickerModal.svelte";
   import VideoCoverModal from "./VideoCoverModal.svelte";
@@ -146,23 +147,35 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
 
   // ---------- ComfyUI ----------
   import { comfyuiStatus } from "../lib/stores";
-  import { comfyuiApi } from "../lib/api";
-  import { openOrReuseComfyuiTab } from "../lib/comfyui-window";
+  import { openWorkflowForMedia } from "../lib/comfyui-window";
   import { registerShortcuts } from "../lib/shortcuts";
   import { onMount, onDestroy } from "svelte";
 
+  // 图片和视频同一条路：桌面版在应用内 ComfyUI 窗口里直接 loadGraphData，
+  // 浏览器版退化成「复用标签 + 落临时文件」。没带工作流就别点了，直接说明原因。
   async function openInComfyui() {
     const det = get(selectedDetail);
     if (!det) return;
-    openOrReuseComfyuiTab($comfyuiStatus.url || "http://127.0.0.1:8188");
+    if (!det.workflow) {
+      notify(noWorkflowText(det.kind));
+      return;
+    }
     try {
-      const r = await comfyuiApi.openWorkflow(det.id);
-      notify(`${r.workflow_name}.json 已写入 ${r.file_path}`);
+      const message = await openWorkflowForMedia(
+        det.id,
+        det.filename,
+        $comfyuiStatus.url || "http://127.0.0.1:8188",
+      );
+      notify(message, "success");
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e);
       const detail = m.match(/→ \d+: (.+)$/)?.[1] || m;
-      notify(`在 ComfyUI 中打开失败：${detail}`);
+      notify(`在 ComfyUI 中打开失败：${detail}`, "error");
     }
+  }
+
+  function noWorkflowText(kind: string): string {
+    return kind === "video" ? "该视频未携带 ComfyUI 工作流" : "该图片未携带 ComfyUI 工作流";
   }
 
   // ---------- 派生 ----------
@@ -171,26 +184,6 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
       ? extractLoras($selectedDetail.positive_prompt, $selectedDetail.parameters)
       : [],
   );
-
-  const workflowBytes = $derived(
-    $selectedDetail?.workflow ? new Blob([$selectedDetail.workflow]).size : 0,
-  );
-  const workflowNodes = $derived(
-    $selectedDetail?.workflow
-      ? (countWorkflowNodes($selectedDetail.workflow))
-      : 0,
-  );
-  function countWorkflowNodes(json: string): number {
-    try {
-      const o = JSON.parse(json);
-      if (o && typeof o === "object") {
-        // ComfyUI workflow 用 "nodes" 数组；API 格式用对象键
-        if (Array.isArray(o.nodes)) return o.nodes.length;
-        return Object.keys(o).length;
-      }
-    } catch {}
-    return 0;
-  }
 
   // 缩略图 URL：视频用海报帧，图片用 ?max=256 预览；没有就 null
   function thumbUrl(d: ImageDetail): string | null {
@@ -376,17 +369,16 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
         >
           <Icon name={d.favorite ? "heart-fill" : "heart"} size={14} />
         </button>
-        {#if d.kind !== "video"}
-          <button
-            type="button"
-            class="p-1.5 rounded border border-border hover:bg-surface-3 transition-colors"
-            title="在 ComfyUI 中打开"
-            aria-label="在 ComfyUI 中打开"
-            onclick={openInComfyui}
-          >
-            <Icon name="comfyui" size={14} />
-          </button>
-        {/if}
+        <button
+          type="button"
+          class="p-1.5 rounded border border-border hover:bg-surface-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+          title={d.workflow ? "在 ComfyUI 中打开工作流" : noWorkflowText(d.kind)}
+          aria-label="在 ComfyUI 中打开工作流"
+          disabled={!d.workflow}
+          onclick={openInComfyui}
+        >
+          <Icon name="comfyui" size={14} />
+        </button>
         <div class="relative">
           <button
             type="button"
@@ -507,6 +499,28 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
           </dl>
         </section>
 
+        <!-- ComfyUI 写进视频容器的提示词与工作流（外部下载的视频没有这两块） -->
+        {#if d.positive_prompt}
+          <PromptCard
+            title="ComfyUI 提示词"
+            text={d.positive_prompt}
+            copyLabel="提示词"
+            onCopy={(ok) => notify(ok ? "已复制 提示词" : "复制失败", ok ? "success" : "error")}
+            initiallyExpanded
+          />
+        {/if}
+        {#if d.negative_prompt}
+          <PromptCard
+            title="反向 Prompt"
+            text={d.negative_prompt}
+            copyLabel="反向 Prompt"
+            onCopy={(ok) => notify(ok ? "已复制 反向 Prompt" : "复制失败", ok ? "success" : "error")}
+          />
+        {/if}
+        {#if d.workflow}
+          <WorkflowCard workflow={d.workflow} filename={d.filename} copy={copy} notify={notify} />
+        {/if}
+
         <!-- AI 反推视频提示词（Seedance 2.0 / MiniMax H3） -->
         {#key d.id}
           <VideoPromptPanel videoId={d.id} filename={d.filename} durationSeconds={d.duration_seconds} />
@@ -603,64 +617,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
 
       <!-- Workflow JSON（默认折叠） -->
       {#if d.workflow}
-        <section>
-          <h4 class="text-[11px] uppercase text-muted mb-1.5 tracking-wider">Workflow JSON</h4>
-          <details class="bg-surface-2 border border-border rounded-md">
-            <summary class="cursor-pointer text-[12px] text-muted hover:text-zinc-200 px-2 py-1.5 flex items-center gap-2 select-none">
-              <Icon name="chevron-right" size={11} />
-              <span class="flex-1">
-                {workflowNodes > 0 ? `${workflowNodes} 节点` : "查看"}
-                {#if workflowBytes > 0}
-                  · {(workflowBytes / 1024).toFixed(1)} KB
-                {/if}
-              </span>
-            </summary>
-            <div class="px-2 pb-2 flex items-center gap-1">
-              <button
-                type="button"
-                class="text-[11px] px-2 py-0.5 rounded border border-border hover:bg-surface-3 inline-flex items-center gap-1"
-                onclick={() => copy(d.workflow, "Workflow JSON")}
-              >
-                <Icon name="copy" size={10} />复制
-              </button>
-              <button
-                type="button"
-                class="text-[11px] px-2 py-0.5 rounded border border-border hover:bg-surface-3 inline-flex items-center gap-1"
-                onclick={() => {
-                  try {
-                    const formatted = JSON.stringify(JSON.parse(d.workflow), null, 2);
-                    navigator.clipboard?.writeText(formatted).then(
-                      () => notify("已复制（格式化后）"),
-                      () => notify("复制失败"),
-                    );
-                  } catch {
-                    notify("JSON 解析失败");
-                  }
-                }}
-              >
-                <Icon name="code" size={10} />格式化并复制
-              </button>
-              <button
-                type="button"
-                class="text-[11px] px-2 py-0.5 rounded border border-border hover:bg-surface-3 inline-flex items-center gap-1"
-                onclick={() => {
-                  const blob = new Blob([d.workflow], { type: "application/json" });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `${d.filename.replace(/\.[^.]+$/, "")}.workflow.json`;
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  URL.revokeObjectURL(url);
-                }}
-              >
-                <Icon name="download" size={10} />下载
-              </button>
-            </div>
-            <pre class="prompt-box border-t border-border p-2 max-h-48 overflow-y-auto">{d.workflow}</pre>
-          </details>
-        </section>
+        <WorkflowCard workflow={d.workflow} filename={d.filename} copy={copy} notify={notify} />
       {/if}
       {/if}
     </div>

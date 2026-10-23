@@ -23,7 +23,7 @@
   import { imagesApi, comfyuiApi, videosApi } from "../lib/api";
   import Icon from "./Icon.svelte";
   import { copyText } from "../lib/ws";
-  import { loadComfyWorkflow, openOrReuseComfyuiTab } from "../lib/comfyui-window";
+  import { openWorkflowForMedia } from "../lib/comfyui-window";
   import type { ImageSummary, FolderNode } from "../lib/types";
   import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
   import { folderId } from "../lib/stores";
@@ -85,8 +85,8 @@
   async function openInComfyui(it: ImageSummary) {
     try {
       notify("正在打开工作流…");
-      await loadComfyWorkflow(it.id, it.filename);
-      notify("已在 ComfyUI 中打开工作流");
+      // 图片与视频共用一条路径：桌面版应用内直接加载，浏览器版复用标签 + 落临时文件
+      notify(await openWorkflowForMedia(it.id, it.filename, $comfyuiStatus.url));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       // 403 / 400 / 404 都从 detail 拿

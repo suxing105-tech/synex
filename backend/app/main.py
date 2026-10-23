@@ -95,6 +95,19 @@ async def lifespan(app: FastAPI):
         cfg.watch_dirs = [str(sample)]
         save_config(cfg)
 
+    # 老库里视频的 ComfyUI 工作流是从容器元数据里补读出来的：一个文件一次 ffprobe，
+    # 大库可能要几十秒，所以放后台任务，不挡启动；跑完发一次 image_indexed
+    # 让前端把 has_workflow（缩略图上的 ComfyUI 按钮开关）刷出来。
+    async def backfill_video_metadata_task() -> None:
+        try:
+            from . import repository as _repo
+            updated = await asyncio.to_thread(_repo.backfill_video_metadata)
+            if updated:
+                log.info("backfilled ComfyUI metadata for %d videos", updated)
+                await bus.publish({"type": "image_indexed", "id": 0})
+        except Exception:  # noqa: BLE001
+            log.exception("backfill_video_metadata failed")
+
     indexer = get_indexer()
     bus = get_bus()
 
@@ -122,13 +135,17 @@ async def lifespan(app: FastAPI):
 
     await asyncio.to_thread(indexer.reconcile_missing)
     reconcile_task = asyncio.create_task(reconcile_loop())
+    video_meta_task = asyncio.create_task(backfill_video_metadata_task())
     try:
         yield
     finally:
         reconcile_task.cancel()
+        video_meta_task.cancel()
         from contextlib import suppress
         with suppress(asyncio.CancelledError):
             await reconcile_task
+        with suppress(asyncio.CancelledError):
+            await video_meta_task
         indexer.shutdown()
 
 

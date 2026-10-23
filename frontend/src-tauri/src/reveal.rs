@@ -56,8 +56,13 @@ pub(crate) fn opener_args(target: &RevealTarget) -> (&'static str, Vec<String>) 
     }
 }
 
-/// Windows：交给 shell 打开并选中。`SHParseDisplayName` + `SHOpenFolderAndSelectItems`
-/// 是官方做法，`explorer.exe /select,` 只是次选（它会多开一个窗口）。
+/// Windows：交给 shell 打开并选中。
+///
+/// 这里照抄后端 `windows_reveal.py` 那套已经验证过的组合：`CoInitialize` +
+/// `ILCreateFromPathW` + `SHOpenFolderAndSelectItems`（PIDL 传文件自己、子项数 0
+/// = 打开父目录并选中它）。少了 `CoInitialize` 是最容易踩的一脚：shell 的这些接口
+/// 都是 COM 接口，Tauri 命令跑在 tokio 工作线程上，没初始化 COM 就直接失败
+/// （0x800401F0），用户看到的就是「打开所在文件夹失败」。
 #[cfg(windows)]
 pub(crate) fn open_with_shell(target: &RevealTarget) -> Result<(), String> {
     use std::ffi::c_void;
@@ -69,44 +74,51 @@ pub(crate) fn open_with_shell(target: &RevealTarget) -> Result<(), String> {
     extern "system" {
         fn AllowSetForegroundWindow(dwProcessId: u32) -> i32;
     }
+    #[link(name = "ole32")]
+    extern "system" {
+        fn CoInitialize(preserved: *mut c_void) -> i32;
+        fn CoUninitialize();
+    }
     #[link(name = "shell32")]
     extern "system" {
-        fn SHParseDisplayName(
-            name: *const u16,
-            bind_ctx: *mut c_void,
-            pidl: *mut *mut c_void,
-            reserved: u32,
-            attrs: *mut u32,
-        ) -> i32;
+        fn ILCreateFromPathW(path: *const u16) -> *mut c_void;
         fn SHOpenFolderAndSelectItems(
             folder: *mut c_void,
             count: u32,
             items: *const *mut c_void,
-            flags: i32,
+            reserved: i32,
         ) -> i32;
         fn ILFree(pidl: *mut c_void);
     }
 
     let path = match target {
-        // 传文件自己的 PIDL、子项数为 0：shell 会打开它的父目录并选中这个文件。
         RevealTarget::File(p) | RevealTarget::Folder(p) => p.clone(),
     };
-    let wide: Vec<u16> = std::ffi::OsStr::new(&path).encode_wide().chain(std::iter::once(0)).collect();
+    let wide: Vec<u16> = std::ffi::OsStr::new(&path)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
 
-    // 我们正是当前前台进程，把前台权限让出去，shell 才能把窗口提到最前面。
+    // S_OK/S_FALSE 才算我们持有这一次初始化；已经是别的模型初始化过就别去反初始化。
+    let initialized = unsafe { CoInitialize(std::ptr::null_mut()) } >= 0;
+    // 我们正是当前前台进程，把前台权限让出去，shell 才能把资源管理器提到最前面。
     unsafe { AllowSetForegroundWindow(ASFW_ANY) };
-
-    let mut pidl: *mut c_void = std::ptr::null_mut();
-    let hr = unsafe { SHParseDisplayName(wide.as_ptr(), std::ptr::null_mut(), &mut pidl, 0, std::ptr::null_mut()) };
-    if hr != 0 || pidl.is_null() {
-        return Err("资源管理器打不开这个位置".into());
+    let pidl = unsafe { ILCreateFromPathW(wide.as_ptr()) };
+    let opened = if pidl.is_null() {
+        Err("资源管理器认不出这个路径".to_string())
+    } else {
+        let code = unsafe { SHOpenFolderAndSelectItems(pidl, 0, std::ptr::null(), 0) };
+        unsafe { ILFree(pidl) };
+        if code < 0 {
+            Err(format!("资源管理器打不开这个位置（{:#x}）", code as u32))
+        } else {
+            Ok(())
+        }
+    };
+    if initialized {
+        unsafe { CoUninitialize() };
     }
-    let result = unsafe { SHOpenFolderAndSelectItems(pidl, 0, std::ptr::null(), 0) };
-    unsafe { ILFree(pidl) };
-    if result != 0 {
-        return Err("资源管理器打不开这个位置".into());
-    }
-    Ok(())
+    opened
 }
 
 #[tauri::command]
@@ -135,6 +147,16 @@ mod tests {
         let mut path = std::env::temp_dir();
         path.push(format!("seekx-reveal-test-{}-{tag}", std::process::id()));
         path
+    }
+
+    #[test]
+    fn shell_calls_are_com_initialised() {
+        // COM 没初始化 = 「打开所在文件夹失败」，这条只能钉源码
+        let source = include_str!("reveal.rs");
+        assert!(source.contains("fn CoInitialize(preserved: *mut c_void) -> i32;"));
+        assert!(source.contains("CoInitialize(std::ptr::null_mut())"));
+        assert!(source.contains("CoUninitialize()"));
+        assert!(source.contains("ILCreateFromPathW"));
     }
 
     #[test]

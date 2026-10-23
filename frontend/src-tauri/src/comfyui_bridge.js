@@ -141,6 +141,26 @@
         TOUCH_EVENTS.forEach((type) => window.removeEventListener(type, markTouched));
       }
     };
+    // 窗口/面板尺寸一变就重新适应视图：拖动窗口、最大化、折叠侧栏都会改画布可视区。
+    // ComfyUI 自己只 resize 画布、不动视角，所以得我们补；260ms 防抖等拖拽停下来。
+    const viewHost = app.canvasContainer || document.getElementById('graph-canvas-container');
+    const sizeKey = () => ((viewHost ? viewHost.clientWidth : window.innerWidth) + 'x'
+      + (viewHost ? viewHost.clientHeight : window.innerHeight));
+    let lastSize = sizeKey();
+    let refitTimer = 0;
+    const onSizeChange = () => {
+      const next = sizeKey();
+      if (next === lastSize) return;
+      lastSize = next;
+      if (refitTimer) clearTimeout(refitTimer);
+      refitTimer = setTimeout(() => { refitTimer = 0; fitOnce(); }, 260);
+    };
+    const watchViewport = () => {
+      window.addEventListener('resize', onSizeChange);
+      try {
+        if (typeof ResizeObserver === 'function' && viewHost) new ResizeObserver(onSizeChange).observe(viewHost);
+      } catch (err) {}
+    };
 
     const guard = async () => {
       const mine = () => !store || !store.activeWorkflow || tabName(store.activeWorkflow) === TAB_NAME;
@@ -156,6 +176,7 @@
     };
     location.href = 'suxing-workflow://loaded';
     autoFit().catch(() => {});
+    watchViewport();
     guard().catch(() => {});
   })().catch((error) => {
     location.href = 'suxing-workflow://failed?message=' + encodeURIComponent(error?.message || String(error));

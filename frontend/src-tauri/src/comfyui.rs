@@ -339,6 +339,10 @@ mod tests {
         // 兜底靠模拟「.」快捷键，绑定目标必须是画布容器
         assert!(BRIDGE_JS.contains("graph-canvas-container"));
         assert!(BRIDGE_JS.contains("app.canvasContainer"));
+        // 改窗口大小 / 折叠侧栏同样要重新适应视图（防抖后补一次 fit）
+        assert!(BRIDGE_JS.contains("addEventListener('resize'"));
+        assert!(BRIDGE_JS.contains("ResizeObserver"));
+        assert!(BRIDGE_JS.contains("watchViewport()"));
         let load_at = BRIDGE_JS.find("if (!(await load()))").expect("load step");
         let fit_at = BRIDGE_JS.find("const fitOnce").expect("fit helper");
         let loaded_at = BRIDGE_JS.find("suxing-workflow://loaded").expect("loaded ping");

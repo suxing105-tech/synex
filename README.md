@@ -73,7 +73,7 @@ cargo tauri build
 #   target\release\bundle\nsis\闪寻空间_<版本>_x64-setup.exe   NSIS 安装包
 ```
 
-> 发布签名安装包请使用 `frontend\scripts\build-update.ps1`（需配置更新签名私钥）。
+> 发布、预览包与公网校验的完整流程见 [docs/release-process.md](docs/release-process.md)；签名安装包由 `frontend\scripts\build-update.ps1` 产出（需更新签名私钥）。
 
 ### 本地开发
 
@@ -95,15 +95,19 @@ pnpm dev        # http://localhost:5173（代理到 8765）
 
 ## 🧪 测试
 
-- 后端：`339 passed`（parser / indexer / repository / api / video / folders / psd）
-- 前端：`474 passed`（71 个测试文件）
+- 后端：`481 passed`（parser / indexer / repository / api / video / folders / psd / 发布脚本）
+- 前端：`620 passed`（82 个测试文件）
+- Rust：`31 passed` + 2 个集成测试
 - `svelte-check`：`0 errors`
 
 ```powershell
-# 后端
-cd backend && python -m pytest -q
+# 一次跑完上面四套（日志与 VERIFY.txt 落在 outputs\verify-latest）
+powershell -NoProfile -ExecutionPolicy Bypass -File frontend\scripts\verify-all.ps1
 
-# 前端
+# 后端单独跑
+cd backend && .\.venv\Scripts\python.exe -m pytest -q
+
+# 前端单独跑
 cd frontend && pnpm test -- --run
 ```
 

@@ -94,3 +94,7 @@ outputs/tauri-m0f-e2e/run-nosidecar/
 apply_splash.cjs
 extract_splash.cjs
 detail.json
+
+# Generated verification and public-verification output
+outputs/verify-latest/
+outputs/**/download-verification/

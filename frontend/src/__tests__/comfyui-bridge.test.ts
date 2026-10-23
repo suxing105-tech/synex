@@ -121,3 +121,40 @@ it('面板页的子路由同样不会被桥接接管', async () => {
   await run({ window: { comfyAPI: { app: { app } } }, location, document: { readyState: 'complete' }, request: { origin: ORIGIN, base: `${ORIGIN}/`, name: '人物', workflow: { nodes: [] } } });
   expect(loadGraphData).not.toHaveBeenCalled();
 });
+
+it('画布可视区尺寸一变就重新适应视图，尺寸没变则不许抢视角', async () => {
+  const zoomToFit = vi.fn();
+  const host: any = { clientWidth: 800, clientHeight: 600 };
+  const listeners: Record<string, Array<() => void>> = {};
+  const app = {
+    graph: { _nodes: [{}, {}] },
+    canvas: { zoomToFit },
+    canvasContainer: host,
+    extensionManager: { workflow: { activeWorkflow: { filename: '我的' } } },
+    loadGraphData: vi.fn().mockResolvedValue({}),
+  };
+  const location: any = { origin: ORIGIN, href: '' };
+  await run({
+    window: {
+      comfyAPI: { app: { app } },
+      addEventListener: (type: string, cb: () => void) => { (listeners[type] ||= []).push(cb); },
+    },
+    location,
+    document: { readyState: 'complete' },
+    request: { origin: ORIGIN, base: `${ORIGIN}/`, name: '测试', workflow: { nodes: [{}, {}] } },
+  });
+  const flush = async () => { for (let i = 0; i < 400; i++) await Promise.resolve(); };
+  expect(listeners.resize?.length).toBeGreaterThan(0);
+
+  const before = zoomToFit.mock.calls.length;
+  // 尺寸没变（比如只是滚动条出现又被抵消）不该动视角
+  (listeners.resize || []).forEach((cb) => cb());
+  await flush();
+  expect(zoomToFit.mock.calls.length).toBe(before);
+
+  host.clientWidth = 1200;
+  host.clientHeight = 700;
+  (listeners.resize || []).forEach((cb) => cb());
+  await flush();
+  expect(zoomToFit.mock.calls.length).toBeGreaterThan(before);
+});

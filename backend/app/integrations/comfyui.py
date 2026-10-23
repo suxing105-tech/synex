@@ -65,7 +65,7 @@ def comfyui_temp_dir() -> Path:
 
 
 def sanitize_filename(raw: str) -> str:
-    """把图片原始文件名清洗成可作 JSON 文件名的安全短名。
+    r"""把图片原始文件名清洗成可作 JSON 文件名的安全短名。
 
     - 把文件系统非法字符（含 ``/`` ``\`` ``:`` 等）替换为 ``_``
     - 去掉扩展名（统一追加 .json）

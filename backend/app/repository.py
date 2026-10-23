@@ -944,7 +944,9 @@ def prune_missing_system_folders(watch_dirs: list[Path]) -> int:
 # 视频容器元数据（ComfyUI 工作流 / 提示词）的解析器版本。
 # 老库里视频的 workflow 全是空的（那时 parse_video_metadata 不读容器 tag），
 # 版本号写进 meta 表做一次性回填门控；以后再加解析形态就把它 +1。
-VIDEO_METADATA_SCHEMA_VERSION = 1
+# v2：提示词键位加了 positive_prompt（本地 Wan）、模型名加了 WanVideoModelLoader，
+# 老库里那批视频存的是空提示词，必须再回填一遍才能补上。
+VIDEO_METADATA_SCHEMA_VERSION = 2
 
 
 def backfill_video_metadata() -> int:

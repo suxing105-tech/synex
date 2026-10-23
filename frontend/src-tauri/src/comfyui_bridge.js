@@ -178,6 +178,20 @@
     heal();
 
     const count = () => (app.graph && app.graph._nodes ? app.graph._nodes.length : 0);
+    // 我们灌进去的图 = 「刚刚载入」，不是「用户改了没存」。不把这个标记清掉的话，
+    // ComfyUI 自己的 UnloadWindowConfirmDialog（Comfy.Window.UnloadConfirmation 默认开
+    // + 有 modified 工作流）就会在下一次任何导航前弹「是否离开网站？你所做的更改可能
+    // 未保存」，用户以为出事了。用户真去动图时 ComfyUI 会重新标成 modified，
+    // 正常的安全提示一点没削弱。
+    const markLoaded = (tab, fileName) => {
+      const clear = (workflow) => {
+        try {
+          if (workflow && workflow.isTemporary && bareName(tabName(workflow)) === bareName(fileName)) workflow.isModified = false;
+        } catch (err) {}
+      };
+      clear(tab);
+      try { clear(store && store.activeWorkflow); } catch (err) {}
+    };
     let current = null;   // 最近一次成功装载，重放保护只对它的标签生效
     let installToken = 0;
     let touched = false;
@@ -211,6 +225,9 @@
       const token = ++installToken;
       touched = false;
       current = { state, tab, name: tabName(tab) || task.name, shown, token };
+      markLoaded(tab, task.name);
+      // ComfyUI 自己的 openWorkflow / loadGraphData 会异步把标签标成 modified，补三次
+      for (const delay of [200, 600, 1500]) setTimeout(() => markLoaded(tab, task.name), delay);
       // 记下「窗口现在装的是哪个」：页面重新加载时以它为准，不再糊第一个工作流。
       write(session, ACTIVE_KEY, JSON.stringify({ id: 0, name: task.name, workflow: state }));
       autoFit().catch(() => {});
@@ -288,6 +305,7 @@
         if (replays >= 2) return;
         replays += 1;
         try { await app.loadGraphData(watch.state, true, true, watch.tab); } catch (err) {}
+        markLoaded(watch.tab, watch.name);
         if (!touched) fitOnce();
       }
     };

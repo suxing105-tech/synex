@@ -127,6 +127,28 @@ it('媒体名里的非法字符会被清成合法标签名，空名退回 ComfyU
   expect(second.createNewTemporary).toHaveBeenLastCalledWith('ComfyUI.json');
 });
 
+it('我们灌进去的工作流不算「未保存改动」，用户的标签照旧算', async () => {
+  const mine = { filename: '我自己的', path: 'workflows/我自己的.json', isPersisted: true, isModified: true, isTemporary: false };
+  const store = tempStore([mine]);
+  const loadGraphData = vi.fn(async (_state: unknown, _add: unknown, _show: unknown, tab: any) => {
+    // 真实 ComfyUI 装载完会把标签标成 modified（标签上那个小圆点）
+    if (tab && typeof tab === 'object') tab.isModified = true;
+    return {};
+  });
+  const app = { graph: { _nodes: [{}] }, canvas: {}, extensionManager: { workflow: store }, loadGraphData };
+  const location: any = { origin: ORIGIN, href: '' };
+  await run({
+    window: { comfyAPI: { app: { app } } }, location, document: { readyState: 'complete' },
+    localStorage: fakeStorage().api, sessionStorage: fakeStorage().api,
+    request: { id: 12, origin: ORIGIN, base: `${ORIGIN}/`, name: '灌入', workflow: { nodes: [{}] } },
+  }, 2400);
+  const ours = store.openWorkflows.find((tab: any) => tab.isTemporary);
+  // 「刚刚载入」而不是「用户改了没存」：不然任何一次导航都会弹「是否离开网站？」
+  expect(ours.isModified).toBe(false);
+  // 用户自己的工作流我们不碰，该提示还是要提示
+  expect(mine.isModified).toBe(true);
+});
+
 it('ComfyUI 把工作流写进地址栏后仍然是画布：装载就地完成，不许导航', async () => {
   const store = tempStore();
   const loadGraphData = vi.fn().mockResolvedValue({});

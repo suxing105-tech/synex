@@ -7,6 +7,7 @@
   import { backendUrl } from "../lib/backend-url";
   import { feedItems, refreshFeed, refreshStats } from "../lib/stores";
   import { imagesApi } from "../lib/api";
+  import { revealLocation as revealInShell } from "../lib/reveal";
   import { copyText, formatSize } from "../lib/ws";
   import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
   import {
@@ -301,10 +302,8 @@
 
   async function revealImage(it: any) {
     try {
-      const r = await imagesApi.reveal(it.id);
-      if (r.method && r.method !== "noop") {
-      } else {
-      }
+      const via = await revealInShell(it.path, true, () => imagesApi.reveal(it.id));
+      if (via === "desktop") notify("已打开图片所在位置");
     } catch (e) {
       notify(`打开位置失败: ${(e as Error).message}`);
     }

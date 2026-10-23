@@ -11,6 +11,7 @@ mod updates;
 mod window_style;
 mod image_drag;
 mod comfyui;
+mod reveal;
 
 use sidecar::{SidecarConfig, SidecarState};
 
@@ -58,6 +59,7 @@ pub fn run() {
             image_drag::drag_original_images,
             comfyui::open_comfy_workflow,
             comfyui::open_external_url,
+            reveal::reveal_path,
             commands::get_sidecar_status,
             folders::select_import_directory,
             folders::select_text_paths,

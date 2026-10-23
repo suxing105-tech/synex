@@ -25,6 +25,7 @@
   import Icon from "./Icon.svelte";
   import { copyText } from "../lib/ws";
   import { openWorkflowForMedia } from "../lib/comfyui-window";
+  import { revealLocation as revealInShell } from "../lib/reveal";
   import type { ImageSummary, FolderNode } from "../lib/types";
   import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
   import { folderId } from "../lib/stores";
@@ -445,12 +446,9 @@
 
   async function revealImage(it: ImageSummary) {
     try {
-      const r = await imagesApi.reveal(it.id);
-      if (r.method && r.method !== "noop") {
-        notify(`已打开${it.kind === "video" ? "视频" : "图片"}所在位置`);
-      } else {
-        notify(`已请求打开${it.kind === "video" ? "视频" : "图片"}所在位置`);
-      }
+      const via = await revealInShell(it.path, true, () => imagesApi.reveal(it.id));
+      const what = it.kind === "video" ? "视频" : "图片";
+      notify(via === "desktop" ? `已打开${what}所在位置` : `已请求打开${what}所在位置`);
     } catch (e) {
       notify(`打开位置失败: ${(e as Error).message}`);
     }

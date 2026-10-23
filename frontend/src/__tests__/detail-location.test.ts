@@ -45,8 +45,9 @@ describe("DetailPanel 位置接线", () => {
     expect(raw.slice(elseIdx)).toContain("onCopyLocation={copyLocation}");
   });
 
-  it("点击位置走后端 reveal，失败时重拉详情", () => {
-    expect(raw).toContain("await imagesApi.reveal(d.id)");
+  it("点击位置先走桌面壳（才能让资源管理器盖在应用上），浏览器版才回退后端 reveal", () => {
+    // 桌面版带 path 走 reveal_path 命令；后端接口只作为浏览器端的回退保留。
+    expect(raw).toContain("revealInShell(d.path, true, () => imagesApi.reveal(d.id))");
     const revealBody = raw.slice(raw.indexOf("async function revealLocation"));
     expect(revealBody.slice(0, 900)).toContain("await refreshSelectedDetail()");
   });

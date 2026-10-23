@@ -195,7 +195,8 @@ describe('真实文件夹组件交互', () => {
     const screen = render(FolderTree);
     await fireEvent.contextMenu(screen.getByRole('button', { name: '来源' }));
     await fireEvent.click(screen.getByRole('menuitem', { name: '所在文件夹位置' }));
-    expect(get(toasts).some(t => t.message.includes('路径不存在'))).toBe(true);
+    // 回退链路多了一层 await，提示会晚一个微任务出现，等它而不是猜时机
+    await vi.waitFor(() => expect(get(toasts).some(t => t.message.includes('路径不存在'))).toBe(true));
   });
 
 

@@ -143,8 +143,9 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
     const d = $selectedDetail;
     if (!d) return;
     try {
-      const r = await imagesApi.reveal(d.id);
-      if (!r.method || r.method === "noop") notify("已请求打开所在文件夹");
+      // 桌面版交给桌面壳，资源管理器才会盖在应用上面；浏览器版才回退到后端接口。
+      const via = await revealInShell(d.path, true, () => imagesApi.reveal(d.id));
+      if (via === "backend") notify("已请求打开所在文件夹");
     } catch (e) {
       notify(`打开所在文件夹失败：${(e as Error).message}`, "error");
       // 十有八九是文件被移走/删了：重拉详情，位置行别再显示旧目录
@@ -171,6 +172,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
   // ---------- ComfyUI ----------
   import { comfyuiStatus } from "../lib/stores";
   import { openWorkflowForMedia } from "../lib/comfyui-window";
+  import { revealLocation as revealInShell } from "../lib/reveal";
   import { registerShortcuts } from "../lib/shortcuts";
   import { onMount, onDestroy } from "svelte";
 

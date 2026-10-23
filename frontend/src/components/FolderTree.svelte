@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from "svelte";
+  import { revealLocation } from '../lib/reveal';
   import { subscribeFileDrop } from '../lib/native-drop';
   import { pushToast } from "../lib/toast";
   import { backendUrl } from "../lib/backend-url";
@@ -233,14 +234,17 @@
     }
   }
 
-  async function revealSystemFolder(id: number) {
+  async function revealSystemFolder(id: number, path?: string | null) {
     menuFor = null;
     try {
-      const response = await fetch(backendUrl(`/api/folders/${id}/reveal`), { method: "POST" });
-      if (!response.ok) {
-        const result = await response.json().catch(() => ({}));
-        throw new Error(result.detail || "打开文件夹失败");
-      }
+      const via = await revealLocation(path, false, async () => {
+        const response = await fetch(backendUrl(`/api/folders/${id}/reveal`), { method: "POST" });
+        if (!response.ok) {
+          const result = await response.json().catch(() => ({}));
+          throw new Error(result.detail || "打开文件夹失败");
+        }
+      });
+      if (via === "backend") pushToast("已请求打开所在文件夹");
     } catch (error) {
       pushToast(`无法打开所在位置：${error instanceof Error ? error.message : error}`, { kind: "error" });
     }
@@ -438,7 +442,7 @@
     </button>
     <button role="menuitem" class="block w-full text-left px-3 py-1 hover:bg-surface-3 disabled:opacity-40"
       disabled={!menuNode?.path} title={menuNode?.path || '此文件夹是图库分类，没有对应的磁盘位置'}
-      onclick={() => menuFor !== null && revealSystemFolder(menuFor)}>所在文件夹位置</button>
+      onclick={() => menuFor !== null && revealSystemFolder(menuFor, menuNode?.path)}>所在文件夹位置</button>
     {#if !menuNode?.path}
       <div class="px-3 pb-1 text-muted text-[11px]">图库分类，无磁盘位置</div>
     {/if}

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
+  import { revealLocation } from '../lib/reveal';
   import { get } from 'svelte/store';
   import { textMode, folderId, view, folders, textTotal, refreshFolders, refreshFeed, selectedId, feedItems, switchContent } from '../lib/stores';
   import { textsApi, TextSession, type TextSummary, type TextHistory, type TextDraft } from '../lib/texts';
@@ -325,7 +326,8 @@
   }
   async function reveal() {
     if (!current) return;
-    try { await textsApi.reveal(current.detail.id); } catch (e) { await copyText(current.detail.path); error = message(e) + '（已复制文件路径）'; }
+    try { await revealLocation(current.detail.path, true, () => textsApi.reveal(current.detail.id)); }
+    catch (e) { await copyText(current.detail.path); error = message(e) + '（已复制文件路径）'; }
   }
   async function showInGallery() {
     if (!assetPreview) return;

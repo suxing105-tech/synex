@@ -352,6 +352,17 @@ mod tests {
     }
 
     #[test]
+    fn panel_script_keeps_the_sidebar_labels() {
+        // ComfyUI 的侧栏尺寸默认值按窗口宽度算（<1536 就 small，small 连标签都不渲染）。
+        // 应用内窗口够不到那个宽度，必须补一次 normal，且不能覆盖用户自己的选择。
+        assert!(PANEL_JS.contains("Comfy.Sidebar.Size"));
+        assert!(PANEL_JS.contains("/api/settings"));
+        assert!(PANEL_JS.contains("settingsValues"));
+        assert!(PANEL_JS.contains("setSettingValueAsync"));
+        assert!(PANEL_JS.contains("\"normal\""));
+    }
+
+    #[test]
     fn panel_script_and_bridge_share_the_injected_scope() {
         // 两段脚本都靠 request.origin 判断生效范围，注入顺序必须是面板在前、桥在后
         assert!(PANEL_JS.contains("window.__seekxPanel"));

@@ -61,7 +61,7 @@ function makeTab(startUrl = CANVAS) {
 }
 
 // 在「同一个标签页里的一个文档」中跑一遍注入脚本
-function openDocument(tab: ReturnType<typeof makeTab>, url: string) {
+function openDocument(tab: ReturnType<typeof makeTab>, url: string, extra: Record<string, any> = {}) {
   tab.location.href = url;
   const body = makeEl("body");
   const document: any = {
@@ -85,6 +85,7 @@ function openDocument(tab: ReturnType<typeof makeTab>, url: string) {
     dispatch(type: string, event: any = {}) { for (const cb of this.listeners[type] || []) cb(event); },
   };
   window.top = window;
+  Object.assign(window, extra);
   vm.runInNewContext(panel, {
     window, document, location: tab.location, sessionStorage: tab.sessionStorageShim, history: tab.history,
     request: { origin: ORIGIN }, URL, setTimeout: (cb: () => void) => cb(),
@@ -207,6 +208,72 @@ describe("ComfyUI 页面模式宿主", () => {
     panelDoc.window.open(`${ORIGIN}/loras/detail/9`, "_blank");
     expect(tab.location.href).toBe(`${ORIGIN}/loras/detail/9`);
     expect(tab.sessionStorageShim.getItem(RETURN)).toBe(CANVAS);
+  });
+
+  const flush = async () => {
+    for (let index = 0; index < 20; index += 1) await Promise.resolve();
+  };
+  const settingsApi = (values: Record<string, unknown>, setSettingValueAsync: any) => ({
+    comfyAPI: { app: { app: { ui: { settings: { settingsValues: values, setSettingValueAsync } } } } },
+  });
+
+  it("服务端没存过侧栏尺寸时写一次 normal，让侧栏显示文字标签", async () => {
+    const tab = makeTab();
+    const setSettingValueAsync = vi.fn(async () => {});
+    openDocument(tab, CANVAS, {
+      ...settingsApi({}, setSettingValueAsync),
+      fetch: async () => ({ ok: true, json: async () => ({ "Comfy.Locale": "zh" }) }),
+    });
+    await flush();
+    expect(setSettingValueAsync).toHaveBeenCalledWith("Comfy.Sidebar.Size", "normal");
+  });
+
+  it("服务端已有用户选的尺寸就不写，前端缓存没加载完不算没设置过", async () => {
+    const tab = makeTab();
+    const setSettingValueAsync = vi.fn(async () => {});
+    openDocument(tab, CANVAS, {
+      ...settingsApi({}, setSettingValueAsync),
+      fetch: async () => ({ ok: true, json: async () => ({ "Comfy.Sidebar.Size": "small" }) }),
+    });
+    await flush();
+    expect(setSettingValueAsync).not.toHaveBeenCalled();
+  });
+
+  it("读不到服务端但前端缓存已加载时，同样补 normal", async () => {
+    const tab = makeTab();
+    const setSettingValueAsync = vi.fn(async () => {});
+    openDocument(tab, CANVAS, settingsApi({ "Comfy.Locale": "zh" }, setSettingValueAsync));
+    await flush();
+    expect(setSettingValueAsync).toHaveBeenCalledWith("Comfy.Sidebar.Size", "normal");
+  });
+
+  it("缓存里已存 small 时即使没有服务端回答也不写", async () => {
+    const tab = makeTab();
+    const setSettingValueAsync = vi.fn(async () => {});
+    openDocument(tab, CANVAS, settingsApi({ "Comfy.Sidebar.Size": "small" }, setSettingValueAsync));
+    await flush();
+    expect(setSettingValueAsync).not.toHaveBeenCalled();
+  });
+
+  it("服务端和缓存都给不出结论时不写任何值，面板照常", async () => {
+    const tab = makeTab();
+    const setSettingValueAsync = vi.fn(async () => {});
+    openDocument(tab, CANVAS, {
+      ...settingsApi({}, setSettingValueAsync),
+      fetch: async () => { throw new Error("offline"); },
+    });
+    await flush();
+    expect(setSettingValueAsync).not.toHaveBeenCalled();
+    const doc = openDocument(tab, `${ORIGIN}/loras`);
+    doc.window.open(`${ORIGIN}/queue`, "_blank");
+    expect(tab.location.href).toBe(`${ORIGIN}/queue`);
+  });
+
+  it("连不上 ComfyUI 设置时安静退出，面板功能照常", () => {
+    const tab = makeTab();
+    const doc = openDocument(tab, CANVAS, { comfyAPI: {} });
+    doc.window.open(`${ORIGIN}/loras`, "_blank");
+    expect(tab.location.href).toBe(`${ORIGIN}/loras`);
   });
 
   it("非当前 ComfyUI origin 时脚本不生效", () => {

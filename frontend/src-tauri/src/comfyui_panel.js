@@ -213,5 +213,59 @@ if (location.origin === request.origin) {
     };
 
     ensureChrome();
+
+    // ---------- 侧栏显示标签（和浏览器里保持一致）----------
+    // 不是语言问题：ComfyUI 的 Comfy.Sidebar.Size 默认值是「窗口宽度 < 1536 就用
+    // small」，small 模式下 SidebarIcon 连标签元素都不渲染，只剩图标。应用内的
+    // ComfyUI 窗口普遍没到 1536 CSS px，所以侧栏在应用里是纯图标、浏览器里有中文。
+    // 用户自己在 ComfyUI 设置里选过就不再插手：settingValues 里有没有这个键就是证据
+    //（设置存在服务端，不在 localStorage，所以只能问 ComfyUI 自己）。
+    var SIDEBAR_SIZE_KEY = "Comfy.Sidebar.Size";
+    // 判据优先用服务端已存值：前端 settings 是异步拉的，刚进页面时缓存可能还是空的，
+    // 盯着空缓存写值会把用户自己选的 small 覆盖掉。两边都确认不了就不写。
+    var readStoredSettings = function () {
+      var fetchFn = null;
+      if (typeof fetch === "function") fetchFn = fetch;
+      else if (window && typeof window.fetch === "function") fetchFn = window.fetch.bind(window);
+      if (!fetchFn) return Promise.resolve(null);
+      return fetchFn("/api/settings", { credentials: "same-origin" })
+        .then(function (res) { return res && res.ok ? res.json() : null; })
+        .then(function (data) { return data && typeof data === "object" ? data : null; })
+        .catch(function () { return null; });
+    };
+    var cachedSettingsLoaded = async function (settings) {
+      for (var attempt = 0; attempt < 80; attempt++) {
+        var values = settings.settingsValues;
+        if (values && Object.keys(values).length > 0) return values;
+        await new Promise(function (resolve) { setTimeout(resolve, 250); });
+      }
+      return null;
+    };
+    var showSidebarLabels = async function () {
+      if (typeof setTimeout !== "function" || typeof Promise !== "function") return;
+      var settings = null;
+      for (var attempt = 0; attempt < 80; attempt++) {
+        try {
+          var api = window.comfyAPI;
+          settings = api && api.app && api.app.app && api.app.app.ui && api.app.app.ui.settings;
+        } catch (err) {
+          settings = null;
+        }
+        if (settings && typeof settings.setSettingValueAsync === "function") break;
+        settings = null;
+        await new Promise(function (resolve) { setTimeout(resolve, 250); });
+      }
+      if (!settings) return;
+      var stored = await readStoredSettings();
+      if (stored) {
+        if (stored[SIDEBAR_SIZE_KEY] !== undefined) return;
+      } else {
+        var cached = await cachedSettingsLoaded(settings);
+        if (!cached) return;
+        if (cached[SIDEBAR_SIZE_KEY] !== undefined) return;
+      }
+      await settings.setSettingValueAsync(SIDEBAR_SIZE_KEY, "normal");
+    };
+    showSidebarLabels().catch(function () {});
   })();
 }

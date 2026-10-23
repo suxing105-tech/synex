@@ -127,6 +127,24 @@ it('媒体名里的非法字符会被清成合法标签名，空名退回 ComfyU
   expect(second.createNewTemporary).toHaveBeenLastCalledWith('ComfyUI.json');
 });
 
+it('ComfyUI 把工作流写进地址栏后仍然是画布：装载就地完成，不许导航', async () => {
+  const store = tempStore();
+  const loadGraphData = vi.fn().mockResolvedValue({});
+  const app = { graph: { _nodes: [{}] }, canvas: {}, extensionManager: { workflow: store }, loadGraphData };
+  const session = fakeStorage();
+  // 这个版本的 ComfyUI 会把当前工作流路由进 URL，路径已经不是 / 了
+  const location: any = { origin: ORIGIN, href: `${ORIGIN}/workflows/数字人_00022_.json` };
+  await run({
+    window: { comfyAPI: { app: { app } } }, location, document: { readyState: 'complete' },
+    localStorage: fakeStorage().api, sessionStorage: session.api,
+    request: { id: 7, origin: ORIGIN, base: `${ORIGIN}/`, name: '数字人_00022_', workflow: { nodes: [{}] } },
+  }, 2400);
+  expect(loadGraphData).toHaveBeenCalledTimes(1);
+  // 就地装载 = 回执是 loaded，并且根本没往画布地址跳过（跳了就会弹「是否离开网站？」）
+  expect(location.href).toBe('suxing-workflow://loaded?id=7');
+  expect(session.bag['SeekX.Request']).toBeUndefined();
+});
+
 it('ComfyUI 一个标签都没恢复出来时，自己开标签并清掉坏掉的恢复记录', async () => {
   const tab = { filename: '角色资产.json', path: 'workflows/角色资产.json', isTemporary: true };
   const store = { openWorkflows: [], activeWorkflow: null, createNewTemporary: vi.fn(() => tab), openWorkflow: vi.fn().mockResolvedValue({}) };
@@ -144,7 +162,7 @@ it('ComfyUI 一个标签都没恢复出来时，自己开标签并清掉坏掉�
   }, 2400);
   // 用户看到的就是这一步：没有活动标签也必须把图装上屏
   expect(store.createNewTemporary).toHaveBeenCalledWith('角色资产.json');
-  expect(store.openWorkflow).toHaveBeenCalledWith(tab, true);
+  expect(store.openWorkflow).toHaveBeenCalledWith(tab, { force: true });
   expect(loadGraphData.mock.calls[0][3]).toBe(tab);
   expect(location.href).toBe('suxing-workflow://loaded?id=4');
   // 有记录却一个标签都没恢复出来 = 记录已经不可信，清掉它，下次启动才不再空转
@@ -188,7 +206,8 @@ it('加载失败不会回报成功，也不会提交生成任务', async () => {
 
 it('面板页面（如 LoRA 管理器 /loras）不会被桥接重复加载工作流', async () => {
   const loadGraphData = vi.fn();
-  const app = { graph: {}, canvas: {}, extensionManager: { workflow: { activeWorkflow: {} } }, loadGraphData };
+  // 真·插件页面：那是另一个文档，comfyAPI 里没有活画布（app.canvas/app.graph 不存在）
+  const app = { extensionManager: { workflow: { activeWorkflow: {} } }, loadGraphData };
   const location: any = { origin: ORIGIN, href: `${ORIGIN}/loras` };
   await run({ window: { comfyAPI: { app: { app } } }, location, document: { readyState: 'complete' }, request: { origin: ORIGIN, base: `${ORIGIN}/`, name: '人物', workflow: { nodes: [] } } });
   expect(loadGraphData).not.toHaveBeenCalled();
@@ -197,7 +216,8 @@ it('面板页面（如 LoRA 管理器 /loras）不会被桥接重复加载工作
 
 it('停在插件页时先把工作流存进待载请求，再跳回画布', async () => {
   const loadGraphData = vi.fn();
-  const app = { graph: {}, canvas: {}, extensionManager: { workflow: { activeWorkflow: {} } }, loadGraphData };
+  // 真·插件页面：那是另一个文档，comfyAPI 里没有活画布（app.canvas/app.graph 不存在）
+  const app = { extensionManager: { workflow: { activeWorkflow: {} } }, loadGraphData };
   const session = fakeStorage();
   const location: any = { origin: ORIGIN, href: `${ORIGIN}/loras` };
   const { window, flush } = boot({
@@ -262,7 +282,8 @@ it('画布地址写成 /index.html 时桥接照常工作', async () => {
 
 it('面板页的子路由同样不会被桥接接管', async () => {
   const loadGraphData = vi.fn();
-  const app = { graph: {}, canvas: {}, extensionManager: { workflow: { activeWorkflow: {} } }, loadGraphData };
+  // 真·插件页面：那是另一个文档，comfyAPI 里没有活画布（app.canvas/app.graph 不存在）
+  const app = { extensionManager: { workflow: { activeWorkflow: {} } }, loadGraphData };
   const location: any = { origin: ORIGIN, href: `${ORIGIN}/loras/detail/9` };
   await run({ window: { comfyAPI: { app: { app } } }, location, document: { readyState: 'complete' }, request: { origin: ORIGIN, base: `${ORIGIN}/`, name: '人物', workflow: { nodes: [] } } });
   expect(loadGraphData).not.toHaveBeenCalled();

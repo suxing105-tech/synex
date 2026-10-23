@@ -573,9 +573,14 @@ mod tests {
 
     #[test]
     fn bridge_only_takes_over_the_canvas_document() {
-        // 插件页面（/loras 等）与画布同源：桥接必须先确认自己在画布文档里，
+        // 插件页面（/loras 等）与画布同源：认不出画布 app 就不能 import scripts/app.js，
         // 否则会把插件的初始化链一起带坏（LoRA 管理器点了没反应）
         assert!(BRIDGE_JS.contains("pagePath === canvasPath"));
+        assert!(BRIDGE_JS.contains("canvasDoc || !!liveApp()"));
+        assert!(BRIDGE_JS.contains("if (!app && canvasDoc && document.readyState === 'complete')"));
+        // 画布文档的 URL 会被 ComfyUI 的路由改掉（/workflows/xxx），不能只按路径判断，
+        // 否则会去导航一个正常画布 = 浏览器弹「是否离开网站？」
+        assert!(BRIDGE_JS.contains("typeof app.loadGraphData === 'function' ? app : null"));
         assert!(!PANEL_JS.contains("loadGraphData"));
         // 页面模式的返回靠这两个键，键名撞车会让返回地址被深度值覆盖
         assert!(PANEL_JS.contains("RETURN_KEY = \"SeekX.PanelReturn\""));

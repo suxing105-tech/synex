@@ -5,9 +5,11 @@
 // 标签名用媒体名 —— 用户在窗口里切标签，跟在浏览器里切标签一样。
 //
 // 六条约束都是踩出来的：
-// 1. 只认画布文档。插件页面（LoRA 管理器的 /loras 等）和画布同源，在那里
-//    import scripts/app.js 会把插件自己的初始化链带坏。停在插件页时先把请求
-//    存进 sessionStorage，跳回画布后由画布那份脚本接手。
+// 1. 「在不在画布上」看 app 在不在，不看地址栏。这个版本的 ComfyUI 会把当前工作流
+//    写进 URL（/workflows/xxx.json 之类），只看路径会把真正的画布误判成别的页面，
+//    于是去导航它 —— 用户看到的就是浏览器的「是否离开网站？」。
+//    只有同源但 app 起不来的页面（真·插件页面）才需要先把请求存进
+//    sessionStorage 再跳回画布；而且绝不在那种页面上 import scripts/app.js。
 // 2. 不把「已经有活动工作流标签」当成前提。ComfyUI 的标签恢复一旦坏掉
 //    （恢复记录里存着已经不存在的标签路径），activeWorkflow 永远是空，
 //    老写法会一直等到超时，用户看到的就是一张空画布——「工作流不见了」。
@@ -35,7 +37,15 @@
   const canvasPath = docPath(request.base, request.origin + '/');
   const pagePath = docPath(location.href || request.base, request.origin + '/');
   const sameOrigin = location.origin === request.origin;
-  const onCanvas = sameOrigin && pagePath === canvasPath;
+  const canvasDoc = sameOrigin && pagePath === canvasPath;
+  // app 已经在这个文档里跑着 = 这就是画布文档，不管地址栏被路由成什么
+  const liveApp = () => {
+    try {
+      const app = window.comfyAPI && window.comfyAPI.app && window.comfyAPI.app.app;
+      return app && app.canvas && app.graph && typeof app.loadGraphData === 'function' ? app : null;
+    } catch (err) { return null; }
+  };
+  const onCanvas = sameOrigin && (canvasDoc || !!liveApp());
   const local = typeof localStorage === 'undefined' || !localStorage ? null : localStorage;
   const session = typeof sessionStorage === 'undefined' || !sessionStorage ? null : sessionStorage;
 
@@ -135,7 +145,7 @@
     let app;
     for (let attempt = 0; attempt < 160; attempt++) {
       app = window.comfyAPI?.app?.app;
-      if (!app && document.readyState === 'complete') {
+      if (!app && canvasDoc && document.readyState === 'complete') {
         try { app = (await import(new URL('scripts/app.js', request.base.replace(/\/?$/, '/')).href)).app; } catch (err) {}
       }
       if (app) break;
@@ -181,7 +191,7 @@
         && workflow.isTemporary && (bareName(tabName(workflow)) === wanted || bareName(workflow.path) === wanted));
       const tab = existing || store.createNewTemporary(fileName);
       const active = bareName(tabName(store.activeWorkflow));
-      if (!existing || active !== wanted) { try { await store.openWorkflow(tab, true); } catch (err) {} }
+      if (!existing || active !== wanted) { try { await store.openWorkflow(tab, { force: true }); } catch (err) {} }
       return tab;
     };
 

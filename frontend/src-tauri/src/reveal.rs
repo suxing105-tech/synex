@@ -36,6 +36,29 @@ pub(crate) fn classify(raw: &str, select: bool) -> Result<RevealTarget, String> 
     }
 }
 
+/// 把库里的路径变成 shell 认的 Windows 写法：正斜杠换反斜杠、去掉多余的结尾分隔符。
+///
+/// `ILCreateFromPathW` 只吃 Win32 形式的路径，库里存的是 `C:/SeekX-Data/a.png`
+/// 这种正斜杠写法，直接丢给它会返回 NULL —— 用户看到的就是一句「认不出这个路径」。
+pub(crate) fn win_path(raw: &str) -> String {
+    let mut text = raw.trim().replace('/', "\\");
+    while text.len() > 3 && text.ends_with('\\') {
+        text.pop();
+    }
+    text
+}
+
+/// `explorer.exe` 的参数：`/select,` 打开父目录并选中文件，单独一个路径就是打开目录。
+pub(crate) fn explorer_args(target: &RevealTarget) -> Vec<String> {
+    let path = match target {
+        RevealTarget::File(p) | RevealTarget::Folder(p) => win_path(&p.display().to_string()),
+    };
+    match target {
+        RevealTarget::File(_) => vec![format!("/select,{path}")],
+        RevealTarget::Folder(_) => vec![path],
+    }
+}
+
 /// 非 Windows 的命令行参数：macOS 用 `open -R` 选中，Linux 只能打开父目录。
 #[cfg(not(windows))]
 pub(crate) fn opener_args(target: &RevealTarget) -> (&'static str, Vec<String>) {
@@ -94,7 +117,8 @@ pub(crate) fn open_with_shell(target: &RevealTarget) -> Result<(), String> {
     let path = match target {
         RevealTarget::File(p) | RevealTarget::Folder(p) => p.clone(),
     };
-    let wide: Vec<u16> = std::ffi::OsStr::new(&path)
+    let normalised = win_path(&path.display().to_string());
+    let wide: Vec<u16> = std::ffi::OsStr::new(&normalised)
         .encode_wide()
         .chain(std::iter::once(0))
         .collect();
@@ -105,12 +129,13 @@ pub(crate) fn open_with_shell(target: &RevealTarget) -> Result<(), String> {
     unsafe { AllowSetForegroundWindow(ASFW_ANY) };
     let pidl = unsafe { ILCreateFromPathW(wide.as_ptr()) };
     let opened = if pidl.is_null() {
-        Err("资源管理器认不出这个路径".to_string())
+        // shell 不肯解析这个路径（网络盘、库别名之类都可能）：交给 explorer 自己办
+        Err("shell 认不出这个路径".to_string())
     } else {
         let code = unsafe { SHOpenFolderAndSelectItems(pidl, 0, std::ptr::null(), 0) };
         unsafe { ILFree(pidl) };
         if code < 0 {
-            Err(format!("资源管理器打不开这个位置（{:#x}）", code as u32))
+            Err(format!("shell 打不开这个位置（{:#x}）", code as u32))
         } else {
             Ok(())
         }
@@ -118,7 +143,19 @@ pub(crate) fn open_with_shell(target: &RevealTarget) -> Result<(), String> {
     if initialized {
         unsafe { CoUninitialize() };
     }
-    opened
+    opened.or_else(|reason| {
+        // 兜底走 explorer.exe：它自己解析路径，也照样开父目录并选中文件。
+        // 注意 explorer 成功时也返回退出码 1，所以只看能不能启动。
+        let args = explorer_args(target);
+        let mut command = std::process::Command::new("explorer.exe");
+        for arg in &args {
+            command.arg(arg);
+        }
+        match command.spawn() {
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("资源管理器打不开这个位置：{reason}（{e}）")),
+        }
+    })
 }
 
 #[tauri::command]
@@ -147,6 +184,23 @@ mod tests {
         let mut path = std::env::temp_dir();
         path.push(format!("seekx-reveal-test-{}-{tag}", std::process::id()));
         path
+    }
+
+    #[test]
+    fn slashes_are_normalised_for_the_shell() {
+        // 库里存的是正斜杠；ILCreateFromPathW 只认反斜杠，不转换就返回 NULL
+        assert_eq!(win_path("C:/SeekX-Data/inbox/a.png"), "C:\\SeekX-Data\\inbox\\a.png");
+        assert_eq!(win_path("D:/ComfyUI/output/"), "D:\\ComfyUI\\output");
+        assert_eq!(win_path("C:/"), "C:\\");
+        assert_eq!(win_path("\\\\nas\\share\\目录"), "\\\\nas\\share\\目录");
+    }
+
+    #[test]
+    fn explorer_fallback_selects_files_and_just_opens_folders() {
+        let file = explorer_args(&RevealTarget::File(PathBuf::from("C:/a/b.png")));
+        assert_eq!(file, vec!["/select,C:\\a\\b.png".to_string()]);
+        let folder = explorer_args(&RevealTarget::Folder(PathBuf::from("C:/a/b")));
+        assert_eq!(folder, vec!["C:\\a\\b".to_string()]);
     }
 
     #[test]

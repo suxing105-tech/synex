@@ -13,6 +13,7 @@
   import { backendUrl } from "../lib/backend-url";
   import {
     removeImageFromFeed, feedItems, feedTotal, feedLoading, refreshFeed, refreshStats,
+    refreshSelectedDetail,
     targetColumns, activeFolderName, newIds,
     multiSelectedIds, folders, refreshFolders,
     selectedId as selectedIdStore,
@@ -527,6 +528,8 @@
       notify(moveSummary(moveStats(r), folder ? folder.name : null));
       // 刷新 folders（image_count 变化）+ feed（folder_ids 变化）
       await Promise.all([refreshFolders(), refreshFeed()]);
+      // 详情面板正好开着被搬走的那一张 → 重拉，「所属文件夹」跟着换成新目录
+      await refreshSelectedDetail((r.moved ?? []).map((m) => m.id));
     } catch (e) {
       notify(`移动失败: ${(e as Error).message}`);
     }

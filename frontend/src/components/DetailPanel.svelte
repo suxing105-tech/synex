@@ -9,7 +9,7 @@
    *   Body（可滚动）
    *     ├─ PromptCard × 2（正向 / 反向）
    *     ├─ ParamsCard（参数按域分组 + LoRA 列表）
-   *     ├─ MetadataCard（标签 + 文件夹）
+   *     ├─ MetadataCard（标签 + 所在文件夹）
    *     └─ Workflow JSON（默认折叠）
    *
    * 与外部交互：
@@ -23,6 +23,7 @@
     feedItems,
     folders,
     refreshFolders,
+    refreshSelectedDetail,
   } from "../lib/stores";
   import { imagesApi } from "../lib/api";
   import { copyText, formatSize, formatDate, allParamsText } from "../lib/ws";
@@ -39,6 +40,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
   import FolderPickerModal from "./FolderPickerModal.svelte";
   import VideoCoverModal from "./VideoCoverModal.svelte";
   import { moveSummary } from "../lib/move-result";
+  import { nativePath, parentDirectory } from "../lib/file-location";
 
   // ---------- 通知（全局 toast） ----------
   async function copy(text: string, label: string) {
@@ -133,6 +135,27 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
     } catch (e) {
       notify(`移动失败：${(e as Error).message}`);
     }
+  }
+
+  // ---------- 所在文件夹 ----------
+  // 位置行显示文件真实所在目录；点击走后端 reveal，资源管理器打开该目录并选中本文件。
+  async function revealLocation() {
+    const d = $selectedDetail;
+    if (!d) return;
+    try {
+      const r = await imagesApi.reveal(d.id);
+      if (!r.method || r.method === "noop") notify("已请求打开所在文件夹");
+    } catch (e) {
+      notify(`打开所在文件夹失败：${(e as Error).message}`, "error");
+      // 十有八九是文件被移走/删了：重拉详情，位置行别再显示旧目录
+      await refreshSelectedDetail();
+    }
+  }
+
+  function copyLocation() {
+    const d = $selectedDetail;
+    if (!d) return;
+    copy(nativePath(parentDirectory(d.path)), "文件夹路径");
   }
 
   // ---------- 收藏 ----------
@@ -528,7 +551,15 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
 
         <!-- 文件夹（视频不做标签） -->
         <section>
-          <MetadataCard tags={[]} folderIds={d.folder_ids} folders={$folders} onSwitchFolder={() => (showFolderPicker = true)} />
+          <MetadataCard
+            tags={[]}
+            folderIds={d.folder_ids}
+            folders={$folders}
+            path={d.path}
+            onSwitchFolder={() => (showFolderPicker = true)}
+            onRevealLocation={revealLocation}
+            onCopyLocation={copyLocation}
+          />
         </section>
       {:else}
       {#key d.id}<ReversePromptPanel imageId={d.id} />{/key}
@@ -609,9 +640,12 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
           tags={d.tags}
           folderIds={d.folder_ids}
           folders={$folders}
+          path={d.path}
           onTagClick={searchByTag}
           onRemoveTag={removeTag}
           onSwitchFolder={() => (showFolderPicker = true)}
+          onRevealLocation={revealLocation}
+          onCopyLocation={copyLocation}
         />
       </section>
 

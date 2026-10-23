@@ -170,6 +170,23 @@ export function removeImageFromFeed(id: number) {
   removeIdsFromSelection([id]);
 }
 
+/**
+ * 重拉当前选中项的详情。文件被真实移动后要刷新「所在文件夹」，
+ * 传 ids 时只有选中项在 ids 里才发请求（批量移动只关心正打开的那一张）。
+ * 失败（文件正在被搬走 / 已删除）保留旧详情，提示交给调用方。
+ */
+export async function refreshSelectedDetail(ids?: Iterable<number>): Promise<void> {
+  const detail = get(selectedDetail);
+  if (!detail) return;
+  if (ids && !Array.from(ids).includes(detail.id)) return;
+  try {
+    const fresh = await imagesApi.detail(detail.id);
+    if (get(selectedDetail)?.id === detail.id) selectedDetail.set(fresh);
+  } catch {
+    // 保留旧详情：详情面板显示上一次已知位置，不额外弹错
+  }
+}
+
 let feedRequest = 0;
 export async function refreshFeed() {
   if (get(textMode)) return;

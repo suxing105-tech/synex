@@ -215,9 +215,11 @@ def settings():
 
 
 def image_path(image_id):
-    row = db.get_pool().main().execute("SELECT path FROM images WHERE id=?", (image_id,)).fetchone()
+    row = db.get_pool().main().execute("SELECT path, kind FROM images WHERE id=?", (image_id,)).fetchone()
     if row is None:
         raise HTTPException(404, "图片记录不存在")
+    if (row["kind"] or "image") == "audio":
+        raise HTTPException(400, "音频不支持反推提示词")
     return Path(row["path"])
 
 

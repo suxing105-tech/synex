@@ -205,8 +205,8 @@ def test_backfill_attach_existing_images_to_system_folders(tmp_data_dir, monkeyp
     sys_nodes = {n["name"]: n for n in flat if n["is_system"]}
     assert "krea2" in sys_nodes
     assert "Audio" in sys_nodes
-    assert sys_nodes["krea2"]["image_count"] == 2
-    assert sys_nodes["Audio"]["image_count"] == 1
+    assert sys_nodes["krea2"]["counts"]["image"] == 2
+    assert sys_nodes["Audio"]["counts"]["image"] == 1
 
 
 def test_backfill_skips_outside_watch(tmp_data_dir):

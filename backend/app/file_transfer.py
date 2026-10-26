@@ -8,7 +8,7 @@ from . import repository
 from .db import get_pool, transaction
 from .folder_storage import target_directory
 from .indexer import get_indexer
-from .parser import SUPPORTED_EXTS, VIDEO_EXTS
+from .parser import AUDIO_EXTS, SUPPORTED_EXTS, VIDEO_EXTS
 
 
 def copy_files(paths: list[str], folder_id: int | None) -> dict:
@@ -23,22 +23,24 @@ def copy_files(paths: list[str], folder_id: int | None) -> dict:
             if source.suffix.lower() not in SUPPORTED_EXTS:
                 raise ValueError('unsupported_format')
             with indexer._live_lock:
-                is_video = source.suffix.lower() in VIDEO_EXTS
+                suffix = source.suffix.lower()
+                is_video = suffix in VIDEO_EXTS
+                is_audio = suffix in AUDIO_EXTS
                 before = source.stat()
-                limit = 2 * 1024 * 1024 * 1024 if is_video else 100 * 1024 * 1024
+                limit = (2048 if is_video else 200 if is_audio else 100) * 1024 * 1024
                 if before.st_size > limit:
-                    raise ValueError('超过 2GB' if is_video else '超过 100MB')
+                    raise ValueError('超过 2GB' if is_video else '超过 200MB' if is_audio else '超过 100MB')
                 # Video metadata/posters are handled by the video indexer, not Pillow.
-                if not is_video and source.suffix.lower() == ".psd":
+                if not is_video and suffix == ".psd":
                     from psd_tools import PSDImage
 
                     with source.open("rb") as source_file:
                         PSDImage.open(source_file)
-                elif not is_video:
+                elif not is_video and not is_audio:
                     with Image.open(source) as image:
                         image.verify()
                 target = directory / source.name
-                row = get_pool().main().execute('SELECT id, favorite FROM images WHERE path=?',
+                row = get_pool().main().execute('SELECT id FROM images WHERE path=?',
                     (repository._normalize_path(source),)).fetchone()
                 if source.parent != directory:
                     number = 0
@@ -64,7 +66,6 @@ def copy_files(paths: list[str], folder_id: int | None) -> dict:
                     if folder_id is not None:
                         conn.execute('INSERT OR IGNORE INTO image_folders(image_id,folder_id) VALUES(?,?)', (image_id, folder_id))
                     if created and row:
-                        conn.execute('UPDATE images SET favorite=? WHERE id=?', (row['favorite'], image_id))
                         conn.execute('INSERT OR IGNORE INTO image_tags(image_id,tag_id) SELECT ?,tag_id FROM image_tags WHERE image_id=?', (image_id, row['id']))
                 indexer.emit_event_sync(payload)
                 saved.append({'id': image_id, 'filename': target.name, 'path': str(target)})

@@ -26,6 +26,7 @@ def import_directories(payload: DirectoryDrop):
 
 @router.get("")
 def list_folders():
+    from collections import Counter
     from pathlib import Path
     from ..indexer import get_indexer
     from .. import texts
@@ -33,11 +34,23 @@ def list_folders():
     with indexer._live_lock:
         folder_storage.sync_user_folders(indexer)
         tree = repository.folder_tree()
-    paths = [Path(r['path']) for r in texts.conn().execute('SELECT path FROM texts WHERE missing=0')]
+    # 文本计数：每篇文本给自己的各级父目录各记一次，节点查表即得「本目录及子目录内文本数」。
+    # 旧实现是每个节点重扫一遍全部文本，文件一多就线性放大。
+    # texts.path 存反斜杠、folders.path 存正斜杠，两边都归一后再比对。
+    def key(p: Path) -> str:
+        return str(p).replace("\\", "/").rstrip("/").casefold()
+
+    text_counts: Counter[str] = Counter()
+    for row in texts.conn().execute('SELECT path FROM texts WHERE missing=0'):
+        directory = Path(row['path']).parent
+        for ancestor in (directory, *directory.parents):
+            text_counts[key(ancestor)] += 1
+
     def enrich(nodes):
         for node in nodes:
-            directory = Path(node['path']).resolve() if node.get('path') else None
-            node['text_count'] = sum(p.is_relative_to(directory) for p in paths) if directory else 0
+            counts = node['counts']
+            counts['text'] = text_counts[key(Path(node['path']))] if node.get('path') else 0
+            node['total'] = sum(counts.values())
             enrich(node['children'])
     enrich(tree)
     return tree

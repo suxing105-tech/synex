@@ -62,7 +62,7 @@ def test_indexer_inserts_image(seeded_db):
 
 
 def test_feed_returns_all(seeded_db):
-    items, total = repository.feed(view="all", limit=10)
+    items, total = repository.feed(limit=10)
     assert total == 5
     assert len(items) == 5
 
@@ -85,20 +85,26 @@ def test_feed_filter_by_folder_includes_descendants(seeded_db):
     assert total >= 1
 
 
-def test_feed_filter_favorite(seeded_db):
-    # 收藏第一张
-    conn = get_pool().main()
-    first_id = conn.execute("SELECT id FROM images ORDER BY id LIMIT 1").fetchone()["id"]
-    repository.set_favorite(first_id, True)
-    items, total = repository.feed(view="favorite", limit=10)
-    assert total == 1
+def test_feed_has_no_view_parameter(seeded_db):
+    """view（收藏 / 最近生成）已从查询里去掉，只剩内容类型过滤。"""
+    import inspect
+
+    params = inspect.signature(repository.feed).parameters
+    assert "view" not in params
+    items, total = repository.feed(kind="image", limit=10)
+    assert total == 5
 
 
-def test_folder_tree_includes_recursive_count(seeded_db):
+def test_folder_tree_counts_by_kind(seeded_db):
     tree = repository.folder_tree()
     assert any(n["name"] == "灵感" for n in tree)
     inspiration = next(n for n in tree if n["name"] == "灵感")
-    assert inspiration["recursive_count"] >= 3
+    # 契约：四类键恒在（文本数由 /api/folders 填，仓储层至少给 0），total 恒等于四项之和
+    assert set(inspiration["counts"]) == {"image", "video", "audio", "text"}
+    assert inspiration["counts"]["image"] >= 3
+    assert inspiration["counts"]["video"] == 0
+    assert inspiration["counts"]["audio"] == 0
+    assert inspiration["total"] == sum(inspiration["counts"].values())
 
 
 def test_fts_index_is_derived_from_images(seeded_db):

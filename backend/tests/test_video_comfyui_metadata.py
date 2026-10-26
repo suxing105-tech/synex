@@ -316,9 +316,18 @@ def test_backfill_never_wipes_and_survives_missing_file(tmp_path, monkeypatch, s
         ("C:/不存在的目录/gone.mp4", "gone.mp4", "video", 1, 0),
     )
     conn.commit()
-    assert repository.backfill_video_metadata() == 0
-    row = conn.execute("SELECT workflow, positive_prompt FROM images WHERE id = 1").fetchone()
+    # 外来源文件（无 ComfyUI tag）也会被补技术参数，所以返回 1；
+    # 关键是已有值一个都不擦，且文件不在了的那行原样不动。
+    assert repository.backfill_video_metadata() == 1
+    row = conn.execute(
+        "SELECT workflow, positive_prompt, duration_seconds, width, fps FROM images WHERE id = 1"
+    ).fetchone()
     assert row["workflow"] == "旧工作流" and row["positive_prompt"] == "旧提示词"
+    assert row["duration_seconds"] and row["fps"], "同一次 ffprobe 的时长/帧率要顺手补上"
+    missing = conn.execute(
+        "SELECT duration_seconds, fps, workflow FROM images WHERE id = 2"
+    ).fetchone()
+    assert missing["duration_seconds"] is None and missing["fps"] is None
 
 
 # ---------- 路由 ----------
@@ -355,3 +364,31 @@ def test_open_workflow_route_accepts_video(tmp_path, monkeypatch, samples):
         missing = client.post("/api/integrations/comfyui/open_workflow/999999")
         assert missing.status_code == 404
         assert "媒体" in missing.json()["detail"]
+
+
+def test_backfill_without_ffprobe_leaves_the_gate_unset(tmp_path, monkeypatch, samples):
+    """缺 ffprobe 时直接返回，绝不写 meta 版本号。
+
+    以前失败也算跑过：门控一落，这台机器以后就算装上 ffmpeg 也永远不会补跑，
+    别人机器上「视频的提示词读不出来」就是这么固化下来的。
+    """
+    from app import media_tools, repository
+    from app.db import get_int_meta
+
+    _isolate(tmp_path, monkeypatch)
+    conn = get_pool().main()
+    conn.execute(
+        "INSERT INTO images(path, filename, kind, size_bytes, mtime) VALUES(?,?,?,?,?)",
+        (samples["tag"].as_posix(), samples["tag"].name, "video", 1, 0),
+    )
+    conn.commit()
+    monkeypatch.setattr(media_tools, "ffprobe_path", lambda: None)
+
+    assert repository.backfill_video_metadata() == 0
+    assert get_int_meta("video_metadata_schema", 0) == 0
+    assert not conn.execute("SELECT workflow FROM images").fetchone()["workflow"]
+
+    # 工具到位后同一批数据能自动补跑，这时才允许落门控
+    monkeypatch.setattr(media_tools, "ffprobe_path", lambda: samples["tag"])
+    assert repository.backfill_video_metadata() == 1
+    assert get_int_meta("video_metadata_schema", 0) == repository.VIDEO_METADATA_SCHEMA_VERSION

@@ -22,6 +22,8 @@ from collections import defaultdict as _dd
 from pathlib import Path
 from typing import Any
 
+from . import media_tools
+
 # ComfyUI 在保存 PNG 时把 ``class_type == "CLIPTextEncode"`` 的节点视为 prompt：
 #   - 连到 ``KSampler`` 正向 ``positive`` 的 → 正向 prompt
 #   - 连到 ``KSampler`` 反向 ``negative`` 的 → 反向 prompt
@@ -669,20 +671,117 @@ IMAGE_EXTS = {".png", ".webp", ".jpg", ".jpeg", ".psd"}
 VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".wmv", ".flv"}
 # WebView（WebView2/Chromium）可原生播放的容器，可直接走 <video>；否则回退系统播放器
 PLAYABLE_EXTS = {".mp4", ".mov", ".m4v", ".webm"}
+# 音频扩展名：ComfyUI 的音乐/TTS 产物与常见音乐文件，全部入库成一等素材
+AUDIO_EXTS = {".mp3", ".wav", ".flac", ".m4a", ".aac", ".opus", ".ogg"}
+# Chromium/WebView2 原生可解码的音频容器（含 FLAC）；不在表内的走系统播放器
+AUDIO_PLAYABLE_EXTS = {".mp3", ".wav", ".flac", ".m4a", ".aac", ".opus", ".ogg"}
 
 # 所有需要索引/监听的媒体扩展名
-SUPPORTED_EXTS = IMAGE_EXTS | VIDEO_EXTS
+SUPPORTED_EXTS = IMAGE_EXTS | VIDEO_EXTS | AUDIO_EXTS
 
 
 def classify(path: Path | str) -> str:
-    """按扩展名判定媒体类型：``'image'`` 或 ``'video'``。未知一律视为图片。"""
+    """按扩展名判定媒体类型：``'image'`` / ``'video'`` / ``'audio'``。未知一律视为图片。"""
     ext = Path(path).suffix.lower()
-    return "video" if ext in VIDEO_EXTS else "image"
+    if ext in VIDEO_EXTS:
+        return "video"
+    if ext in AUDIO_EXTS:
+        return "audio"
+    return "image"
 
 
 def is_playable_video(path: Path | str) -> bool:
     """判定该视频容器是否能在 WebView 内直接播放。"""
     return Path(path).suffix.lower() in PLAYABLE_EXTS
+
+
+def is_playable_audio(path: Path | str) -> bool:
+    """判定该音频容器是否能在 WebView 内直接播放。"""
+    return Path(path).suffix.lower() in AUDIO_PLAYABLE_EXTS
+
+
+def parse_audio_metadata(path: Path) -> dict[str, Any]:
+    """解析音频元数据（ffprobe 子进程）。返回与图片/视频同构的结构，失败时字段为空。
+
+    用到的字段：``duration_seconds`` / ``audio_codec`` / ``format``；采样率、声道、
+    码率等音频专属信息放进 ``parameters["audio"]``，详情面板直接读，不再加表列。
+    ComfyUI 的音频产物不带提示词与工作流，那些字段一律留空。
+
+    不会抛出异常。
+    """
+    result: dict[str, Any] = {
+        "filename": path.name,
+        "kind": "audio",
+        "width": None,
+        "height": None,
+        "duration_seconds": None,
+        "video_codec": None,
+        "audio_codec": None,
+        "fps": None,
+        "format": None,
+        "positive_prompt": "",
+        "negative_prompt": "",
+        "parameters": {},
+        "workflow": "",
+        "seed": None,
+        "model": None,
+        "sampler": None,
+        "steps": None,
+        "cfg": None,
+    }
+    try:
+        probe = subprocess.run(
+            [
+                *media_tools.ffprobe_cmd(),
+                "-v", "error",
+                "-print_format", "json",
+                "-show_format",
+                "-show_streams",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )
+        if probe.returncode != 0 or not probe.stdout:
+            return result
+        data = json.loads(probe.stdout)
+    except Exception:
+        return result
+
+    fmt = data.get("format", {})
+    result["format"] = path.suffix.lstrip(".").upper() or (fmt.get("format_name") or None)
+    extra: dict[str, Any] = {}
+    try:
+        if fmt.get("duration"):
+            result["duration_seconds"] = round(float(fmt["duration"]), 3)
+    except (TypeError, ValueError):
+        pass
+    if fmt.get("bit_rate"):
+        extra["bit_rate"] = fmt["bit_rate"]
+    for stream in data.get("streams", []):
+        if stream.get("codec_type") != "audio":
+            continue
+        result["audio_codec"] = stream.get("codec_name")
+        if stream.get("sample_rate"):
+            extra["sample_rate"] = stream["sample_rate"]
+        if stream.get("channels") is not None:
+            extra["channels"] = stream["channels"]
+        if result["duration_seconds"] is None and stream.get("duration"):
+            try:
+                result["duration_seconds"] = round(float(stream["duration"]), 3)
+            except (TypeError, ValueError):
+                pass
+        break
+    for tag in ("title", "artist"):
+        value = (fmt.get("tags") or {}).get(tag)
+        if value:
+            extra[tag] = value
+    if extra:
+        result["parameters"] = {"audio": extra}
+    return result
 
 
 def parse_metadata(path: Path) -> dict[str, Any]:
@@ -1049,7 +1148,7 @@ def parse_video_metadata(path: Path) -> dict[str, Any]:
     try:
         probe = subprocess.run(
             [
-                "ffprobe",
+                *media_tools.ffprobe_cmd(),
                 "-v", "error",
                 "-print_format", "json",
                 "-show_format",

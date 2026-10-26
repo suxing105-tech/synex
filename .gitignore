@@ -17,6 +17,9 @@ dist/
 .vite/
 .svelte-kit/
 
+# Bundled media toolchain (96 MB binaries, fetched by frontend/scripts/fetch-media-tools.ps1)
+vendor/media-tools/
+
 # Tauri
 frontend/src-tauri/target/
 frontend/src-tauri/gen/

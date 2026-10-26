@@ -152,6 +152,7 @@ async def generate(image_id: int, payload: GenerateInput):
             raise HTTPException(409, "这张图片正在反推，请等待完成")
         _busy.add(image_id)
     try:
+        path = service.image_path(image_id)  # 音频 / 已删除的记录在这里就挡掉
         settings = service.settings()
         config_id = payload.model_config_id or settings["default_model_id"]
         if config_id is None:
@@ -161,7 +162,7 @@ async def generate(image_id: int, payload: GenerateInput):
         instruction = settings["instruction"]
         if key:
             instruction = instruction.replace(key, "[已隐藏密钥]")
-        data_url, fingerprint = await run_in_threadpool(service.prepare_image, service.image_path(image_id))
+        data_url, fingerprint = await run_in_threadpool(service.prepare_image, path)
         text = await service.request_model(config, key, data_url, instruction)
         zh, en, status = service.parse_text(text)
         return service.insert_record(image_id, prompt_zh=zh, prompt_en=en, raw_text=text, status=status,

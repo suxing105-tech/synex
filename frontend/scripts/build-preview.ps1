@@ -47,6 +47,13 @@ try {
   $env:CARGO_NET_OFFLINE = 'true'
   $env:TAURI_SIGNING_PRIVATE_KEY = (Resolve-Path -LiteralPath $SigningKeyPath).Path
 
+  # Video posters / audio waveforms / container prompts all need ffmpeg+ffprobe, and a
+  # target machine cannot be expected to have them on PATH. Stage them so the NSIS
+  # bundle ships its own copy next to the sidecar.
+  $step = 'media-tools'
+  & (Join-Path $PSScriptRoot 'fetch-media-tools.ps1')
+  if ($LASTEXITCODE) { throw ('fetch-media-tools.ps1 failed (' + $LASTEXITCODE + ')') }
+
   $step = 'sidecar'
   $code = RunNative { & $Python -m PyInstaller --noconfirm --distpath (Join-Path $Out 'sidecar') --workpath (Join-Path $Out 'build\pyinstaller') (Join-Path $Repo 'frontend\pyinstaller\python-backend.spec') } (Join-Path $Out 'build\sidecar-build.log')
   if ($code) { throw ('sidecar build failed (' + $code + '), see build\sidecar-build.log') }
@@ -64,6 +71,11 @@ try {
   Copy-Item -LiteralPath (Join-Path $Release 'suxing-gallery.exe') -Destination (Join-Path $Out 'app\suxing-gallery.exe') -Force
   Copy-Item -LiteralPath $fresh -Destination (Join-Path $Out 'app\python-backend.exe') -Force
   Copy-Item -LiteralPath $fresh -Destination (Join-Path $Out 'app\python-backend-x86_64-pc-windows-msvc.exe') -Force
+  # The preview app/ folder mirrors the installed layout, so the sidecar must be able
+  # to find ffmpeg/ffprobe right next to python-backend.exe here as well.
+  foreach ($tool in @('ffmpeg', 'ffprobe')) {
+    Copy-Item -LiteralPath (Join-Path $Repo ('vendor\media-tools\' + $tool + '.exe')) -Destination (Join-Path $Out ('app\' + $tool + '.exe')) -Force
+  }
 
   $step = 'installer'
   $version = (Get-Content -LiteralPath (Join-Path $Repo 'frontend\src-tauri\tauri.conf.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
@@ -87,7 +99,7 @@ try {
   $sc.Save()
 
   $step = 'artifacts'
-  $items = @('app/suxing-gallery.exe', 'app/python-backend.exe', $lnk, $destName)
+  $items = @('app/suxing-gallery.exe', 'app/python-backend.exe', 'app/ffmpeg.exe', 'app/ffprobe.exe', $lnk, $destName)
   $artifacts = $items | ForEach-Object {
     $p = Join-Path $Out ($_ -replace '/', '\')
     if (!(Test-Path -LiteralPath $p)) { throw ('missing artifact ' + $_) }

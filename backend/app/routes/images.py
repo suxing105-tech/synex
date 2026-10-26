@@ -31,7 +31,6 @@ router = APIRouter(prefix="/api/images", tags=["images"])
 @router.get("")
 def list_images(
     folder_id: int | None = None,
-    view: str | None = None,
     q: str | None = None,
     tag: str | None = None,
     model: str | None = None,
@@ -41,7 +40,6 @@ def list_images(
 ):
     items, total = repository.feed(
         folder_id=folder_id,
-        view=view,
         q=q,
         tag=tag,
         model=model,
@@ -83,13 +81,15 @@ def get_original(
     from ..db import get_pool
 
     row = get_pool().main().execute(
-        "SELECT path, filename, mtime FROM images WHERE id = ?", (image_id,)
+        "SELECT path, filename, mtime, kind FROM images WHERE id = ?", (image_id,)
     ).fetchone()
     if not row:
         raise HTTPException(404, "图片不存在")
     p = Path(row["path"])
     if not p.exists():
         raise HTTPException(404, "原文件不存在")
+    if (row["kind"] or "image") == "audio" and (max is not None or fit is not None):
+        raise HTTPException(400, "音频不支持图片预览，请用 /api/audio 的波形与文件接口")
     mtime = float(row["mtime"] or 0.0)
     stat = p.stat()
 
@@ -225,16 +225,6 @@ def delete_image(image_id: int, remove_file: bool = True):
     except OSError as e:
         raise HTTPException(500, f"删除文件失败: {e}")
     return {"ok": True, **result}
-
-
-@router.post("/{image_id}/favorite")
-def toggle_favorite(image_id: int, favorite: bool = True, payload: dict | None = None):
-    if payload is not None:
-        favorite = payload.get("favorite", favorite)
-        if not isinstance(favorite, bool):
-            raise HTTPException(400, "favorite 必须是布尔值")
-    repository.set_favorite(image_id, favorite)
-    return {"id": image_id, "favorite": favorite}
 
 
 @router.post("/{image_id}/tags")
@@ -402,10 +392,13 @@ def reveal_image(image_id: int):
     }
 
 
-from ..parser import SUPPORTED_EXTS, VIDEO_EXTS
+from ..parser import AUDIO_EXTS, SUPPORTED_EXTS, VIDEO_EXTS
 _ALLOWED_EXTS = SUPPORTED_EXTS
 _MAX_IMAGE_BYTES = 100 * 1024 * 1024  # 100 MB 图片单文件上限
 _MAX_VIDEO_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB 视频单文件上限
+# 音频单独一档，和 file_transfer.copy_files 的拖目录上限对齐：
+# 24bit/96kHz 的 FLAC 母带动辄 100-500MB，落到 100MB 的图片上限会被判 too_large。
+_MAX_AUDIO_BYTES = 200 * 1024 * 1024  # 200 MB 音频单文件上限
 _FILENAME_BAD = re.compile(r"[\\/\x00-\x1f\x7f]+")
 _FILENAME_TRAILING_DOTS = re.compile(r"^[.]+|[.]+$")
 
@@ -502,7 +495,11 @@ def import_images(
 
         try:
             content = f.file.read()
-            max_bytes = _MAX_VIDEO_BYTES if ext in VIDEO_EXTS else _MAX_IMAGE_BYTES
+            max_bytes = (
+                _MAX_VIDEO_BYTES if ext in VIDEO_EXTS
+                else _MAX_AUDIO_BYTES if ext in AUDIO_EXTS
+                else _MAX_IMAGE_BYTES
+            )
             if len(content) > max_bytes:
                 skipped.append(
                     ImportSkippedItem(filename=original_name, reason="too_large")

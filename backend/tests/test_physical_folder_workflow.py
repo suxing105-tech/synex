@@ -42,7 +42,6 @@ def test_copy_preserves_metadata_handles_collisions_and_same_directory(indexer, 
     existing = make_png(destination / 'a.png', width=16)
     existing_bytes = existing.read_bytes()
     image_id = indexer._process_path_sync(source)['id']
-    repository.set_favorite(image_id, True)
     repository.set_tags(image_id, ['保留'])
     result = copy_files([str(source)], folder['id'])
     assert not result['skipped']
@@ -53,7 +52,6 @@ def test_copy_preserves_metadata_handles_collisions_and_same_directory(indexer, 
     assert Path(saved['path']).read_bytes() == original
     assert source.read_bytes() == original
     assert existing.read_bytes() == existing_bytes
-    assert repository.image_detail(image_id)['favorite']
     assert repository.image_detail(image_id)['tags'] == ['保留']
     assert repository.feed(folder_id=folder['id'])[1] == 1
     again = copy_files([saved['path']], folder['id'])
@@ -71,7 +69,7 @@ def test_missing_images_removed_without_watchdog_event(indexer, tmp_path):
         assert indexer.reconcile_missing() == [image_id]
         assert emit.call_args.args[0]['type'] == 'image_removed'
     assert repository.feed(folder_id=folder['id']) == ([], 0)
-    assert repository.folder_tree()[0]['recursive_count'] == 0
+    assert repository.folder_tree()[0]['counts']['image'] == 0
     assert indexer.reconcile_missing() == []
 
 

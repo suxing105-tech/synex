@@ -15,7 +15,10 @@ def test_desktop_can_save_settings(origin):
     assert response.headers["access-control-allow-origin"] == origin
     actual = client.get("/api/health", headers={"Origin": origin})
     assert actual.headers["access-control-allow-origin"] == origin
-    assert actual.json() == {"status": "ok"}
+    # 健康检查现在还带 media_tools 诊断（ffmpeg/ffprobe 来源），所以只锁 status 键
+    body = actual.json()
+    assert body["status"] == "ok"
+    assert set(body) == {"status", "media_tools"}
 
 
 def test_unrelated_website_is_not_allowed():

@@ -58,20 +58,17 @@ def test_move_image_relocates_file_on_disk(tmp_data_dir):
     assert _folders_of(image_id) == {("HOF", False)}
 
 
-def test_move_preserves_id_favorite_and_tags(tmp_data_dir):
+def test_move_preserves_id_and_tags(tmp_data_dir):
     init_pool()
     source = make_png(tmp_data_dir / "keep.png")
     image_id = _index(source)
-    repository.set_favorite(image_id, True)
     repository.set_tags(image_id, ["定妆", "冷色"])
     folder = folder_storage.create_folder("耕升", None)
 
     folder_storage.move_images([image_id], folder["id"])
 
-    row = get_pool().main().execute(
-        "SELECT id, favorite FROM images WHERE id=?", (image_id,)
-    ).fetchone()
-    assert row is not None and row["favorite"] == 1
+    row = get_pool().main().execute("SELECT id FROM images WHERE id=?", (image_id,)).fetchone()
+    assert row is not None
     assert sorted(repository.image_detail(image_id)["tags"]) == ["冷色", "定妆"]
 
 

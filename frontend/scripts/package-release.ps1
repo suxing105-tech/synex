@@ -20,7 +20,9 @@ if (-not $SkipBuild) {
     Write-Host "==> [1/3] rebuild sidecar" -ForegroundColor Cyan
     & (Join-Path $PSScriptRoot "build-sidecar.ps1")
     if ($LASTEXITCODE -ne 0) { throw "build-sidecar.ps1 failed" }
-    Write-Host "==> [2/3] cargo tauri build" -ForegroundColor Cyan
+    Write-Host "==> [2/3] stage ffmpeg/ffprobe + cargo tauri build" -ForegroundColor Cyan
+& (Join-Path $PSScriptRoot "fetch-media-tools.ps1")
+if ($LASTEXITCODE -ne 0) { throw "fetch-media-tools.ps1 failed" }
     Push-Location $FrontendRoot
     try { cargo tauri build | Out-Host } finally { Pop-Location }
 } else {

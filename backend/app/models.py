@@ -14,7 +14,7 @@ class ImageSummary(BaseModel):
     id: int
     filename: str
     path: str
-    kind: str = "image"  # image / video
+    kind: str = "image"  # image / video / audio
     original_url: str | None = None  # 原图 URL（feed 拿 ?max=1024 预览，浏览器缩放）
     thumbnail_url: str | None = None  # 视频=海报帧；图片=缩放预览
     play_url: str | None = None  # 视频原文件 URL（播放器用），仅视频有值
@@ -27,7 +27,6 @@ class ImageSummary(BaseModel):
     fps: float | None = None
     mtime: float
     size_bytes: int
-    favorite: bool = False
     folder_ids: list[int] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     model: str | None = None
@@ -52,13 +51,21 @@ class ImageDetail(ImageSummary):
 # ---------- 文件夹 ----------
 
 
+class FolderCounts(BaseModel):
+    image: int = 0
+    video: int = 0
+    audio: int = 0
+    text: int = 0
+
+
 class FolderNode(BaseModel):
     id: int
     parent_id: int | None
     name: str
     order: int
-    image_count: int = 0
-    recursive_count: int = 0
+    # /api/folders 的真实契约：按类型分开计数，侧栏每行只显示当前口径那一个
+    counts: FolderCounts = Field(default_factory=FolderCounts)
+    total: int = 0
     is_system: bool = False  # True = 监听目录的文件系统子目录（可改显示名称，不可删除）
     path: str | None = None  # system folder 时存绝对路径（前端可显示完整来源）
     children: list["FolderNode"] = Field(default_factory=list)
@@ -111,7 +118,6 @@ class ConfigUpdate(BaseModel):
 
 class FeedQuery(BaseModel):
     folder_id: int | None = None
-    view: str | None = None  # all / favorite / recent
     q: str | None = None
     tag: str | None = None
     model: str | None = None

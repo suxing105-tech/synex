@@ -52,7 +52,6 @@ class Save(BaseModel):
 
 
 class Meta(BaseModel):
-    favorite: bool | None = None
     tags: list[str] | None = Field(default=None, max_length=100)
 
 
@@ -67,9 +66,9 @@ class Move(Version):
 
 @router.get('')
 @errors
-def listing(q: str = '', folder_id: int | None = None, view: str = 'all', format: str = '',
+def listing(q: str = '', folder_id: int | None = None, format: str = '',
             tag: str = '', sort: str = 'mtime', offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=500)):
-    return texts.listing(q, folder_id, view, format, tag, sort, offset, limit)
+    return texts.listing(q, folder_id, format, tag, sort, offset, limit)
 
 
 @router.post('/preview')
@@ -105,7 +104,7 @@ def save(text_id: int, payload: Save):
 @router.patch('/{text_id}')
 @errors
 def metadata(text_id: int, payload: Meta):
-    return texts.metadata(text_id, payload.favorite, payload.tags)
+    return texts.metadata(text_id, tags=payload.tags)
 
 
 @router.post('/{text_id}/move')

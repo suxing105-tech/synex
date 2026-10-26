@@ -24,13 +24,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import media_tools
 from .config import data_dir, load_config, save_config
 from .db import get_pool, init_pool
 from .events import get_bus
 from .indexer import get_indexer
+from .routes import audio as audio_route
 from .routes import comfyui as comfyui_route
 from .routes import folders as folders_route
 from .routes import images as images_route
+from .routes import items as items_route
 from .routes import settings as settings_route
 from .routes import tags as tags_route
 from .routes import reverse_prompts as reverse_prompts_route
@@ -79,6 +82,14 @@ async def lifespan(app: FastAPI):
         log.warning("startup diag failed: %s", e)
 
     cfg = load_config()
+
+    # 媒体工具（ffmpeg/ffprobe）来自安装包还是 PATH，缺了要能在日志里一眼看到。
+    # 版本探测要开子进程，放线程里跑，不挡启动。
+    try:
+        await asyncio.to_thread(media_tools.warm)
+        media_tools.log_status()
+    except Exception as e:  # noqa: BLE001 - 诊断失败不该挡启动
+        log.warning("media tools probe failed: %s", e)
     # 把已索引但未挂 system folder 的图按 watch_dirs 子目录挂上。
     # 这是一次性历史回填；之后由 indexer 自动维护。
     try:
@@ -170,6 +181,8 @@ app.add_middleware(
 
 app.include_router(comfyui_route.router)
 app.include_router(images_route.router)
+app.include_router(items_route.router)
+app.include_router(audio_route.router)
 app.include_router(folders_route.router)
 app.include_router(tags_route.router)
 app.include_router(settings_route.router)
@@ -185,7 +198,12 @@ app.include_router(texts_route.router)
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok"}
+    """健康检查顺带报媒体工具状态。
+
+    ffmpeg/ffprobe 缺失只会让「缩略图 + 视频提示词」静默变空，用户看不出原因，
+    所以把工具来源和版本一起暴露出来，设置页与排障日志都能直接读到。
+    """
+    return {"status": "ok", "media_tools": media_tools.status()}
 
 
 @app.websocket("/ws/events")

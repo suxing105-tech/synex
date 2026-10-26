@@ -38,7 +38,12 @@ try {
         # 所以跑原生命令时临时切 Continue，靠 $LASTEXITCODE 判断成败。
         $PreviousEap = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
-        & $Python -m PyInstaller --noconfirm --distpath "$OutputDir/sidecar" --workpath "$OutputDir/build/pyinstaller" "$RepoRoot/frontend/pyinstaller/python-backend.spec" *> "$OutputDir/sidecar-build.log"
+        # 安装包必须自带 ffmpeg/ffprobe：换一台没装 ffmpeg 的电脑，视频海报和视频里的
+# ComfyUI 提示词会全部静默变空（视频照样能播，所以很难看出是缺工具）。
+& (Join-Path $PSScriptRoot "fetch-media-tools.ps1")
+if ($LASTEXITCODE -ne 0) { throw "fetch-media-tools.ps1 failed" }
+
+& $Python -m PyInstaller --noconfirm --distpath "$OutputDir/sidecar" --workpath "$OutputDir/build/pyinstaller" "$RepoRoot/frontend/pyinstaller/python-backend.spec" *> "$OutputDir/sidecar-build.log"
         $PyiExit = $LASTEXITCODE
         $ErrorActionPreference = $PreviousEap
         if ($PyiExit) { throw "后台打包失败，查看 sidecar-build.log" }

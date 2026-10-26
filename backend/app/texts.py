@@ -45,7 +45,7 @@ def initialize(conn):
         filename TEXT NOT NULL, body TEXT NOT NULL DEFAULT '',
         version TEXT NOT NULL DEFAULT '', encoding TEXT, mtime REAL NOT NULL DEFAULT 0,
         stamp TEXT NOT NULL DEFAULT '', created REAL NOT NULL, opened REAL NOT NULL DEFAULT 0,
-        favorite INTEGER NOT NULL DEFAULT 0, tags TEXT NOT NULL DEFAULT '[]',
+        tags TEXT NOT NULL DEFAULT '[]',
         missing INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT ''
     );
     CREATE INDEX IF NOT EXISTS texts_mtime ON texts(mtime DESC);
@@ -200,7 +200,7 @@ def detail(text_id: int, encoding: str | None = None, opened=False):
 
 def summary(r):
     return {k: r[k] for k in ('id', 'path', 'filename', 'mtime', 'created', 'opened',
-                              'favorite', 'missing', 'error')} | {
+                              'missing', 'error')} | {
         'format': Path(r['path']).suffix.lower()[1:], 'tags': json.loads(r['tags']),
         'excerpt': r['body'][:180]}
 
@@ -294,7 +294,7 @@ def reorder(ids: list[int]):
     return {'ok': True}
 
 
-def listing(q='', folder_id=None, view='all', format='', tag='', sort='mtime', offset=0, limit=100):
+def listing(q='', folder_id=None, format='', tag='', sort='mtime', offset=0, limit=100):
     clauses, args = ['missing=0'], []
     if folder_id is not None:
         folder = conn().execute('SELECT path FROM folders WHERE id=?', (folder_id,)).fetchone()
@@ -303,10 +303,6 @@ def listing(q='', folder_id=None, view='all', format='', tag='', sort='mtime', o
         prefix = str(Path(folder['path']).resolve()) + os.sep
         clauses.append('lower(substr(path,1,?))=lower(?)')
         args.extend((len(prefix), prefix))
-    if view == 'favorite':
-        clauses.append('favorite=1')
-    if view == 'recent':
-        clauses.append('opened>0')
     if format:
         clauses.append('lower(path) LIKE ?')
         args.append('%.' + format.lower())
@@ -321,7 +317,7 @@ def listing(q='', folder_id=None, view='all', format='', tag='', sort='mtime', o
         clauses.append('(instr(lower(filename),lower(?))>0 OR instr(lower(body),lower(?))>0 OR instr(lower(tags),lower(?))>0)')
         args.extend([q.strip()] * 3)
     where = ' AND '.join(clauses)
-    order = 'COALESCE((SELECT position FROM text_order WHERE text_id=texts.id),2147483647),mtime DESC' if sort == 'manual' else 'opened DESC' if view == 'recent' else {'mtime': 'mtime DESC', 'name': 'filename COLLATE NOCASE', 'created': 'created DESC'}.get(sort, 'mtime DESC')
+    order = 'COALESCE((SELECT position FROM text_order WHERE text_id=texts.id),2147483647),mtime DESC' if sort == 'manual' else {'mtime': 'mtime DESC', 'name': 'filename COLLATE NOCASE', 'created': 'created DESC'}.get(sort, 'mtime DESC')
     total = conn().execute(f'SELECT count(*) FROM texts WHERE {where}', args).fetchone()[0]
     items = []
     for r in conn().execute(f'SELECT * FROM texts WHERE {where} ORDER BY {order},id LIMIT ? OFFSET ?', [*args, limit, offset]):
@@ -413,12 +409,11 @@ def create(directory, name, body='', folder_id=None):
         return detail(index(p)['id'], opened=True)
 
 
-def metadata(text_id, favorite=None, tags=None):
+def metadata(text_id, tags=None):
     with LOCK:
         r = row(text_id)
-        conn().execute('UPDATE texts SET favorite=?,tags=? WHERE id=?',
-            (r['favorite'] if favorite is None else int(favorite),
-             r['tags'] if tags is None else json.dumps(list(dict.fromkeys(t.strip() for t in tags if t.strip())), ensure_ascii=False), text_id))
+        conn().execute('UPDATE texts SET tags=? WHERE id=?',
+            (r['tags'] if tags is None else json.dumps(list(dict.fromkeys(t.strip() for t in tags if t.strip())), ensure_ascii=False), text_id))
         sync_fts(row(text_id))
         return summary(row(text_id))
 

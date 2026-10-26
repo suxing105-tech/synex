@@ -3,12 +3,15 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import re
 import sqlite3
 from collections.abc import Iterable
 from pathlib import Path
 
 from .db import get_pool, transaction
-from .parser import is_playable_video, parse_video_metadata
+from . import media_tools
+from .parser import is_playable_audio, is_playable_video, parse_video_metadata
 from .texts import serialized
 
 logger = logging.getLogger(__name__)
@@ -61,6 +64,16 @@ def video_file_url(video_id: int, identity: str = "") -> str:
     return f"/api/videos/{video_id}/file?v={_cache_bust(identity)}"
 
 
+def audio_waveform_url(audio_id: int, identity: str = "", width: int = 840, height: int = 360) -> str:
+    """音频波形图 URL（Feed 卡片用，21:9 与卡片同比例，后端首次请求时生成并缓存）。"""
+    return f"/api/audio/{audio_id}/waveform?v={_cache_bust(identity)}&w={width}&h={height}"
+
+
+def audio_file_url(audio_id: int, identity: str = "") -> str:
+    """音频原文件 URL（应用内播放条用，支持 Range 拖动进度）。"""
+    return f"/api/audio/{audio_id}/file?v={_cache_bust(identity)}"
+
+
 def _media_urls(row: sqlite3.Row) -> dict:
     """按媒体类型返回 ``original_url`` / ``thumbnail_url`` / ``play_url`` / ``playable``。"""
     kind = row["kind"] or "image"
@@ -71,6 +84,15 @@ def _media_urls(row: sqlite3.Row) -> dict:
             "thumbnail_url": video_thumb_url(row["id"], identity),
             "play_url": video_file_url(row["id"], identity),
             "playable": is_playable_video(Path(row["path"])),
+        }
+    if kind == "audio":
+        # 音频没有海报帧：波形图当缩略图，播放走 /api/audio/{id}/file（Range 支持）。
+        # original_url 不带 max，避免浏览器/Pillow 把音频当图片去缩放。
+        return {
+            "original_url": original_url_for(row["id"], row["mtime"], max_size=None, identity=identity),
+            "thumbnail_url": audio_waveform_url(row["id"], identity),
+            "play_url": audio_file_url(row["id"], identity),
+            "playable": is_playable_audio(Path(row["path"])),
         }
     ou = original_url_for(row["id"], row["mtime"], identity=identity)
     thumbnail_url = original_url_for(
@@ -95,6 +117,11 @@ def _normalize_path(p: Path) -> str:
     return str(p).replace("\\", "/")
 
 
+# 素材类型口径：媒体三类和文本分开算，侧栏每行只展示当前 scope 那一种
+MEDIA_KINDS = ("image", "video", "audio")
+ITEM_KINDS = MEDIA_KINDS + ("text",)
+
+
 def folder_tree() -> list[dict]:
     conn = get_pool().main()
     rows = conn.execute(
@@ -106,12 +133,15 @@ def folder_tree() -> list[dict]:
             {"id": r["id"], "parent_id": r["parent_id"], "name": r["name"], "order": r["order"], "is_system": bool(r["is_system"]), "path": r["path"]}
         )
 
-    # 计算每节点直接图片数 + 递归后代数
-    direct_counts = dict(
-        conn.execute(
-            "SELECT folder_id, COUNT(*) AS c FROM image_folders GROUP BY folder_id"
-        ).fetchall()
-    )
+    # 每节点按媒体类型直接计数，再递归汇总后代。侧栏只显示一种口径，
+    # 所以必须分类型给出，不能只给一个混合总数。文本计数由路由层补。
+    direct: dict[int, dict[str, int]] = {}
+    for r in conn.execute(
+        "SELECT j.folder_id AS folder_id, i.kind AS kind, COUNT(*) AS c "
+        "FROM image_folders j JOIN images i ON i.id = j.image_id "
+        "GROUP BY j.folder_id, i.kind"
+    ).fetchall():
+        direct.setdefault(r["folder_id"], {})[r["kind"] or "image"] = r["c"]
 
     # 先把所有子节点 id 收集好（用于递归计数）
     children_map: dict[int, list[int]] = {}
@@ -119,20 +149,26 @@ def folder_tree() -> list[dict]:
         if parent is not None:
             children_map.setdefault(parent, []).append(fid)
 
-    def recursive_count(fid: int) -> int:
-        total = direct_counts.get(fid, 0)
+    def recursive_counts(fid: int) -> dict[str, int]:
+        counts = {kind: direct.get(fid, {}).get(kind, 0) for kind in MEDIA_KINDS}
         for child in children_map.get(fid, []):
-            total += recursive_count(child)
-        return total
+            for kind, count in recursive_counts(child).items():
+                counts[kind] += count
+        return counts
 
     def build(parent: int | None) -> list[dict]:
         out = []
         for n in by_parent.get(parent, []):
             fid = n["id"]
+            counts = recursive_counts(fid)
+            # 文本数不在 images 表里，由 /api/folders 按目录前缀填进来。
+            # 这里先把键补齐：counts 的形状对任何调用方都固定是四类，
+            # 免得侧栏之类的消费者拿到 3 个键的版本自己去猜缺的那一类是几。
+            counts.setdefault("text", 0)
             out.append({
                 **n,
-                "image_count": direct_counts.get(fid, 0),
-                "recursive_count": recursive_count(fid),
+                "counts": counts,
+                "total": sum(counts.values()),
                 "children": build(fid),
             })
         return out
@@ -346,12 +382,6 @@ def bulk_assign_folder(image_ids: list[int], folder_id: int | None) -> int:
     return len(image_ids)
 
 
-def set_favorite(image_id: int, favorite: bool) -> None:
-    get_pool().main().execute(
-        "UPDATE images SET favorite = ? WHERE id = ?", (1 if favorite else 0, image_id)
-    )
-
-
 def set_tags(image_id: int, tags: Iterable[str]) -> list[str]:
     """覆盖式设置标签；返回清理后的标签列表。"""
     clean: list[str] = []
@@ -422,7 +452,7 @@ def image_detail(image_id: int) -> dict | None:
 _SUMMARY_SELECT = (
     "images.id, images.path, images.filename, images.kind, images.width, "
     "images.height, images.mtime, images.size_bytes, images.duration_seconds, "
-    "images.video_codec, images.audio_codec, images.fps, images.favorite, "
+    "images.video_codec, images.audio_codec, images.fps, "
     "images.model, images.seed, images.thumb_path, images.cover_path, "
     "images.format, images.indexed_at, "
     "length(COALESCE(images.workflow, '')) > 0 AS has_workflow"
@@ -463,7 +493,6 @@ def _row_to_summary(row: sqlite3.Row) -> dict:
         "video_codec": row["video_codec"],
         "audio_codec": row["audio_codec"],
         "fps": row["fps"],
-        "favorite": bool(row["favorite"]),
         "folder_ids": folder_ids,
         "tags": tags,
         "model": row["model"],
@@ -657,10 +686,220 @@ def image_reveal_path(image_id: int) -> str | None:
 # ---------- Feed ----------
 
 
+def folder_descendant_ids(conn: sqlite3.Connection, folder_id: int) -> list[int]:
+    """文件夹自身 + 全部后代 id（媒体归类到父文件夹时也要算进来）。"""
+    ids = [folder_id]
+    i = 0
+    while i < len(ids):
+        children = conn.execute(
+            "SELECT id FROM folders WHERE parent_id = ?", (ids[i],)
+        ).fetchall()
+        ids.extend(r["id"] for r in children)
+        i += 1
+    return ids
+
+
+def folder_disk_prefix(folder_id: int) -> str | None:
+    """文件夹的磁盘前缀（文本按路径前缀归属，没有磁盘目录就返回 None）。"""
+    row = get_pool().main().execute(
+        "SELECT path FROM folders WHERE id = ?", (folder_id,)
+    ).fetchone()
+    if not row or not row["path"]:
+        return None
+    return str(Path(row["path"])) + os.sep
+
+
+# 文本摘录里不想看到 Markdown 装饰，但这些字符在正文里也可能有意义，只去掉行首/成对装饰符
+_MARKDOWN_NOISE = ("#", "*", ">", "`", "~", "[", "]", "|", "___")
+
+
+def _strip_markdown(text: str) -> str:
+    """把 Markdown 装饰符去掉并压平空白，给统一流的文本卡当摘录。"""
+    for ch in _MARKDOWN_NOISE:
+        text = text.replace(ch, "")
+    return " ".join(text.split())
+
+
+def _text_to_feed_item(row: sqlite3.Row, query: str = "") -> dict:
+    """texts 行 → 统一流里的文本卡片数据。"""
+    body = row["body"] or ""
+    excerpt = body[:160]
+    if query:
+        at = body.lower().find(query.lower())
+        if at >= 0:
+            excerpt = body[max(0, at - 35): at + 125]
+    path = row["path"] or row["filename"]
+    return {
+        "item_type": "text",
+        "id": row["id"],
+        "filename": row["filename"],
+        "path": path,
+        "kind": "text",
+        "mtime": row["mtime"],
+        "tags": json.loads(row["tags"] or "[]"),
+        "format": Path(path).suffix.lower()[1:],
+        "excerpt": _strip_markdown(excerpt),
+    }
+
+
+def unified_feed(
+    *,
+    folder_id: int | None = None,
+    q: str | None = None,
+    tag: str | None = None,
+    kinds: Iterable[str] | None = None,
+    sort: str = "mtime_desc",
+    limit: int = 500,
+    offset: int = 0,
+) -> tuple[list[dict], int, dict[str, int]]:
+    """「所有素材」统一流：图片 / 视频 / 音频 / 文本按同一时间轴混排。
+
+    媒体与文本在两张表里各自自增 id，所以每项都带 ``item_type``，前端必须用
+    ``item_type:id`` 当 key —— 光用数字 id 会撞车。
+    返回 ``(items, total, counts)``：total 含 kinds 过滤（可浏览总数），
+    counts 是四类各自数量且不含 kinds 过滤（筛选 chips 上要显示每类还有多少）。
+    """
+    conn = get_pool().main()
+    requested = [k for k in (list(kinds) if kinds else list(ITEM_KINDS)) if k in ITEM_KINDS]
+    wanted = list(dict.fromkeys(requested)) or list(ITEM_KINDS)
+
+    media_where: list[str] = []
+    media_params: list[object] = []
+    text_where: list[str] = ["missing = 0"]
+    text_params: list[object] = []
+
+    if folder_id is not None:
+        ids = folder_descendant_ids(conn, folder_id)
+        placeholders = ",".join("?" * len(ids))
+        media_where.append(
+            f"images.id IN (SELECT image_id FROM image_folders WHERE folder_id IN ({placeholders}))"
+        )
+        media_params.extend(ids)
+        prefix = folder_disk_prefix(folder_id)
+        if prefix is None:
+            # 没有磁盘目录的旧分类不可能包含文本文件
+            text_where.append("0")
+        else:
+            text_where.append("lower(substr(path,1,?)) = lower(?)")
+            text_params.extend((len(prefix), prefix))
+
+    if tag:
+        media_where.append(
+            "images.id IN (SELECT it.image_id FROM image_tags it JOIN tags t ON t.id = it.tag_id "
+            "WHERE t.name = ?)"
+        )
+        media_params.append(tag)
+        text_where.append("EXISTS (SELECT 1 FROM json_each(texts.tags) WHERE value = ?)")
+        text_params.append(tag)
+
+    query = (q or "").strip()
+    if query:
+        like = f"%{query}%"
+        fts_ids: list[int] | None = None
+        try:
+            fts_ids = [
+                r["rowid"]
+                for r in conn.execute(
+                    "SELECT rowid FROM images_fts WHERE images_fts MATCH ? ORDER BY rank LIMIT 5000",
+                    (_build_fts_query(query),),
+                ).fetchall()
+            ]
+        except sqlite3.Error as exc:
+            logger.warning("统一流图片 FTS 失败，本次退回模糊匹配：%s", exc)
+        if fts_ids:
+            placeholders = ",".join("?" * len(fts_ids))
+            media_where.append(
+                f"(images.id IN ({placeholders}) OR images.filename LIKE ? OR images.model LIKE ?)"
+            )
+            media_params.extend(fts_ids)
+            media_params.extend([like, like])
+        else:
+            media_where.append(
+                "(images.filename LIKE ? OR images.model LIKE ? OR images.positive_prompt LIKE ?)"
+            )
+            media_params.extend([like, like, like])
+        if len(query) >= 3:
+            try:
+                text_where.append("id IN (SELECT rowid FROM texts_fts WHERE texts_fts MATCH ?)")
+                text_params.append('"' + query.replace('"', '""') + '"')
+            except sqlite3.Error as exc:
+                logger.warning("统一流文本 FTS 失败，本次只用模糊匹配：%s", exc)
+        text_where.append(
+            "(instr(lower(filename),lower(?))>0 OR instr(lower(body),lower(?))>0 OR instr(lower(tags),lower(?))>0)"
+        )
+        text_params.extend([query] * 3)
+
+    media_sql = ("WHERE " + " AND ".join(media_where)) if media_where else ""
+    text_sql = "WHERE " + " AND ".join(text_where)
+
+    # counts 先算（不含 kinds 过滤）：chips 要显示「这一类有多少」，与当前选中无关
+    counts: dict[str, int] = {kind: 0 for kind in ITEM_KINDS}
+    for row in conn.execute(
+        f"SELECT kind, COUNT(*) AS c FROM images {media_sql} GROUP BY kind", media_params
+    ).fetchall():
+        counts[row["kind"] or "image"] = row["c"]
+    counts["text"] = conn.execute(
+        f"SELECT COUNT(*) AS c FROM texts {text_sql}", text_params
+    ).fetchone()[0]
+
+    media_kinds = [k for k in wanted if k in MEDIA_KINDS]
+    branches: list[str] = []
+    params: list[object] = []
+    if media_kinds:
+        listing_where = list(media_where)
+        listing_params = list(media_params)
+        listing_where.append(f"images.kind IN ({','.join('?' * len(media_kinds))})")
+        listing_params.extend(media_kinds)
+        clause = "WHERE " + " AND ".join(listing_where)
+        branches.append(
+            "SELECT 'media' AS item_type, images.id AS id, images.mtime AS mtime, "
+            "images.filename AS filename FROM images " + clause
+        )
+        params.extend(listing_params)
+    if "text" in wanted:
+        branches.append(
+            "SELECT 'text' AS item_type, texts.id AS id, texts.mtime AS mtime, "
+            "texts.filename AS filename FROM texts " + text_sql
+        )
+        params.extend(text_params)
+    if not branches:
+        return [], 0, counts
+
+    order = (
+        "ORDER BY filename COLLATE NOCASE ASC, item_type ASC, id ASC"
+        if sort == "name_asc"
+        else "ORDER BY mtime DESC, item_type ASC, id DESC"
+    )
+    page = conn.execute(
+        f"SELECT item_type, id FROM ({' UNION ALL '.join(branches)}) {order} LIMIT ? OFFSET ?",
+        (*params, limit, offset),
+    ).fetchall()
+
+    items: list[dict] = []
+    for r in page:
+        if r["item_type"] == "media":
+            media_row = conn.execute(
+                f"SELECT {_SUMMARY_SELECT} FROM images WHERE id = ?", (r["id"],)
+            ).fetchone()
+            if media_row is None:
+                continue
+            item = _row_to_summary(media_row)
+            item["item_type"] = "media"
+        else:
+            text_row = conn.execute(
+                "SELECT * FROM texts WHERE id = ? AND missing = 0", (r["id"],)
+            ).fetchone()
+            if text_row is None:
+                continue
+            item = _text_to_feed_item(text_row, query)
+        items.append(item)
+    total = sum(counts[kind] for kind in wanted)
+    return items, total, counts
+
+
 def feed(
     *,
     folder_id: int | None = None,
-    view: str | None = None,
     q: str | None = None,
     tag: str | None = None,
     model: str | None = None,
@@ -675,30 +914,12 @@ def feed(
     params: list[object] = []
 
     if folder_id is not None:
-        # 包含所有后代
-        ids = [folder_id]
-        i = 0
-        while i < len(ids):
-            children = conn.execute(
-                "SELECT id FROM folders WHERE parent_id = ?", (ids[i],)
-            ).fetchall()
-            ids.extend(r["id"] for r in children)
-            i += 1
+        ids = folder_descendant_ids(conn, folder_id)
         placeholders = ",".join("?" * len(ids))
         where.append(
             f"images.id IN (SELECT image_id FROM image_folders WHERE folder_id IN ({placeholders}))"
         )
         params.extend(ids)
-
-    if view == "favorite":
-        where.append("images.favorite = 1")
-    elif view == "recent":
-        # 最近 7 天
-        import time
-
-        cutoff = time.time() - 7 * 86400
-        where.append("images.mtime >= ?")
-        params.append(cutoff)
 
     if tag:
         where.append(
@@ -792,20 +1013,20 @@ def tag_list() -> list[dict]:
 
 def stats() -> dict:
     conn = get_pool().main()
-    total_images = conn.execute(
-        "SELECT COUNT(*) AS c FROM images WHERE kind = 'image'"
-    ).fetchone()["c"]
-    total_videos = conn.execute(
-        "SELECT COUNT(*) AS c FROM images WHERE kind = 'video'"
-    ).fetchone()["c"]
-    favorites = conn.execute(
-        "SELECT COUNT(*) AS c FROM images WHERE favorite = 1"
+    totals = {kind: 0 for kind in MEDIA_KINDS}
+    for row in conn.execute(
+        "SELECT kind, COUNT(*) AS c FROM images GROUP BY kind"
+    ).fetchall():
+        totals[row["kind"] or "image"] = row["c"]
+    total_texts = conn.execute(
+        "SELECT COUNT(*) AS c FROM texts WHERE missing = 0"
     ).fetchone()["c"]
     folders = conn.execute("SELECT COUNT(*) AS c FROM folders").fetchone()["c"]
     return {
-        "total_images": total_images,
-        "total_videos": total_videos,
-        "favorites": favorites,
+        "total_images": totals["image"],
+        "total_videos": totals["video"],
+        "total_audio": totals["audio"],
+        "total_texts": total_texts,
         "folders": folders,
     }
 
@@ -946,29 +1167,42 @@ def prune_missing_system_folders(watch_dirs: list[Path]) -> int:
 # 版本号写进 meta 表做一次性回填门控；以后再加解析形态就把它 +1。
 # v2：提示词键位加了 positive_prompt（本地 Wan）、模型名加了 WanVideoModelLoader，
 # 老库里那批视频存的是空提示词，必须再回填一遍才能补上。
-VIDEO_METADATA_SCHEMA_VERSION = 2
+# v3：以前「ffprobe 不可用」也照样落门控，装 ffmpeg 的机器没跑成功就永久跳过回填，
+# 别人机器上「视频的提示词再也读不出来」是这么来的。改成缺工具不落门控 + 版本 +1，
+# 让那批库在装上自带 ffmpeg 的安装包后自动补跑一次。
+VIDEO_METADATA_SCHEMA_VERSION = 3
 
 
-def backfill_video_metadata() -> int:
+def backfill_video_metadata(conn: sqlite3.Connection | None = None) -> int:
     """给已入库的视频补读 ComfyUI 写进容器的工作流与提示词。返回更新的行数。
 
     为什么需要：「在 ComfyUI 中打开」按钮的开关是 ``has_workflow``，而旧解析器把
     视频那一列永远写成空串，所以老库里的视频永远出不了按钮。新导入的视频由
     indexer 直接解析，不依赖这里。
 
-    两条硬规则：
+    四条硬规则：
     - **只写不擦**：某个字段这次没解析出来就不进 UPDATE，绝不把已有的值清掉；
-    - **一次性的例外**：跑完把版本写进 meta，下次启动直接 0 行返回；
-      解析失败（文件不在了 / ffprobe 挂了）跳过该行，但门控照样落下，
+    - **技术字段只补空**：时长/分辨率/帧率/编码只在原值是 NULL 时才写；
+    - **缺工具不落门控**：机器上没有 ffprobe 就直接返回，绝不写 meta 版本，
+      否则这台机器装了 ffmpeg 之后也永远不会补跑（0.2.22 修的线上反馈）；
+    - **一次性的例外**：工具在、跑完了才把版本写进 meta，下次启动直接 0 行返回；
+      单个文件解析失败（文件不在了 / ffprobe 挂了）跳过该行，门控照样落下，
       不然每次启动都要把整库 ffprobe 一遍。
+
+    ``conn`` 只为测试注入用，缺省取主库连接。
     """
     from .db import get_int_meta, set_meta
 
-    conn = get_pool().main()
+    if conn is None:
+        conn = get_pool().main()
+    if media_tools.ffprobe_path() is None:
+        logger.warning("ffprobe 不可用，跳过视频元数据回填（下次启动会再试）")
+        return 0
     if get_int_meta("video_metadata_schema", 0) >= VIDEO_METADATA_SCHEMA_VERSION:
         return 0
     rows = conn.execute(
-        "SELECT id, path FROM images WHERE kind = 'video' ORDER BY id"
+        "SELECT id, path, width, height, duration_seconds, video_codec, audio_codec, "
+        "fps, format FROM images WHERE kind = 'video' ORDER BY id"
     ).fetchall()
     updated = 0
     for row in rows:
@@ -995,6 +1229,13 @@ def backfill_video_metadata() -> int:
             updates["seed"] = meta["seed"]
         if meta.get("model"):
             updates["model"] = meta["model"]
+        # 顺带补技术参数：同一次 ffprobe 已经把时长/分辨率/帧率/编码都读出来了，
+        # 不写就得等用户逐个打开详情面板才补齐（0.2.22 把帧率搬进头部后，
+        # 没补的机器上头部徽标会一直空着）。同样只填 NULL，不动已有值。
+        for col in ("width", "height", "duration_seconds", "video_codec", "audio_codec", "fps", "format"):
+            value = meta.get(col)
+            if value is not None and row[col] is None:
+                updates[col] = value
         if not updates:
             continue
         assignments = ", ".join(f"{col} = ?" for col in updates)

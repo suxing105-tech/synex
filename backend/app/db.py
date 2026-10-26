@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 import threading
 from collections.abc import Iterator
@@ -26,6 +27,9 @@ from pathlib import Path
 from .config import db_path
 
 logger = logging.getLogger(__name__)
+
+# 收藏列删除前的一次性备份目录名（唯一回滚手段，存在即不再备份）
+PRE_FAVORITE_DROP_DIR = "pre-0.2.21"
 
 
 SCHEMA = r"""
@@ -56,12 +60,10 @@ CREATE TABLE IF NOT EXISTS images (
     cfg REAL,
     thumb_path TEXT,
     thumb_status TEXT NOT NULL DEFAULT 'pending',
-    favorite INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     indexed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_images_mtime ON images(mtime DESC);
-CREATE INDEX IF NOT EXISTS idx_images_favorite ON images(favorite) WHERE favorite = 1;
 CREATE INDEX IF NOT EXISTS idx_images_seed ON images(seed);
 CREATE TABLE IF NOT EXISTS folders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -157,6 +159,7 @@ class ConnectionPool:
             initialize_video_prompts(self._main)
             migrate_system_folders(self._main)
             migrate_media_kind(self._main)
+            migrate_drop_favorite(self._main, self.path)
             # 搜索索引必须在任何线程写 images 之前修好：老库的 contentless 索引是坏过的
             # （见 migrate_fts），而触发器也依赖 images_fts 存在。
             try:
@@ -398,6 +401,67 @@ def migrate_media_kind(conn: sqlite3.Connection) -> None:
         if name not in cols:
             conn.execute(f"ALTER TABLE images ADD COLUMN {name} {ddl}")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_images_kind ON images(kind)")
+
+
+def backup_before_drop_favorite(conn: sqlite3.Connection, db_path: Path) -> Path | None:
+    """删收藏列之前的一次性备份：备份已存在就不覆盖、也不再重复备份。
+
+    走 sqlite3 的在线备份 API，WAL 模式下也能拿到一致快照。
+    """
+    target_dir = db_path.parent / "backup" / PRE_FAVORITE_DROP_DIR
+    target = target_dir / db_path.name
+    if target.exists():
+        return None
+    target_dir.mkdir(parents=True, exist_ok=True)
+    # 先写临时名再原子改名：半途失败的残文件不能让「备份已存在」的判断成立
+    temp = target_dir / (target.name + ".tmp")
+    try:
+        dst = sqlite3.connect(temp)
+        try:
+            conn.backup(dst)
+            dst.commit()
+        finally:
+            dst.close()
+        os.replace(temp, target)
+    finally:
+        temp.unlink(missing_ok=True)
+    logger.info("删除收藏列前已备份数据库到 %s", target)
+    return target
+
+
+def migrate_drop_favorite(conn: sqlite3.Connection, db_path: Path | None = None) -> bool:
+    """幂等迁移：收藏功能整体移除后，删掉 images / texts 残留的 favorite 列。
+
+    依赖该列的索引必须先删，否则 SQLite 拒绝 DROP COLUMN。
+    真正动列前强制备份一次（唯一回滚手段）；备份失败就跳过迁移而不是硬删。
+    SQLite 不支持 DROP COLUMN 时只记 warning：列残留不影响功能，不能因此启动失败。
+    """
+    tables = ("images", "texts")
+
+    def columns(table: str) -> set[str]:
+        return {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+
+    if not any("favorite" in columns(table) for table in tables):
+        return False
+    conn.execute("DROP INDEX IF EXISTS idx_images_favorite")
+    if db_path is not None:
+        try:
+            backup_before_drop_favorite(conn, db_path)
+        except sqlite3.Error as exc:
+            logger.warning("删除收藏列前的数据库备份失败，本次跳过该迁移：%s", exc)
+            return False
+    dropped = False
+    for table in tables:
+        if "favorite" not in columns(table):
+            continue
+        try:
+            conn.execute(f"ALTER TABLE {table} DROP COLUMN favorite")
+            dropped = True
+        except sqlite3.OperationalError as exc:
+            logger.warning("%s.favorite 列删除失败（不影响功能）：%s", table, exc)
+    conn.commit()
+    return dropped
+
 
 def get_int_meta(key: str, default: int = 0) -> int:
     row = get_pool().main().execute(

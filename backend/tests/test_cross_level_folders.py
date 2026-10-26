@@ -40,10 +40,3 @@ def test_source_subfolder_can_move_up_and_down(init_db,tmp_path):
     folder_storage.relocate_folder(aid,None,'root')
     assert a.is_dir()
 
-
-def test_favorite_json_can_be_enabled_and_disabled(client):
-    iid=client.get('/api/images').json()['items'][0]['id']
-    for favorite in (True,False):
-        response=client.post(f'/api/images/{iid}/favorite',json={'favorite':favorite})
-        assert response.json()['favorite'] is favorite
-        assert client.get(f'/api/images/{iid}').json()['favorite'] is favorite

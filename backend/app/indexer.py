@@ -34,7 +34,13 @@ from watchdog.observers import Observer
 
 from .config import Config, load_config, save_config
 from .db import get_pool, transaction
-from .parser import SUPPORTED_EXTS, parse_metadata, parse_video_metadata, classify
+from .parser import (
+    SUPPORTED_EXTS,
+    parse_audio_metadata,
+    parse_metadata,
+    parse_video_metadata,
+    classify,
+)
 from . import repository
 
 log = logging.getLogger(__name__)
@@ -224,6 +230,8 @@ class Indexer:
         try:
             if kind == "video":
                 meta = parse_video_metadata(path)
+            elif kind == "audio":
+                meta = parse_audio_metadata(path)
             else:
                 meta = parse_metadata(path)
         except Exception as e:

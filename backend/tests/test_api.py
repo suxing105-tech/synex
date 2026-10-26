@@ -35,7 +35,15 @@ def client(tmp_path: Path, monkeypatch):
 def test_health(client):
     r = client.get("/api/health")
     assert r.status_code == 200
-    assert r.json()["status"] == "ok"
+    body = r.json()
+    assert body["status"] == "ok"
+    # 健康检查顺带报 ffmpeg/ffprobe 来源：缺工具只会让缩略图静默变空，
+    # 没有这个字段就只能靠用户截图猜原因（0.2.22 的线上反馈）。
+    tools = body["media_tools"]
+    assert set(tools["tools"]) == {"ffmpeg", "ffprobe"}
+    assert tools["available"] is (len(tools["missing"]) == 0)
+    for info in tools["tools"].values():
+        assert set(info) == {"path", "source", "version"}
 
 
 def test_feed_returns_images(client):
@@ -53,12 +61,14 @@ def test_search(client):
     assert body["total"] == 1
 
 
-def test_favorite_toggle(client):
+def test_favorite_feature_is_removed(client):
+    """收藏功能已整体删除：接口不存在、响应里没有 favorite 字段。"""
     img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
-    r = client.post(f"/api/images/{img_id}/favorite", params={"favorite": True})
-    assert r.status_code == 200
-    r = client.get(f"/api/images/{img_id}")
-    assert r.json()["favorite"] is True
+    assert client.post(f"/api/images/{img_id}/favorite", params={"favorite": True}).status_code == 405
+    detail = client.get(f"/api/images/{img_id}").json()
+    assert "favorite" not in detail
+    assert "favorite" not in client.get("/api/images", params={"limit": 1}).json()["items"][0]
+    assert "favorites" not in client.get("/api/stats").json()
 
 
 def test_folder_create_list(client):

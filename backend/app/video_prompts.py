@@ -24,6 +24,7 @@ from pathlib import Path
 from fastapi import HTTPException
 
 from . import db, reverse_prompts
+from . import media_tools
 from .config import previews_dir
 
 # ---------- 常量（阈值/体积为常量，秒数与数量是设置项） ----------
@@ -374,7 +375,7 @@ def video_meta(video_id):
 def detect_shots(path: Path, threshold: float = SCENE_THRESHOLD) -> list[float]:
     """返回镜头硬切发生的绝对秒数；无切点或失败返回 []。"""
     command = [
-        "ffmpeg", "-hide_banner", "-nostats", "-i", str(path),
+        *media_tools.ffmpeg_cmd(), "-hide_banner", "-nostats", "-i", str(path),
         "-vf", f"scale=256:-2,select='gt(scene,{threshold})',showinfo",
         "-an", "-f", "null", "-",
     ]
@@ -410,7 +411,7 @@ def extract_frame(path: Path, seconds: float, max_edge: int = FRAME_MAX_EDGE) ->
         try:
             with tempfile.NamedTemporaryFile(dir=previews_dir(), suffix=".tmp", delete=False) as temp:
                 temp_path = Path(temp.name)
-            command = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *seek_args,
+            command = [*media_tools.ffmpeg_cmd(), "-y", "-hide_banner", "-loglevel", "error", *seek_args,
                        *tail, str(temp_path)]
             proc = subprocess.run(command, capture_output=True, text=True,
                                   encoding="utf-8", errors="replace", timeout=120)
@@ -808,8 +809,11 @@ def create_run(video_id, *, units, anchors, sound_note, frames, instruction, con
                status="planned", error="", risk_terms=()):
     fingerprint = current_fingerprint(video_id)
     with db.transaction() as conn:
-        if not conn.execute("SELECT 1 FROM images WHERE id=?", (video_id,)).fetchone():
+        kind = conn.execute("SELECT kind FROM images WHERE id=?", (video_id,)).fetchone()
+        if kind is None:
             raise HTTPException(404, "视频已移出图库，未保存分镜方案")
+        if (kind["kind"] or "image") != "video":
+            raise HTTPException(400, "只有视频支持分镜方案")
         run_id = conn.execute(
             "INSERT INTO video_prompt_runs(video_id,range_start_ms,range_end_ms,units_json,anchors_text,"
             "sound_note,frames_json,status,error,risk_terms,instruction,model_name,model,frame_limit,"

@@ -17,6 +17,7 @@ from pathlib import Path
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from . import media_tools
 from .config import previews_dir
 
 log = logging.getLogger(__name__)
@@ -98,6 +99,74 @@ def generate_preview(
             temp_path.unlink(missing_ok=True)
 
 
+def generate_audio_waveform(
+    audio_path: Path, audio_id: int, width: int = 840, height: int = 360
+) -> Path | None:
+    """用 ffmpeg 生成音频波形图（showwavespic），缓存到 ``previews/``。
+
+    只在波形第一次进入视口时按需生成，不参与扫描；失败返回 ``None``，
+    Feed 卡片回退成音符图形。缓存键用 id + 尺寸 + 源文件 mtime/大小
+    （音频动辄几十 MB，不整份哈希）。不会抛异常。
+    """
+    import os
+    import tempfile
+
+    try:
+        stat = audio_path.stat()
+    except OSError:
+        return None
+    out_path = (
+        previews_dir()
+        / f"{audio_id}_wave_{width}x{height}_{int(stat.st_mtime)}_{stat.st_size}.png"
+    )
+    if out_path.exists():
+        return out_path
+
+    # 波形只画中间约 55% 高的一条，再补透明边到请求尺寸：卡片是 21:9（840x360），
+    # 直接 showwavespic 会让波形铺满整张卡糊成一块红，上下留白才像缩略图。
+    wave_height = max(32, round(height * 0.55))
+    pad_y = (height - wave_height) // 2
+
+    temp_path = None
+    try:
+        # 后缀必须是 .png：ffmpeg 按扩展名挑封装器，.tmp 会直接报未知格式
+        with tempfile.NamedTemporaryFile(
+            dir=previews_dir(), suffix="_wave.png", delete=False
+        ) as temp:
+            temp_path = Path(temp.name)
+        proc = subprocess.run(
+            [
+                *media_tools.ffmpeg_cmd(),
+                "-y",
+                "-i", str(audio_path),
+                "-filter_complex",
+                f"showwavespic=s={width}x{wave_height}:colors=#f24e4e,"
+                f"pad={width}:{height}:0:{pad_y}:color=0x00000000",
+                "-frames:v", "1",
+                "-pix_fmt", "rgba",
+                str(temp_path),
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+        )
+        if proc.returncode != 0 or not temp_path.exists() or temp_path.stat().st_size == 0:
+            log.warning("波形生成失败：%s", audio_path)
+            return None
+        with _LOCK:
+            if not out_path.exists():
+                os.replace(temp_path, out_path)
+        return out_path
+    except (OSError, subprocess.SubprocessError) as exc:
+        log.warning("波形生成异常：%s (%s)", audio_path, exc)
+        return None
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+
 def generate_video_thumbnail(video_path: Path, video_id: int, max_size: int = 1024) -> Path | None:
     """用 ffmpeg 截取视频封面帧，按源文件内容摘要缓存到 ``previews/``。
 
@@ -109,7 +178,9 @@ def generate_video_thumbnail(video_path: Path, video_id: int, max_size: int = 10
     import tempfile
 
     try:
-        source_digest = hashlib.sha256(video_path.read_bytes()).hexdigest()
+        # 流式哈希：视频动辄几百 MB，read_bytes() 会一次性把它读进内存。
+        with video_path.open("rb") as source_file:
+            source_digest = hashlib.file_digest(source_file, "sha256").hexdigest()
     except OSError:
         return None
     out_path = previews_dir() / f"{video_id}_poster_{source_digest}.webp"
@@ -126,7 +197,7 @@ def generate_video_thumbnail(video_path: Path, video_id: int, max_size: int = 10
         ok = False
         for seek in ("1", "0"):
             cmd = [
-                "ffmpeg",
+                *media_tools.ffmpeg_cmd(),
                 "-y",
                 "-ss", seek,
                 "-i", str(video_path),
@@ -182,7 +253,7 @@ def generate_video_cover(
             temp_path = Path(temp.name)
         seek = max(0.0, float(time))
         cmd = [
-            "ffmpeg",
+            *media_tools.ffmpeg_cmd(),
             "-y",
             "-ss", f"{seek:.3f}",
             "-i", str(video_path),

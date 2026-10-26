@@ -5,7 +5,7 @@
   import { isPsdFilename } from "../lib/media-format";
   import { matchesAction, shortcutBlocked } from "../lib/shortcut-settings";
   import { backendUrl } from "../lib/backend-url";
-  import { feedItems, refreshFeed, refreshStats } from "../lib/stores";
+  import { mediaItems, refreshFeed, refreshStats } from "../lib/stores";
   import { imagesApi } from "../lib/api";
   import { revealLocation as revealInShell } from "../lib/reveal";
   import { copyText, formatSize } from "../lib/ws";
@@ -27,7 +27,7 @@
 
   let compareEnabled = $state(true);
   let compareMode = $state<"split" | "side">("split");
-  let compareImages = $derived($feedItems.filter(it => $multiSelectedIds.has(it.id)));
+  let compareImages = $derived($mediaItems.filter(it => $multiSelectedIds.has(it.id)));
   let comparing = $derived(compareEnabled && compareImages.length === 2);
 
   // 右键菜单
@@ -215,12 +215,12 @@
   }
 
   function prev() {
-    if ($feedItems.length === 0) return;
-    index = (index - 1 + $feedItems.length) % $feedItems.length;
+    if ($mediaItems.length === 0) return;
+    index = (index - 1 + $mediaItems.length) % $mediaItems.length;
   }
   function next() {
-    if ($feedItems.length === 0) return;
-    index = (index + 1) % $feedItems.length;
+    if ($mediaItems.length === 0) return;
+    index = (index + 1) % $mediaItems.length;
   }
 
   function handleKey(e: KeyboardEvent) {
@@ -257,7 +257,7 @@
   function openMenu(e: MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    const it = $feedItems[index];
+    const it = $mediaItems[index];
     if (!it) return;
     menuTargetId = it.id;
     menuX = e.clientX;
@@ -270,7 +270,7 @@
     void menuTick;
     const id = menuTargetId;
     if (id === null) return [];
-    const it = $feedItems.find((x) => x.id === id);
+    const it = $mediaItems.find((x) => x.id === id);
     if (!it) return [];
     return [
       { label: "复制图片", onClick: () => copyImage(it) },
@@ -313,7 +313,7 @@
   async function deleteCurrent() {
     if (deleting) return;
     deleting = true;
-    const targets = comparing ? [...compareImages] : [$feedItems[index]].filter(Boolean);
+    const targets = comparing ? [...compareImages] : [$mediaItems[index]].filter(Boolean);
     for (const it of targets) await deleteImage(it);
     deleting = false;
   }
@@ -333,7 +333,7 @@
   // 切换图片 / 重新打开：设置 URL + 选中
   $effect(() => {
     if (open) {
-      const it = $feedItems[index];
+      const it = $mediaItems[index];
       if (it) {
         originalUrl = backendUrl(`/api/images/${it.id}/file?cache=2`);
         fullPreviewFailed = false;
@@ -390,8 +390,8 @@
 
 <svelte:window onkeydown={handleKey} />
 
-{#if open && $feedItems.length > 0 && $feedItems[index]}
-  {@const it = $feedItems[index]}
+{#if open && $mediaItems.length > 0 && $mediaItems[index]}
+  {@const it = $mediaItems[index]}
   <section class="inline-viewer absolute inset-0 z-20 flex flex-col bg-bg overflow-hidden fill-interactions" aria-label="图片细节预览">
     <header class="lightbox-header flex items-center gap-2 px-4 py-3 shrink-0 border-b border-border bg-surface">
       <button class="rounded-lg px-3 py-2 text-xs" onclick={close} title="返回缩略图（Esc）">← 返回</button>
@@ -445,7 +445,7 @@
     <footer class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 shrink-0 border-t border-border bg-surface text-xs">
       {#if !comparing}<div class="flex items-center gap-2">
         <button class="rounded-lg px-3 py-2" onclick={prev} title="上一张">‹</button>
-        <span class="text-muted">{index + 1} / {$feedItems.length}</span>
+        <span class="text-muted">{index + 1} / {$mediaItems.length}</span>
         <button class="rounded-lg px-3 py-2" onclick={next} title="下一张">›</button>
       </div>
       <span class="text-muted">{#if it.width && it.height}{it.width} × {it.height} · {/if}{formatSize(it.size_bytes)}</span>

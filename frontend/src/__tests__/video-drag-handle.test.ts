@@ -6,7 +6,8 @@ import { feedItems, feedLoading, multiSelectedIds } from '../lib/stores';
 const drag = vi.hoisted(() => vi.fn());
 vi.mock('../lib/original-drag', () => ({ beginOriginalDrag: drag }));
 vi.mock('../lib/api', () => ({
-  imagesApi: { list: vi.fn(async () => ({ items: get(feedItems), total: get(feedItems).length })), detail: vi.fn() },
+  itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) },
+imagesApi: { list: vi.fn(async () => ({ items: get(feedItems), total: get(feedItems).length })), detail: vi.fn() },
   foldersApi: { tree: vi.fn(async () => []) }, statsApi: { get: vi.fn() }, scanApi: { progress: vi.fn() }, comfyuiApi: {}, videosApi: {},
 }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); drag.mockReset(); });

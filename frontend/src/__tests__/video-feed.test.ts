@@ -2,11 +2,12 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 import Feed from '../components/Feed.svelte';
-import { feedItems, feedLoading, feedTotal, kind, multiSelectedIds } from '../lib/stores';
+import { feedItems, feedLoading, feedTotal, feedCounts, scope, multiSelectedIds } from '../lib/stores';
 import { videosApi } from '../lib/api';
 
 vi.mock('../lib/api', () => ({
-  imagesApi: { list: vi.fn(async () => ({ items: [], total: 0 })), detail: vi.fn() },
+  itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) },
+imagesApi: { list: vi.fn(async () => ({ items: [], total: 0 })), detail: vi.fn() },
   foldersApi: { tree: vi.fn(async () => []) }, statsApi: { get: vi.fn() }, scanApi: { progress: vi.fn() }, comfyuiApi: {},
   videosApi: { open: vi.fn(async () => ({ ok: true, id: 1, path: 'D:/x.mp4' })), copy: vi.fn(async () => ({ ok: true, id: 1, path: 'D:/x.mp4', method: 'clipboard' })) },
 }));
@@ -15,16 +16,17 @@ const video = (id: number, playable: boolean) => ({
   id, filename: `${id}.mp4`, path: `D:/${id}.mp4`, kind: 'video',
   thumbnail_url: `/api/videos/${id}/thumb`, play_url: `/api/videos/${id}/file`, playable,
   width: 1920, height: 1080, duration_seconds: 12, mtime: 1, size_bytes: 1000,
-  favorite: false, folder_ids: [], tags: [], model: null, seed: null,
+  item_type: 'media', folder_ids: [], tags: [], model: null, seed: null,
 });
 
 beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(900);
   feedLoading.set(false); feedTotal.set(1); multiSelectedIds.set(new Set());
-  kind.set('video');
+  scope.set('video');
+  feedCounts.set({ image: 0, video: 1, audio: 0, text: 0 });
   feedItems.set([video(1, true)] as any);
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); kind.set('image'); feedItems.set([]); feedTotal.set(0); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); scope.set('all'); feedItems.set([]); feedTotal.set(0); feedCounts.set({ image: 0, video: 0, audio: 0, text: 0 }); });
 
 it('视频卡片渲染居中播放按钮，点击可弹层 open-video-player 事件', async () => {
   const dispatch = vi.spyOn(window, 'dispatchEvent');
@@ -51,8 +53,9 @@ it('视频视图双击卡片不再直接播放（仅播放按钮播放）', asyn
   expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'open-video-player' }));
 });
 
-it('视频视图工具栏计数使用「个」而非「张」', async () => {
+it('视频口径的工具栏计数用「个视频」而不是「张图片」', async () => {
   feedTotal.set(3);
+  feedCounts.set({ image: 0, video: 3, audio: 0, text: 0 });
   const screen = render(Feed, { selectedId: null, lightboxOpen: false, lightboxIndex: 0 });
   expect(screen.getByText(/3 个/)).toBeTruthy();
 });

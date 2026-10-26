@@ -3,21 +3,23 @@ import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 import Feed from '../components/Feed.svelte';
 import ContextMenu from '../components/ContextMenu.svelte';
-import { feedItems, feedLoading, folders, multiSelectedIds } from '../lib/stores';
+import { feedItems, feedLoading, folders, multiSelectedIds, scope } from '../lib/stores';
 import { imagesApi } from '../lib/api';
 vi.mock('../lib/api', () => ({
-  imagesApi: { list: vi.fn(async () => ({ items: get(feedItems), total: get(feedItems).length })), detail: vi.fn(), rename: vi.fn(), bulkAssignFolder: vi.fn(), toggleFavorite: vi.fn() },
+  itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) } ,
+imagesApi: { list: vi.fn(async () => ({ items: get(feedItems), total: get(feedItems).length })), detail: vi.fn(), rename: vi.fn(), bulkAssignFolder: vi.fn() },
   foldersApi: { tree: vi.fn(async () => get(folders)) }, statsApi: { get: vi.fn() }, scanApi: { progress: vi.fn() }, comfyuiApi: {},
 }));
-const item = { id: 1, filename: 'original.jpg', path: 'D:/original.jpg', width: 1600, height: 900 };
+const item = { id: 1, item_type: 'media', kind: 'image', filename: 'original.jpg', path: 'D:/original.jpg', width: 1600, height: 900 };
 beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(900);
+  scope.set('image');
   feedLoading.set(false); feedItems.set([item] as any); multiSelectedIds.set(new Set());
   folders.set([{ id: 10, name: '项目', children: [{ id: 11, name: '角色', children: [{ id: 12, name: '定妆', children: [] }] }] }] as any);
   vi.mocked(imagesApi.rename).mockReset().mockResolvedValue({ ...item, filename: 'new.jpg' } as any);
   vi.mocked(imagesApi.bulkAssignFolder).mockReset().mockResolvedValue({ ids: [1] } as any);
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.mocked(imagesApi.list).mockImplementation(async () => ({ items: get(feedItems), total: get(feedItems).length }) as any); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); scope.set('all'); vi.mocked(imagesApi.list).mockImplementation(async () => ({ items: get(feedItems), total: get(feedItems).length }) as any); });
 function feed() { return render(Feed, { selectedId: null, lightboxOpen: false, lightboxIndex: 0 }); }
 it('菜单改名关闭菜单并聚焦名称输入，Enter 保存而不打开预览', async () => {
   const screen = feed();
@@ -82,16 +84,19 @@ it('切换父项清理旧分支，键盘可以展开，菜单位置限制在窗�
   expect(screen.queryByText('二级')).toBeNull();
 });
 
-it('收藏紧跟重命名，标记位于 ComfyUI 按钮左侧，支持取消', async () => {
-  vi.mocked(imagesApi.toggleFavorite).mockResolvedValueOnce({ id: 1, favorite: true }).mockResolvedValueOnce({ id: 1, favorite: false });
+it('右键菜单不再有任何收藏入口，重命名后面直接是所在位置', async () => {
   const screen = feed(); await fireEvent.contextMenu(screen.getByAltText('original.jpg'));
   const labels = screen.getAllByRole('menuitem').map(it => it.textContent?.trim());
-  expect(labels.indexOf('收藏')).toBe(labels.indexOf('重命名') + 1);
-  await fireEvent.click(screen.getByText('收藏'));
-  const badge = screen.getByLabelText('已收藏');
-  expect(badge.classList.contains('right-10')).toBe(true);
-  await fireEvent.contextMenu(screen.getByAltText('original.jpg'));
-  await fireEvent.click(screen.getByText('取消收藏'));
+  expect(labels).not.toContain('收藏');
+  expect(labels).not.toContain('取消收藏');
+  expect(labels.indexOf('图片所在位置')).toBe(labels.indexOf('重命名') + 1);
   expect(screen.queryByLabelText('已收藏')).toBeNull();
-  expect(imagesApi.toggleFavorite).toHaveBeenLastCalledWith(1, false);
+});
+
+it('音频条目的菜单用「播放」替代复制图片', async () => {
+  feedItems.set([{ id: 2, filename: 'take.mp3', path: 'D:/take.mp3', kind: 'audio', duration_seconds: 42 }] as any);
+  const screen = feed(); await fireEvent.contextMenu(screen.getByTitle('take.mp3'));
+  expect(screen.getByText('播放')).toBeTruthy();
+  expect(screen.queryByText('复制图片')).toBeNull();
+  expect(screen.getByText('删除音频')).toBeTruthy();
 });

@@ -24,6 +24,7 @@ it('captures the selected destination before copying and describes the saved med
   expect(source).toContain('if ($folderId !== null) return { id: $folderId, name: $activeFolderName }');
   expect(source).toContain('imagesApi.copyFiles([path], targetId)');
   expect(source).toContain('const targetId = destination.id');
-  expect(source).toContain('${videos} 个视频');
+  expect(source).toContain('${counts.video} 个视频');
+  expect(source).toContain('${counts.audio} 条音频');
   expect(source).not.toContain('return "收件箱"');
 });

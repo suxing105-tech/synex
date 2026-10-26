@@ -34,8 +34,9 @@ function findOpenTagClass(raw: string, anchor: RegExp, openTag: "<button" | "<sp
 }
 
 const detailPanelTargets: Array<{ name: string; anchor: RegExp }> = [
-  { name: "Header 缩略图按钮", anchor: /title="查看大图"/ },
-  { name: "收藏按钮", anchor: /aria-pressed=\{d\.favorite\}/ },
+  { name: "Header 缩略图按钮", anchor: /title=\{headerThumbLabel\(d\.kind\)\}/ },
+  { name: "Header 视频播放按钮", anchor: /aria-label="播放视频"/ },
+  { name: "音频播放按钮", anchor: /onclick=\{toggleSelectedAudio\}/ },
   { name: "ComfyUI 打开按钮", anchor: /aria-label="在 ComfyUI 中打开工作流"/ },
   { name: "更多菜单按钮", anchor: /aria-haspopup="menu"/ },
 ];

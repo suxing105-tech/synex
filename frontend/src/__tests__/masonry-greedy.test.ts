@@ -46,7 +46,7 @@ function mkItem(id: number, w: number | null, h: number | null): ImageSummary {
     height: h,
     mtime: 0,
     size_bytes: 0,
-    favorite: false,
+    
     folder_ids: [],
     tags: [],
     model: null,

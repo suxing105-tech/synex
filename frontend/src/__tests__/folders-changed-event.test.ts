@@ -5,9 +5,10 @@ import { connectEvents, disconnectEvents } from '../lib/ws';
 import { get } from 'svelte/store';
 
 vi.mock('../lib/api', () => ({
-  imagesApi: { list: vi.fn().mockResolvedValue({ items: [], total: 0 }), detail: vi.fn().mockResolvedValue({ id: 1 }) },
+  itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) },
+imagesApi: { list: vi.fn().mockResolvedValue({ items: [], total: 0 }), detail: vi.fn().mockResolvedValue({ id: 1 }) },
   foldersApi: { tree: vi.fn().mockResolvedValue([{ id: 99, name: '来源目录' }]) },
-  statsApi: { get: vi.fn().mockResolvedValue({ total_images: 0, favorites: 0, folders: 0 }) },
+  statsApi: { get: vi.fn().mockResolvedValue({ total_images: 0, total_videos: 0, total_audio: 0, total_texts: 0, folders: 0 }) },
   scanApi: { progress: vi.fn() },
 }));
 

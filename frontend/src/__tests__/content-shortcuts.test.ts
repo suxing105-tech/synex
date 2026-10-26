@@ -1,39 +1,75 @@
-import { afterEach, expect, it, vi } from 'vitest';
-import { fireEvent, render, cleanup } from '@testing-library/svelte';
-import { get } from 'svelte/store';
-import { registerContentShortcuts } from '../lib/content-shortcuts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, cleanup } from '@testing-library/svelte';
+import { registerContentShortcuts, SCOPE_BY_KEY } from '../lib/content-shortcuts';
 import { loadShortcuts, validateShortcuts, defaultShortcuts } from '../lib/shortcut-settings';
-import { folderId, kind, textMode } from '../lib/stores';
-import ContentSwitcher from '../components/ContentSwitcher.svelte';
+import { folderId, scope } from '../lib/stores';
 
-afterEach(() => { cleanup(); document.body.innerHTML = ''; localStorage.clear(); textMode.set(false); kind.set('image'); folderId.set(null); });
-it('I / T / V 切换类型；输入、组合输入、弹窗、预览和修饰键不切换', () => {
-  const switchTo = vi.fn(); let preview = false;
-  const off = registerContentShortcuts(switchTo, () => preview);
-  for (const key of ['i', 't', 'v']) window.dispatchEvent(new KeyboardEvent('keydown', { key }));
-  expect(switchTo.mock.calls).toEqual([['image'], ['text'], ['video']]);
-  for (const tag of ['input', 'textarea', 'select', 'div']) {
-    const el = document.createElement(tag); if (tag === 'div') el.setAttribute('contenteditable', 'true'); document.body.append(el);
-    el.dispatchEvent(new KeyboardEvent('keydown', { key: 't', bubbles: true })); document.body.removeChild(el);
-  }
-  for (const extra of [{ isComposing: true }, { repeat: true }, { ctrlKey: true }, { shiftKey: true }, { metaKey: true }, { altKey: true }]) window.dispatchEvent(new KeyboardEvent('keydown', { key: 't', ...extra }));
-  const dialog = document.createElement('div'); dialog.setAttribute('role', 'dialog'); document.body.append(dialog);
-  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'v' })); dialog.remove();
-  preview = true; window.dispatchEvent(new KeyboardEvent('keydown', { key: 'i' }));
-  expect(switchTo).toHaveBeenCalledTimes(3); off();
+afterEach(() => {
+  cleanup();
+  document.body.innerHTML = '';
+  localStorage.clear();
+  scope.set('all');
+  folderId.set(null);
 });
-it('旧 T 标签键迁移为 Shift+T，并保留其他自定义快捷键', () => {
-  localStorage.setItem('suxing.shortcuts.v1', JSON.stringify({ tags: 't', positive: 'ctrl+q' }));
-  expect(loadShortcuts()).toMatchObject({ tags: 'shift+t', positive: 'ctrl+q' });
-  expect(validateShortcuts({ ...defaultShortcuts, positive: 'i' })).toContain('保留');
-});
-it('图标可访问、显示按键提示，切换后保留当前文件夹', async () => {
-  folderId.set(42);
-  const ui = render(ContentSwitcher);
-  expect(ui.getByRole('button', { name: '图片' }).textContent?.trim()).toBe('');
-  expect(ui.getByRole('button', { name: '文本' }).title).toBe('文本 (T)');
-  await fireEvent.click(ui.getByRole('button', { name: '文本' }));
-  expect(get(textMode)).toBe(true); expect(get(folderId)).toBe(42);
-  await fireEvent.click(ui.getByRole('button', { name: '视频' }));
-  expect(get(textMode)).toBe(false); expect(get(kind)).toBe('video'); expect(get(folderId)).toBe(42);
+
+const press = (key: string, extra: Partial<KeyboardEventInit> = {}) =>
+  window.dispatchEvent(new KeyboardEvent('keydown', { key, ...extra }));
+
+describe('内容口径快捷键', () => {
+  it('0 / A / I / V / T 分别切到所有素材、音频、图片、视频、文本', () => {
+    const switchTo = vi.fn();
+    const off = registerContentShortcuts(switchTo);
+    for (const key of ['0', 'a', 'i', 'v', 't']) press(key);
+    expect(switchTo.mock.calls).toEqual([['all'], ['audio'], ['image'], ['video'], ['text']]);
+    off();
+  });
+
+  it('收藏快捷键随功能一起下线', () => {
+    expect(SCOPE_BY_KEY.f).toBeUndefined();
+    expect(Object.keys(SCOPE_BY_KEY).sort()).toEqual(['0', 'a', 'i', 't', 'v']);
+  });
+
+  it('输入、输入法、弹窗与预览期间不切类型', () => {
+    const switchTo = vi.fn();
+    let preview = false;
+    const off = registerContentShortcuts(switchTo, () => preview);
+    for (const tag of ['input', 'textarea', 'select', 'div']) {
+      const el = document.createElement(tag);
+      if (tag === 'div') el.setAttribute('contenteditable', 'true');
+      document.body.append(el);
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 't', bubbles: true }));
+      document.body.removeChild(el);
+    }
+    for (const extra of [{ isComposing: true }, { repeat: true }, { ctrlKey: true }, { shiftKey: true }, { metaKey: true }, { altKey: true }]) {
+      press('t', extra);
+    }
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    document.body.append(dialog);
+    press('v');
+    dialog.remove();
+    preview = true;
+    press('i');
+    expect(switchTo).not.toHaveBeenCalled();
+    off();
+  });
+
+  it('旧 T 标签键迁移为 Shift+T，并保留自定义快捷键', () => {
+    localStorage.setItem('suxing.shortcuts.v1', JSON.stringify({ tags: 't', positive: 'ctrl+q' }));
+    expect(loadShortcuts()).toMatchObject({ tags: 'shift+t', positive: 'ctrl+q' });
+    expect(validateShortcuts({ ...defaultShortcuts, positive: 'i' })).toContain('保留');
+  });
+
+  it('按 a 之后焦点在输入框里再按也不会误触', () => {
+    const switchTo = vi.fn();
+    const off = registerContentShortcuts(switchTo);
+    const input = document.createElement('input');
+    document.body.append(input);
+    fireEvent.keyDown(input, { key: 'a' });
+    expect(switchTo).not.toHaveBeenCalled();
+    input.remove();
+    press('a');
+    expect(switchTo).toHaveBeenCalledWith('audio');
+    off();
+  });
 });

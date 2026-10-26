@@ -6,7 +6,10 @@ import type {
   ConfigOut,
   FeedQuery,
   FeedResponse,
+  HealthPayload,
   FolderNode,
+  ItemFeedQuery,
+  ItemsResponse,
   ImageDetail,
   ImageSummary,
   ImportResponse,
@@ -68,12 +71,6 @@ export const imagesApi = {
   detail(id: number): Promise<ImageDetail> {
     return http<ImageDetail>(`/api/images/${id}`);
   },
-  toggleFavorite(id: number, favorite: boolean): Promise<{ id: number; favorite: boolean }> {
-    return http(`/api/images/${id}/favorite`, {
-      method: "POST",
-      body: JSON.stringify({ favorite }),
-    });
-  },
   setTags(id: number, tags: string[]): Promise<{ id: number; tags: string[] }> {
     return http(`/api/images/${id}/tags`, {
       method: "POST",
@@ -134,6 +131,26 @@ export const imagesApi = {
     for (const f of files) fd.append("files", f, f.name);
     if (folderId != null) fd.append("folder_id", String(folderId));
     return http<ImportResponse>("/api/images/import", { method: "POST", body: fd });
+  },
+};
+
+// ---------- 「所有素材」统一流 ----------
+
+
+export const itemsApi = {
+  /** 图片 / 视频 / 音频 / 文本按同一时间轴混排；counts 不含 kinds 过滤。 */
+  list(query: ItemFeedQuery = {}): Promise<ItemsResponse> {
+    return http<ItemsResponse>(`/api/items${qs(query as Record<string, unknown>)}`);
+  },
+};
+
+// ---------- 音频 ----------
+
+
+export const audioApi = {
+  /** 应用内播不了的容器（AudioEngine 解码失败）交给系统默认播放器。 */
+  open(id: number): Promise<{ ok: boolean; id: number; path: string }> {
+    return http(`/api/audio/${id}/open`, { method: "POST" });
   },
 };
 
@@ -240,6 +257,14 @@ export const scanApi = {
   },
   progress(): Promise<ScanProgress> {
     return http<ScanProgress>("/api/scan/progress");
+  },
+};
+
+// ---------- 健康检查（含媒体工具状态）----------
+
+export const healthApi = {
+  get(): Promise<HealthPayload> {
+    return http<HealthPayload>("/api/health");
   },
 };
 

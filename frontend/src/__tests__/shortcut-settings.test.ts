@@ -30,7 +30,9 @@ describe("自定义快捷键", () => {
     expect(loadShortcuts()).toEqual(defaultShortcuts);
   });
   it("冲突与保留键不可保存", () => {
-    expect(validateShortcuts({ ...defaultShortcuts, positive: "f" })).toContain("冲突");
+    expect(validateShortcuts({ ...defaultShortcuts, positive: "n" })).toContain("冲突");
+    for (const key of ["0", "a", "i", "v", "t"])
+      expect(validateShortcuts({ ...defaultShortcuts, positive: key })).toContain("保留");
     expect(() => saveShortcuts({ ...defaultShortcuts, positive: "escape" })).toThrow();
     expect(validateShortcuts({ ...defaultShortcuts, positive: "ctrl+shift+q", negative: "shift+ctrl+q" })).toContain("冲突");
   });
@@ -58,7 +60,7 @@ describe("自定义快捷键", () => {
     const ui = render(ShortcutSettings);
     const button = ui.getByRole("button", { name: "设置复制正向 Prompt快捷键" });
     await fireEvent.click(button);
-    await fireEvent.keyDown(button, { key: "f" });
+    await fireEvent.keyDown(button, { key: "n" });
     expect(ui.getByRole("status").textContent).toContain("冲突");
     await fireEvent.keyDown(button, { key: "q", ctrlKey: true });
     expect(get(shortcutSettings).positive).toBe("p");

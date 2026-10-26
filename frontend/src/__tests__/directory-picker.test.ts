@@ -7,7 +7,8 @@ import { selectImportDirectory, isTauri } from "../lib/tauri";
 import Modal from "../components/OnboardingModal.svelte";
 
 vi.mock("../lib/api", () => ({
-  scanApi: { importDirectory: vi.fn(), validateDirectory: vi.fn(), progress: vi.fn() },
+  itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) },
+scanApi: { importDirectory: vi.fn(), validateDirectory: vi.fn(), progress: vi.fn() },
   settingsApi: { get: vi.fn() },
 }));
 vi.mock("../lib/tauri", () => ({ isTauri: vi.fn(), selectImportDirectory: vi.fn(), getSidecarStatus: vi.fn() }));

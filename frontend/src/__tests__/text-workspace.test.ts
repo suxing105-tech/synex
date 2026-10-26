@@ -4,14 +4,15 @@ import { writable } from 'svelte/store';
 import TextWorkspace from '../components/TextWorkspace.svelte';
 import { textsApi } from '../lib/texts';
 
-vi.mock('../lib/stores', () => ({ textMode: writable(true), folderId: writable(null), view: writable('all'),
-  folders: writable([]), textTotal: writable(0), refreshFolders: vi.fn(), refreshFeed: vi.fn(),
-  selectedId: writable(null), feedItems: writable([]), switchContent: vi.fn(), kind: writable('image'), query: writable('') }));
+vi.mock('../lib/stores', () => ({ textMode: writable(true), folderId: writable(null), scope: writable('text'),
+  folders: writable([]), refreshFolders: vi.fn(), refreshFeed: vi.fn(),
+  selectedId: writable(null), feedItems: writable([]), switchContent: vi.fn(), query: writable(''),
+  pendingTextOpen: writable(null) }));
 vi.mock('../lib/native-drop', () => ({ subscribeFileDrop: () => () => {} }));
-vi.mock('../lib/api', () => ({ imagesApi: { list: vi.fn() } }));
+vi.mock('../lib/api', () => ({ itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) }, imagesApi: { list: vi.fn() } }));
 const d = (id = 1, body = '# 剧本\n\n第一幕') => ({ id, body, path: `C:/demo/${id}.md`, filename: `${id}.md`, format: 'md',
   version: 'v1', encoding: 'utf-8', newline: 'LF', bom: false, readonly: false, needs_encoding: false,
-  excerpt: body, mtime: 1, created: 1, opened: 1, favorite: false, missing: false, error: '', tags: [] });
+  excerpt: body, mtime: 1, created: 1, opened: 1, missing: false, error: '', tags: [] });
 beforeEach(() => {
   localStorage.clear();
   vi.spyOn(textsApi, 'list').mockResolvedValue({ items: [d()], total: 1 });

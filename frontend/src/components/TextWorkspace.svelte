@@ -2,7 +2,7 @@
   import { onMount, onDestroy, tick } from 'svelte';
   import { revealLocation } from '../lib/reveal';
   import { get } from 'svelte/store';
-  import { textMode, folderId, view, folders, textTotal, refreshFolders, refreshFeed, selectedId, feedItems, switchContent } from '../lib/stores';
+  import { textMode, folderId, folders, refreshFolders, refreshFeed, selectedId, feedItems, switchContent, pendingTextOpen } from '../lib/stores';
   import { textsApi, TextSession, type TextSummary, type TextHistory, type TextDraft } from '../lib/texts';
   import { imagesApi, videosApi } from '../lib/api';
   import type { ImageSummary, FolderNode } from '../lib/types';
@@ -31,7 +31,6 @@
   let dragTarget = $state<number | null>(null);
   let dragAfter = $state(false);
   import GallerySearch from './GallerySearch.svelte';
-  import ContentSwitcher from './ContentSwitcher.svelte';
   let filtersOpen = $state(false);
 
   const STORAGE = 'seekx-text-workspace-v1';
@@ -50,7 +49,6 @@
   let format = $state('');
   let tagFilter = $state('');
   let sort = $state('mtime');
-  let favoriteOnly = $state(false);
   let items = $state<TextSummary[]>([]);
   let total = $state(0);
   let loading = $state(false);
@@ -104,10 +102,9 @@
     const request = ++requestId;
     loading = true;
     try {
-      const result = await textsApi.list({ q: search, folder_id: get(folderId), view: favoriteOnly ? 'favorite' : get(view), format, tag: tagFilter, sort, offset: append ? items.length : 0 });
+      const result = await textsApi.list({ q: search, folder_id: get(folderId), format, tag: tagFilter, sort, offset: append ? items.length : 0 });
       if (request !== requestId || !alive) return;
       items = append ? [...items, ...result.items] : result.items; total = result.total; error = '';
-      const all = await textsApi.list({ limit: 1 }); textTotal.set(all.total);
     } catch (e) { if (request === requestId) error = message(e); }
     finally { if (request === requestId) loading = false; }
   }
@@ -192,11 +189,6 @@
       if (result.errors.length) { modalError = result.errors.map(x => `${x.path}：${x.reason}`).join('\n'); preview = null; }
       else modal = '';
     } catch (e) { modalError = message(e); } finally { busy = false; }
-  }
-  async function favorite() {
-    if (!current) return;
-    try { const result = await textsApi.meta(current.detail.id, { favorite: !current.detail.favorite }); Object.assign(current.detail, result); changed(); await refreshList(); }
-    catch (e) { error = message(e); }
   }
   async function tags(value: string) {
     if (!current) return;
@@ -333,8 +325,9 @@
     if (!assetPreview) return;
     const item = assetPreview; assetPreview = null; switchContent(item.kind, true);
     await refreshFeed();
-    if (!get(feedItems).some(x => x.id === item.id)) {
-      const detail = await imagesApi.detail(item.id); feedItems.update(items => [detail, ...items]);
+    if (!get(feedItems).some(x => x.item_type === "media" && x.id === item.id)) {
+      const detail = await imagesApi.detail(item.id);
+      feedItems.update((items) => [{ ...detail, item_type: "media" }, ...items]);
     }
     selectedId.set(item.id); await tick();
     window.dispatchEvent(new CustomEvent(item.kind === 'video' ? 'open-video-player' : 'open-lightbox', { detail: { id: item.id } }));
@@ -347,14 +340,23 @@
     await refreshList();
   }
   $effect(() => {
-    const f = $folderId, v = $view, mode = $textMode;
-    search; format; tagFilter; sort; favoriteOnly;
+    const f = $folderId, mode = $textMode;
+    search; format; tagFilter; sort;
     if (!ready || !mode) return;
     if (f !== lastFolder) { lastFolder = f; listOpen = true; }
     const delay = setTimeout(() => { void refreshList(); }, 180);
     return () => clearTimeout(delay);
   });
+  // 「所有素材」里点文本卡要把这一篇打开。TextWorkspace 靠 display:none 常驻，
+  // window 事件在隐藏期会丢，所以跳转目标走 store 订阅；onMount 时先补吃一次待办。
+  function consumePendingTextOpen(id: number | null) {
+    if (id === null) return;
+    pendingTextOpen.set(null);
+    listOpen = true;
+    void openDocument(id);
+  }
   onMount(() => {
+    const disposePending = pendingTextOpen.subscribe((id) => consumePendingTextOpen(id));
     const disposeDrop = subscribeFileDrop(() => get(textMode) ? region : null, n => hover = n, previewPaths);
     const dropped = (e: Event) => { if (get(textMode)) void previewPaths((e as CustomEvent<string[]>).detail); };
     const refresh = () => { void syncOpen(); };
@@ -385,7 +387,7 @@
               // Keep unavailable drafts recoverable instead of dropping them from storage.
               const placeholder = { id, filename: '待恢复文档', path: '', format: 'md', body: '', version: draft.version,
                 encoding: 'utf-8', newline: 'LF', bom: false, readonly: false, needs_encoding: false, mtime: 0,
-                created: 0, opened: 0, favorite: false, missing: true, tags: [], excerpt: '', error: message(e) };
+                created: 0, opened: 0, missing: true, tags: [], excerpt: '', error: message(e) };
               const s = new TextSession(placeholder, changed, textsApi, draft); s.state = 'error'; s.error = message(e);
               sessions.set(id, s); restored.push(id);
             }
@@ -396,7 +398,7 @@
       ready = true; changed(); await refreshList();
     })();
     timer = setInterval(() => { void syncOpen(); }, 5000);
-    return () => { alive = false; disposeDrop(); clearInterval(timer); window.removeEventListener('associate-text-paths', dropped); window.removeEventListener('texts-changed', refresh); window.removeEventListener('keydown', keys); window.removeEventListener('beforeunload', before); };
+    return () => { alive = false; disposePending(); disposeDrop(); clearInterval(timer); window.removeEventListener('associate-text-paths', dropped); window.removeEventListener('texts-changed', refresh); window.removeEventListener('keydown', keys); window.removeEventListener('beforeunload', before); };
   });
   onDestroy(() => { for (const s of sessions.values()) s.dispose(); });
 </script>
@@ -412,7 +414,6 @@
     <div class="workspace-actions">
       <button onclick={() => newDocument()} title="新建文本" aria-label="新建文本"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
       <button onclick={() => { preview = null; pathInput = ''; showModal('associate'); }} title="关联文件 / 目录" aria-label="关联文件 / 目录"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 19V5h7l2 3h9v11zM12 11v6m-3-3h6"/></svg></button>
-      <ContentSwitcher />
     </div>
   </header>
   {#if error || draftError}<div class="notice" role="alert">{error || draftError}<button onclick={() => { error = ''; }}>×</button></div>{/if}
@@ -420,8 +421,8 @@
   <div class="workspace-body" use:measureBody>
     {#if listOpen}
       <aside class="text-list" style:width={`${Math.min(listWidth, maxListWidth)}px`}>
-        <div class="list-heading"><span>{total} 篇{loading ? ' · 加载中…' : ''}</span><button aria-label="文本筛选" aria-expanded={filtersOpen} class:chosen={filtersOpen || !!format || !!tagFilter || favoriteOnly} onclick={() => filtersOpen = !filtersOpen} title="筛选与排序"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg></button></div>
-        {#if $folderId !== null && search}<button onclick={() => { folderId.set(null); view.set('all'); }}>搜索全部文本</button>{/if}
+        <div class="list-heading"><span>{total} 篇{loading ? ' · 加载中…' : ''}</span><button aria-label="文本筛选" aria-expanded={filtersOpen} class:chosen={filtersOpen || !!format || !!tagFilter} onclick={() => filtersOpen = !filtersOpen} title="筛选与排序"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg></button></div>
+        {#if $folderId !== null && search}<button onclick={() => { folderId.set(null); }}>搜索全部文本</button>{/if}
         {#if filtersOpen}<div class="filters">
           <div class="filter-selects">
             <label class="filter-field"><span>格式</span><div class="select-wrap">
@@ -434,8 +435,8 @@
             </div></label>
           </div>
           <div class="tag-filter"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 3h8l10 10-8 8L3 11z"/><circle cx="7" cy="7" r="1"/></svg><input aria-label="筛选标签" placeholder="按标签筛选" bind:value={tagFilter}/></div>
-          <div class="filter-options"><label class="favorite-filter"><input type="checkbox" bind:checked={favoriteOnly}/>仅收藏</label>
-            {#if format || tagFilter || favoriteOnly}<button class="clear-filters" onclick={() => { format = ''; tagFilter = ''; favoriteOnly = false; }}>清除筛选</button>{/if}
+          <div class="filter-options">
+            {#if format || tagFilter}<button class="clear-filters" onclick={() => { format = ''; tagFilter = ''; }}>清除筛选</button>{/if}
           </div>
         </div>{/if}
         <div class="list-scroll" class:dragging={dragFrom !== null} use:textListDrag={{ change: (from, target, after) => { dragFrom = from; dragTarget = target; dragAfter = after; }, drop: (from, target, after) => { void reorder(from, target, after); } }}>
@@ -452,7 +453,7 @@
                   onclick={(e) => e.stopPropagation()} ondblclick={(e) => e.stopPropagation()}
                   onkeydown={(e) => { e.stopPropagation(); if (e.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); void saveRename(item); } else if (e.key === 'Escape') { e.preventDefault(); renamingId = null; } }}
                   onblur={() => saveRename(item)} />
-              {:else}<div><strong>{item.filename}</strong>{#if item.favorite}<span>★</span>{/if}</div>{/if}
+              {:else}<div><strong>{item.filename}</strong></div>{/if}
               {#if search}<p>{item.excerpt || '空白文本'}</p>{/if}
             </div>
           {/each}
@@ -507,7 +508,7 @@
         <footer><span class="save-state" class:problem={['error','conflict'].includes(current.state)}>{stateLabel[current.state]}</span><span>{Array.from(current.body.replace(/\s/g, '')).length} 字</span><span>{current.detail.encoding || '编码待选择'} · {current.detail.newline}</span>
           <span class="spacer"></span>
           <details class="document-options"><summary aria-label="文档选项" title="文档选项">⋯</summary><div>
-            <button onclick={favorite}>{current.detail.favorite ? '取消收藏' : '收藏文本'}</button><button onclick={showMove}>移动文件</button>
+            <button onclick={showMove}>移动文件</button>
             <label>标签<input aria-label="文本标签" placeholder="用逗号分隔" value={current.detail.tags.join('，')} onchange={(e) => tags(e.currentTarget.value)}/></label>
           </div></details><button onclick={showHistory}>历史版本</button><button title={current.detail.path} onclick={reveal}>文件位置</button><button onclick={() => newDocument(true)}>另存副本</button></footer></div>
       {:else}
@@ -582,7 +583,7 @@
   .filter-selects { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; }.filter-field { display:flex; flex-direction:column; gap:5px; min-width:0; }.filter-field > span { font-size:10px; color:#8a8a8e; }
   .select-wrap { position:relative; }.filters select { appearance:none; width:100%; height:29px; padding:0 22px 0 8px; font-size:11px; border:1px solid #323237; border-radius:5px; background:#222225; color:#d4d4d8; }.select-wrap svg { position:absolute; right:7px; top:9px; pointer-events:none; color:#8a8a8e; }
   .tag-filter { display:flex; align-items:center; gap:6px; height:29px; padding:0 8px; background:#222225; border:1px solid #323237; border-radius:5px; color:#8a8a8e; }.tag-filter input { width:100%; border:0; background:transparent; padding:0; height:25px; font-size:11px; outline:none; }.tag-filter:focus-within { border-color:#77777f; }
-  .filter-options { display:flex; align-items:center; justify-content:space-between; min-height:20px; }.favorite-filter { display:flex; gap:6px; align-items:center; font-size:11px; color:#a1a1aa; cursor:pointer; }.favorite-filter input { width:12px; height:12px; margin:0; padding:0; accent-color:#f24e4e; }.clear-filters { padding:2px 0; font-size:10px; color:#a1a1aa; }
+  .filter-options { display:flex; align-items:center; justify-content:flex-end; min-height:20px; }.clear-filters { padding:2px 0; font-size:10px; color:#a1a1aa; }
 
   .list-scroll { flex:1; overflow:auto; padding:0 6px 8px; }
   .text-row { font-size:12px; width:100%; display:block; text-align:left; border-radius:5px; padding:7px 12px; border:0; white-space:normal; }

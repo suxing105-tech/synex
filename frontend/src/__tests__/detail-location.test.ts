@@ -15,9 +15,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const raw = readFileSync(resolve(here, "..", "components", "DetailPanel.svelte"), "utf8");
 
 vi.mock("../lib/api", () => ({
-  imagesApi: { detail: vi.fn(), list: vi.fn().mockResolvedValue({ items: [], total: 0 }) },
+  itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) },
+imagesApi: { detail: vi.fn(), list: vi.fn().mockResolvedValue({ items: [], total: 0 }) },
   foldersApi: { tree: vi.fn().mockResolvedValue([]) },
-  statsApi: { get: vi.fn().mockResolvedValue({ total_images: 0, favorites: 0, folders: 0 }) },
+  statsApi: { get: vi.fn().mockResolvedValue({ total_images: 0, total_videos: 0, total_audio: 0, total_texts: 0, folders: 0 }) },
   scanApi: { progress: vi.fn() },
 }));
 

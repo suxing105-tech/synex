@@ -4,7 +4,7 @@ import { markdownBlocks, renderMarkdown } from '../lib/text-markdown';
 
 export const detail = (body = '原文', version = 'v1'): TextDetail => ({ id: 1, path: 'C:/notes/剧本.md', filename: '剧本.md', format: 'md', body,
   version, encoding: 'utf-8', newline: 'LF', bom: false, readonly: false, needs_encoding: false,
-  excerpt: body, mtime: 0, created: 0, opened: 0, favorite: false, missing: false, error: '', tags: [] });
+  excerpt: body, mtime: 0, created: 0, opened: 0, missing: false, error: '', tags: [] });
 afterEach(() => vi.useRealTimers());
 
 describe('独立文档保存队列', () => {

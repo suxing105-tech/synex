@@ -6,27 +6,32 @@
   import FolderPickerModal from "./FolderPickerModal.svelte";
   import { moveStats, moveSummary } from "../lib/move-result";
   import GallerySearch from "./GallerySearch.svelte";
-  import ContentSwitcher from "./ContentSwitcher.svelte";
+  import TypeChips from "./TypeChips.svelte";
   import { copyOriginalImage } from "../lib/image-clipboard";
-  import { isAcceptedMediaFile, isPsdFilename, thumbnailAspectRatio, thumbnailHeightToWidthRatio, thumbnailObjectFit } from "../lib/media-format";
+  import { formatDuration, isAcceptedMediaFile, isPsdFilename, mediaKindOfFilename, thumbnailAspectRatio, thumbnailHeightToWidthRatio, thumbnailObjectFit } from "../lib/media-format";
+  import { mediaSummary, selectionSummary } from "../lib/counts";
+  import { isTextItem, itemUid, kindsIn } from "../lib/items";
   import { matchesAction, shortcutBlocked } from "../lib/shortcut-settings";
   import { backendUrl } from "../lib/backend-url";
   import {
-    removeImageFromFeed, feedItems, feedTotal, feedLoading, refreshFeed, refreshStats,
+    removeImageFromFeed, feedItems, feedTotal, feedLoading, feedLoadingMore, feedCounts,
+    refreshFeed, refreshStats, loadMoreFeed, setFeedScrollBridge,
     refreshSelectedDetail,
     targetColumns, activeFolderName, newIds,
     multiSelectedIds, folders, refreshFolders,
     selectedId as selectedIdStore,
     applySelection, clearSelection, removeIdsFromSelection,
-    comfyuiStatus, kind,
+    comfyuiStatus, scope, mediaItems, playAudio, playingAudio, stopAudio, audioProgress,
+    pendingTextOpen, switchContent,
   } from "../lib/stores";
   
-  import { imagesApi, comfyuiApi, videosApi } from "../lib/api";
+  import { imagesApi, comfyuiApi, videosApi, audioApi } from "../lib/api";
+  import { pushToast } from "../lib/toast";
   import Icon from "./Icon.svelte";
   import { copyText } from "../lib/ws";
   import { openWorkflowForMedia } from "../lib/comfyui-window";
   import { revealLocation as revealInShell } from "../lib/reveal";
-  import type { ImageSummary, FolderNode } from "../lib/types";
+  import type { FolderNode, ImageSummary, ItemSummary, MediaFeedItem, TextFeedItem } from "../lib/types";
   import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
   import { folderId } from "../lib/stores";
 
@@ -61,15 +66,17 @@
   }
   onDestroy(() => resolveDestination?.(null));
   function mediaCount(paths: string[]) {
-    const videos = paths.filter(path => /\.(mp4|mov|m4v|webm|mkv|avi|wmv|flv)$/i.test(path)).length;
-    return [paths.length > videos ? `${paths.length - videos} 张图片` : '', videos ? `${videos} 个视频` : ''].filter(Boolean).join('、');
+    const counts = { image: 0, video: 0, audio: 0 };
+    for (const path of paths) counts[mediaKindOfFilename(path)] += 1;
+    return [counts.image ? `${counts.image} 张图片` : '', counts.video ? `${counts.video} 个视频` : '', counts.audio ? `${counts.audio} 条音频` : '']
+      .filter(Boolean).join('、');
   }
   let toast = $state<string | null>(null);
   function notify(msg: string) {
     toast = msg;
     setTimeout(() => (toast = null), 1800);
   }
-  async function openVideo(it: ImageSummary) {
+  async function openVideo(it: MediaFeedItem) {
     if (it.kind !== "video") return;
     if (it.playable) {
       window.dispatchEvent(new CustomEvent("open-video-player", { detail: { id: it.id } }));
@@ -82,9 +89,17 @@
       notify("打开失败：" + (e instanceof Error ? e.message : e));
     }
   }
-  // 计数单位：图片用「张」，视频用「个」
-  let unit = $derived($kind === "video" ? "个" : "张");
-  async function openInComfyui(it: ImageSummary) {
+  // 音频不在这里播：统一交给底部播放条（不可播容器由播放条降级成系统播放器）。
+  // 当前多选张数（派生：用于工具栏计数）
+  let selectedCount = $derived($multiSelectedIds.size);
+  let totalLabel = $derived(mediaSummary($feedCounts));
+  let selectedKinds = $derived(kindsIn($mediaItems.filter((it) => $multiSelectedIds.has(it.id))));
+  let selectedLabel = $derived(selectionSummary(selectedCount, selectedKinds));
+  // 「对比」只认恰好两张图片：混排流里选到视频/音频/文本时按钮不出现，避免点了没反应。
+  let comparePair = $derived(
+    selectedCount === 2 && $mediaItems.filter((it) => $multiSelectedIds.has(it.id)).every((it) => it.kind === "image"),
+  );
+  async function openInComfyui(it: MediaFeedItem) {
     try {
       notify("正在打开工作流…");
       // 图片与视频共用一条路径：桌面版应用内直接加载，浏览器版复用标签 + 落临时文件
@@ -95,6 +110,22 @@
       const detail = msg.match(/→ \d+: (.+)$/)?.[1] || msg;
       notify(`在 ComfyUI 中打开失败：${detail}`);
     }
+  }
+
+  // ---------- 「所有素材」里的文本卡 ----------
+  //
+  // 文本卡是只读入口：它不进选区、不参与删除/移动（那些归文本工作区管），
+  // 点一下 = 切到文本口径 + 让文本工作区打开这一篇。跳转目标走 store 而不是
+  // window 事件：TextWorkspace 靠 display:none 常驻，隐藏期的 window 事件会丢。
+  function openTextItem(it: TextFeedItem) {
+    pendingTextOpen.set(it.id);
+    switchContent("text");
+  }
+  /* 音频与文本卡统一 21:9 横幅（后端波形默认出图 840x360 同比例） */
+  const TEXT_CARD_ASPECT = "21 / 9";
+  const TEXT_CARD_RATIO_H = 9 / 21;
+  function textFormatLabel(format: string): string {
+    return (format || "txt").replace(/^[.]+/, "").toUpperCase();
   }
 
   // ---------- 拖拽导入状态 ----------
@@ -265,7 +296,7 @@
   function reasonTextOf(reason: string): string {
     switch (reason) {
       case "unsupported_format": return "格式不支持";
-      case "too_large": return "超过 100MB";
+      case "too_large": return "超过大小上限";
       case "write_failed": return "写入失败";
       case "indexed_failed": return "索引失败";
       case "name_collision_exhausted": return "同名过多";
@@ -279,39 +310,52 @@
   let draggedOriginal = false;
   onDestroy(() => stopOriginalDrag?.());
 
-  function pointerOnImage(e: PointerEvent, item: ImageSummary) {
+  function pointerOnImage(e: PointerEvent, item: MediaFeedItem) {
     if ((e.target as HTMLElement).closest('.comfyui-open-btn')) return;
     stopOriginalDrag?.();
     draggedOriginal = false;
     const images = $multiSelectedIds.has(item.id)
-      ? $feedItems.filter(image => $multiSelectedIds.has(image.id)) : [item];
+      ? $mediaItems.filter(image => $multiSelectedIds.has(image.id)) : [item];
     stopOriginalDrag = beginOriginalDrag(e, images.map(image => image.path),
       () => { draggedOriginal = true; },
       error => notify(`拖出失败：${error instanceof Error ? error.message : error}`));
   }
 
-  function imageLoaded(item: ImageSummary, image: HTMLImageElement) {
+  function imageLoaded(item: MediaFeedItem, image: HTMLImageElement) {
     image.style.visibility = "visible";
     if (previewFailedIds.has(item.id)) {
       previewFailedIds = new Set([...previewFailedIds].filter(id => id !== item.id));
     }
+    if (waveFailedIds.has(item.id)) {
+      waveFailedIds = new Set([...waveFailedIds].filter(id => id !== item.id));
+    }
     if (isPsdFilename(item.filename)) return;
     const width = image.naturalWidth, height = image.naturalHeight;
     if (width > 0 && height > 0 && (!item.width || !item.height || Math.abs(item.width / item.height - width / height) > .01)) {
-      feedItems.update(items => items.map(row => row.id === item.id ? { ...row, width, height } : row));
+      feedItems.update((rows) => rows.map((row) =>
+        !isTextItem(row) && row.id === item.id ? { ...row, width, height } : row,
+      ));
     }
   }
 
-  function aspectFor(it: ImageSummary): string {
+  function aspectFor(it: ItemSummary): string {
+    if (it.item_type === "text") return TEXT_CARD_ASPECT;
     return thumbnailAspectRatio(it.filename, it.kind, it.width, it.height);
   }
 
-  // 当前多选张数（派生：用于 header 计数器）
-  let selectedCount = $derived($multiSelectedIds.size);
+  /** 贪心分列用的高度口径：文本卡与音频波形都固定 21:9。 */
+  function ratioFor(it: ItemSummary): number {
+    if (it.item_type === "text") return TEXT_CARD_RATIO_H;
+    return thumbnailHeightToWidthRatio(it.filename, it.kind, it.width, it.height);
+  }
+
 
   // 当前鼠标滑过的缩略图 id（空格键放大这张；不受 selectedId 影响）
   let hoveredId = $state<number | null>(null);
   let previewFailedIds = $state<Set<number>>(new Set());
+  // 音频缩略图 = 懒生成的波形图。它 404 只说明「还没生成 / ffmpeg 不可用」，
+  // 不能走 checkMissing —— 那会把一条正常入库的音频当成丢失文件删掉索引。
+  let waveFailedIds = $state<Set<number>>(new Set());
 
   // 反向同步：applySelection 写 store.selectedId 但不会反向写到这里的 prop，
   // 导致 handleKey（空格开 Lightbox）读到旧 prop。
@@ -329,21 +373,47 @@
   }
 
   // 缩略图点击：根据修饰键走单选 / Ctrl 多选切换 / Shift 区间
-  function onThumbClick(e: MouseEvent, it: ImageSummary) {
+  function onThumbClick(e: MouseEvent, it: MediaFeedItem) {
     const modifier = e.shiftKey ? "shift" : e.ctrlKey || e.metaKey ? "ctrl" : "none";
     if (modifier === "none" && selectedCount === 2 && $multiSelectedIds.has(it.id)) { selectedId = it.id; return; }
-    applySelection($feedItems, it.id, modifier);
+    // 选区只覆盖媒体子序列：混排流里的文本卡有自己的点击语义（见 openTextItem）。
+    applySelection($mediaItems, it.id, modifier);
+    if (it.kind === "audio") toggleAudio(it);
+  }
+
+  // 音频卡自己就是播放控件：点一下播、再点停。播放实例是全应用唯一的 AudioEngine（隐藏），
+  // 卡片只负责把 audioProgress 画成顶部进度线。内核解不了的容器不假装能播，直接交系统播放器。
+  function toggleAudio(it: MediaFeedItem) {
+    if ($playingAudio?.id === it.id) { stopAudio(); return; }
+    if (it.playable === false) { void openAudioExternally(it); return; }
+    playAudio(it);
+  }
+
+  async function openAudioExternally(it: MediaFeedItem) {
+    try {
+      await audioApi.open(it.id);
+      pushToast("这个容器无法内嵌播放，已用系统播放器打开");
+    } catch (e) {
+      pushToast(`打开失败：${e instanceof Error ? e.message : e}`, { kind: "error" });
+    }
+  }
+
+  /** 顶部进度线的宽度：时长缺失或被夹到 0-100，不让进度条溢出卡片。 */
+  function audioPercent(it: MediaFeedItem): number {
+    const total = it.duration_seconds || 0;
+    if (total <= 0) return 0;
+    return Math.max(0, Math.min(100, ($audioProgress / total) * 100));
   }
 
   // ---------- 右键菜单：action handlers ----------
 
-  function openContextMenu(e: MouseEvent, it: ImageSummary) {
+  function openContextMenu(e: MouseEvent, it: MediaFeedItem) {
     e.preventDefault();
     e.stopPropagation();
     // 右键的图不在当前多选集合里 → 先单选这张（与文件管理器行为一致），菜单对单图生效。
     // 右键的图已在多选集合里 → 不改选区，菜单对整个集合生效（多选才有意义）。
     if (!$multiSelectedIds.has(it.id)) {
-      applySelection($feedItems, it.id, "none");
+      applySelection($mediaItems, it.id, "none");
       menuTargetIds = [it.id];
     } else {
       // 复制当前多选集合快照，避免后续状态变化污染菜单项
@@ -362,24 +432,26 @@
     void menuTick;
     const ids = menuTargetIds;
     if (ids.length === 0) return [];
-    const items = $feedItems.filter((x) => ids.includes(x.id));
+    const items = $mediaItems.filter((x) => ids.includes(x.id));
     if (items.length === 0) return [];
     if (items.length === 1) {
       const t = items[0];
       const isVideo = t.kind === "video";
+      const isAudio = t.kind === "audio";
+      const noun = isAudio ? "音频" : isVideo ? "视频" : "图片";
       return [
-        { label: isVideo ? "复制视频" : "复制图片", onClick: () => isVideo ? copyVideoToClipboard(t) : copyImageToClipboard(t) },
+        ...(isAudio
+          ? [{ label: $playingAudio?.id === t.id ? "暂停" : "播放", onClick: () => toggleAudio(t) }]
+          : [{ label: isVideo ? "复制视频" : "复制图片", onClick: () => isVideo ? copyVideoToClipboard(t) : copyImageToClipboard(t) }]),
         ...(isPsdFilename(t.filename) ? [{ label: "在 Photoshop 中打开", onClick: () => openInPhotoshop(t) }] : []),
         { label: "重命名", onClick: () => renameImage(t) },
-        { label: t.favorite ? "取消收藏" : "收藏", onClick: () => favoriteImage(t) },
-        { label: isVideo ? "视频所在位置" : "图片所在位置", onClick: () => revealImage(t) },
+        { label: `${noun}所在位置`, onClick: () => revealImage(t) },
         { label: "移动到…", children: moveMenu(items) },
         { kind: "sep" },
-        { label: isVideo ? "删除视频" : "删除图片", danger: true, onClick: () => deleteImages(items) },
+        { label: `删除${noun}`, danger: true, onClick: () => deleteImages(items) },
       ];
     }
-    const isVideo = items[0].kind === "video";
-    const noun = isVideo ? "视频" : "图片";
+    const noun = items[0].kind === "video" ? "视频" : items[0].kind === "audio" ? "音频" : "图片";
     return [
       { label: `复制 ${items.length} 个${noun}地址`, onClick: () => copyImageUrls(items) },
       { label: "移动到…", children: moveMenu(items) },
@@ -388,12 +460,12 @@
     ];
   });
 
-  async function copyImageToClipboard(it: ImageSummary) {
+  async function copyImageToClipboard(it: MediaFeedItem) {
     try { await copyOriginalImage(it.id); notify(isPsdFilename(it.filename) ? "已复制 PSD 合成画面" : "已复制原图到剪贴板"); }
     catch (e) { notify(`复制原图失败：${(e as Error).message}`); }
   }
 
-  async function openInPhotoshop(it: ImageSummary) {
+  async function openInPhotoshop(it: MediaFeedItem) {
     try {
       await imagesApi.openPhotoshop(it.id);
       notify("已在 Photoshop 中打开 PSD");
@@ -403,7 +475,7 @@
     }
   }
 
-  async function copyVideoToClipboard(it: ImageSummary) {
+  async function copyVideoToClipboard(it: MediaFeedItem) {
     try { await videosApi.copy(it.id); notify("已复制视频到剪贴板"); }
     catch (e) { notify(`复制视频失败：${e instanceof Error ? e.message : e}`); }
   }
@@ -412,14 +484,14 @@
   let renameValue = $state("");
   let renameSaving = $state(false);
   let renameInput: HTMLInputElement | undefined = $state();
-  async function renameImage(it: ImageSummary) {
+  async function renameImage(it: MediaFeedItem) {
     if (renameSaving) return;
     renamingId = it.id;
     renameValue = it.filename.replace(/\.[^.]+$/, "");
     await tick();
     renameInput?.focus(); renameInput?.select();
   }
-  async function saveRename(it: ImageSummary) {
+  async function saveRename(it: MediaFeedItem) {
     if (renamingId !== it.id || renameSaving) return;
     const value = renameValue.trim();
     if (!value) { notify("文件名不能为空"); renameInput?.focus(); return; }
@@ -427,7 +499,9 @@
     renameSaving = true;
     try {
       const updated = await imagesApi.rename(it.id, value);
-      feedItems.update(items => items.map(item => item.id === it.id ? { ...item, ...updated } : item));
+      feedItems.update((rows) => rows.map((row): ItemSummary =>
+        isTextItem(row) || row.id !== it.id ? row : { ...row, ...updated, item_type: row.item_type },
+      ));
       renamingId = null;
       notify("已重命名");
     } catch (e) {
@@ -436,18 +510,11 @@
     } finally { renameSaving = false; }
   }
 
-  async function favoriteImage(it: ImageSummary) {
-    try {
-      const result = await imagesApi.toggleFavorite(it.id, !it.favorite);
-      feedItems.update(items => items.map(item => item.id === it.id ? { ...item, favorite: result.favorite } : item));
-      await refreshStats();
-    } catch (e) { notify(`收藏失败：${(e as Error).message}`); }
-  }
 
-  async function revealImage(it: ImageSummary) {
+  async function revealImage(it: MediaFeedItem) {
     try {
       const via = await revealInShell(it.path, true, () => imagesApi.reveal(it.id));
-      const what = it.kind === "video" ? "视频" : "图片";
+      const what = it.kind === "video" ? "视频" : it.kind === "audio" ? "音频" : "图片";
       notify(via === "desktop" ? `已打开${what}所在位置` : `已请求打开${what}所在位置`);
     } catch (e) {
       notify(`打开位置失败: ${(e as Error).message}`);
@@ -457,7 +524,7 @@
   // 批量删除：单图也走这条，传 length=1 的数组即可。
   // 失败的项不会从多选集合里剔除，保留以便用户重试。
   let deleting = false;
-  async function deleteImages(items: ImageSummary[]) {
+  async function deleteImages(items: MediaFeedItem[]) {
     if (items.length === 0 || deleting) return;
     deleting = true;
     const succeeded: number[] = [];
@@ -479,11 +546,11 @@
     const okCount = succeeded.length;
     const failCount = failed.length;
     if (okCount > 0 && failCount === 0) {
-      notify(okCount === 1 ? `已删除图片（清理缩略图 ${cleaned} 个）` : `已删除 ${okCount} 张图片（清理缩略图 ${cleaned} 个）`);
+      notify(okCount === 1 ? `已删除（清理预览 ${cleaned} 个）` : `已删除 ${okCount} 项（清理预览 ${cleaned} 个）`);
     } else if (okCount > 0 && failCount > 0) {
-      notify(`已删除 ${okCount} 张，${failCount} 张失败`);
+      notify(`已删除 ${okCount} 项，${failCount} 项失败`);
     } else {
-      notify(`删除失败（${failCount} 张）`);
+      notify(`删除失败（${failCount} 项）`);
     }
     // 乐观更新本地 feedItems：直接从数组里过滤掉已删 id。
     // 不调 refreshFeed() —— 整个数组替换会让 masonry 贪心分组重算，滚动条跳回顶部。
@@ -494,14 +561,14 @@
 
   // 批量复制图片地址（多张时降级为 URL 文本）。
   // 浏览器 Clipboard 一次只能写一张 ClipboardItem（图片），多张只能合并成 text。
-  async function copyImageUrls(items: ImageSummary[]) {
+  async function copyImageUrls(items: MediaFeedItem[]) {
     const urls = items.map((it) => backendUrl(it.original_url ?? `/api/images/${it.id}/file`));
     const text = urls.join("\n");
     const ok = await copyText(text);
     notify(ok ? `已复制 ${items.length} 个图片地址` : "复制失败");
   }
 
-  function moveMenu(items: ImageSummary[]): ContextMenuItem[] {
+  function moveMenu(items: MediaFeedItem[]): ContextMenuItem[] {
     const choose = (folder: { id: number; name: string } | null) => {
       movePickerIds = items.map(it => it.id);
       movePickerCount = items.length;
@@ -548,7 +615,7 @@
     if (e.key === "Delete" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
       e.preventDefault();
       const ids = $multiSelectedIds.size ? $multiSelectedIds : new Set(selectedId === null ? [] : [selectedId]);
-      void deleteImages($feedItems.filter(item => ids.has(item.id)));
+      void deleteImages($mediaItems.filter(item => ids.has(item.id)));
       return;
     }
     if (e.key === "Escape") {
@@ -570,13 +637,12 @@
         e.preventDefault();
         // 阻止 Lightbox 的 window keydown 也响应本次空格。
         e.stopImmediatePropagation();
-        const idx = $feedItems.findIndex((it) => it.id === previewId);
+        const media = $mediaItems;
+        const idx = media.findIndex((it) => it.id === previewId);
         if (idx >= 0) {
-          const preview = $feedItems[idx];
-          if (preview?.kind === "video") {
-            openVideo(preview);
-            return;
-          }
+          const preview = media[idx];
+          if (preview.kind === "video") { openVideo(preview); return; }
+          if (preview.kind === "audio") { playAudio(preview); return; }
           lightboxIndex = idx;
           lightboxOpen = true;
         }
@@ -597,6 +663,8 @@
   // 既保留 mtime 顺序（不 shuffle），又让每列内自然横竖混合。
   // 因为列宽是 px 固定，拖动缩放滑块时缩略图会真的变大变小。
   const COL_GAP = 8;
+  // 首帧还没量到容器宽度时用的列宽（只影响第一次排到哪一列）
+  const FALLBACK_COLUMN_WIDTH = 220;
 
   // 容器宽度，由 bind:clientWidth 写入
   let containerWidth = $state(0);
@@ -605,6 +673,21 @@
   let prevLightboxOpen = false;
   let savedScrollTop = 0;
 
+  // 实时事件（新图入库）会整段重拉 feed。不接这个桥，正在翻的列表会跳回顶部。
+  onMount(() => {
+    setFeedScrollBridge({
+      capture: () => scrollerEl?.scrollTop ?? 0,
+      restore: (value) => { if (scrollerEl) scrollerEl.scrollTop = value; },
+    });
+    return () => setFeedScrollBridge(null);
+  });
+
+  // 距底不足一屏的三分之一就接着要下一页（所有 scope 同一套，FEED_PAGE 一页）
+  function onScrollerScroll(e: Event) {
+    const el = e.currentTarget as HTMLElement;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 320) void loadMoreFeed();
+  }
+
 
   // 列数随容器宽度 + 缩放基线变
   // 列数直接来自 slider（4-12）；不靠容器宽度推算，避免临界点跳动
@@ -612,8 +695,11 @@
 
   // 列宽 = 容器宽均分 + gap，用于贪心分列预计算高度
   let columnWidth = $derived.by(() => {
-    if (containerWidth <= 0) return 0;
     const n = columnCount;
+    // 容器宽度要等首帧布局后才测到。宽度未知时不能返回空列：Svelte 的 each 块
+    // 若以空数组创建，之后补进来的卡片（卡里有 {#if}）不会渲染，整屏就是空白。
+    // 所以先按兜底列宽排布，测到真实宽度后同一次更新里重排。
+    if (containerWidth <= 0) return FALLBACK_COLUMN_WIDTH;
     return (containerWidth - (n - 1) * COL_GAP) / n;
   });
 
@@ -621,13 +707,12 @@
   let columns = $derived.by(() => {
     const n = columnCount;
     const w = columnWidth;
-    const cols: { items: ImageSummary[]; height: number }[] = Array.from(
+    const cols: { items: ItemSummary[]; height: number }[] = Array.from(
       { length: n },
       () => ({ items: [], height: 0 }),
     );
-    if (w <= 0) return cols;
     for (const it of $feedItems) {
-      const ratio = thumbnailHeightToWidthRatio(it.filename, it.kind, it.width, it.height);
+      const ratio = ratioFor(it);
       const h = w * ratio + COL_GAP;
       // 找当前最矮的列
       let target = cols[0];
@@ -659,15 +744,15 @@
 
 <svelte:window onkeydown={handleKey} />
 
-<div class="gallery-toolbar px-4 py-3 grid items-center gap-3 border-b border-border bg-surface shrink-0">
+<div class="gallery-toolbar px-4 py-3 items-center border-b border-border bg-surface shrink-0">
   <div class="toolbar-info flex items-center gap-3 min-w-0">
   <div>
     <div class="text-base font-medium">{$activeFolderName}</div>
     <div class="text-xs text-muted mt-0">
-      {$feedTotal} {unit}
+      {totalLabel}
       {#if selectedCount > 0}
         <span class="ml-2 inline-flex items-center gap-1 text-accent">
-          <span>已选 {selectedCount} {unit}</span>
+          <span>{selectedLabel}</span>
           <button
             type="button"
             class="px-1.5 py-0.5 text-[11px] rounded border border-border hover:border-accent"
@@ -678,12 +763,13 @@
       {/if}
     </div>
   </div>
-  {#if selectedCount === 2 && $kind === 'image'}
-    <button class="compare-trigger shrink-0 rounded-lg px-2 py-2 text-xs" onclick={() => { const i = $feedItems.findIndex(it => $multiSelectedIds.has(it.id)); if (i >= 0) openLightbox($feedItems[i], i); }}>对比图片</button>
+  {#if comparePair}
+    <button class="compare-trigger shrink-0 rounded-lg px-2 py-2 text-xs" onclick={() => { const media = $mediaItems; const i = media.findIndex(it => $multiSelectedIds.has(it.id)); if (i >= 0) openLightbox(media[i], i); }}>对比图片</button>
   {/if}
   </div>
-  <GallerySearch label={$kind === 'video' ? '搜索视频' : '搜索图片'} />
-  <div class="ml-auto flex items-center gap-2 text-[12.5px] text-muted">
+  <GallerySearch label={$scope === 'all' ? '搜索图片、视频、音频、文本' : $scope === 'video' ? '搜索视频' : $scope === 'audio' ? '搜索音频' : '搜索图片'} />
+  <div class="toolbar-actions flex flex-wrap items-center text-[12.5px] text-muted">
+    <TypeChips />
     <input
       type="range"
       min="4"
@@ -695,7 +781,6 @@
       class="columns-slider w-20"
       style="--value: {$targetColumns}"
     />
-    <ContentSwitcher />
   </div>
 </div>
 
@@ -706,8 +791,9 @@
   ondragover={onDragOver}
   ondragleave={onDragLeave}
   ondrop={onDrop}
+  onscroll={onScrollerScroll}
   role="region"
-  aria-label="图片流；可拖拽文件到此处导入，鼠标停在此处按 Ctrl+V 导入剪贴板图片"
+  aria-label="素材流；可拖拽文件到此处导入，鼠标停在此处按 Ctrl+V 导入剪贴板内容"
 >
   {#if dragHover}
     <div
@@ -731,7 +817,7 @@
               </span>
             {/if}
           </div>
-          <div class="text-[11px] text-muted/80 mt-2">支持 PNG / WebP / JPG / JPEG / MP4 / MOV / WebM 等；也可以按 Ctrl+V 导入剪贴板内容</div>
+          <div class="text-[11px] text-muted/80 mt-2">支持图片 / 视频 / 音频（MP3 · WAV · FLAC · M4A · AAC · OPUS · OGG）；也可以按 Ctrl+V 导入剪贴板内容</div>
         {/if}
       </div>
     </div>
@@ -762,16 +848,31 @@
       >
         {#each columns as col}
           <div class="masonry-col" style="gap: {COL_GAP}px;">
-            {#each col.items as it (it.id)}
+            {#each col.items as it (itemUid(it))}
+              {#if it.item_type === "text"}
+                <button
+                  type="button"
+                  class="text-card"
+                  style="aspect-ratio: {aspectFor(it)}; width: 100%;"
+                  title={it.filename}
+                  aria-label={it.filename}
+                  onclick={() => openTextItem(it)}
+                  onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openTextItem(it); } }}
+                >
+                  <span class="text-format">{textFormatLabel(it.format)}</span>
+                  <span class="text-name">{it.filename}</span>
+                  <p class="text-excerpt">{it.excerpt || "（空文档）"}</p>
+                </button>
+              {:else}
               <button
                 type="button"
-                class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 text-left {$multiSelectedIds.has(it.id) ? 'is-selected' : ''} {$newIds.has(it.id) ? 'new-badge' : ''}"
+                class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 text-left {$multiSelectedIds.has(it.id) ? 'is-selected' : ''} {$newIds.has(it.id) ? 'new-badge' : ''} {$playingAudio?.id === it.id && it.kind === 'audio' ? 'is-playing' : ''}"
                 style="aspect-ratio: {aspectFor(it)}; width: 100%;"
                 title={it.filename}
                 onclick={(e) => { if (draggedOriginal) { draggedOriginal = false; return; } onThumbClick(e, it); }}
                 onpointerdown={(e) => pointerOnImage(e, it)}
                 ondragstart={(e) => e.preventDefault()}
-                ondblclick={() => { if (it.kind !== "video") openLightbox(it, $feedItems.findIndex((x) => x.id === it.id)); }}
+                ondblclick={() => { if (it.kind === "audio") { playAudio(it); return; } if (it.kind === "video") return; openLightbox(it, $mediaItems.findIndex((x) => x.item_type === "media" && x.id === it.id)); }}
                 oncontextmenu={(e) => openContextMenu(e, it)}
                 onmouseenter={() => (hoveredId = it.id)}
                 onmouseleave={() => { if (hoveredId === it.id) hoveredId = null; }}
@@ -785,6 +886,11 @@
                   decoding="async"
                   onerror={(e) => {
                     if (it.kind === "video") return;
+                    if (it.kind === "audio") {
+                      waveFailedIds = new Set([...waveFailedIds, it.id]);
+                      if (e.currentTarget instanceof HTMLImageElement) e.currentTarget.style.visibility = "hidden";
+                      return;
+                    }
                     if (isPsdFilename(it.filename)) previewFailedIds = new Set([...previewFailedIds, it.id]);
                     checkMissing(it.id, e.currentTarget as HTMLImageElement);
                   }}
@@ -792,25 +898,41 @@
                   class:object-cover={thumbnailObjectFit(it.filename) === "cover"}
                   class:object-contain={thumbnailObjectFit(it.filename) === "contain"}
                 />
+                {#if waveFailedIds.has(it.id)}
+                  <span class="absolute inset-0 flex items-center justify-center text-muted" aria-label="波形暂不可用"><Icon name="music" size={24} /></span>
+                {/if}
                 {#if previewFailedIds.has(it.id)}
                   <span class="absolute inset-0 flex items-center justify-center px-2 text-center text-xs text-muted" aria-label="PSD 预览不可用">PSD 预览不可用</span>
                 {/if}
-                {#if it.kind === "video"}
+                {#if it.kind === "video" || it.kind === "audio"}
                   <div
                     role="button"
                     tabindex="-1"
                     class="video-play-btn absolute inset-0 flex items-center justify-center"
-                    title="播放视频"
-                    aria-label="播放 {it.filename}"
-                    onclick={(e) => { e.stopPropagation(); e.preventDefault(); if (draggedOriginal) { draggedOriginal = false; return; } openVideo(it); }}
+                    title={it.kind === "audio" ? ($playingAudio?.id === it.id ? "暂停音频" : "播放音频") : "播放视频"}
+                    aria-label={(it.kind === "audio" && $playingAudio?.id === it.id ? "暂停 " : "播放 ") + it.filename}
+                    onclick={(e) => { e.stopPropagation(); e.preventDefault(); if (draggedOriginal) { draggedOriginal = false; return; } if (it.kind === "audio") { toggleAudio(it); return; } openVideo(it); }}
                     onpointerdown={(e) => { e.stopPropagation(); pointerOnImage(e, it); }}
                     onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openVideo(it); } }}
                   >
-                    <svg viewBox="0 0 24 24" aria-hidden="true" class="video-play-icon drop-shadow-lg">
-                      <circle cx="12" cy="12" r="9.2" fill="rgba(0,0,0,0.35)" stroke="#fff" stroke-width="1.5"/>
-                      <path d="M9.7 7.9 16.4 12 9.7 16.1 Z" fill="#fff" stroke="#fff" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
-                    </svg>
+                    {#if it.kind === "audio" && $playingAudio?.id === it.id}
+                      <svg viewBox="0 0 24 24" aria-hidden="true" class="video-play-icon drop-shadow-lg">
+                        <circle cx="12" cy="12" r="9.2" fill="rgba(0,0,0,0.35)" stroke="#fff" stroke-width="1.5"/>
+                        <path d="M9.9 8.4v7.2M14.1 8.4v7.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+                      </svg>
+                    {:else}
+                      <svg viewBox="0 0 24 24" aria-hidden="true" class="video-play-icon drop-shadow-lg">
+                        <circle cx="12" cy="12" r="9.2" fill="rgba(0,0,0,0.35)" stroke="#fff" stroke-width="1.5"/>
+                        <path d="M9.7 7.9 16.4 12 9.7 16.1 Z" fill="#fff" stroke="#fff" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+                      </svg>
+                    {/if}
                   </div>
+                {/if}
+                {#if it.kind === "audio" && it.duration_seconds}
+                  <span class="media-duration">{formatDuration($playingAudio?.id === it.id && $audioProgress > 0 ? $audioProgress : it.duration_seconds)}</span>
+                {/if}
+                {#if it.kind === "audio" && $playingAudio?.id === it.id}
+                  <span class="audio-progress" style="width: {audioPercent(it)}%;" aria-hidden="true"></span>
                 {/if}
                 <div class="image-name absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] truncate"
                   role="button" tabindex="0" aria-label="图片名称"
@@ -825,9 +947,6 @@
                       onblur={() => saveRename(it)} />
                   {:else}{it.filename}{/if}
                 </div>
-                {#if it.favorite}
-                  <div class="favorite-badge absolute top-1 right-10 w-6 h-7 flex items-center justify-center text-danger text-[14px] drop-shadow" aria-label="已收藏">♥</div>
-                {/if}
 
                 {#if $comfyuiStatus.running && it.has_workflow && (hoveredId === it.id || $selectedIdStore === it.id || $multiSelectedIds.has(it.id))}
                   <div
@@ -846,10 +965,16 @@
                   <div class="absolute bottom-8 left-1 bg-success text-bg text-[10px] font-bold px-1.5 rounded shadow">NEW</div>
                 {/if}
               </button>
+              {/if}
             {/each}
           </div>
         {/each}
       </div>
+      {#if $feedLoadingMore}
+        <div class="feed-more" role="status">正在加载…</div>
+      {:else if $feedItems.length > 0 && $feedItems.length < $feedTotal}
+        <div class="feed-more feed-more-hint">已加载 {$feedItems.length} / {$feedTotal}，继续滚动</div>
+      {/if}
     </div>
   {/if}
 </div>
@@ -868,9 +993,59 @@
   .thumb.is-selected::after { content: ""; position: absolute; inset: 0; box-sizing: border-box; border: 2px solid #d4d4d4; border-radius: inherit; pointer-events: none; z-index: 3; }
   .image-rename { min-width: 0; border: 1px solid #888; border-radius: 3px; background: #222; color: #eee; padding: 1px 3px; outline: none; font: inherit; }
   .import-progress { position: sticky; top: 0; z-index: 25; width: fit-content; margin: 0 auto 8px; padding: 6px 12px; background: #292929; border-radius: 16px; font-size: 12px; color: #ddd; }
-  .gallery-toolbar { grid-template-columns: minmax(100px, 1fr) minmax(120px, 2fr) minmax(280px, 1fr); }
+  /* 「所有素材」里的文本卡：21:9 横幅只读入口。徽标 + 标题一行 + 摘录两行，点开进文本工作区。
+     卡片只有约 1/3 列宽那么高，装不下第四行，所以悬停提示整行删掉（标题 tooltip 够用）。 */
+  .text-card {
+    position: relative; display: flex; flex-direction: column; gap: 3px; flex: none; min-height: 0;
+    padding: 8px 10px; border: 1px solid rgb(50 50 55); border-radius: 6px; overflow: hidden;
+    background: linear-gradient(180deg, #232326, #1c1c1f); color: #d8d8dc;
+    text-align: left; cursor: pointer; user-select: none;
+  }
+  .text-card:hover { border-color: #6a6a70; background: linear-gradient(180deg, #27272b, #1f1f22); }
+  .text-card:focus-visible { outline: 2px solid #f24e4e; outline-offset: 1px; }
+  .text-format {
+    align-self: flex-start; padding: 1px 5px; border-radius: 4px; background: #f24e4e1f;
+    color: #f2a0a0; font-size: 9.5px; letter-spacing: .04em;
+  }
+  .text-name {
+    font-size: 12px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .text-excerpt {
+    margin: 0; flex: 1; font-size: 11px; line-height: 1.4; color: #8a8a8e;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  /* 音频卡：时长是唯一硬信息，放在左上角避开底部文件名条 */
+  .media-duration {
+    position: absolute; top: 6px; left: 6px; z-index: 2; padding: 1px 5px; border-radius: 5px;
+    background: rgba(0, 0, 0, .62); color: #eaeaea; font-size: 10.5px;
+    font-variant-numeric: tabular-nums; pointer-events: none;
+  }
+  /* 播放中的音频卡不描红边 —— 边框与图片/视频完全一致，只靠顶部进度线和暂停图标表意 */
+  .audio-progress { position: absolute; top: 0; left: 0; height: 2px; background: #f24e4e; opacity: .9; pointer-events: none; transition: width .12s linear; }
+  .feed-more { text-align: center; padding: 14px 0 6px; font-size: 11.5px; color: #8a8a8e; }
+  .feed-more-hint { color: #5c5c62; }
+  /* 工具栏两段式布局。
+     宽列（≥1280px）：三段网格，左右两条轨道都是 minmax(0,1fr) —— 两侧严格等宽，
+     中列才是几何居中，搜索框不再因为「左边标题短、右边控件长」被拽偏。
+     侧轨 min 必须留 0：0.2.22 的裁切事故就是网格侧列设了 min 下限，撑破容器把控件整段切掉。
+     窄列（详情栏打开 / 窗口变小）：退回可换行 flex，控件整组贴右、放不下整段换行，不裁切。 */
+  .gallery-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(200px, 30%) minmax(0, 1fr); column-gap: 12px; row-gap: 8px; }
+  .toolbar-info { min-width: 0; }
+  .toolbar-actions { min-width: 0; justify-content: flex-end; column-gap: 8px; row-gap: 6px; }
+  .toolbar-actions .columns-slider { flex-shrink: 0; }
+  /* 侧轨要装下控件组（排序 + chips + 滑块约 416px），中列取 30% 才留得下：
+     代数关系 sides = 0.35 * 内容宽 - 12 ≥ 416 → 容器要 ≥ 1255，这里取 1280。
+     再窄就退回可换行 flex（0.2.22 的行为），不为了居中把滑块挤到第二行。 */
+  @container (max-width: 1280px) {
+    .gallery-toolbar { display: flex; flex-wrap: wrap; }
+    .toolbar-info { flex: 1 1 150px; }
+    /* GallerySearch 是另一个组件，样式拿不到作用域类，只能用 :global 命中 */
+    :global(.gallery-toolbar .gallery-search) { flex: 0 1 clamp(200px, 30%, 480px); }
+    /* 整组贴右：不占剩余空间，靠 margin-left:auto 顶到滑块那一侧，chips 与滑块之间只留一个 gap */
+    .toolbar-actions { flex: 0 1 auto; margin-left: auto; justify-content: flex-end; min-width: 0; column-gap: 8px; row-gap: 6px; }
+  }
   @container (max-width: 650px) {
-    .gallery-toolbar { grid-template-columns:minmax(80px,1fr) auto; gap:8px; padding-inline:10px; }
+    .gallery-toolbar { padding-inline: 10px; }
     .toolbar-info { display:none; }
     .gallery-toolbar .columns-slider { width:48px; }
   }

@@ -2,7 +2,7 @@ import { backendUrl } from './backend-url';
 
 export interface TextSummary {
   id: number; path: string; filename: string; format: string; excerpt: string;
-  mtime: number; created: number; opened: number; favorite: boolean; tags: string[];
+  mtime: number; created: number; opened: number; tags: string[];
   missing: boolean; error: string; match_offset?: number;
 }
 export interface TextDetail extends TextSummary {
@@ -33,7 +33,7 @@ export const textsApi = {
   create: (payload: { directory: string; name: string; body?: string; folder_id?: number | null }) => request<TextDetail>('', 'POST', payload),
   save: (id: number, body: string, version: string, encoding: string | null, resolving_conflict = false) => request<TextDetail>(`/${id}`, 'PUT', { body, version, encoding, resolving_conflict }),
   reveal: (id: number) => request(`/${id}/reveal`, 'POST'),
-  meta: (id: number, payload: { favorite?: boolean; tags?: string[] }) => request<TextSummary>(`/${id}`, 'PATCH', payload),
+  meta: (id: number, payload: { tags?: string[] }) => request<TextSummary>(`/${id}`, 'PATCH', payload),
   move: (id: number, directory: string, name: string, version: string) => request<TextDetail>(`/${id}/move`, 'POST', { directory, name, version }),
   trash: (id: number, version: string) => request(`/${id}/trash`, 'POST', { version }),
   history: (id: number) => request<TextHistory[]>(`/${id}/history`),

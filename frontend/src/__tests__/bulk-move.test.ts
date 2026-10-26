@@ -25,16 +25,16 @@ describe("FolderPickerModal 列表逻辑", () => {
 
   it("只 system folder → 返回空（不能选 system）", () => {
     const tree: FolderNode[] = [
-      { id: 1, parent_id: null, name: "krea2", order: 0, image_count: 80, recursive_count: 80, is_system: true, children: [] },
-      { id: 2, parent_id: null, name: "video", order: 0, image_count: 16, recursive_count: 16, is_system: true, children: [] },
+      { id: 1, parent_id: null, name: "krea2", order: 0, counts: { image: 80, video: 0, audio: 0, text: 0 }, total: 80, is_system: true, children: [] },
+      { id: 2, parent_id: null, name: "video", order: 0, counts: { image: 16, video: 0, audio: 0, text: 0 }, total: 16, is_system: true, children: [] },
     ];
     expect(flattenUserFolders(tree)).toEqual([]);
   });
 
   it("只 user folder → 全返回", () => {
     const tree: FolderNode[] = [
-      { id: 1, parent_id: null, name: "灵感", order: 0, image_count: 0, recursive_count: 2, children: [] },
-      { id: 2, parent_id: null, name: "草稿", order: 0, image_count: 0, recursive_count: 0, children: [] },
+      { id: 1, parent_id: null, name: "灵感", order: 0, counts: { image: 2, video: 0, audio: 0, text: 0 }, total: 2, children: [] },
+      { id: 2, parent_id: null, name: "草稿", order: 0, counts: { image: 0, video: 0, audio: 0, text: 0 }, total: 0, children: [] },
     ];
     const flat = flattenUserFolders(tree);
     expect(flat).toHaveLength(2);
@@ -45,11 +45,11 @@ describe("FolderPickerModal 列表逻辑", () => {
 
   it("混合树 → 只保留 user folder 子树，system folder 整棵跳过", () => {
     const tree: FolderNode[] = [
-      { id: 10, parent_id: null, name: "krea2", order: 0, image_count: 0, recursive_count: 80, is_system: true, children: [
-        { id: 11, parent_id: 10, name: "foo", order: 0, image_count: 0, recursive_count: 80, is_system: true, children: [] },
+      { id: 10, parent_id: null, name: "krea2", order: 0, counts: { image: 80, video: 0, audio: 0, text: 0 }, total: 80, is_system: true, children: [
+        { id: 11, parent_id: 10, name: "foo", order: 0, counts: { image: 80, video: 0, audio: 0, text: 0 }, total: 80, is_system: true, children: [] },
       ] },
-      { id: 1, parent_id: null, name: "项目", order: 0, image_count: 0, recursive_count: 1, children: [
-        { id: 2, parent_id: 1, name: "角色定妆", order: 0, image_count: 0, recursive_count: 0, children: [] },
+      { id: 1, parent_id: null, name: "项目", order: 0, counts: { image: 1, video: 0, audio: 0, text: 0 }, total: 1, children: [
+        { id: 2, parent_id: 1, name: "角色定妆", order: 0, counts: { image: 0, video: 0, audio: 0, text: 0 }, total: 0, children: [] },
       ] },
     ];
     const flat = flattenUserFolders(tree);
@@ -61,11 +61,11 @@ describe("FolderPickerModal 列表逻辑", () => {
   it("深度正确传递", () => {
     const tree: FolderNode[] = [
       {
-        id: 1, parent_id: null, name: "root", order: 0, image_count: 0, recursive_count: 0,
+        id: 1, parent_id: null, name: "root", order: 0, counts: { image: 0, video: 0, audio: 0, text: 0 }, total: 0,
         children: [
-          { id: 2, parent_id: 1, name: "mid", order: 0, image_count: 0, recursive_count: 0,
+          { id: 2, parent_id: 1, name: "mid", order: 0, counts: { image: 0, video: 0, audio: 0, text: 0 }, total: 0,
             children: [
-              { id: 3, parent_id: 2, name: "leaf", order: 0, image_count: 0, recursive_count: 0, children: [] },
+              { id: 3, parent_id: 2, name: "leaf", order: 0, counts: { image: 0, video: 0, audio: 0, text: 0 }, total: 0, children: [] },
             ],
           },
         ],

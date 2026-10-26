@@ -1,6 +1,19 @@
 import { writable, derived, get } from "svelte/store";
-import type { ComfyuiStatus, FeedResponse, FolderNode, ImageDetail, ImageSummary, MediaKind, ScanProgress, Stats } from "./types";
-import { foldersApi, imagesApi, scanApi, statsApi } from "./api";
+import { tick } from "svelte";
+import type {
+  ComfyuiStatus,
+  FolderCounts,
+  FolderNode,
+  ImageDetail,
+  ItemKind,
+  ItemSummary,
+  MediaFeedItem,
+  Scope,
+  ScanProgress,
+  Stats,
+} from "./types";
+import { foldersApi, imagesApi, itemsApi, scanApi, statsApi } from "./api";
+import { isMediaItem, itemUid, mediaOnly } from "./items";
 import { nextSelection, type Modifier, type SelectionState } from "./selection";
 
 // ---------- 当前选中图片详情 ----------
@@ -14,45 +27,132 @@ export const selectedId = writable<number | null>(null);
 // - selectedId: 单选 / 主选。DetailPanel 和 Lightbox 都靠它驱动，保持向后兼容。
 // - multiSelectedIds: 当前被选中的 id 集合（>=1 个）。环形高亮用它。
 // - selectionAnchorId: shift 区间选的锚点。每次"非 shift"点击会更新。
-//   设计上 selectionAnchorId === selectedId（最后一次非 shift 的 primary），
-//   但单独存一份便于 shift 在 primary 之外扩展（例如：先单选 A，ctrl 选 B，
-//   再 shift 点 C，区间从 B → C，而不是 A → C）。
+//   选区只覆盖媒体项：文本卡在统一流里是只读入口，不参与选区。
 export const multiSelectedIds = writable<Set<number>>(new Set());
 export const selectionAnchorId = writable<number | null>(null);
 
-// ---------- Feed 视图状态 ----------
+// ---------- 浏览口径（scope） ----------
+//
+// 侧栏一行 = 一个 scope，同时决定：feed 请求参数、计数量词、卡片类型、快捷键。
+// 0.2.21 之前这是 kind + textMode + view 三个 store，同一行数字在三种组合下含义不同，
+// 用户看不出「这个数字数的是什么」；现在收成一个 scope，口径由 lib/counts.ts 单点定义。
 
+export const scope = writable<Scope>("all");
+export const textMode = derived(scope, (s) => s === "text");
 
 export const folderId = writable<number | null>(null);
-export const view = writable<"all" | "favorite" | "recent">("all");
-export const kind = writable<MediaKind>("image");
 export const query = writable<string>("");
 export const tag = writable<string | null>(null);
-export const textMode = writable(false);
-export const textTotal = writable(0);
-type ContentType = MediaKind | 'text';
-const contentViews = new Map<ContentType, { folder: number | null; view: 'all' | 'favorite' | 'recent'; query: string; tag: string | null }>();
-export function switchContent(next: ContentType, all = false, keepFolder = false) {
-  const current: ContentType = get(textMode) ? 'text' : get(kind);
+
+/** 每个 scope 记住自己的文件夹与搜索条件，切回来不用重新选。 */
+type ScopeMemory = { folder: number | null; query: string; tag: string | null };
+const scopeMemory = new Map<Scope, ScopeMemory>();
+
+export function switchContent(next: Scope, all = false, keepFolder = false) {
+  const current = get(scope);
+  if (current !== next) {
+    scopeMemory.set(current, { folder: get(folderId), query: get(query), tag: get(tag) });
+  }
+  const saved = scopeMemory.get(next);
   const folder = get(folderId);
-  contentViews.set(current, { folder, view: get(view), query: get(query), tag: get(tag) });
-  const saved = contentViews.get(next);
-  textMode.set(next === 'text');
-  if (next !== 'text') kind.set(next);
+  scope.set(next);
   folderId.set(keepFolder ? folder : all ? null : saved?.folder ?? null);
-  view.set(all || keepFolder ? 'all' : saved?.view ?? 'all');
-  query.set(all ? '' : saved?.query ?? ''); tag.set(all ? null : saved?.tag ?? null);
+  query.set(all ? "" : saved?.query ?? "");
+  tag.set(all ? null : saved?.tag ?? null);
+}
+
+/**
+ * 「所有素材」的类型过滤（chips）：**单选**。
+ * 「全部」= 四类都要；点某一类 = 只看那一类。原来做成可任意组合的多选，
+ * 长相是切换器、行为是筛选器，第二下几乎没人点；改成和侧栏同构的单选。
+ */
+export const ALL_KINDS: readonly ItemKind[] = ["image", "video", "audio", "text"];
+export type KindFilter = ItemKind | "all";
+const KIND_STORAGE_KEY = "seekx.item-kind.v1";
+/** 0.2.22 r4 之前的多选键，只用于一次性迁移；组合选择单选表达不了，直接放弃。 */
+const LEGACY_KINDS_KEY = "seekx.item-kinds.v1";
+
+function isKind(value: unknown): value is ItemKind {
+  return typeof value === "string" && (ALL_KINDS as readonly string[]).includes(value);
+}
+
+function readStoredKindFilter(): KindFilter {
+  try {
+    const saved = localStorage.getItem(KIND_STORAGE_KEY);
+    if (isKind(saved)) return saved;
+    const legacy = localStorage.getItem(LEGACY_KINDS_KEY);
+    if (legacy !== null) {
+      localStorage.removeItem(LEGACY_KINDS_KEY);
+      const parsed: unknown = JSON.parse(legacy);
+      const picked = Array.isArray(parsed) ? parsed.filter(isKind) : [];
+      if (picked.length === 1) return picked[0];
+    }
+    return "all";
+  } catch {
+    /* 隐私模式下 localStorage 不可用：过滤只在本次会话内生效，不影响浏览 */
+    return "all";
+  }
+}
+
+export const kindFilter = writable<KindFilter>(readStoredKindFilter());
+
+/** 单选：再点已选中的那一类不取消 —— 过滤条件为空没有意义。 */
+export function selectKind(next: KindFilter): void {
+  kindFilter.set(next);
+  try {
+    localStorage.setItem(KIND_STORAGE_KEY, next);
+  } catch {
+    /* 同上 */
+  }
+}
+
+/** 发给 /api/items 的 kinds：「全部」= 四类全带上，与后端 counts 口径一致。 */
+export function kindsOfFilter(value: KindFilter): ItemKind[] {
+  return value === "all" ? [...ALL_KINDS] : [value];
 }
 
 export const targetColumns = writable<number>(5);
 
-export const feedItems = writable<ImageSummary[]>([]);
+/** 统一流：scope==='all' 时是四类混排，其余 scope 只有媒体（或文本工作区自己加载）。 */
+export const feedItems = writable<ItemSummary[]>([]);
 export const feedTotal = writable<number>(0);
-
 export const feedLoading = writable<boolean>(false);
+export const feedLoadingMore = writable<boolean>(false);
+/** 当前过滤条件下的四类计数（不含 kinds 过滤），供工具栏与 chips 显示。 */
+export const feedCounts = writable<FolderCounts>({ image: 0, video: 0, audio: 0, text: 0 });
+
+/** 选区 / Lightbox / 删除 / 移动只认这条媒体子序列。 */
+export const mediaItems = derived(feedItems, (items) => mediaOnly(items));
+
+/** 当前在播的是哪条音频（null = 没有）。全应用只有一个 <audio> 实例（AudioEngine.svelte），
+ *  控制界面在音频卡本身上，没有待机播放条。 */
+export const playingAudio = writable<MediaFeedItem | null>(null);
+
+/** 当前播放位置（秒），由 AudioEngine 写入，只有 playingAudio 非空时有意义。 */
+export const audioProgress = writable<number>(0);
+
+export function playAudio(item: MediaFeedItem) {
+  audioProgress.set(0);
+  playingAudio.set(item);
+}
+
+export function stopAudio() {
+  playingAudio.set(null);
+  audioProgress.set(0);
+}
+
+/** 统一流里点文本卡 → 文本工作区要打开哪一篇。TextWorkspace 常驻（靠 display:none 隐藏），
+ *  卸载期的 window 事件会丢，所以走 store。 */
+export const pendingTextOpen = writable<number | null>(null);
 
 export const folders = writable<FolderNode[]>([]);
-export const stats = writable<Stats>({ total_images: 0, total_videos: 0, favorites: 0, folders: 0 });
+export const stats = writable<Stats>({
+  total_images: 0,
+  total_videos: 0,
+  total_audio: 0,
+  total_texts: 0,
+  folders: 0,
+});
 
 export const scanProgress = writable<ScanProgress>({
   running: false,
@@ -86,11 +186,11 @@ export function markNew(ids: number[]) {
 
 // ---------- 多选动作 ----------
 //
-// 调用方传入当前 feed 快照 + 被点的 id + 修饰键，
+// 调用方传入当前媒体子序列 + 被点的 id + 修饰键，
 // 由纯函数 nextSelection 计算新状态并写入 stores。
 
 export function applySelection(
-  feedItemsSnap: ImageSummary[],
+  mediaSnapshot: ReadonlyArray<{ id: number }>,
   clickId: number,
   modifier: Modifier,
 ): void {
@@ -99,7 +199,7 @@ export function applySelection(
     selected: getMultiSelectedIds(),
     anchor: getSelectionAnchorId(),
   };
-  const r = nextSelection(feedItemsSnap, current, clickId, modifier);
+  const r = nextSelection(mediaSnapshot, current, clickId, modifier);
   selectedId.set(r.primary);
   multiSelectedIds.set(r.selected);
   selectionAnchorId.set(r.anchor);
@@ -163,7 +263,7 @@ const pendingFeedRemovals = new Set<Set<number>>();
 export function removeImageFromFeed(id: number) {
   for (const pending of pendingFeedRemovals) pending.add(id);
   feedItems.update((items) => {
-    const next = items.filter((item) => item.id !== id);
+    const next = items.filter((item) => !(isMediaItem(item) && item.id === id));
     if (next.length !== items.length) feedTotal.update((n) => Math.max(0, n - 1));
     return next;
   });
@@ -187,39 +287,123 @@ export async function refreshSelectedDetail(ids?: Iterable<number>): Promise<voi
   }
 }
 
-let feedRequest = 0;
-export async function refreshFeed() {
+// ---------- feed 拉取 ----------
+
+/** 一屏 500 项：比原来一次性拉 1000 项首屏更快，剩下的滚到底再要。 */
+export const FEED_PAGE = 500;
+
+type FeedParams = {
+  folder: number | null;
+  scope: Scope;
+  q: string;
+  tag: string | null;
+  kinds: ItemKind[];
+};
+
+function currentFeedParams(): FeedParams {
+  return {
+    folder: get(folderId),
+    scope: get(scope),
+    q: get(query),
+    tag: get(tag),
+    kinds: kindsOfFilter(get(kindFilter)),
+  };
+}
+
+function countsForSingleKind(scope: Scope, total: number): FolderCounts {
+  const base: FolderCounts = { image: 0, video: 0, audio: 0, text: 0 };
+  if (scope !== "all" && scope !== "text") base[scope] = total;
+  return base;
+}
+
+/** Feed 注册进来：实时刷新要保住滚动位置，切换筛选则要回到顶部。 */
+let scrollBridge: { capture(): number; restore(value: number): void } | null = null;
+export function setFeedScrollBridge(bridge: typeof scrollBridge) {
+  scrollBridge = bridge;
+}
+
+async function fetchFeedPage(params: FeedParams, offset: number, removed: Set<number>) {
+  if (params.scope === "all") {
+    const resp = await itemsApi.list({
+      folder_id: params.folder,
+      q: params.q || undefined,
+      tag: params.tag || undefined,
+      kinds: params.kinds.join(","),
+      // 统一流固定「新的在前」：0.2.22 验收时撤掉了名称排序按钮，后端仍保留 sort 参数
+      sort: "mtime_desc",
+      limit: FEED_PAGE,
+      offset,
+    });
+    const items = resp.items.filter((item) => !(isMediaItem(item) && removed.has(item.id)));
+    return { items, total: Math.max(0, resp.total - (resp.items.length - items.length)), counts: resp.counts };
+  }
+  const resp = await imagesApi.list({
+    folder_id: params.folder,
+    kind: params.scope as Exclude<Scope, "all" | "text">,
+    q: params.q || undefined,
+    tag: params.tag || undefined,
+    limit: FEED_PAGE,
+    offset,
+  });
+  const items: MediaFeedItem[] = resp.items
+    .filter((item) => !removed.has(item.id))
+    .map((item) => ({ ...item, item_type: "media" as const }));
+  return {
+    items,
+    total: Math.max(0, resp.total - (resp.items.length - items.length)),
+    counts: countsForSingleKind(params.scope, resp.total),
+  };
+}
+
+export async function refreshFeed(opts?: { keepScroll?: boolean }): Promise<void> {
   if (get(textMode)) return;
   const request = ++feedRequest;
   const removed = new Set<number>();
   pendingFeedRemovals.add(removed);
+  const keepScroll = opts?.keepScroll === true;
+  const scrollTop = keepScroll ? (scrollBridge?.capture() ?? 0) : 0;
   feedLoading.set(true);
   try {
-    let folder: number | null | undefined;
-    let v: "all" | "favorite" | "recent" | undefined;
-    let k: MediaKind | undefined;
-    let q: string | undefined;
-    let tg: string | null | undefined;
-    folderId.subscribe((v) => (folder = v))();
-    view.subscribe((vv) => (v = vv as "all" | "favorite" | "recent"))();
-    kind.subscribe((kk) => (k = kk))();
-    query.subscribe((vv) => (q = vv))();
-    tag.subscribe((vv) => (tg = vv))();
-    const resp = await imagesApi.list({
-      folder_id: folder,
-      view: v === "all" ? undefined : v,
-      kind: k,
-      q,
-      tag: tg ?? undefined,
-      limit: 1000,
-    });
+    const params = currentFeedParams();
+    const page = await fetchFeedPage(params, 0, removed);
     if (request !== feedRequest) return;
-    const items = resp.items.filter((item) => !removed.has(item.id));
-    feedItems.set(items);
-    feedTotal.set(Math.max(0, resp.total - (resp.items.length - items.length)));
+    feedItems.set(page.items);
+    feedTotal.set(page.total);
+    feedCounts.set(page.counts);
+    if (keepScroll) {
+      await tick();
+      scrollBridge?.restore(scrollTop);
+    }
   } finally {
     pendingFeedRemovals.delete(removed);
     if (request === feedRequest) feedLoading.set(false);
+  }
+}
+
+/** 滚到底接着要下一页；重复项按 itemUid 去重，绝不出现在两屏里。 */
+export async function loadMoreFeed(): Promise<void> {
+  if (get(textMode) || get(feedLoading) || get(feedLoadingMore)) return;
+  const params = currentFeedParams();
+  const loaded = get(feedItems);
+  if (loaded.length >= get(feedTotal)) return;
+  const request = feedRequest;
+  feedLoadingMore.set(true);
+  try {
+    const page = await fetchFeedPage(params, loaded.length, new Set());
+    if (request !== feedRequest || get(feedItems).length !== loaded.length) return;
+    const seen = new Set(loaded.map((item) => itemUid(item)));
+    const merged = [...loaded];
+    for (const item of page.items) {
+      const uid = itemUid(item);
+      if (seen.has(uid)) continue;
+      seen.add(uid);
+      merged.push(item);
+    }
+    feedItems.set(merged);
+    feedTotal.set(Math.max(page.total, merged.length));
+    feedCounts.set(page.counts);
+  } finally {
+    feedLoadingMore.set(false);
   }
 }
 
@@ -227,18 +411,19 @@ export async function refreshScanProgress() {
   scanProgress.set(await scanApi.progress());
 }
 
-// 视图/筛选变化触发 feed 刷新
+// ---------- 订阅：口径/筛选变化 → 重拉 ----------
+
+let feedRequest = 0;
 let lastKey = "";
 async function feedAutoRefresh() {
-  let folder: number | null | undefined;
-  let v: "all" | "favorite" | "recent" | undefined;
-  let k: MediaKind | undefined;
-  let q: string | undefined;
-  folderId.subscribe((v) => (folder = v))();
-  view.subscribe((vv) => (v = vv as "all" | "favorite" | "recent"))();
-  kind.subscribe((kk) => (k = kk))();
-  query.subscribe((vv) => (q = vv))();
-  const key = String(folder ?? "") + "|" + String(v) + "|" + String(k) + "|" + String(q);
+  const params = currentFeedParams();
+  const key = [
+    params.folder ?? "",
+    params.scope,
+    params.q,
+    params.scope === "all" ? [...params.kinds].sort().join(",") : "",
+    params.tag ?? "",
+  ].join("|");
   if (key === lastKey) return;
   lastKey = key;
   await refreshFeed();
@@ -257,10 +442,10 @@ function debouncedRefresh() {
 }
 
 folderId.subscribe(debouncedRefresh);
-view.subscribe(debouncedRefresh);
-kind.subscribe(debouncedRefresh);
+scope.subscribe(debouncedRefresh);
 query.subscribe(debouncedRefresh);
 tag.subscribe(debouncedRefresh);
+kindFilter.subscribe(debouncedRefresh);
 
 // ---------- 选中图片详情加载 ----------
 
@@ -278,16 +463,16 @@ selectedId.subscribe(async (id) => {
   }
 });
 
-// 视图/筛选变化 → 清空选区（旧选中的 id 可能已经不在当前 feed）
+// 口径/筛选变化 → 清空选区（旧选中的 id 可能已经不在当前 feed）
 folderId.subscribe(() => clearSelection());
-view.subscribe(() => clearSelection());
-kind.subscribe(() => clearSelection());
+scope.subscribe(() => clearSelection());
 query.subscribe(() => clearSelection());
 tag.subscribe(() => clearSelection());
 
-// feedItems 变化（删除某张图 / 新入库）→ 把不存在的 id 从选区里剔除
+// feedItems 变化（删除某张图 / 新入库）→ 把不存在的 id 从选区里剔除。
+// 只看媒体子序列：文本项的 id 与媒体 id 会撞号，不能拿来验真。
 feedItems.subscribe((items) => {
-  const valid = new Set(items.map((it) => it.id));
+  const valid = new Set(mediaOnly(items).map((it) => it.id));
   let after = new Set<number>();
   multiSelectedIds.update((s) => {
     let changed = false;
@@ -312,24 +497,28 @@ feedItems.subscribe((items) => {
 
 // ---------- 派生：当前激活文件夹名 ----------
 
+const SCOPE_TITLES: Record<Scope, string> = {
+  all: "所有素材",
+  image: "全部图片",
+  video: "所有视频",
+  audio: "全部音频",
+  text: "全部文本",
+};
 
-export const activeFolderName = derived(
-    [folders, folderId, view, kind],
-    ([$folders, $folderId, $view, $kind]) => {
-      if ($view === "favorite") return "收藏";
-      if ($view === "recent") return "最近生成";
-      if ($folderId === null) return $kind === "video" ? "所有视频" : "全部图片";
-      const find = (nodes: FolderNode[]): FolderNode | null => {
-        for (const n of nodes) {
-          if (n.id === $folderId) return n;
-          const f = find(n.children);
-          if (f) return f;
-        }
-        return null;
-      };
-      return find($folders)?.name ?? ($kind === "video" ? "所有视频" : "全部图片");
+export const activeFolderName = derived([folders, folderId, scope], ([$folders, $folderId, $scope]) => {
+  if ($folderId === null) return SCOPE_TITLES[$scope];
+  const find = (nodes: FolderNode[]): FolderNode | null => {
+    for (const n of nodes) {
+      if (n.id === $folderId) return n;
+      const f = find(n.children);
+      if (f) return f;
     }
-);
+    return null;
+  };
+  return find($folders)?.name ?? SCOPE_TITLES[$scope];
+});
+
+export const activeScopeTitle = derived(scope, (s) => SCOPE_TITLES[s]);
 
 
 // ---------- ComfyUI 集成 ----------

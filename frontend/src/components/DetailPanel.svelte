@@ -24,8 +24,11 @@
     folders,
     refreshFolders,
     refreshSelectedDetail,
+    playAudio,
+    playingAudio,
+    stopAudio,
   } from "../lib/stores";
-  import { imagesApi } from "../lib/api";
+  import { audioApi, imagesApi } from "../lib/api";
   import { copyText, formatSize, formatDate, allParamsText } from "../lib/ws";
   import { pushToast } from "../lib/toast";
   import { extractLoras } from "../lib/params";
@@ -67,6 +70,14 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
   // ---------- 视频封面 ----------
   let coverModalOpen = $state(false);
 
+  // 音频波形是懒生成的：URL 404（ffmpeg 缺失 / 还没生成）时退回音符图形，
+  // 换一条音频要重新给一次机会。
+  let waveFailed = $state(false);
+  $effect(() => {
+    void $selectedDetail?.id;
+    waveFailed = false;
+  });
+
   async function refreshAfterCoverChange() {
     const id = $selectedDetail?.id;
     if (id == null) return;
@@ -75,7 +86,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
       selectedDetail.set(detail);
       feedItems.update((items) =>
         items.map((it) =>
-          it.id === id ? { ...it, thumbnail_url: detail.thumbnail_url } : it,
+          it.item_type === "media" && it.id === id ? { ...it, thumbnail_url: detail.thumbnail_url } : it,
         ),
       );
     } catch {
@@ -159,15 +170,6 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
     copy(nativePath(parentDirectory(d.path)), "文件夹路径");
   }
 
-  // ---------- 收藏 ----------
-  async function toggleFav() {
-    const d = $selectedDetail;
-    if (!d) return;
-    const fav = !d.favorite;
-    await imagesApi.toggleFavorite(d.id, fav);
-    selectedDetail.set({ ...d, favorite: fav });
-    notify(fav ? "已加入收藏" : "已取消收藏");
-  }
 
   // ---------- ComfyUI ----------
   import { comfyuiStatus } from "../lib/stores";
@@ -210,9 +212,9 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
       : [],
   );
 
-  // 缩略图 URL：视频用海报帧，图片用 ?max=256 预览；没有就 null
+  // 缩略图 URL：视频用海报帧、音频用波形图，图片用 ?max=256 预览；没有就 null
   function thumbUrl(d: ImageDetail): string | null {
-    if (d.kind === "video") return d.thumbnail_url ? backendUrl(d.thumbnail_url) : null;
+    if (d.kind === "video" || d.kind === "audio") return d.thumbnail_url ? backendUrl(d.thumbnail_url) : null;
     if (!d.original_url) return null;
     const sep = d.original_url.includes("?") ? "&" : "?";
     return backendUrl(`${d.original_url}${sep}max=256`);
@@ -226,16 +228,61 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
     return `${m}:${rem.toString().padStart(2, "0")}`;
   }
 
-  function videoInfoRows(d: ImageDetail) {
+  /**
+   * 音频信息行。
+   *
+   * 采样率 / 声道 / 码率没有独立表列 —— 后端 ffprobe 把它们落在 parameters.audio，
+   * 这里就地读，避免为三个只展示不检索的字段加列。
+   */
+  function audioInfoRows(d: ImageDetail) {
+    const extra = ((d.parameters ?? {}) as { audio?: Record<string, unknown> }).audio ?? {};
+    const num = (key: string): number => {
+      const raw = extra[key];
+      const value = typeof raw === "number" ? raw : Number(raw);
+      return Number.isFinite(value) ? value : 0;
+    };
+    const rate = num("sample_rate");
+    const channels = num("channels");
+    const bitrate = num("bit_rate");
+    const title = typeof extra.title === "string" ? extra.title : "";
+    const artist = typeof extra.artist === "string" ? extra.artist : "";
     return [
-      { label: "分辨率", value: d.width && d.height ? `${d.width}×${d.height}` : "—" },
       { label: "时长", value: formatDuration(d.duration_seconds) || "—" },
+      { label: "采样率", value: rate > 0 ? `${Math.round(rate / 100) / 10} kHz` : "—" },
+      { label: "声道", value: channels === 1 ? "单声道" : channels === 2 ? "立体声" : channels > 0 ? `${channels} 声道` : "—" },
+      { label: "编码", value: d.audio_codec ?? "—" },
+      { label: "码率", value: bitrate > 0 ? `${Math.round(bitrate / 1000)} kbps` : "—" },
       { label: "容器", value: d.format ?? "—" },
-      { label: "视频编码", value: d.video_codec ?? "—" },
-      { label: "音频编码", value: d.audio_codec ?? "—" },
-      { label: "帧率", value: d.fps != null ? `${d.fps} fps` : "—" },
       { label: "大小", value: formatSize(d.size_bytes) },
+      ...(title ? [{ label: "标题", value: title }] : []),
+      ...(artist ? [{ label: "艺术家", value: artist }] : []),
     ];
+  }
+
+  // 音频走全应用唯一的播放实例（AudioEngine，隐藏）：这里只是又一个入口，没有常驻底栏。
+  // 容器不被 WebView 支持时直接降级到系统播放器，不进播放态。
+  function toggleSelectedAudio() {
+    const d = $selectedDetail;
+    if (!d || d.kind !== "audio") return;
+    if ($playingAudio?.id === d.id) { stopAudio(); return; }
+    if (d.playable === false) { void openSelectedAudioExternally(); return; }
+    playAudio({ ...d, item_type: "media" });
+  }
+
+  async function openSelectedAudioExternally() {
+    const d = $selectedDetail;
+    if (!d || d.kind !== "audio") return;
+    try {
+      const r = await audioApi.open(d.id);
+      notify(r.ok ? "已用系统播放器打开" : "已请求用系统播放器打开", "success");
+    } catch (e) {
+      notify(`打开失败：${(e as Error).message}`, "error");
+    }
+  }
+
+  // 缩略图的点击语义按类型分：视频 = 改封面（面板里已不再重复放大图），其余 = 看大图
+  function headerThumbLabel(kind: string): string {
+    return kind === "video" ? "修改视频封面" : "查看大图";
   }
 
   // 打开视频播放器弹层（App.svelte 监听）
@@ -287,12 +334,6 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
         },
       },
       {
-        key: "f", action: "favorite",
-        handler: () => {
-          if ($selectedDetail) toggleFav();
-        },
-      },
-      {
         key: "t", action: "tags",
         handler: () => {
           if ($selectedDetail) showTagInput = !showTagInput;
@@ -338,9 +379,9 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
       <button
         type="button"
         class="shrink-0 w-12 h-12 rounded-md overflow-hidden bg-surface-3 border border-border hover:bg-bg focus:outline-none focus:border-accent transition-colors"
-        title="查看大图"
-        aria-label="查看大图"
-        onclick={() => d.kind === "video" ? playVideo() : openLightbox(d)}
+        title={headerThumbLabel(d.kind)}
+        aria-label={headerThumbLabel(d.kind)}
+        onclick={() => (d.kind === "video" ? (coverModalOpen = true) : openLightbox(d))}
       >
         {#if thumbUrl(d)}
           <img
@@ -351,7 +392,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
           />
         {:else}
           <div class="w-full h-full flex items-center justify-center text-muted">
-            <Icon name={d.kind === "video" ? "video" : "image"} size={20} />
+            <Icon name={d.kind === "video" ? "video" : d.kind === "audio" ? "music" : "image"} size={20} />
           </div>
         {/if}
       </button>
@@ -360,11 +401,12 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
         <div class="text-[13px] font-mono font-semibold truncate" title={d.filename}>{d.filename}</div>
         <div class="text-[11px] text-muted mt-0.5 flex gap-2 flex-wrap">
           {#if d.width && d.height}<span>{d.width}×{d.height}</span>{/if}
-          {#if d.kind === "video" && d.duration_seconds != null}<span>{formatDuration(d.duration_seconds)}</span>{/if}
+          {#if (d.kind === "video" || d.kind === "audio") && d.duration_seconds != null}<span>{formatDuration(d.duration_seconds)}</span>{/if}
+          {#if d.kind === "video" && d.fps != null}<span>{d.fps} fps</span>{/if}
           <span>{formatSize(d.size_bytes)}</span>
           <span>{formatDate(d.mtime)}</span>
         </div>
-        {#if d.kind !== "video" && d.seed !== null}
+        {#if d.kind === "image" && d.seed !== null}
           <div class="text-[11px] mt-0.5 flex items-center gap-1 text-muted">
             <Icon name="hash" size={10} />
             <span class="font-mono truncate" title={String(d.seed)}>{String(d.seed)}</span>
@@ -382,18 +424,17 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
       </div>
 
       <div class="shrink-0 flex items-center gap-1" data-menu-root>
-        <button
-          type="button"
-          class="p-1.5 rounded border border-border hover:bg-surface-3 transition-colors"
-          class:!border-danger={d.favorite}
-          class:text-danger={d.favorite}
-          title={d.favorite ? "取消收藏" : "加入收藏"}
-          aria-label={d.favorite ? "取消收藏" : "加入收藏"}
-          aria-pressed={d.favorite}
-          onclick={toggleFav}
-        >
-          <Icon name={d.favorite ? "heart-fill" : "heart"} size={14} />
-        </button>
+        {#if d.kind === "video"}
+          <button
+            type="button"
+            class="p-1.5 rounded border border-border hover:bg-surface-3 transition-colors"
+            title="播放视频"
+            aria-label="播放视频"
+            onclick={playVideo}
+          >
+            <Icon name="play" size={14} />
+          </button>
+        {/if}
         <button
           type="button"
           class="p-1.5 rounded border border-border hover:bg-surface-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
@@ -422,7 +463,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
               class="absolute right-0 top-full mt-1 z-30 bg-surface-2 border border-border rounded-md py-1 min-w-[180px] shadow-lg"
               role="menu"
             >
-              {#if d.kind !== "video"}
+              {#if d.kind === "image"}
               <button
                 type="button"
                 class="w-full text-left px-3 py-1.5 text-[12px] hover:bg-surface-3 flex items-center gap-2"
@@ -467,7 +508,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
               >
                 <Icon name="external-link" size={11} />复制绝对路径
               </button>
-              {#if d.kind !== "video"}
+              {#if d.kind === "image"}
               <button
                 type="button"
                 class="w-full text-left px-3 py-1.5 text-[12px] hover:bg-surface-3 flex items-center gap-2"
@@ -486,44 +527,6 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
     <!-- ============== Body ============== -->
     <div class="flex-1 overflow-y-auto p-4 space-y-4 detail-body">
       {#if d.kind === "video"}
-        <!-- 视频封面：可修改 -->
-        <section class="bg-surface-2 border border-border rounded-md overflow-hidden">
-          <div class="relative aspect-video w-full bg-black">
-            {#if thumbUrl(d)}
-              <img
-                src={thumbUrl(d)}
-                alt={d.filename}
-                class="absolute inset-0 w-full h-full object-cover"
-                loading="lazy"
-              />
-            {/if}
-            <div class="absolute inset-0 bg-black/25 flex items-center justify-center">
-              <button
-                type="button"
-                class="px-4 py-2 rounded-md bg-black/70 border border-white/20 hover:bg-accent text-white text-[12.5px] font-medium backdrop-blur-sm transition-colors"
-                title="修改视频封面"
-                aria-label="修改视频封面"
-                onclick={() => (coverModalOpen = true)}
-              >
-                修改封面
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <!-- 视频信息卡 -->
-        <section class="bg-surface-2 border border-border rounded-md p-3">
-          <h4 class="text-[11px] uppercase text-muted mb-2 tracking-wider">视频信息</h4>
-          <dl class="space-y-1.5 text-[12px]">
-            {#each videoInfoRows(d) as row}
-              <div class="flex justify-between gap-2">
-                <dt class="text-muted shrink-0">{row.label}</dt>
-                <dd class="font-mono text-zinc-200 text-right truncate">{row.value}</dd>
-              </div>
-            {/each}
-          </dl>
-        </section>
-
         <!-- ComfyUI 写进视频容器的提示词与工作流（外部下载的视频没有这两块） -->
         {#if d.positive_prompt}
           <PromptCard
@@ -552,6 +555,67 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
         {/key}
 
         <!-- 文件夹（视频不做标签） -->
+        <section>
+          <MetadataCard
+            tags={[]}
+            folderIds={d.folder_ids}
+            folders={$folders}
+            path={d.path}
+            onSwitchFolder={() => (showFolderPicker = true)}
+            onRevealLocation={revealLocation}
+            onCopyLocation={copyLocation}
+          />
+        </section>
+      {:else if d.kind === "audio"}
+        <!-- 音频：波形是懒生成 + 落盘缓存的预览，取不到就退回音符图形 -->
+        <section class="bg-surface-2 border border-border rounded-md overflow-hidden">
+          <div class="relative w-full bg-black flex items-center justify-center audio-wave" style="aspect-ratio: 21 / 9;">
+            {#if thumbUrl(d) && !waveFailed}
+              <img
+                src={thumbUrl(d)}
+                alt="波形"
+                class="absolute inset-0 w-full h-full object-contain"
+                loading="lazy"
+                onerror={() => (waveFailed = true)}
+              />
+            {:else}
+              <Icon name="music" size={34} />
+            {/if}
+          </div>
+          <div class="p-3 flex items-center gap-2">
+            <button
+              type="button"
+              class="flex-1 px-3 py-2 rounded-md bg-accent/15 border border-accent/40 hover:bg-accent text-accent hover:text-white text-[12.5px] font-medium transition-colors flex items-center justify-center gap-1.5"
+              title={$playingAudio?.id === d.id ? "暂停音频" : "播放音频"}
+              onclick={toggleSelectedAudio}
+            >
+              <Icon name={$playingAudio?.id === d.id ? "pause" : "play"} size={11} />{$playingAudio?.id === d.id ? "暂停" : "播放"}
+            </button>
+            <button
+              type="button"
+              class="px-3 py-2 rounded-md border border-border hover:bg-surface-3 text-[12.5px] transition-colors"
+              title="用系统播放器打开原文件"
+              onclick={openSelectedAudioExternally}
+            >
+              系统播放器
+            </button>
+          </div>
+        </section>
+
+        <!-- 音频信息卡 -->
+        <section class="bg-surface-2 border border-border rounded-md p-3">
+          <h4 class="text-[11px] uppercase text-muted mb-2 tracking-wider">音频信息</h4>
+          <dl class="space-y-1.5 text-[12px]">
+            {#each audioInfoRows(d) as row}
+              <div class="flex justify-between gap-2">
+                <dt class="text-muted shrink-0">{row.label}</dt>
+                <dd class="font-mono text-zinc-200 text-right truncate">{row.value}</dd>
+              </div>
+            {/each}
+          </dl>
+        </section>
+
+        <!-- 文件夹（音频不做标签、没有 Prompt 可反推） -->
         <section>
           <MetadataCard
             tags={[]}

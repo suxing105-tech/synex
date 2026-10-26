@@ -10,8 +10,8 @@ const userFolder: FolderNode = {
   parent_id: null,
   name: "影驰",
   order: 0,
-  image_count: 3,
-  recursive_count: 3,
+  counts: { image: 3, video: 0, audio: 0, text: 0 },
+  total: 3,
   path: "C:/SeekX-Data/folders/影驰",
   children: [],
 };

@@ -192,6 +192,6 @@ describe('Feed wiring', () => {
     expect(feed()).toContain('subscribeClipboardPaste(() => scrollerEl');
     expect(feed()).toContain('await importFiles(files)');
     expect(feed()).toContain('return isAcceptedMediaFile(f);');
-    expect(feed()).toContain('Ctrl+V 导入剪贴板图片');
+    expect(feed()).toContain('Ctrl+V 导入剪贴板内容');
   });
 });

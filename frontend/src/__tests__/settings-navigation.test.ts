@@ -3,7 +3,8 @@ import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import SettingsModal from '../components/SettingsModal.svelte';
 import { settingsApi } from '../lib/api';
 vi.mock('../lib/api', () => ({
-  settingsApi: { get: vi.fn(async () => ({ watch_dirs: ['C:/素材'], live_enabled: true })), update: vi.fn(async (cfg) => cfg) },
+  itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) },
+settingsApi: { get: vi.fn(async () => ({ watch_dirs: ['C:/素材'], live_enabled: true })), update: vi.fn(async (cfg) => cfg) },
   comfyuiApi: { status: vi.fn(async () => ({ running: false, enabled: true, url: 'http://127.0.0.1:8188' })) },
   imagesApi: { list: vi.fn(async () => ({ items: [], total: 0 })) },
   http: vi.fn(async (path: string) => path === '/api/reverse-prompt-settings' ? { default_model_id: null, instruction: '', default_instruction: '' } : []),

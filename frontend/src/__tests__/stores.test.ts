@@ -1,8 +1,27 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import { vi } from "vitest";
+
+// stores 里有「筛选变化 → 200ms 防抖重拉」的订阅。本文件不测这条链路，
+// 但 beforeEach 会动 query/scope，定时器就会真去请求本机 3000 端口 ——
+// 开发服务器开着的时候它会用真实数据覆盖 feedItems，测试因此变flaky。
+// 这里给一个永不落地的 promise：不发网络请求，也不改任何状态。
+vi.mock("../lib/api", () => {
+  const never: () => Promise<never> = () => new Promise(() => {});
+  return {
+    itemsApi: { list: never },
+    imagesApi: { list: never, detail: never },
+    foldersApi: { tree: never },
+    statsApi: { get: never },
+    scanApi: { progress: never },
+    comfyuiApi: {},
+    audioApi: { open: never },
+  };
+});
 import { get } from "svelte/store";
 import {
   query,
-  view,
+  scope,
+  textMode,
   folderId,
   targetColumns,
   feedItems,
@@ -16,12 +35,12 @@ import {
   clearSelection,
   removeIdsFromSelection,
 } from "../lib/stores";
-import type { ImageSummary } from "../lib/types";
+import type { MediaFeedItem } from "../lib/types";
 
 describe("前端 stores", () => {
   beforeEach(() => {
     query.set("");
-    view.set("all");
+    scope.set("all");
     folderId.set(null);
     targetColumns.set(5);
     feedItems.set([]);
@@ -36,8 +55,9 @@ describe("前端 stores", () => {
     expect(get(query)).toBe("");
   });
 
-  it("默认视图是 all", () => {
-    expect(get(view)).toBe("all");
+  it("默认口径是所有素材，启动就停在混排流", () => {
+    expect(get(scope)).toBe("all");
+    expect(get(textMode)).toBe(false);
   });
 
   it("默认列数 5", () => {
@@ -51,11 +71,16 @@ describe("前端 stores", () => {
     expect(get(targetColumns)).toBe(12);
   });
 
-  it("切换视图会更新 store", () => {
-    view.set("favorite");
-    expect(get(view)).toBe("favorite");
-    view.set("recent");
-    expect(get(view)).toBe("recent");
+  it("切换口径会更新 store，textMode 由 scope 派生", () => {
+    for (const next of ["image", "video", "audio"] as const) {
+      scope.set(next);
+      expect(get(scope)).toBe(next);
+      expect(get(textMode)).toBe(false);
+    }
+    scope.set("text");
+    expect(get(textMode)).toBe(true);
+    scope.set("all");
+    expect(get(textMode)).toBe(false);
   });
 
   it("切换文件夹 id", () => {
@@ -66,11 +91,12 @@ describe("前端 stores", () => {
   });
 
   it("feedItems 是数组，支持 push", () => {
-    const sample: ImageSummary = {
+    const sample: MediaFeedItem = {
       id: 1,
       filename: "a.png",
       path: "a.png",
       original_url: "/api/images/1/file?max=1024&v=1.0",
+      item_type: "media",
       kind: "image",
       thumbnail_url: "/api/images/1/file?max=1024&v=1.0",
       play_url: null,
@@ -83,7 +109,6 @@ describe("前端 stores", () => {
       height: 1024,
       mtime: 1.0,
       size_bytes: 100,
-      favorite: false,
       folder_ids: [],
       tags: [],
       model: null,
@@ -107,30 +132,30 @@ describe("前端 stores", () => {
   });
 
   describe("多选 stores", () => {
-    const items: ImageSummary[] = [
+    const items: MediaFeedItem[] = [
       {
         id: 1, filename: "a.png", path: "a.png",
         original_url: "/api/images/1/file?max=1024", thumbnail_url: "/api/images/1/file?max=1024",
-        kind: "image", play_url: null, playable: null, duration_seconds: null,
+        item_type: "media", kind: "image", play_url: null, playable: null, duration_seconds: null,
         video_codec: null, audio_codec: null, fps: null,
         width: 1024, height: 1024,
-        mtime: 1, size_bytes: 100, favorite: false, folder_ids: [], tags: [], model: null, seed: 1,
+        mtime: 1, size_bytes: 100, folder_ids: [], tags: [], model: null, seed: 1,
       },
       {
         id: 2, filename: "b.png", path: "b.png",
         original_url: "/api/images/2/file?max=1024", thumbnail_url: "/api/images/2/file?max=1024",
-        kind: "image", play_url: null, playable: null, duration_seconds: null,
+        item_type: "media", kind: "image", play_url: null, playable: null, duration_seconds: null,
         video_codec: null, audio_codec: null, fps: null,
         width: 1024, height: 1024,
-        mtime: 2, size_bytes: 100, favorite: false, folder_ids: [], tags: [], model: null, seed: 2,
+        mtime: 2, size_bytes: 100, folder_ids: [], tags: [], model: null, seed: 2,
       },
       {
         id: 3, filename: "c.png", path: "c.png",
         original_url: "/api/images/3/file?max=1024", thumbnail_url: "/api/images/3/file?max=1024",
-        kind: "image", play_url: null, playable: null, duration_seconds: null,
+        item_type: "media", kind: "image", play_url: null, playable: null, duration_seconds: null,
         video_codec: null, audio_codec: null, fps: null,
         width: 1024, height: 1024,
-        mtime: 3, size_bytes: 100, favorite: false, folder_ids: [], tags: [], model: null, seed: 3,
+        mtime: 3, size_bytes: 100, folder_ids: [], tags: [], model: null, seed: 3,
       },
     ];
 

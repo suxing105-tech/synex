@@ -1,17 +1,20 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
-  import { folderId, kind, switchContent, textMode, view } from '../lib/stores';
+  import { folderId, scope, switchContent } from '../lib/stores';
+  import type { Scope } from '../lib/types';
 
   let { onexpand }: { onexpand: () => void } = $props();
 
-  const entries = [
-    { type: 'image', label: '全部图片', icon: 'image' },
-    { type: 'video', label: '所有视频', icon: 'video' },
-    { type: 'text', label: '全部文本', icon: 'text' },
-  ] as const;
+  const entries: { scope: Scope; label: string; key: string; icon: string }[] = [
+    { scope: 'all', label: '所有素材', key: '0', icon: 'layers' },
+    { scope: 'image', label: '全部图片', key: 'I', icon: 'image' },
+    { scope: 'video', label: '所有视频', key: 'V', icon: 'video' },
+    { scope: 'audio', label: '全部音频', key: 'A', icon: 'music' },
+    { scope: 'text', label: '全部文本', key: 'T', icon: 'text' },
+  ];
 
-  function active(type: (typeof entries)[number]['type']) {
-    return $view === 'all' && $folderId === null && (type === 'text' ? $textMode : !$textMode && $kind === type);
+  function active(next: Scope) {
+    return $scope === next && $folderId === null;
   }
 </script>
 
@@ -19,13 +22,14 @@
   <button class="expand" title="展开左侧栏" aria-label="展开左侧栏" onclick={onexpand}>
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16m4-11 3 3-3 3"/></svg>
   </button>
-  {#each entries as entry}
+  {#each entries as entry (entry.scope)}
     <button
-      class:active={active(entry.type)}
-      title={entry.label}
+      class:active={active(entry.scope)}
+      title={`${entry.label} (${entry.key})`}
       aria-label={entry.label}
-      aria-current={active(entry.type) ? 'page' : undefined}
-      onclick={() => switchContent(entry.type, true)}
+      aria-keyshortcuts={entry.key.toLowerCase()}
+      aria-current={active(entry.scope) ? 'page' : undefined}
+      onclick={() => switchContent(entry.scope, true)}
     >
       <Icon name={entry.icon} size={18} />
     </button>

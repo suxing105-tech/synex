@@ -33,8 +33,8 @@ describe("system folder 树拆分", () => {
         parent_id: null,
         name: "灵感",
         order: 0,
-        image_count: 3,
-        recursive_count: 3,
+        counts: { image: 3, video: 0, audio: 0, text: 0 },
+        total: 3,
         children: [],
       },
     ];
@@ -51,8 +51,8 @@ describe("system folder 树拆分", () => {
         parent_id: null,
         name: "krea2",
         order: 0,
-        image_count: 0,
-        recursive_count: 81,
+        counts: { image: 81, video: 0, audio: 0, text: 0 },
+        total: 81,
         is_system: true,
         path: "D:/ComfyUI/output/krea2",
         children: [],
@@ -72,16 +72,16 @@ describe("system folder 树拆分", () => {
         parent_id: null,
         name: "灵感",
         order: 0,
-        image_count: 0,
-        recursive_count: 2,
+        counts: { image: 2, video: 0, audio: 0, text: 0 },
+        total: 2,
         children: [
           {
             id: 2,
             parent_id: 1,
             name: "草稿",
             order: 0,
-            image_count: 2,
-            recursive_count: 2,
+            counts: { image: 2, video: 0, audio: 0, text: 0 },
+            total: 2,
             children: [],
           },
         ],
@@ -91,8 +91,8 @@ describe("system folder 树拆分", () => {
         parent_id: null,
         name: "krea2",
         order: 1,
-        image_count: 5,
-        recursive_count: 10,
+        counts: { image: 10, video: 0, audio: 0, text: 0 },
+        total: 10,
         is_system: true,
         path: "D:/ComfyUI/output/krea2",
         children: [
@@ -101,8 +101,8 @@ describe("system folder 树拆分", () => {
             parent_id: 10,
             name: "foo",
             order: 0,
-            image_count: 5,
-            recursive_count: 5,
+            counts: { image: 5, video: 0, audio: 0, text: 0 },
+            total: 5,
             is_system: true,
             path: "D:/ComfyUI/output/krea2/foo",
             children: [],
@@ -114,8 +114,8 @@ describe("system folder 树拆分", () => {
         parent_id: null,
         name: "Audio",
         order: 2,
-        image_count: 2,
-        recursive_count: 2,
+        counts: { image: 2, video: 0, audio: 0, text: 0 },
+        total: 2,
         is_system: true,
         path: "D:/ComfyUI/output/Audio",
         children: [],
@@ -143,8 +143,8 @@ describe("system folder 树拆分", () => {
         parent_id: null,
         name: "krea2",
         order: 0,
-        image_count: 0,
-        recursive_count: 81,
+        counts: { image: 81, video: 0, audio: 0, text: 0 },
+        total: 81,
         is_system: true,
         path: "D:/ComfyUI/output/krea2",
         children: [
@@ -153,8 +153,8 @@ describe("system folder 树拆分", () => {
             parent_id: 10,
             name: "subdir",
             order: 0,
-            image_count: 81,
-            recursive_count: 81,
+            counts: { image: 81, video: 0, audio: 0, text: 0 },
+            total: 81,
             is_system: true,
             path: "D:/ComfyUI/output/krea2/subdir",
             children: [],
@@ -164,10 +164,10 @@ describe("system folder 树拆分", () => {
     ];
     const { system } = splitBySystem(tree);
     const all = flat(system);
-    const totalImages = all.reduce((acc, n) => acc + n.recursive_count, 0);
+    const totalImages = all.reduce((acc, n) => acc + n.total, 0);
     expect(totalImages).toBe(162);
-    expect(all.find((n) => n.name === "krea2")?.recursive_count).toBe(81);
-    expect(all.find((n) => n.name === "subdir")?.recursive_count).toBe(81);
+    expect(all.find((n) => n.name === "krea2")?.total).toBe(81);
+    expect(all.find((n) => n.name === "subdir")?.total).toBe(81);
   });
 });
 
@@ -178,8 +178,8 @@ describe("FolderNode 类型字段", () => {
       parent_id: null,
       name: "x",
       order: 0,
-      image_count: 0,
-      recursive_count: 0,
+      counts: { image: 0, video: 0, audio: 0, text: 0 },
+      total: 0,
       children: [],
     };
     expect(node.is_system).toBeUndefined();
@@ -192,8 +192,8 @@ describe("FolderNode 类型字段", () => {
       parent_id: null,
       name: "krea2",
       order: 0,
-      image_count: 0,
-      recursive_count: 81,
+      counts: { image: 81, video: 0, audio: 0, text: 0 },
+      total: 81,
       is_system: true,
       path: "D:/ComfyUI/output/krea2",
       children: [],

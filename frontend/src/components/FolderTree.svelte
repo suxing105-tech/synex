@@ -4,7 +4,9 @@
   import { subscribeFileDrop } from '../lib/native-drop';
   import { pushToast } from "../lib/toast";
   import { backendUrl } from "../lib/backend-url";
-  import { folders, folderId, view, stats, kind, query, tag, textMode, textTotal, switchContent } from "../lib/stores";
+  import { folders, folderId, stats, query, tag, textMode, scope, switchContent } from "../lib/stores";
+  import { countBreakdown, countFor, formatCount, scopeCaption } from "../lib/counts";
+  import type { FolderCounts, Scope } from "../lib/types";
   import Icon from "./Icon.svelte";
   import type { FolderNode } from "../lib/types";
   import { foldersApi } from "../lib/api";
@@ -21,7 +23,7 @@
       const result = await foldersApi.importDirectories(paths);
       await refreshFolders();
       if (result.copied.length) {
-        view.set('all'); folderId.set(result.copied[0].id);
+        folderId.set(result.copied[0].id);
         await Promise.all([refreshFeed(), refreshStats()]);
         pushToast(`已复制 ${result.copied.length} 个文件夹到我的文件夹（保留原文件）`);
       }
@@ -53,11 +55,6 @@
     return null;
   }
 
-  function setView(v: "all" | "favorite" | "recent") {
-    view.set(v);
-    folderId.set(null);
-  }
-
   let collapsed = $state<Set<number>>(new Set());
   let clickTimer: ReturnType<typeof setTimeout> | undefined;
   let holdTimer: ReturnType<typeof setTimeout> | undefined;
@@ -68,7 +65,6 @@
   let saving = $state(false);
 
   function pickFolder(f: FolderNode) {
-    view.set("all");
     folderId.set(f.id);
     const next = new Set(collapsed);
     if (next.has(f.id)) next.delete(f.id);
@@ -268,7 +264,7 @@
       newFolderFor = null;
       newFolderName = "";
       await refreshFolders();
-      view.set("all"); folderId.set(result.id);
+      folderId.set(result.id);
     } catch (error) {
       pushToast(`创建失败：${error instanceof Error ? error.message : error}`, { kind: "error" });
     } finally { saving = false; }
@@ -280,6 +276,34 @@
   // 注意：后端 folder_tree() 已经按 parent_id 嵌套好了；这里只是按根节点过滤。
   let userFolders = $derived($folders.filter((f) => !f.is_system));
   let systemFolders = $derived($folders.filter((f) => !!f.is_system));
+
+  // 系统区五行：一行 = 一个 scope。数字只有一个，口径写在分组标题右侧，明细在 hover 里。
+  const SYSTEM_ROWS: { scope: Scope; label: string; icon: string }[] = [
+    { scope: "all", label: "所有素材", icon: "layers" },
+    { scope: "image", label: "全部图片", icon: "image" },
+    { scope: "video", label: "所有视频", icon: "video" },
+    { scope: "audio", label: "全部音频", icon: "music" },
+    { scope: "text", label: "全部文本", icon: "text" },
+  ];
+
+  let libraryCounts = $derived<FolderCounts>({
+    image: $stats.total_images,
+    video: $stats.total_videos,
+    audio: $stats.total_audio,
+    text: $stats.total_texts,
+  });
+
+  let systemRows = $derived(
+    SYSTEM_ROWS.map((row) => ({
+      ...row,
+      count: countFor(libraryCounts, row.scope),
+      detail: countBreakdown(libraryCounts),
+    })),
+  );
+
+  function isActiveScope(next: Scope): boolean {
+    return $scope === next && $folderId === null;
+  }
 </script>
 
 <svelte:window onclick={closeAll} onpointermove={pointerMove} onpointerup={releaseFolder}
@@ -296,65 +320,26 @@
   {#if externalHover || importingFolders}
     <div class="external-drop-status" role="status">{$textMode ? '松开以关联文本；编辑将保存到原文件' : importingFolders ? '正在复制文件夹及全部内容…' : '松开后复制到我的文件夹（保留原文件）'}</div>
   {/if}
-  <div class="text-[10px] uppercase text-muted tracking-wider px-[10px] py-[10px] opacity-70">
-    系统
+  <div class="scope-heading">
+    <span>系统</span>
+    <span class="scope-caption" title="下面每一行的数字都只数这一种素材">{scopeCaption($scope)}</span>
   </div>
-  <div
-    class="folder-item {!$textMode && $view === 'all' && $folderId === null && $kind === 'image' ? 'active' : ''}"
-    onclick={() => {
-      switchContent('image', true);
-      kind.set('image');
-      view.set('all');
-      folderId.set(null);
-      tag.set(null);
-      query.set('');
-    }}
-  >
-    <span class="caret-spacer"></span>
-    <span class="icon"><Icon name="image" size={13} /></span>
-    <span class="label">全部图片</span>
-    <span class="count">{$stats.total_images}</span>
-  </div>
-  <div
-    class="folder-item {!$textMode && $view === 'all' && $folderId === null && $kind === 'video' ? 'active' : ''}"
-    onclick={() => {
-      switchContent('video', true);
-      kind.set('video');
-      view.set('all');
-      folderId.set(null);
-      tag.set(null);
-      query.set('');
-    }}
-  >
-    <span class="caret-spacer"></span>
-    <span class="icon"><Icon name="video" size={13} /></span>
-    <span class="label">所有视频</span>
-    <span class="count">{$stats.total_videos}</span>
-  </div>
-  <div class="folder-item {$textMode && $view === 'all' && $folderId === null ? 'active' : ''}"
-    role="button" tabindex="0" onclick={() => switchContent('text', true)}
-    onkeydown={(e) => { if (e.key === 'Enter') switchContent('text', true); }}>
-    <span class="caret-spacer"></span><span class="icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>
-    <span class="label">全部文本</span><span class="count">{$textTotal || ''}</span>
-  </div>
-  <div
-    class="folder-item {$view === 'favorite' ? 'active' : ''}"
-    onclick={() => setView('favorite')}
-  >
-    <span class="caret-spacer"></span>
-    <span class="icon"><Icon name="star" size={13} /></span>
-    <span class="label">收藏</span>
-    <span class="count">{$textMode ? '' : $stats.favorites}</span>
-  </div>
-  <div
-    class="folder-item {$view === 'recent' ? 'active' : ''}"
-    onclick={() => setView('recent')}
-  >
-    <span class="caret-spacer"></span>
-    <span class="icon"><Icon name="clock" size={13} /></span>
-    <span class="label">{$textMode ? '最近打开' : '最近生成'}</span>
-    <span class="count"></span>
-  </div>
+  {#each systemRows as row (row.scope)}
+    <div
+      class="folder-item"
+      class:active={isActiveScope(row.scope)}
+      role="button"
+      tabindex="0"
+      onclick={() => switchContent(row.scope, true)}
+      onkeydown={(e) => { if (e.key === "Enter") switchContent(row.scope, true); }}
+    >
+      <span class="caret-spacer"></span>
+      <span class="icon"><Icon name={row.icon} size={13} /></span>
+      <span class="label">{row.label}</span>
+      <span class="count" class:zero={row.count === 0} title={row.detail}>{formatCount(row.count)}</span>
+    </div>
+  {/each}
+
 
   {#if systemFolders.length > 0}
     <div class="flex items-center justify-between px-[10px] pt-[14px] pb-[4px]">
@@ -507,7 +492,7 @@
     {:else}
       <span class="label" title={folder.path ?? folder.name}>{folder.name}</span>
     {/if}
-    <span class="count">{$textMode ? folder.text_count ?? 0 : folder.recursive_count}</span>
+    <span class="count" class:zero={countFor(folder, $scope) === 0} title={countBreakdown(folder)}>{formatCount(countFor(folder, $scope))}</span>
     <button class="menu-btn" onclick={(e) => openMenu(folder.id, e)}
       ondblclick={(e) => e.stopPropagation()} aria-label="文件夹操作">
       <Icon name="more-vertical" size={14} />
@@ -591,13 +576,24 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* 计数 pill：宽度固定才能一眼看出是「一列数字」，长文件夹名该截断还是截断 */
   :global(.folder-item .count) {
-    font-size: 11px;
-    color: #8a8a8e;
     flex-shrink: 0;
+    min-width: 2.6em;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 6px;
+    background: #ffffff08;
+    color: #8a8a8e;
+  }
+  :global(.folder-item .count.zero) {
+    opacity: .4;
   }
   :global(.folder-item.active .count) {
     color: #f24e4e;
+    background: #f24e4e1f;
   }
   :global(.folder-item .menu-btn) {
     opacity: 0;
@@ -636,9 +632,26 @@
   :global(.folder-item.system.active) {
     color: #f24e4e;
   }
+  .scope-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 10px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted, #85858e);
+    opacity: .9;
+  }
+  .scope-caption {
+    font-size: 10px;
+    letter-spacing: 0;
+    text-transform: none;
+    color: #6f6f76;
+  }
   .folder-hint { font-size: 10px; color: #85858e; padding: 4px 10px 10px; line-height: 1.7; }
   .folder-caret { width: 12px; height: 14px; display: flex; align-items: center; flex-shrink: 0; color: #92929c; }
-  :global(.folder-item .count) { font-variant-numeric: tabular-nums; border-radius: 5px; padding: 1px 5px; background: #ffffff06; }
   :global(.folder-item:focus-visible) { outline: none; background: #ffffff12; }
   :global(.folder-item.dragging) { opacity: .45; cursor: grabbing; }
   :global(.folder-item.drop-before) { box-shadow: 0 -2px #f24e4e; }

@@ -6,14 +6,15 @@ import VideoPlayer from '../components/VideoPlayer.svelte';
 import { feedItems, multiSelectedIds } from '../lib/stores';
 
 vi.mock('../lib/api', () => ({
-  videosApi: { open: vi.fn(async () => ({ ok: true, id: 1, path: 'D:/x.mp4' })), copy: vi.fn(async () => ({ ok: true, id: 1, path: 'D:/x.mp4', method: 'clipboard' })) },
+  itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) },
+videosApi: { open: vi.fn(async () => ({ ok: true, id: 1, path: 'D:/x.mp4' })), copy: vi.fn(async () => ({ ok: true, id: 1, path: 'D:/x.mp4', method: 'clipboard' })) },
 }));
 
 const video = (id: number) => ({
   id, filename: `${id}.mp4`, path: `D:/${id}.mp4`, kind: 'video',
   thumbnail_url: `/api/videos/${id}/thumb`, play_url: `/api/videos/${id}/file`, playable: true,
   width: 1920, height: 1080, duration_seconds: 12, mtime: 1, size_bytes: 1000,
-  favorite: false, folder_ids: [], tags: [], model: null, seed: null,
+  folder_ids: [], tags: [], model: null, seed: null,
 });
 
 beforeEach(() => {

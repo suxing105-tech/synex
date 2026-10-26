@@ -1,17 +1,19 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { imagesApi } from '../lib/api';
-import { feedItems, feedTotal, refreshFeed, removeImageFromFeed, selectedId, selectedDetail } from '../lib/stores';
+import { feedItems, feedTotal, refreshFeed, removeImageFromFeed, scope, selectedId, selectedDetail } from '../lib/stores';
 import { connectEvents, disconnectEvents } from '../lib/ws';
 
 vi.mock('../lib/api', () => ({
   imagesApi: { list: vi.fn().mockResolvedValue({ items: [], total: 0 }), detail: vi.fn().mockResolvedValue({ id: 1 }) },
   foldersApi: { tree: vi.fn().mockResolvedValue([]) },
-  statsApi: { get: vi.fn().mockResolvedValue({ total_images: 0, favorites: 0, folders: 0 }) },
+  statsApi: { get: vi.fn().mockResolvedValue({ total_images: 0, total_videos: 0, total_audio: 0, total_texts: 0, folders: 0 }) },
   scanApi: { progress: vi.fn() },
+  itemsApi: { list: vi.fn().mockResolvedValue({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } }) },
 }));
 
-afterEach(() => { vi.unstubAllGlobals(); feedItems.set([]); selectedId.set(null); });
+beforeEach(() => { scope.set('image'); });
+afterEach(() => { vi.unstubAllGlobals(); feedItems.set([]); selectedId.set(null); scope.set('all'); });
 
 it('删除事件立即去掉缩略图并清理详情，不重排剩余图片', async () => {
   let socket: any;

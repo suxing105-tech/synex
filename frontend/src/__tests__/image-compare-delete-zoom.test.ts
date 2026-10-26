@@ -9,11 +9,18 @@ import { feedItems, feedLoading, multiSelectedIds, selectedId } from '../lib/sto
 import { getOrientedImageSize } from '../lib/image-dims';
 import { foldersApi, imagesApi } from '../lib/api';
 vi.mock('../lib/api', () => ({
-  imagesApi: { list: vi.fn().mockResolvedValue({ items: [], total: 0 }), detail: vi.fn(), remove: vi.fn() },
+  // 默认 scope 是「所有素材」，删除后的重拉走 itemsApi：这里必须和 imagesApi 一样回吐 feedItems，
+  // 否则刷新会把列表清空，删除类断言就会变成时序竞态。
+  itemsApi: { list: vi.fn(async () => {
+    const [{ get }, stores] = await Promise.all([import("svelte/store"), import("../lib/stores")]);
+    const list = get(stores.feedItems);
+    return { items: list, total: list.length, counts: { image: list.length, video: 0, audio: 0, text: 0 } };
+  }) },
+imagesApi: { list: vi.fn().mockResolvedValue({ items: [], total: 0 }), detail: vi.fn(), remove: vi.fn() },
   foldersApi: { tree: vi.fn().mockResolvedValue([]) }, statsApi: { get: vi.fn() }, scanApi: { progress: vi.fn() }, comfyuiApi: {},
 }));
 vi.mock('../lib/image-dims', async (original) => ({ ...await original<any>(), getOrientedImageSize: vi.fn().mockResolvedValue({ w: 1600, h: 900 }) }));
-const items = [1, 2, 3].map(id => ({ id, filename: `${id}.jpg`, path: `D:/${id}.jpg`, width: 1600, height: 900, size_bytes: 2000 }));
+const items = [1, 2, 3].map(id => ({ id, item_type: 'media', kind: 'image', filename: `${id}.jpg`, path: `D:/${id}.jpg`, width: 1600, height: 900, size_bytes: 2000 }));
 beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(900);
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);

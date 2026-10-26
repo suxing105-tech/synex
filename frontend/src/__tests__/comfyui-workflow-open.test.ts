@@ -9,7 +9,7 @@ import { isTauri } from "../lib/tauri";
 // 浏览器版有个硬约束：window.open 必须发生在点击手势的同步段，所以顺序也要锁。
 
 vi.mock("../lib/tauri", () => ({ isTauri: vi.fn(() => false) }));
-vi.mock("../lib/api", () => ({ comfyuiApi: { openWorkflow: vi.fn() } }));
+vi.mock("../lib/api", () => ({ itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) }, comfyuiApi: { openWorkflow: vi.fn() } }));
 
 const calls: string[] = [];
 

@@ -63,9 +63,31 @@ export const ICON_PATHS: Record<string, string> = {
   heart:
     '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>',
 
-  // 心（实心，favorite 用）
-  "heart-fill":
-    '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" fill="currentColor" stroke="none"/>',
+  // 音符（音频素材）
+  music:
+    '<path d="M9 18V5l12-2v13"/>' +
+    '<circle cx="6" cy="18" r="3"/>' +
+    '<circle cx="18" cy="16" r="3"/>',
+
+  // 叠层（「所有素材」= 四类混在一起）
+  layers:
+    '<polygon points="12 2 21 7 12 12 3 7 12 2"/>' +
+    '<polyline points="3 12 12 17 21 12"/>' +
+    '<polyline points="3 17 12 22 21 17"/>',
+
+  play: '<polygon points="6 3 20 12 6 21 6 3" fill="currentColor" stroke="none"/>',
+
+  pause:
+    '<rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none"/>' +
+    '<rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none"/>',
+
+  // 波形（音频占位）
+  wave:
+    '<line x1="4" y1="10" x2="4" y2="14"/>' +
+    '<line x1="8" y1="6" x2="8" y2="18"/>' +
+    '<line x1="12" y1="3" x2="12" y2="21"/>' +
+    '<line x1="16" y1="7" x2="16" y2="17"/>' +
+    '<line x1="20" y1="10" x2="20" y2="14"/>',
 
   // 复制
   copy:

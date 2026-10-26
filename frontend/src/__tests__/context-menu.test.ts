@@ -105,7 +105,7 @@ describe("ImageSummary 构造样本（菜单测试用）", () => {
       height: 1024,
       mtime: 1,
       size_bytes: 100,
-      favorite: false,
+      
       folder_ids: [],
       tags: [],
       model: null,

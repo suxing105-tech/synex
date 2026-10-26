@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
 import SettingsModal from '../components/SettingsModal.svelte';
-vi.mock('../lib/api', () => ({ settingsApi: { get: vi.fn(async () => { throw new Error('offline'); }) }, comfyuiApi: { status: vi.fn(async () => ({ running: false, enabled: true, url: 'http://127.0.0.1:8188' })) }, http: vi.fn(async (path: string) => path === '/api/reverse-prompt-settings' ? { default_model_id: null, instruction: '', default_instruction: '' } : []) }));
+vi.mock('../lib/api', () => ({ itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) }, settingsApi: { get: vi.fn(async () => { throw new Error('offline'); }) }, comfyuiApi: { status: vi.fn(async () => ({ running: false, enabled: true, url: 'http://127.0.0.1:8188' })) }, http: vi.fn(async (path: string) => path === '/api/reverse-prompt-settings' ? { default_model_id: null, instruction: '', default_instruction: '' } : []) }));
 afterEach(cleanup);
 it('后台尚未就绪时仍可从通用设置打开导入目录', async () => {
   const onOpenOnboarding = vi.fn();

@@ -2,7 +2,7 @@ import { it, expect, vi } from 'vitest';
 import { loadComfyWorkflow } from '../lib/comfyui-window';
 import { comfyuiApi } from '../lib/api';
 vi.mock('../lib/tauri', () => ({ isTauri: () => true }));
-vi.mock('../lib/api', () => ({ comfyuiApi: { openWorkflow: vi.fn() } }));
+vi.mock('../lib/api', () => ({ itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) }, comfyuiApi: { openWorkflow: vi.fn() } }));
 it('传递图片完整工作流与图片名，并等待 ComfyUI 加载完成', async () => {
   const workflow = { nodes: [{ id: 1, type: 'Test' }], links: [] };
   vi.mocked(comfyuiApi.openWorkflow).mockResolvedValue({ workflow, comfyui_url: 'http://127.0.0.1:8188' } as any);

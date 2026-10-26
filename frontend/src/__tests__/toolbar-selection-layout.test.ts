@@ -5,19 +5,20 @@ import { get } from 'svelte/store';
 import Feed from '../components/Feed.svelte';
 import { feedItems, feedLoading, multiSelectedIds, targetColumns } from '../lib/stores';
 vi.mock('../lib/api', () => ({
-  imagesApi: { list: vi.fn(async () => ({ items: get(feedItems), total: get(feedItems).length })), detail: vi.fn() },
+  itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) },
+imagesApi: { list: vi.fn(async () => ({ items: get(feedItems), total: get(feedItems).length })), detail: vi.fn() },
   foldersApi: { tree: vi.fn(async () => []) }, statsApi: { get: vi.fn() }, scanApi: { progress: vi.fn() }, comfyuiApi: {},
 }));
 beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200);
   feedLoading.set(false); multiSelectedIds.set(new Set());
-  feedItems.set([1, 2, 3].map(id => ({ id, filename: `${id}.jpg`, width: 900, height: 1200 })) as any);
+  feedItems.set([1, 2, 3].map(id => ({ id, item_type: 'media', kind: 'image', filename: `${id}.jpg`, width: 900, height: 1200 })) as any);
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 it('0、1、2、3 张选中时搜索和列数始终占用原来的工具栏位置', async () => {
   const screen = render(Feed, { selectedId: null, lightboxOpen: false, lightboxIndex: 0 });
   const toolbar = screen.container.querySelector('.gallery-toolbar')!;
-  const searchSlot = screen.getByLabelText('搜索图片').parentElement;
+  const searchSlot = screen.getByLabelText('搜索图片、视频、音频、文本').parentElement;
   const columnsSlot = screen.container.querySelector('.columns-slider')!.parentElement;
   for (const count of [0, 1, 2, 3, 2, 0]) {
     multiSelectedIds.set(new Set(Array.from({ length: count }, (_, i) => i + 1))); await tick();

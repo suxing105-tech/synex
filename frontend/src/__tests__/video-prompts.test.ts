@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { get } from "svelte/store";
 
-vi.mock("../lib/api", () => ({ http: vi.fn() }));
+vi.mock("../lib/api", () => ({ itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) }, http: vi.fn() }));
 vi.mock("../lib/toast", () => ({
   pushToast: vi.fn(() => 1), updateToast: vi.fn(), dismissToast: vi.fn(),
 }));

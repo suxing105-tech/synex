@@ -2,7 +2,7 @@
   import { startUpdates } from "./lib/updates";
   import { onMount, onDestroy } from "svelte";
   import { connectEvents, disconnectEvents } from "./lib/ws";
-  import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, comfyuiEnabled, feedItems, tag, folderId, query, view, selectedDetail } from "./lib/stores";
+  import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, comfyuiEnabled, mediaItems, tag, folderId, query, selectedDetail } from "./lib/stores";
   import { createSplashGate } from "./lib/splash-gate.svelte";
   import FolderTree from "./components/FolderTree.svelte";
   import DesktopTitlebar from "./components/DesktopTitlebar.svelte";
@@ -31,6 +31,7 @@
   import VideoPlayer from "./components/VideoPlayer.svelte";
   import SettingsModal from "./components/SettingsModal.svelte";
   import ScanProgressBar from "./components/ScanProgressBar.svelte";
+  import AudioEngine from "./components/AudioEngine.svelte";
   import SplashOverlay from "./components/SplashOverlay.svelte";
   import Toast from "./components/Toast.svelte";
   import { statsApi, settingsApi, comfyuiApi } from "./lib/api";
@@ -80,7 +81,8 @@
   function handleOpenLightbox(e: Event) {
     const id = (e as CustomEvent<{ id: number }>).detail?.id;
     if (id == null) return;
-    const idx = $feedItems.findIndex((it) => it.id === id);
+    // Lightbox 只走媒体子序列：统一流里的文本项占位会让下标错位
+    const idx = $mediaItems.findIndex((it) => it.id === id);
     if (idx < 0) return;
     selectedIdValue = id;
     lightboxIndex = idx;
@@ -92,7 +94,6 @@
     const t = (e as CustomEvent<{ tag: string }>).detail?.tag;
     if (!t) return;
     folderId.set(null);
-    view.set("all");
     query.set("");
     tag.set(t);
   }
@@ -238,6 +239,7 @@
         bind:lightboxIndex
       />
       </div>
+      <AudioEngine />
       <Lightbox bind:open={lightboxOpen} bind:index={lightboxIndex} bind:selectedId={selectedIdValue} />
       {/if}
     </main>

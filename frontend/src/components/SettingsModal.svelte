@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { settingsApi, comfyuiApi } from "../lib/api";
+  import { settingsApi, comfyuiApi, healthApi } from "../lib/api";
+  import { describeMediaTools } from "../lib/media-tools";
   import { comfyuiStatus } from "../lib/stores";
   import type { ConfigOut } from "../lib/types";
   import ShortcutSettings from "./ShortcutSettings.svelte";
@@ -88,6 +89,24 @@
       comfyuiStatusLocal = { running: false, url: comfyuiUrlInput };
     } finally {
       probing = false;
+    }
+  }
+
+  // ffmpeg/ffprobe 缺失只会让封面、波形、视频提示词静默变空，用户完全看不出来，
+  // 所以「关于与更新」里常驻一条状态（后端 /api/health 顺带报来源和版本）。
+  let mediaTools = $state(describeMediaTools(null));
+  let mediaProbing = $state<boolean>(false);
+  $effect(() => { if (open) void refreshMediaTools(); });
+
+  async function refreshMediaTools() {
+    mediaProbing = true;
+    try {
+      const health = await healthApi.get();
+      mediaTools = describeMediaTools(health.media_tools ?? null);
+    } catch {
+      mediaTools = { ok: false, text: "图库后台未响应", hint: "重启闪寻空间后再重新检测。" };
+    } finally {
+      mediaProbing = false;
     }
   }
 
@@ -222,6 +241,13 @@
             <section id="settings-about" class="settings-section" aria-labelledby="settings-about-title">
               <h3 id="settings-about-title">关于与更新</h3>
               <p class="section-description">闪寻空间 · Seek-X</p>
+              <div class="setting-group">
+                <h4>媒体组件</h4>
+                <p class="setting-description">视频封面、音频波形与视频提示词读取由内置的 ffmpeg / ffprobe 完成。</p>
+                <p class="connection-status" role="status"><span class="status-dot" class:bg-success={mediaTools.ok} class:bg-danger={!mediaTools.ok}></span>{mediaTools.text}</p>
+                {#if mediaTools.hint}<p class="setting-description">{mediaTools.hint}</p>{/if}
+                <div class="section-actions"><button class="setting-button" disabled={mediaProbing} onclick={refreshMediaTools}>{mediaProbing ? "检测中…" : "重新检测"}</button></div>
+              </div>
               <UpdatePanel />
             </section>
           </div>

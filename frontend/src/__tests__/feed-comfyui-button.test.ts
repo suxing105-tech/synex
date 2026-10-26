@@ -35,7 +35,6 @@ function makeImage(overrides: Partial<ImageSummary> = {}): ImageSummary {
     height: 1024,
     mtime: 0,
     size_bytes: 0,
-    favorite: false,
     folder_ids: [],
     tags: [],
     model: null,

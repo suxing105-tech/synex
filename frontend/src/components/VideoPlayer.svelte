@@ -1,9 +1,9 @@
 <script lang="ts">
   import { backendUrl } from "../lib/backend-url";
-  import { feedItems, multiSelectedIds } from "../lib/stores";
+  import { mediaItems, multiSelectedIds } from "../lib/stores";
   import { videosApi } from "../lib/api";
   import { pushToast } from "../lib/toast";
-  import type { ImageSummary } from "../lib/types";
+  import type { MediaFeedItem } from "../lib/types";
   import Icon from "./Icon.svelte";
   import VideoCompare from "./VideoCompare.svelte";
 
@@ -15,7 +15,7 @@
 
   // 当前 feed 里可播放的视频（有 play_url）
   const videos = $derived(
-    $feedItems.filter((it): it is ImageSummary & { play_url: string } => !!it.play_url),
+    $mediaItems.filter((it): it is MediaFeedItem & { play_url: string } => !!it.play_url),
   );
 
   let currentIndex = $state(0);
@@ -25,8 +25,8 @@
   // 对比：feed 里恰好 ctrl 选中的两个视频，且都可播放两路 URL
   let compareOn = $state(false);
   const selectedVideos = $derived(
-    $feedItems.filter(
-      (it): it is ImageSummary & { play_url: string } =>
+    $mediaItems.filter(
+      (it): it is MediaFeedItem & { play_url: string } =>
         it.kind === "video" && !!it.play_url && $multiSelectedIds.has(it.id),
     ),
   );

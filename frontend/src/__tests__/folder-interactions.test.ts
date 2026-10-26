@@ -10,16 +10,16 @@ import { get } from "svelte/store";
 import { clearToasts, toasts } from "../lib/toast";
 
 vi.mock('../lib/native-drop', () => ({ subscribeFileDrop: vi.fn(() => () => {}) }));
-vi.mock("../lib/api", () => ({ foldersApi: { importDirectories: vi.fn(), create: vi.fn().mockResolvedValue({ id: 7 }), rename: vi.fn(), reorder: vi.fn(), move: vi.fn(), remove: vi.fn(), tree: vi.fn() } }));
+vi.mock("../lib/api", () => ({ itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) }, foldersApi: { importDirectories: vi.fn(), create: vi.fn().mockResolvedValue({ id: 7 }), rename: vi.fn(), reorder: vi.fn(), move: vi.fn(), remove: vi.fn(), tree: vi.fn() } }));
 vi.mock("../lib/stores", () => ({
-  folders: writable([]), folderId: writable(null), view: writable("all"),
-  kind: writable("image"), query: writable(""), tag: writable(null),
-  textMode: writable(false), textTotal: writable(0), switchContent: vi.fn(),
-  stats: writable({ total_images: 0, total_videos: 0, favorites: 0 }), refreshFolders: vi.fn(), refreshFeed: vi.fn(), refreshStats: vi.fn(),
+  folders: writable([]), folderId: writable(null), scope: writable("all"),
+  query: writable(""), tag: writable(null),
+  textMode: writable(false), switchContent: vi.fn(),
+  stats: writable({ total_images: 0, total_videos: 0, total_audio: 0, total_texts: 0, folders: 0 }), refreshFolders: vi.fn(), refreshFeed: vi.fn(), refreshStats: vi.fn(),
 }));
 
 const node = (id: number, name: string, children: any[] = [], parent_id: number | null = null) =>
-  ({ id, name, children, parent_id, order: 0, image_count: 0, recursive_count: 0 });
+  ({ id, name, children, parent_id, order: 0, counts: { image: 0, video: 0, audio: 0, text: 0 }, total: 0 });
 
 beforeEach(() => {
   vi.useFakeTimers(); vi.clearAllMocks();

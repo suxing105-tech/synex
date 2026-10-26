@@ -31,7 +31,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File frontend\scripts\build-previ
 powershell -NoProfile -ExecutionPolicy Bypass -File outputs\preview-v1\launch-preview.ps1 -CheckOnly
 ```
 
-产出 `app\`（主程序 + sidecar）、`闪寻空间<-后缀>_x64-setup.exe`、
+`build-preview.ps1` 第一步会跑 `fetch-media-tools.ps1`：把 `vendor\media-tools\`（或
+`-SourceDir` / PATH 上找到的）`ffmpeg.exe` / `ffprobe.exe` 复制成
+`src-tauri\binaries\ffmpeg-x86_64-pc-windows-msvc.exe` 等，Tauri 再按 `externalBin`
+安装成主程序同级的 `ffmpeg.exe` / `ffprobe.exe`。找不到就直接失败——没有它们，
+别人机器上的视频海报、音频波形和视频里的 ComfyUI 提示词全是空的，而视频照样能播，
+用户只会以为程序坏了。`app\` 里也会放一份，和安装后的目录布局一致。
+
+产出 `app\`（主程序 + sidecar + ffmpeg + ffprobe）、`闪寻空间<-后缀>_x64-setup.exe`、
 `闪寻空间-快捷启动.lnk`、`artifacts.json`（字节数 + sha256）、`DONE.txt`。
 脚本会自己设置 `TAURI_SIGNING_PRIVATE_KEY`——Tauri 打包阶段就要给更新包签名。
 

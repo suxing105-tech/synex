@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import codecs
 import hashlib
 import importlib.util
 import json
@@ -136,3 +137,24 @@ def test_asset_names_follow_the_version() -> None:
         "suxing-gallery_0.2.21_x64-setup.exe.sig",
         "latest.json",
     ]
+
+
+def test_powershell_scripts_with_chinese_carry_a_bom() -> None:
+    """Windows PowerShell 5.1 reads a BOM-less UTF-8 script as GBK, so a Chinese
+    comment swallows the next quote and the whole file fails to parse
+    ("Unexpected token", "The string is missing the terminator"). Any .ps1 that
+    is not pure ASCII must therefore start with a UTF-8 BOM."""
+    offenders = []
+    for script in sorted(SCRIPTS.glob("*.ps1")):
+        blob = script.read_bytes()
+        if blob.startswith(codecs.BOM_UTF8):
+            continue
+        if any(byte > 0x7F for byte in blob):
+            offenders.append(script.name)
+    assert offenders == []
+
+
+def test_release_scripts_exist() -> None:
+    for name in ("build-update.ps1", "build-preview.ps1", "package-release.ps1",
+                 "fetch-media-tools.ps1", "verify-all.ps1"):
+        assert (SCRIPTS / name).is_file(), name

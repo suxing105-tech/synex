@@ -1,4 +1,4 @@
-# package-release.ps1 - 一键打包：重建 sidecar + tauri build + 组装安装包与快捷启动
+﻿# package-release.ps1 - 一键打包：重建 sidecar + tauri build + 组装安装包与快捷启动
 # 用法：
 #   .\package-release.ps1                 # 先重建 sidecar 再 tauri build，最后组装输出
 #   .\package-release.ps1 -SkipBuild      # 跳过编译，仅用现有 target/release 产物组装

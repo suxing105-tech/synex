@@ -1,4 +1,4 @@
-# build-sidecar.ps1 - PyInstaller pack backend to python-backend.exe
+﻿# build-sidecar.ps1 - PyInstaller pack backend to python-backend.exe
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 

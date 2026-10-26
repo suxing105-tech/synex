@@ -1,4 +1,9 @@
 <script lang="ts">
+  /**
+   * ⚠ 已下线（0.2.24 素材打开统一化）：文本改在中间栏内嵌层 TextReader 里读与改，
+   * App 不再挂载本组件，入口也全部收掉了。这里整文件保留一版作回滚保险，
+   * 下一轮连同 stores 里的 textMode / pendingTextOpen 一起删除。别在这里加新功能。
+   */
   import { onMount, onDestroy, tick } from 'svelte';
   import { revealLocation } from '../lib/reveal';
   import { get } from 'svelte/store';

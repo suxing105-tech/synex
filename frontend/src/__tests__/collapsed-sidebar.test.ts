@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 import CollapsedSidebar from '../components/CollapsedSidebar.svelte';
-import { folderId, query, scope, tag, textMode } from '../lib/stores';
+import { folderId, query, scope, tag } from '../lib/stores';
 
 beforeEach(() => {
   scope.set('image');
@@ -37,7 +37,7 @@ describe('收起的左侧栏', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: '所有视频' }));
     expect(get(scope)).toBe('video');
-    expect(get(textMode)).toBe(false);
+    expect(get(scope)).toBe('video');
     expect(get(folderId)).toBeNull();
     expect(get(query)).toBe('');
     expect(get(tag)).toBeNull();
@@ -45,15 +45,13 @@ describe('收起的左侧栏', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: '全部音频' }));
     expect(get(scope)).toBe('audio');
-    expect(get(textMode)).toBe(false);
 
     await fireEvent.click(screen.getByRole('button', { name: '全部文本' }));
-    expect(get(textMode)).toBe(true);
+    expect(get(scope)).toBe('text');
     expect(screen.getByRole('button', { name: '全部文本' }).getAttribute('aria-current')).toBe('page');
 
     await fireEvent.click(screen.getByRole('button', { name: '所有素材' }));
     expect(get(scope)).toBe('all');
-    expect(get(textMode)).toBe(false);
     expect(screen.getByRole('button', { name: '所有素材' }).getAttribute('aria-current')).toBe('page');
   });
 

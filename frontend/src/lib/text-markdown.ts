@@ -26,6 +26,46 @@ function inline(source: string, id: number, depth = 0): string {
   return html + escapeHtml(source.slice(at));
 }
 
+const HTML_ENTITY_SPLIT = new RegExp('(&(?:#\\d+|#[xX][0-9a-fA-F]{1,6}|[a-zA-Z][a-zA-Z0-9]{1,7});)', 'g');
+
+/** 在一段不含标签、也不含实体的转义文本里打高亮。 */
+function markPlain(part: string, needle: string): string {
+  const lower = part.toLowerCase();
+  let at = lower.indexOf(needle);
+  if (at < 0) return part;
+  let out = '', from = 0;
+  while (at >= 0) {
+    out += part.slice(from, at) + `<mark class="text-hit">${part.slice(at, at + needle.length)}</mark>`;
+    from = at + needle.length;
+    at = lower.indexOf(needle, from);
+  }
+  return out + part.slice(from);
+}
+
+/**
+ * 给已经转义好的 HTML 打命中高亮。
+ *
+ * 只处理标签之间的文本节点：先按标签切开，标签本身原样保留，
+ * 所以 <code> 里的内容会被标出来，而属性、href 永远不会被改写。
+ *
+ * 实体（&amp; / &lt; / &#39;）也整段跳过：命中词恰好是 "lt" 时若从实体中间切开，
+ * 页面上会多出看得见的 "lt;"，等于把用户的原文改坏了 —— 宁可少标一处。
+ */
+export function highlightHtml(html: string, term: string): string {
+  const needle = term.trim().toLowerCase();
+  if (!needle || !html) return html;
+  return html
+    .split(/(<[^>]*>)/g)
+    .map((part) => {
+      if (!part || part.startsWith('<')) return part;
+      return part
+        .split(HTML_ENTITY_SPLIT)
+        .map((piece, i) => (i % 2 ? piece : markPlain(piece, needle)))
+        .join('');
+    })
+    .join('');
+}
+
 export interface MarkdownBlock { start: number; end: number; text: string; }
 /** Blank-line blocks, while keeping fenced code (including blank lines) together. */
 export function markdownBlocks(body: string): MarkdownBlock[] {
@@ -46,7 +86,7 @@ export function markdownBlocks(body: string): MarkdownBlock[] {
   return blocks;
 }
 
-export function renderMarkdown(source: string, id: number): string {
+export function renderMarkdown(source: string, id: number, highlight = ''): string {
   const lines = source.split('\n');
   let html = '', fence = '', code: string[] = [], list = '';
   const closeList = () => { if (list) { html += `</${list}>`; list = ''; } };
@@ -86,5 +126,5 @@ export function renderMarkdown(source: string, id: number): string {
   }
   closeList();
   if (fence) html += `<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`;
-  return html || '<p class="placeholder">点击开始写作…</p>';
+  return html ? highlightHtml(html, highlight) : '<p class="placeholder">点击开始写作…</p>';
 }

@@ -11,7 +11,9 @@ import {
   feedTotal,
   kindFilter,
   multiSelectedIds,
-  pendingTextOpen,
+  readerItem,
+  selectedId,
+  selectedText,
   refreshFeed,
   removeImageFromFeed,
   loadMoreFeed,
@@ -89,7 +91,8 @@ beforeEach(() => {
   stopAudio();
   multiSelectedIds.set(new Set());
   selectionAnchorId.set(null);
-  pendingTextOpen.set(null);
+  readerItem.set(null);
+  selectedText.set(null);
   feedItems.set(mixedItems());
   feedTotal.set(mixedItems().length);
   vi.mocked(itemsApi.list).mockReset();
@@ -100,7 +103,8 @@ afterEach(() => {
   vi.restoreAllMocks();
   feedItems.set([]);
   multiSelectedIds.set(new Set());
-  pendingTextOpen.set(null);
+  readerItem.set(null);
+  selectedText.set(null);
   stopAudio();
   scope.set("all");
 });
@@ -131,30 +135,46 @@ describe("统一网格：四类混排在一条流里", () => {
   });
 });
 
-describe("统一网格：文本卡是只读入口", () => {
-  it("点文本卡 = 切到文本口径 + 指定要打开的那一篇", async () => {
+describe("统一网格：文本卡在中间栏就地打开", () => {
+  it("点文本卡 = 选中文本 + 清掉媒体选区，口径不变", async () => {
+    const { container } = renderFeed();
+    await tick();
+    await fireEvent.click(thumbCards(container)[0]);
+    expect(get(selectedId)).not.toBeNull();
+    await fireEvent.click(textCards(container)[0]);
+    expect(get(selectedText)?.id).toBe(1);
+    expect(get(selectedId)).toBeNull();
+    expect(get(scope)).toBe("all");
+    expect(textCards(container)[0].className).toContain("is-selected");
+  });
+
+  it("双击 / Enter / Space 打开阅读层，不改口径", async () => {
+    const { container } = renderFeed();
+    await tick();
+    await fireEvent.dblClick(textCards(container)[1]);
+    expect(get(readerItem)?.id).toBe(2);
+    await fireEvent.keyDown(textCards(container)[0], { key: "Enter" });
+    expect(get(readerItem)?.id).toBe(1);
+    await fireEvent.keyDown(textCards(container)[1], { key: " " });
+    expect(get(readerItem)?.id).toBe(2);
+    expect(get(scope)).toBe("all");
+  });
+
+  it("媒体卡单击仍走媒体选区，并清掉文本选中", async () => {
     const { container } = renderFeed();
     await tick();
     await fireEvent.click(textCards(container)[0]);
-    expect(get(pendingTextOpen)).toBe(1);
-    expect(get(scope)).toBe("text");
+    expect(get(selectedText)?.id).toBe(1);
+    await fireEvent.click(thumbCards(container)[0]);
+    expect(get(selectedText)).toBeNull();
+    expect(get(selectedId)).not.toBeNull();
   });
 
-  it("键盘 Enter / Space 同样能打开", async () => {
-    const { container } = renderFeed();
-    await tick();
-    await fireEvent.keyDown(textCards(container)[1], { key: "Enter" });
-    expect(get(pendingTextOpen)).toBe(2);
-    await fireEvent.keyDown(textCards(container)[0], { key: " " });
-    expect(get(pendingTextOpen)).toBe(1);
-  });
-
-  it("文本卡不进选区：点它不改 multiSelectedIds，也不显示选中环", async () => {
+  it("文本卡不进批量选区：ctrl 点它不改 multiSelectedIds（文本不参与批量删除）", async () => {
     const { container } = renderFeed();
     await tick();
     await fireEvent.pointerDown(textCards(container)[0], { ctrlKey: true });
     expect(get(multiSelectedIds).size).toBe(0);
-    expect(textCards(container)[0].className).not.toContain("is-selected");
   });
 
   it("选区只覆盖媒体子序列：shift 区间不会把文本拖进选区", async () => {

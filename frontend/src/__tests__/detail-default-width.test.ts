@@ -7,7 +7,7 @@ it('starts the expanded detail pane at its minimum, independently of window widt
   expect(source).toContain('let detailWidth = $state(DETAIL_MIN);');
   expect(source).toContain('let detailCollapsed = $state(false);');
   expect(source).toContain('Math.max(DETAIL_MIN, Math.min(DETAIL_MAX, startW + dx))');
-  expect(source).toContain('${detailCollapsed ? 44 : detailWidth}px');
+  expect(source).toContain('{detailCollapsed ? 44 : detailWidth}px');
 });
 
 it('points left to expand the right pane and right to collapse it', () => {

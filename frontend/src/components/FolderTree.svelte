@@ -4,7 +4,8 @@
   import { subscribeFileDrop } from '../lib/native-drop';
   import { pushToast } from "../lib/toast";
   import { backendUrl } from "../lib/backend-url";
-  import { folders, folderId, stats, query, tag, textMode, scope, switchContent } from "../lib/stores";
+  import { associateTextPaths, folders, folderId, stats, query, tag, scope, switchContent } from "../lib/stores";
+  import { isTextFilePath } from "../lib/text-reading";
   import { countBreakdown, countFor, formatCount, scopeCaption } from "../lib/counts";
   import type { FolderCounts, Scope } from "../lib/types";
   import Icon from "./Icon.svelte";
@@ -16,7 +17,9 @@
   let externalHover = $state(0);
   let importingFolders = $state(false);
   onMount(() => subscribeFileDrop(() => sidebarRegion, count => externalHover = count, async paths => {
-    if ($textMode) { window.dispatchEvent(new CustomEvent('associate-text-paths', { detail: paths })); return; }
+    // 文本文件走「关联本地文本」：编辑要写回原文件，不能复制进图库目录。
+    const textPaths = paths.filter(isTextFilePath);
+    if (textPaths.length) { associateTextPaths.set(textPaths); return; }
     if (importingFolders) return;
     importingFolders = true;
     try {
@@ -318,7 +321,7 @@
 </div>
 <div bind:this={sidebarRegion} class:external-hover={externalHover > 0} class="folder-scroll flex-1 overflow-y-auto px-2 pb-3" role="presentation" oncontextmenu={openBlankMenu}>
   {#if externalHover || importingFolders}
-    <div class="external-drop-status" role="status">{$textMode ? '松开以关联文本；编辑将保存到原文件' : importingFolders ? '正在复制文件夹及全部内容…' : '松开后复制到我的文件夹（保留原文件）'}</div>
+    <div class="external-drop-status" role="status">{externalHover > 0 && importingFolders ? '正在复制文件夹及全部内容…' : '松开后复制到我的文件夹（保留原文件）；文本文件将关联原文件'}</div>
   {/if}
   <div class="scope-heading">
     <span>系统</span>

@@ -33,8 +33,12 @@ describe("中间区域图片预览", () => {
   });
   it("预览挂载在中间 main，按画布测量，无全屏或模糊遮罩", () => {
     const app=readFileSync('src/App.svelte','utf8');
-    expect(app.slice(app.indexOf('<main'),app.indexOf('</main>'))).toContain('<Lightbox');
-    expect(app).toContain('inert={lightboxOpen}');
+    const main=app.slice(app.indexOf('<main'),app.indexOf('</main>'));
+    // 三层内嵌视图都在中间栏里：图片 / 文本 / 视频同一层，Esc 一律回缩略图
+    expect(main).toContain('<Lightbox');
+    expect(main).toContain('<TextReader');
+    expect(main).toContain('<VideoPlayer');
+    expect(app).toContain('inert={lightboxOpen || videoPlayerOpen || Boolean($readerItem)}');
     const viewer=readFileSync('src/components/Lightbox.svelte','utf8');
     expect(viewer).toContain('max-width: none');
     expect(viewer).toContain('bind:clientWidth={viewportW}');

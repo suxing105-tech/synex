@@ -21,8 +21,8 @@
     multiSelectedIds, folders, refreshFolders,
     selectedId as selectedIdStore,
     applySelection, clearSelection, removeIdsFromSelection,
-    comfyuiStatus, scope, mediaItems, playAudio, playingAudio, stopAudio, audioProgress,
-    pendingTextOpen, switchContent,
+    comfyuiStatus, scope, kindFilter, mediaItems, playAudio, playingAudio, stopAudio, audioProgress,
+    selectedText, selectTextItem, openTextReader, associateTextPaths,
   } from "../lib/stores";
   
   import { imagesApi, comfyuiApi, videosApi, audioApi } from "../lib/api";
@@ -33,14 +33,20 @@
   import { revealLocation as revealInShell } from "../lib/reveal";
   import type { FolderNode, ImageSummary, ItemSummary, MediaFeedItem, TextFeedItem } from "../lib/types";
   import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
+  import TextCreateModal from "./TextCreateModal.svelte";
+  import TextAssociateModal from "./TextAssociateModal.svelte";
+  import { textsApi } from "../lib/texts";
+  import { isTextFilePath, textFeedItemOf, textFormatLabel } from "../lib/text-reading";
   import { folderId } from "../lib/stores";
 
   interface Props {
     selectedId: number | null;
     lightboxOpen: boolean;
     lightboxIndex: number;
+    /** 中间栏被图片 / 文本 / 视频内嵌层盖住：网格的 Delete / Esc / 空格要让位。 */
+    overlayOpen?: boolean;
   }
-  let { selectedId = $bindable(), lightboxOpen = $bindable(), lightboxIndex = $bindable() }: Props = $props();
+  let { selectedId = $bindable(), lightboxOpen = $bindable(), lightboxIndex = $bindable(), overlayOpen = false }: Props = $props();
 
   // 右键菜单状态
   let menuOpen = $state(false);
@@ -114,18 +120,106 @@
 
   // ---------- 「所有素材」里的文本卡 ----------
   //
-  // 文本卡是只读入口：它不进选区、不参与删除/移动（那些归文本工作区管），
-  // 点一下 = 切到文本口径 + 让文本工作区打开这一篇。跳转目标走 store 而不是
-  // window 事件：TextWorkspace 靠 display:none 常驻，隐藏期的 window 事件会丢。
-  function openTextItem(it: TextFeedItem) {
-    pendingTextOpen.set(it.id);
-    switchContent("text");
-  }
-  /* 音频与文本卡统一 21:9 横幅（后端波形默认出图 840x360 同比例） */
+  // 文本卡与图片卡同构：单击 = 选中并在右侧出详情，双击 / 回车 = 在中间栏就地打开。
+  // 选中状态必须走 selectedText，不能借 selectedId —— texts.id 与 images.id 会撞车。
+  // 文本不参与多选与批量移动 / 删除，选区始终只覆盖媒体子序列。
   const TEXT_CARD_ASPECT = "21 / 9";
   const TEXT_CARD_RATIO_H = 9 / 21;
-  function textFormatLabel(format: string): string {
-    return (format || "txt").replace(/^[.]+/, "").toUpperCase();
+
+  /** 文本口径 = 侧栏选「全部文本」或类型筛选只勾了文本。 */
+  const isTextScope = $derived($scope === "text" || $kindFilter === "text");
+  let hoveredText = $state<number | null>(null);
+  let textMenuOpen = $state(false);
+  let textMenuX = $state(0);
+  let textMenuY = $state(0);
+  let textMenuTarget = $state<TextFeedItem | null>(null);
+  /** 网格右键菜单里的重命名 / 回收站需要 version，只有详情接口给。 */
+  let textDialog = $state<"" | "rename" | "trash">("");
+  let textDialogValue = $state("");
+  let textDialogBusy = $state(false);
+  let textDialogError = $state("");
+
+  function openTextCardMenu(e: MouseEvent, it: TextFeedItem) {
+    e.preventDefault();
+    e.stopPropagation();
+    textMenuTarget = it;
+    textMenuX = e.clientX;
+    textMenuY = e.clientY;
+    textMenuOpen = true;
+  }
+
+  const textMenuItems = $derived.by<ContextMenuItem[]>(() => {
+    const it = textMenuTarget;
+    if (!it) return [];
+    return [
+      { label: "阅读", onClick: () => openTextReader(it) },
+      { label: "就地编辑", onClick: () => openTextReader(it, undefined, true) },
+      { label: "复制全文", onClick: () => void copyTextBody(it) },
+      { label: "文件位置", onClick: () => void revealTextFile(it) },
+      { label: "重命名", onClick: () => startTextRename(it) },
+      { kind: "sep" },
+      { label: "移入回收站", danger: true, onClick: () => { textMenuTarget = it; textDialog = "trash"; textDialogError = ""; } },
+    ];
+  });
+
+  async function copyTextBody(it: TextFeedItem) {
+    try {
+      const detail = await textsApi.detail(it.id);
+      const ok = await copyText(detail.body).catch(() => false);
+      notify(ok ? `已复制全文（${detail.body.length} 字）` : "复制失败，请打开后手动选择");
+    } catch (e) { notify(e instanceof Error ? e.message : String(e)); }
+  }
+  async function revealTextFile(it: TextFeedItem) {
+    try { await revealInShell(it.path, true, () => textsApi.reveal(it.id)); }
+    catch (e) { await copyText(it.path); notify(`${e instanceof Error ? e.message : String(e)}（已复制文件路径）`); }
+  }
+  function startTextRename(it: TextFeedItem) {
+    textMenuTarget = it;
+    textDialogValue = it.filename;
+    textDialog = "rename";
+    textDialogError = "";
+  }
+  async function runTextDialog() {
+    const it = textMenuTarget;
+    if (!it) return;
+    textDialogBusy = true; textDialogError = "";
+    try {
+      const detail = await textsApi.detail(it.id);
+      if (textDialog === "rename") {
+        const name = textDialogValue.trim();
+        if (!name) throw new Error("文件名不能为空");
+        if (name !== it.filename) await textsApi.move(it.id, detail.path.replace(/[\\/][^\\/]+$/, ""), name, detail.version);
+        textDialog = "";
+        await refreshFeed({ keepScroll: true });
+      } else {
+        await textsApi.trash(it.id, detail.version);
+        if ($selectedText?.id === it.id) selectedText.set(null);
+        textDialog = "";
+        await Promise.all([refreshFolders(), refreshFeed({ keepScroll: true })]);
+        notify("已移入系统回收站");
+      }
+    } catch (e) {
+      textDialogError = e instanceof Error ? e.message : String(e);
+    } finally {
+      textDialogBusy = false;
+    }
+  }
+
+  // ---------- 文本口径的工具栏：新建 / 关联 ----------
+  let textCreateOpen = $state(false);
+  async function createText(value: { directory: string; name: string; format: string }) {
+    try {
+      const name = value.name.replace(/\.(txt|md|markdown|srt|vtt)$/i, "") + "." + value.format;
+      const created = await textsApi.create({
+        directory: value.directory,
+        name,
+        body: "",
+        folder_id: value.directory ? null : $folderId,
+      });
+      textCreateOpen = false;
+      await Promise.all([refreshFolders(), refreshFeed({ keepScroll: true })]);
+      openTextReader(textFeedItemOf(created), "", true);
+    } catch (e) { notify(e instanceof Error ? e.message : String(e)); }
   }
 
   // ---------- 拖拽导入状态 ----------
@@ -248,7 +342,12 @@
   onMount(() => subscribeFileDrop(
     () => scrollerEl,
     (count) => { dragCounter = count ? 1 : 0; dragFileCount = count; },
-    async (paths) => {
+    async (dropped) => {
+      // 文本文件不是「导入副本」，编辑要写回原文件，所以走关联弹层而不是导入流程。
+      const textPaths = dropped.filter(isTextFilePath);
+      const paths = dropped.filter((p) => !isTextFilePath(p));
+      if (textPaths.length) associateTextPaths.set(textPaths);
+      if (!paths.length) return;
       if (importing) return;
       importing = true;
       importingProgress = { done: 0, total: paths.length };
@@ -611,6 +710,8 @@
 
   function handleKey(e: KeyboardEvent) {
     if (shortcutBlocked(e)) return;
+    // 内嵌层（图片预览 / 文本阅读 / 视频播放）开着时，按键归它自己，网格不抢 Delete / Esc / 空格。
+    if (overlayOpen) return;
     if (isTypingTarget(e.target) || lightboxOpen) return;
     if (e.key === "Delete" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
       e.preventDefault();
@@ -619,7 +720,7 @@
       return;
     }
     if (e.key === "Escape") {
-      if (selectedCount > 0) {
+      if (selectedCount > 0 || $selectedText) {
         e.preventDefault();
         clearSelection();
       }
@@ -630,6 +731,15 @@
       // 否则两个 svelte:window handler 都触发：Feed 先把 lightboxOpen 改成 true，
       // Lightbox 的 handler 看到 open=true 紧接着调 next()，结果展示的是选中图的下一张。
       if (lightboxOpen) return;
+      // 悬停 / 选中的是文本卡时，空格打开阅读层：与图片同一手势，不需要另一套键。
+      const hoveredTextItem = hoveredText === null ? null : $feedItems.filter(isTextItem).find((x) => x.id === hoveredText) ?? null;
+      const textPreview = hoveredTextItem ?? $selectedText;
+      if (textPreview) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        openTextReader(textPreview);
+        return;
+      }
       // 空格放大：当前鼠标滑过的那张，不再依赖 selectedId。
       // 鼠标没在任何缩略图上 → 不响应（避免误触发）。
       const previewId = $multiSelectedIds.size === 2 ? [...$multiSelectedIds][0] : hoveredId ?? selectedId;
@@ -767,8 +877,12 @@
     <button class="compare-trigger shrink-0 rounded-lg px-2 py-2 text-xs" onclick={() => { const media = $mediaItems; const i = media.findIndex(it => $multiSelectedIds.has(it.id)); if (i >= 0) openLightbox(media[i], i); }}>对比图片</button>
   {/if}
   </div>
-  <GallerySearch label={$scope === 'all' ? '搜索图片、视频、音频、文本' : $scope === 'video' ? '搜索视频' : $scope === 'audio' ? '搜索音频' : '搜索图片'} />
+  <GallerySearch label={$scope === 'all' ? '搜索图片、视频、音频、文本' : $scope === 'video' ? '搜索视频' : $scope === 'audio' ? '搜索音频' : $scope === 'text' ? '搜索文本' : '搜索图片'} />
   <div class="toolbar-actions flex flex-wrap items-center text-[12.5px] text-muted">
+    {#if isTextScope}
+      <button type="button" class="text-tool shrink-0 rounded-lg px-2.5 py-2 text-xs" onclick={() => { textCreateOpen = true; }}>新建文本</button>
+      <button type="button" class="text-tool shrink-0 rounded-lg px-2.5 py-2 text-xs" onclick={() => associateTextPaths.set([])} title="把本地 TXT / MD / SRT / VTT 关联进图库，编辑直接写原文件">关联本地文本</button>
+    {/if}
     <TypeChips />
     <input
       type="range"
@@ -827,7 +941,18 @@
   {#if $feedLoading && $feedItems.length === 0}
     <div class="text-center text-muted py-12">加载中…</div>
   {:else if $feedItems.length === 0}
-    <div class="empty-feed" aria-label="空文件夹"></div>
+    <div class="empty-feed" aria-label={isTextScope ? "还没有文本" : "空文件夹"}>
+      {#if isTextScope}
+        <div class="empty-text-actions">
+          <p>文本直接读你的本地文件，改完就写回原文件。</p>
+          <div>
+            <button type="button" class="primary" onclick={() => { textCreateOpen = true; }}>新建文本</button>
+            <button type="button" onclick={() => associateTextPaths.set([])}>关联本地文本</button>
+          </div>
+          <small>TXT · Markdown · SRT · VTT</small>
+        </div>
+      {/if}
+    </div>
   {:else}
     <!--
       贪心 masonry：
@@ -853,11 +978,16 @@
                 <button
                   type="button"
                   class="text-card"
+                  class:is-selected={$selectedText?.id === it.id}
                   style="aspect-ratio: {aspectFor(it)}; width: 100%;"
                   title={it.filename}
                   aria-label={it.filename}
-                  onclick={() => openTextItem(it)}
-                  onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openTextItem(it); } }}
+                  onclick={() => selectTextItem(it)}
+                  ondblclick={() => openTextReader(it)}
+                  oncontextmenu={(e) => openTextCardMenu(e, it)}
+                  onmouseenter={() => (hoveredText = it.id)}
+                  onmouseleave={() => { if (hoveredText === it.id) hoveredText = null; }}
+                  onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); openTextReader(it); } }}
                 >
                   <span class="text-format">{textFormatLabel(it.format)}</span>
                   <span class="text-name">{it.filename}</span>
@@ -980,6 +1110,34 @@
 </div>
 
 <ContextMenu bind:open={menuOpen} x={menuX} y={menuY} items={menuItems} />
+<ContextMenu bind:open={textMenuOpen} x={textMenuX} y={textMenuY} items={textMenuItems} />
+
+{#if textDialog && textMenuTarget}
+  <div class="text-dialog-backdrop" role="presentation">
+    <div class="text-dialog" role="dialog" aria-modal="true" aria-label={textDialog === "rename" ? "重命名文本" : "移入回收站"}>
+      <h2>{textDialog === "rename" ? "重命名" : "移入系统回收站"}</h2>
+      {#if textDialogError}<p class="dialog-error" role="alert">{textDialogError}</p>{/if}
+      {#if textDialog === "rename"}
+        <label>文件名称<input bind:value={textDialogValue} onkeydown={(e) => { if (e.key === "Enter") void runTextDialog(); }} /></label>
+        <p class="dialog-muted">改名作用在磁盘原文件上，图库记录跟着走。</p>
+      {:else}
+        <p>会把磁盘原文件一起移入系统回收站：</p>
+        <pre>{textMenuTarget.path}</pre>
+        <p class="dialog-muted">回收站不可用时会停止操作，不做永久删除。</p>
+      {/if}
+      <div class="dialog-actions">
+        <button type="button" onclick={() => { textDialog = ""; }}>取消</button>
+        <button type="button" class={textDialog === "trash" ? "danger" : "primary"} disabled={textDialogBusy} onclick={() => void runTextDialog()}>
+          {textDialogBusy ? "处理中…" : textDialog === "rename" ? "保存" : "确认移入回收站"}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<TextCreateModal open={textCreateOpen} title="新建文本" defaultDirectory=""
+  onSubmit={(value) => void createText(value)} onClose={() => { textCreateOpen = false; }} />
+<TextAssociateModal open={$associateTextPaths !== null} paths={$associateTextPaths ?? []} onClose={() => associateTextPaths.set(null)} />
 
 
 
@@ -993,7 +1151,7 @@
   .thumb.is-selected::after { content: ""; position: absolute; inset: 0; box-sizing: border-box; border: 2px solid #d4d4d4; border-radius: inherit; pointer-events: none; z-index: 3; }
   .image-rename { min-width: 0; border: 1px solid #888; border-radius: 3px; background: #222; color: #eee; padding: 1px 3px; outline: none; font: inherit; }
   .import-progress { position: sticky; top: 0; z-index: 25; width: fit-content; margin: 0 auto 8px; padding: 6px 12px; background: #292929; border-radius: 16px; font-size: 12px; color: #ddd; }
-  /* 「所有素材」里的文本卡：21:9 横幅只读入口。徽标 + 标题一行 + 摘录两行，点开进文本工作区。
+  /* 「所有素材」里的文本卡：21:9 横幅只读入口。徽标 + 标题一行 + 摘录两行，点开进中间栏的阅读层。
      卡片只有约 1/3 列宽那么高，装不下第四行，所以悬停提示整行删掉（标题 tooltip 够用）。 */
   .text-card {
     position: relative; display: flex; flex-direction: column; gap: 3px; flex: none; min-height: 0;
@@ -1002,6 +1160,26 @@
     text-align: left; cursor: pointer; user-select: none;
   }
   .text-card:hover { border-color: #6a6a70; background: linear-gradient(180deg, #27272b, #1f1f22); }
+  /* 选中的文本卡与图片卡同一套描边，右侧栏随之切换成文本详情 */
+  .text-card.is-selected { border-color: #d4d4d4; box-shadow: inset 0 0 0 1px #d4d4d4; }
+  .text-tool { border: 1px solid rgb(58 58 65); background: #232327; color: #d9d8e0; margin-left: 6px; }
+  .empty-text-actions { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 12px; color: #a9a7b3; font-size: 12.5px; }
+  .empty-text-actions button { border: 1px solid rgb(58 58 65); border-radius: 6px; background: #232327; color: #dddce4; padding: 6px 12px; font-size: 12px; cursor: pointer; margin: 0 4px; }
+  .empty-text-actions button.primary { background: #6d4c4c; border-color: #8a5f5f; }
+  .empty-text-actions small { color: #74727e; }
+  .text-dialog-backdrop { position: fixed; inset: var(--desktop-titlebar-height, 0px) 0 0; background: #000a; z-index: 90; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .text-dialog { width: 460px; max-width: 96vw; border: 1px solid #44404a; border-radius: 12px; background: #18181b; padding: 20px; color: #dddce4; font-size: 13px; }
+  .text-dialog h2 { font-size: 17px; font-weight: 600; margin-bottom: 12px; }
+  .text-dialog label { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+  .text-dialog input { background: #101012; border: 1px solid #45454d; border-radius: 6px; color: inherit; padding: 7px 9px; }
+  .text-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.7 Consolas, 'Microsoft YaHei', monospace; background: #0e0e10; padding: 12px; border-radius: 6px; }
+  .dialog-muted { color: #8b8997; font-size: 12px; line-height: 1.7; }
+  .dialog-error { color: #f0ce9b; font-size: 12px; margin-bottom: 8px; }
+  .dialog-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 14px; }
+  .dialog-actions button { border: 1px solid #49424c; border-radius: 6px; background: #26262b; color: #dddce4; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+  .dialog-actions button:disabled { opacity: .45; cursor: default; }
+  .dialog-actions .primary { background: #6d4c4c; border-color: #8a5f5f; }
+  .dialog-actions .danger { background: #5b2723; border-color: #7d3a34; }
   .text-card:focus-visible { outline: 2px solid #f24e4e; outline-offset: 1px; }
   .text-format {
     align-self: flex-start; padding: 1px 5px; border-radius: 4px; background: #f24e4e1f;

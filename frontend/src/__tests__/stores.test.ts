@@ -71,16 +71,14 @@ describe("前端 stores", () => {
     expect(get(targetColumns)).toBe(12);
   });
 
-  it("切换口径会更新 store，textMode 由 scope 派生", () => {
-    for (const next of ["image", "video", "audio"] as const) {
+  it("切换口径只改 scope；textMode 是遗留门，不再随 scope 派生", () => {
+    // 0.2.24 起文本在中间栏内嵌层里读，scope 只决定网格里放什么。
+    // textMode 只剩未挂载的 TextWorkspace 用，下一轮随文件一起删除。
+    for (const next of ["image", "video", "audio", "text", "all"] as const) {
       scope.set(next);
       expect(get(scope)).toBe(next);
       expect(get(textMode)).toBe(false);
     }
-    scope.set("text");
-    expect(get(textMode)).toBe(true);
-    scope.set("all");
-    expect(get(textMode)).toBe(false);
   });
 
   it("切换文件夹 id", () => {

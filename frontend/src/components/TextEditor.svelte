@@ -1,10 +1,12 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import { markdownBlocks, renderMarkdown } from '../lib/text-markdown';
-  let { body, id, markdown, readonly = false, source = false, editing = false, cursor = 0, scroll = 0,
+  import { escapeHtml, highlightHtml, markdownBlocks, renderMarkdown } from '../lib/text-markdown';
+  let { body, id, markdown, readonly = false, source = false, editing = false, cursor = 0, scroll = 0, highlight = '',
+    pageWidth = '', pageFontSize = '',
     onchange, onposition, oncomposition, onasset }:
     { body: string; id: number; markdown: boolean; readonly?: boolean; source?: boolean; editing?: boolean;
-      cursor?: number; scroll?: number; onchange: (body: string) => void;
+      cursor?: number; scroll?: number; highlight?: string; pageWidth?: string; pageFontSize?: string;
+      onchange: (body: string) => void;
       onposition: (cursor: number, scroll: number) => void; oncomposition: (v: boolean) => void;
       onasset: (href: string) => void } = $props();
   let area = $state<HTMLTextAreaElement>();
@@ -33,7 +35,8 @@
     area?.focus(); area?.setSelectionRange(Math.max(0, at - start), Math.max(0, at - start)); grow();
   }
   export async function locate(at: number, length = 0) {
-    if (!editing && markdown && !source) {
+    // 阅读态（Markdown 分块或纯文本分行）都带 data-block-start，按块滚动定位。
+    if (!editing) {
       const b = blocks.find(b => at >= b.start && at <= b.end) || blocks[0];
       await tick();
       scroller?.querySelector(`[data-block-start="${b?.start}"]`)?.scrollIntoView({ block: 'center' });
@@ -81,13 +84,19 @@
 </script>
 
 <div class="text-editor" bind:this={scroller} use:mounted onscroll={() => onposition(cursor, scroller?.scrollTop || 0)}>
-  {#if fullSource}
+  {#if fullSource && !editing}
+    <div class="plain-page" style:max-width={pageWidth || null} style:font-size={pageFontSize || null}>
+      {#each blocks as block (block.start)}
+        <pre class="plain-block" data-block-start={block.start}>{@html block.text.trim() ? highlightHtml(escapeHtml(block.text), highlight) : '<span class="empty-reading">空白文本，点击上方“编辑”开始写作。</span>'}</pre>
+      {/each}
+    </div>
+  {:else if fullSource}
     <textarea bind:this={area} aria-label="文本正文" value={body} readonly={readonly || !editing} spellcheck="false"
       oninput={input} onclick={position} onkeyup={position} onblur={position}
       oncompositionstart={() => { composing = true; oncomposition(true); }}
       oncompositionend={() => { composing = false; input(); oncomposition(false); }}></textarea>
   {:else}
-    <div class="markdown-page">
+    <div class="markdown-page" style:max-width={pageWidth || null} style:font-size={pageFontSize || null}>
       {#each blocks as block (block.start)}
         {#if active && block.start === active.start}
           <textarea bind:this={area} aria-label="编辑 Markdown 段落" value={shown} {readonly} spellcheck="false"
@@ -100,7 +109,7 @@
             onclick={(e) => previewClick(e, block.start, block.end)}
             onkeydown={(e) => { if (e.target === e.currentTarget && e.key === 'Enter') void activate(block.start, block.end); }}>
             {#if !editing && !block.text.trim()}<span class="empty-reading">空白文本，点击上方“编辑”开始写作。</span>
-            {:else}{@html renderMarkdown(block.text, id)}{/if}
+            {:else}{@html renderMarkdown(block.text, id, highlight)}{/if}
           </div>
         {/if}
       {/each}
@@ -112,6 +121,9 @@
   .text-editor { overflow:auto; flex:1; min-height:0; padding:30px clamp(20px,5vw,90px) 120px; }
   textarea { display:block; width:100%; min-height:180px; resize:none; background:transparent; border:0; outline:none; color:inherit; font:15px/1.85 Consolas,'Microsoft YaHei',monospace; padding:8px 0; tab-size:2; }
   .markdown-page { max-width:880px; margin:auto; font-size:16px; line-height:1.9; overflow-wrap:anywhere; }
+  .plain-page { max-width:880px; margin:auto; font-size:16px; line-height:1.9; overflow-wrap:anywhere; }
+  .plain-block { margin:0 0 1.1em; white-space:pre-wrap; font:inherit; }
+  .plain-page :global(mark.text-hit), .markdown-page :global(mark.text-hit) { background:#5b4413; color:#ffe9a8; border-radius:3px; padding:0 2px; }
   .markdown-block { min-height:15px; cursor:text; outline:none; border-radius:5px; }
   .markdown-block:focus-visible { box-shadow:0 0 0 1px #777; }
   .empty-reading { color:#8a8a8e; }

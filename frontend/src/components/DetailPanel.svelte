@@ -20,6 +20,7 @@
   import { get } from "svelte/store";
   import {
     selectedDetail,
+    selectedText,
     feedItems,
     folders,
     refreshFolders,
@@ -40,6 +41,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
   import ParamsCard from "./ParamsCard.svelte";
   import WorkflowCard from "./WorkflowCard.svelte";
   import MetadataCard from "./MetadataCard.svelte";
+  import TextDetailPanel from "./TextDetailPanel.svelte";
   import FolderPickerModal from "./FolderPickerModal.svelte";
   import VideoCoverModal from "./VideoCoverModal.svelte";
   import { moveSummary } from "../lib/move-result";
@@ -364,11 +366,14 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
   }}
 />
 
-{#if !$selectedDetail}
+{#if $selectedText}
+  <!-- 文本选中走独立分支：texts.id 与 images.id 会撞车，详情不能复用图片那套字段 -->
+  <TextDetailPanel />
+{:else if !$selectedDetail}
   <div class="h-full flex items-center justify-center text-center text-muted p-8">
     <div>
       <div class="mb-3 opacity-50"><Icon name="arrow-left" size={36} /></div>
-      <div class="text-[12.5px]">在中间选一张图片<br />查看详情和操作</div>
+      <div class="text-[12.5px]">在中间选一张图片或文本<br />查看详情和操作</div>
     </div>
   </div>
 {:else}

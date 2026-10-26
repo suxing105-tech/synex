@@ -9,6 +9,7 @@ import type {
   ItemSummary,
   MediaFeedItem,
   Scope,
+  TextFeedItem,
   ScanProgress,
   Stats,
 } from "./types";
@@ -38,7 +39,17 @@ export const selectionAnchorId = writable<number | null>(null);
 // 用户看不出「这个数字数的是什么」；现在收成一个 scope，口径由 lib/counts.ts 单点定义。
 
 export const scope = writable<Scope>("all");
-export const textMode = derived(scope, (s) => s === "text");
+
+/**
+ * 遗留开关：文本工作区是否可见。
+ *
+ * 0.2.24 之前它是 `derived(scope === 'text')`，所以「文本口径」= 卸载整个图库、
+ * 换成全屏 TextWorkspace —— 这就是文本用起来像另一个应用的原因。现在文本和图片
+ * 一样在中间栏里就地打开（TextReader / Lightbox / VideoPlayer 同一层），
+ * scope 只决定网格里放什么。工作区入口已全部收掉、组件不再挂载，
+ * 这个 store 只给它内部那批 `get(textMode)` 门控用，下一轮随文件一起删除。
+ */
+export const textMode = writable(false);
 
 export const folderId = writable<number | null>(null);
 export const query = writable<string>("");
@@ -113,7 +124,7 @@ export function kindsOfFilter(value: KindFilter): ItemKind[] {
 
 export const targetColumns = writable<number>(5);
 
-/** 统一流：scope==='all' 时是四类混排，其余 scope 只有媒体（或文本工作区自己加载）。 */
+/** 统一流：scope==='all' 时是四类混排，'text' 时只有文本，其余 scope 只有媒体。 */
 export const feedItems = writable<ItemSummary[]>([]);
 export const feedTotal = writable<number>(0);
 export const feedLoading = writable<boolean>(false);
@@ -142,8 +153,53 @@ export function stopAudio() {
 }
 
 /** 统一流里点文本卡 → 文本工作区要打开哪一篇。TextWorkspace 常驻（靠 display:none 隐藏），
- *  卸载期的 window 事件会丢，所以走 store。 */
+ *  卸载期的 window 事件会丢，所以走 store。遗留：随工作区一起删除。 */
 export const pendingTextOpen = writable<number | null>(null);
+
+// ---------- 文本：选中 / 阅读层 / 关联 ----------
+//
+// 三个通道都不能借用 selectedId：texts.id 与 images.id 各自自增，
+// 同一个数字可以同时指向一篇文章和一张图（见 lib/items.ts 的 itemUid）。
+export const selectedText = writable<TextFeedItem | null>(null);
+/** 中间栏阅读层打开的那一篇，null = 阅读层关闭。 */
+export const readerItem = writable<TextFeedItem | null>(null);
+/** 打开阅读层那一刻的搜索词快照：正文命中高亮与跳转都按它算。 */
+export const readerTerm = writable<string>("");
+/** 拖到侧栏 / 网格的 .txt/.md/.srt/.vtt 路径，交给关联弹层处理。 */
+export const associateTextPaths = writable<string[] | null>(null);
+
+/** 阅读层里存过盘或改过元数据，关闭时要把网格摘录刷新一次。 */
+let textFeedStale = false;
+export function markTextFeedStale(): void { textFeedStale = true; }
+
+/** 单击文本卡 = 选中文本并清掉媒体选区（两套选中互斥，右侧栏只讲一件事）。 */
+export function selectTextItem(item: TextFeedItem): void {
+  selectedId.set(null);
+  multiSelectedIds.set(new Set());
+  selectionAnchorId.set(null);
+  selectedDetail.set(null);
+  selectedText.set(item);
+}
+
+/** 打开后是否直接进编辑态：详情栏「就地编辑」与右键菜单用它，阅读层读完就清掉。 */
+export const readerWantsEdit = writable(false);
+
+/** 双击 / 空格：在中间栏打开这一篇，term 默认取当前搜索词。 */
+export function openTextReader(item: TextFeedItem, term = get(query), edit = false): void {
+  selectTextItem(item);
+  readerTerm.set(term.trim());
+  readerWantsEdit.set(edit);
+  readerItem.set(item);
+}
+
+/** 返回缩略图：只在正文或元数据真变过时才重新拉一页，避免白跑一次网络。 */
+export async function closeTextReader(): Promise<void> {
+  readerItem.set(null);
+  readerTerm.set("");
+  if (!textFeedStale) return;
+  textFeedStale = false;
+  await refreshFeed({ keepScroll: true });
+}
 
 export const folders = writable<FolderNode[]>([]);
 export const stats = writable<Stats>({
@@ -203,12 +259,14 @@ export function applySelection(
   selectedId.set(r.primary);
   multiSelectedIds.set(r.selected);
   selectionAnchorId.set(r.anchor);
+  selectedText.set(null);
 }
 
 export function clearSelection(): void {
   selectedId.set(null);
   multiSelectedIds.set(new Set());
   selectionAnchorId.set(null);
+  selectedText.set(null);
 }
 
 export function removeIdsFromSelection(ids: Iterable<number>): void {
@@ -312,7 +370,8 @@ function currentFeedParams(): FeedParams {
 
 function countsForSingleKind(scope: Scope, total: number): FolderCounts {
   const base: FolderCounts = { image: 0, video: 0, audio: 0, text: 0 };
-  if (scope !== "all" && scope !== "text") base[scope] = total;
+  // 单一口径只数这一类：文本口径也不例外，否则「全部文本」下 chip 会显示 0 篇文本
+  if (scope !== "all") base[scope] = total;
   return base;
 }
 
@@ -323,7 +382,10 @@ export function setFeedScrollBridge(bridge: typeof scrollBridge) {
 }
 
 async function fetchFeedPage(params: FeedParams, offset: number, removed: Set<number>) {
-  if (params.scope === "all") {
+  // 「全部文本」也走统一流：只有 /api/items 会给带 item_type:"text" 的行，
+  // /api/images?kind=text 那条从来不返回文本，Feed 也就画不出文本卡。
+  if (params.scope === "all" || params.scope === "text") {
+    if (params.scope === "text") params.kinds = ["text"];
     const resp = await itemsApi.list({
       folder_id: params.folder,
       q: params.q || undefined,
@@ -335,7 +397,10 @@ async function fetchFeedPage(params: FeedParams, offset: number, removed: Set<nu
       offset,
     });
     const items = resp.items.filter((item) => !(isMediaItem(item) && removed.has(item.id)));
-    return { items, total: Math.max(0, resp.total - (resp.items.length - items.length)), counts: resp.counts };
+    const total = Math.max(0, resp.total - (resp.items.length - items.length));
+    // 单一口径下侧栏只数这一类，counts 别把另外三类的结构带过去（与 image/video/audio 一致）。
+    const counts = params.scope === "text" ? countsForSingleKind("text", total) : resp.counts;
+    return { items, total, counts };
   }
   const resp = await imagesApi.list({
     folder_id: params.folder,
@@ -356,7 +421,6 @@ async function fetchFeedPage(params: FeedParams, offset: number, removed: Set<nu
 }
 
 export async function refreshFeed(opts?: { keepScroll?: boolean }): Promise<void> {
-  if (get(textMode)) return;
   const request = ++feedRequest;
   const removed = new Set<number>();
   pendingFeedRemovals.add(removed);
@@ -382,7 +446,7 @@ export async function refreshFeed(opts?: { keepScroll?: boolean }): Promise<void
 
 /** 滚到底接着要下一页；重复项按 itemUid 去重，绝不出现在两屏里。 */
 export async function loadMoreFeed(): Promise<void> {
-  if (get(textMode) || get(feedLoading) || get(feedLoadingMore)) return;
+  if (get(feedLoading) || get(feedLoadingMore)) return;
   const params = currentFeedParams();
   const loaded = get(feedItems);
   if (loaded.length >= get(feedTotal)) return;

@@ -11,20 +11,20 @@
   const desktop = isTauri();
   let desktopMaximized = $state(false);
   import CollapsedSidebar from "./components/CollapsedSidebar.svelte";
-  import TextWorkspace from './components/TextWorkspace.svelte';
   import { registerSidebarShortcuts } from "./lib/sidebar-shortcuts";
+  // 内嵌层（图片 / 文本 / 视频）开着时全局快捷键让位；右侧栏常驻，所以 rightAvailable 恒真。
+  const viewerOpen = () => lightboxOpen || videoPlayerOpen || Boolean($readerItem);
   onMount(() => registerSidebarShortcuts(
     () => sidebarCollapsed = !sidebarCollapsed,
     () => detailCollapsed = !detailCollapsed,
-    () => lightboxOpen || settingsOpen || onboardingOpen || videoPlayerOpen,
-    () => !$textMode,
+    () => viewerOpen() || settingsOpen || onboardingOpen,
+    () => true,
   ));
   import { registerContentShortcuts } from './lib/content-shortcuts';
-  onMount(() => registerContentShortcuts(type => switchContent(type, false, true), () => lightboxOpen || settingsOpen || onboardingOpen));
-  import { textMode, switchContent } from './lib/stores';
-  let textOpened = $state(false);
-  $effect(() => { if ($textMode) textOpened = true; });
+  onMount(() => registerContentShortcuts(type => switchContent(type, false, true), () => viewerOpen() || settingsOpen || onboardingOpen));
+  import { switchContent, readerItem, readerTerm } from './lib/stores';
   import Feed from "./components/Feed.svelte";
+  import TextReader from "./components/TextReader.svelte";
   import DetailPanel from "./components/DetailPanel.svelte";
   import Lightbox from "./components/Lightbox.svelte";
   import OnboardingModal from "./components/OnboardingModal.svelte";
@@ -211,10 +211,9 @@
   <ScanProgressBar />
   <div
     class="flex-1 min-h-0 grid app-grid"
-    class:drawer-mode={narrowMode && !$textMode}
+    class:drawer-mode={narrowMode}
     class:sidebar-collapsed={sidebarCollapsed}
-    class:text-mode={$textMode}
-    style="--sidebar-width: {sidebarCollapsed ? 44 : 260}px; grid-template-columns: {$textMode ? 'var(--sidebar-width) 1fr' : `var(--sidebar-width) 1fr 6px ${detailCollapsed ? 44 : detailWidth}px`};"
+    style="--sidebar-width: {sidebarCollapsed ? 44 : 260}px; grid-template-columns: var(--sidebar-width) 1fr 6px {detailCollapsed ? 44 : detailWidth}px;"
   >
     <aside class="border-r border-border bg-surface flex flex-col min-h-0">
       {#if sidebarCollapsed}
@@ -230,20 +229,23 @@
       </div>
     </aside>
     <main class="relative min-w-0 min-h-0 overflow-hidden isolate" style="display:flex;flex-direction:column;">
-      {#if textOpened}<div style:display={$textMode ? 'block' : 'none'} style="flex:1;min-height:0;"><TextWorkspace /></div>{/if}
-      {#if !$textMode}
-      <div class="h-full flex flex-col" inert={lightboxOpen}>
+      <!--
+        中间栏只有一个「打开态」层级：图片 Lightbox、文本 TextReader、视频 VideoPlayer
+        都挂在这里，都是 absolute inset-0，Esc 一律回到缩略图。网格常驻，只是被 inert 挡住交互。
+      -->
+      <div class="h-full flex flex-col" inert={lightboxOpen || videoPlayerOpen || Boolean($readerItem)}>
       <Feed
         bind:selectedId={selectedIdValue}
         bind:lightboxOpen
         bind:lightboxIndex
+        overlayOpen={lightboxOpen || videoPlayerOpen || Boolean($readerItem)}
       />
       </div>
       <AudioEngine />
       <Lightbox bind:open={lightboxOpen} bind:index={lightboxIndex} bind:selectedId={selectedIdValue} />
-      {/if}
+      <TextReader open={Boolean($readerItem)} item={$readerItem} term={$readerTerm} />
+      <VideoPlayer bind:open={videoPlayerOpen} bind:startId={videoStartId} />
     </main>
-    {#if !$textMode}
     <div
       class="splitter"
       role="separator"
@@ -272,10 +274,9 @@
         </div>
       {/if}
     </aside>
-    {/if}
   </div>
 
-  {#if !$textMode && narrowMode && $selectedDetail && !drawerOpen}
+  {#if narrowMode && $selectedDetail && !drawerOpen}
     <button
       type="button"
       class="drawer-toggle"
@@ -287,8 +288,6 @@
   {/if}
 </div>
 
-
-<VideoPlayer bind:open={videoPlayerOpen} bind:startId={videoStartId} />
 
 <OnboardingModal bind:open={onboardingOpen} />
 <SettingsModal bind:open={settingsOpen} bind:tab={settingsTab} onOpenOnboarding={() => { settingsOpen = false; onboardingOpen = true; }} />
@@ -353,7 +352,7 @@
     transform: translateY(-1px);
   }
   @media (max-width: 1100px) {
-    .app-grid:not(.text-mode) {
+    .app-grid {
       grid-template-columns: var(--sidebar-width) 1fr 6px 320px !important;
     }
   }

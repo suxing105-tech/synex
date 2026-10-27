@@ -5,6 +5,7 @@ import { get } from "svelte/store";
 import TypeChips from "../components/TypeChips.svelte";
 import { ALL_KINDS, feedCounts, kindFilter, scope, selectKind } from "../lib/stores";
 import type { ItemKind } from "../lib/types";
+import { ICON_PATHS } from "../lib/icons";
 
 vi.mock("../lib/api", () => ({
   itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) },
@@ -18,6 +19,12 @@ vi.mock("../lib/api", () => ({
 const KEY = "seekx.item-kind.v1";
 const LEGACY_KEY = "seekx.item-kinds.v1";
 const ALL: ItemKind[] = ["image", "video", "audio", "text"];
+
+/** happy-dom 会把自闭合标签补成 <rect ...></rect>，归一化后才能和 ICON_PATHS 原文比对 */
+function innerSvg(el?: Element | null): string {
+  return (el?.innerHTML ?? "").replace(/<([a-z]+)([^>]*?)><\/\1>/gi, "<$1$2/>");
+}
+
 
 function chipByText(container: HTMLElement, text: string): HTMLButtonElement {
   const el = [...container.querySelectorAll<HTMLButtonElement>(".chip")]
@@ -164,6 +171,14 @@ describe("持久化", () => {
     const after = await bootFilter(() => localStorage.setItem(LEGACY_KEY, JSON.stringify(["text"])));
     expect(after).toBe("text");
     expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
+  });
+
+  it("「全部」chip 用房子图标，与侧栏同一枚", () => {
+    const screen = render(TypeChips);
+    expect(innerSvg(chipByText(screen.container, "全部").querySelector("svg"))).toBe(ICON_PATHS.home);
+    for (const chip of [...screen.container.querySelectorAll(".chip")]) {
+      expect(innerSvg(chip.querySelector("svg"))).not.toBe(ICON_PATHS.layers);
+    }
   });
 
   it("「全部」= 四类都发给后端；单选只发那一类（counts 口径不受影响）", async () => {

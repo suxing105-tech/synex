@@ -140,6 +140,22 @@ export const ICON_PATHS: Record<string, string> = {
     '<line x1="18" y1="6" x2="6" y2="18"/>' +
     '<line x1="6" y1="6" x2="18" y2="18"/>',
 
+  // 侧栏文件夹：轮廓 + 15% 填充 + 盖板线，比纯线框更实（对标 Codex 侧栏）
+  "folder-solid":
+    '<path fill="currentColor" fill-opacity=".15" d="M3 7.5A2.5 2.5 0 0 1 5.5 5h3.09a2 2 0 0 1 1.42.59l.88.88a1 1 0 0 0 .7.29H18.5A2.5 2.5 0 0 1 21 9.25v8.25A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5z"/>' +
+    '<path stroke-opacity=".45" d="M3 10.5h18"/>',
+
+  // 房子（「所有素材」= 回到图库主页，四类混在一起的入口）
+  home:
+    '<path d="m3 9.5 9-7 9 7V20a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>' +
+    '<path d="M9 22v-8h6v8"/>',
+
+  // 归档箱（目录归档：只从图库收起，磁盘不动）
+  archive:
+    '<polyline points="21 8 21 21 3 21 3 8"/>' +
+    '<rect x="2" y="3" width="20" height="5" rx="1"/>' +
+    '<line x1="10" y1="12" x2="14" y2="12"/>',
+
   // comfyui 走 PNG 真 logo（品牌识别强），见 Icon.svelte 的 special case；
   // PNG 在 frontend/public/comfyui-logo.png，由 vite 静态托管。
 };

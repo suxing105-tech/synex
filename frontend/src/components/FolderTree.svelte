@@ -248,9 +248,34 @@
       if (hidingSelected) folderId.set(null);
       await refreshFolders();
       await Promise.all([refreshFeed(), refreshStats()]);
-      pushToast(`已归档「${node.name}」，磁盘上的文件没有动`);
+      pushToast(`已归档「${node.name}」· 文件还在磁盘上`, {
+        ttl: ARCHIVE_NOTICE_TTL,
+        placement: "center",
+        icon: "archive",
+        actions: [
+          { label: "查看", onClick: () => window.dispatchEvent(new Event("open-archived-settings")) },
+          { label: "撤销", primary: true, onClick: () => void undoArchive(node.id, node.name) },
+        ],
+      });
     } catch (error) {
       pushToast(`归档失败：${error instanceof Error ? error.message : error}`, { kind: 'error' });
+    }
+  }
+
+  /**
+   * 归档的反馈只在底部浮 3 秒（查看 = 跳设置的已归档目录，撤销 = 原地恢复）。
+   * 侧栏不再常驻一行说明：那行字平时是噪音，出事时又不够醒目。
+   */
+  const ARCHIVE_NOTICE_TTL = 3000;
+
+  async function undoArchive(id: number, name: string) {
+    try {
+      await foldersApi.restore(id);
+      await refreshFolders();
+      await Promise.all([refreshFeed(), refreshStats()]);
+      pushToast(`已恢复「${name}」`);
+    } catch (error) {
+      pushToast(`恢复失败：${error instanceof Error ? error.message : error}`, { kind: "error" });
     }
   }
 
@@ -314,19 +339,10 @@
   let userFolders = $derived($folders.filter((f) => !f.is_system));
   let systemFolders = $derived($folders.filter((f) => !!f.is_system));
 
-  // 归档掉的目录不在树里，侧栏必须说一句「东西没丢，在设置里恢复」，
-  // 否则用户点开右键归档以后会以为整个文件夹被删了。
-  let archivedCount = $state(0);
-  async function loadArchivedCount() {
-    try { archivedCount = (await foldersApi.archived()).length; } catch { archivedCount = 0; }
-  }
-  // 挂载时 $folders 就会触发一次，不需要额外的 onMount
-  $effect(() => { $folders; void loadArchivedCount(); });
-
   // 系统区五行：一行 = 一个 scope。数字只有一个，口径写在分组标题右侧，明细在 hover 里。
   // keys 只用于悬停提示：口径键本身在 lib/content-shortcuts.ts 里硬编码。
   const SYSTEM_ROWS: { scope: Scope; label: string; keys: string[]; icon: string }[] = [
-    { scope: "all", label: "所有素材", keys: ["0", "Q"], icon: "layers" },
+    { scope: "all", label: "所有素材", keys: ["0", "Q"], icon: "home" },
     { scope: "image", label: "全部图片", keys: ["I"], icon: "image" },
     { scope: "video", label: "所有视频", keys: ["V"], icon: "video" },
     { scope: "audio", label: "全部音频", keys: ["A"], icon: "music" },
@@ -358,7 +374,7 @@
   onkeydown={(e) => { if (e.key === 'Escape') { renameFor = null; newFolderFor = null; cancelDrag(); closeAll(); } }} />
 
 <div class="px-[14px] pt-[14px] pb-[8px] flex items-center justify-between">
-  <h3 class="text-[11px] uppercase text-muted tracking-wider">文件夹</h3>
+  <h3 class="folder-title">文件夹</h3>
   <button class="collapse-sidebar" onclick={oncollapse} title="收起左侧栏" aria-label="收起左侧栏">
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16m7-11-3 3 3 3"/></svg>
   </button>
@@ -367,8 +383,8 @@
   {#if externalHover || importingFolders}
     <div class="external-drop-status" role="status">{externalHover > 0 && importingFolders ? '正在复制文件夹及全部内容…' : '松开后复制到我的文件夹（保留原文件）；文本文件将关联原文件'}</div>
   {/if}
-  <div class="scope-heading">
-    <span>系统</span>
+  <div class="folder-group-bar">
+    <span class="folder-group">系统</span>
     <span class="scope-caption" title="下面每一行的数字都只数这一种素材">{scopeCaption($scope)}</span>
   </div>
   {#each systemRows as row (row.scope)}
@@ -390,18 +406,21 @@
   {/each}
 
 
-  <div class="flex items-center justify-between px-[10px] pt-[14px] pb-[4px]">
-    <div data-folder-root="system" class:root-drop={drop?.position === "root" && !!dragging?.is_system} class="text-[10px] uppercase text-muted tracking-wider opacity-70">
-      来源目录
-    </div>
+  <div
+    class="folder-group-bar folder-group-rule"
+    data-folder-root="system"
+    class:root-drop={drop?.position === "root" && !!dragging?.is_system}
+  >
+    <span class="folder-group">来源目录</span>
     <button
-      class="bg-transparent border-0 text-muted text-[12px] hover:text-zinc-200 disabled:opacity-40"
+      class="group-add"
+      class:quiet={addingSource}
       disabled={addingSource}
       title="添加来源目录：只登记位置并开始监听，不复制也不移动原文件"
       aria-label="添加来源目录"
       onclick={(e) => { e.stopPropagation(); void addSource(); }}
     >
-      <Icon name="plus" size={12} />
+      <Icon name="plus" size={13} />
     </button>
   </div>
   {#if systemFolders.length === 0 && !addingSource}
@@ -410,23 +429,23 @@
   {#each systemFolders as f (f.id)}
     {@render systemFolderItem(f, 0)}
   {/each}
-  {#if archivedCount > 0}
-    <div class="text-[11px] text-muted px-3 pb-2 leading-relaxed">
-      已归档 {archivedCount} 个目录 · 文件还在磁盘上，恢复在设置 → 通用 → 已归档目录
-    </div>
-  {/if}
 
-  <div class="flex items-center justify-between px-[10px] pt-[14px] pb-[4px]">
-    <div data-folder-root="user" class:root-drop={drop?.position === "root" && !dragging?.is_system} class="text-[10px] uppercase text-muted tracking-wider opacity-70">我的文件夹</div>
+  <div
+    class="folder-group-bar folder-group-rule"
+    data-folder-root="user"
+    class:root-drop={drop?.position === "root" && !dragging?.is_system}
+  >
+    <span class="folder-group">我的文件夹</span>
     <button
-      class="bg-transparent border-0 text-muted text-[12px] hover:text-zinc-200"
+      class="group-add"
       onclick={(e) => {
         e.stopPropagation();
         startNew(null);
       }}
       title="新建文件夹"
+      aria-label="新建文件夹"
     >
-      <Icon name="plus" size={12} />
+      <Icon name="plus" size={13} />
     </button>
   </div>
 
@@ -548,7 +567,7 @@
         <Icon name={collapsed.has(folder.id) ? 'chevron-right' : 'chevron-down'} size={12} />
       {/if}
     </span>
-    <span class="icon"><Icon name="folder" size={15} /></span>
+    <span class="icon"><Icon name="folder-solid" size={15} /></span>
     {#if renameFor === folder.id}
       <input class="folder-name-input" aria-label="文件夹名称" bind:value={renameValue}
         maxlength={64} readonly={saving} use:focusRename
@@ -582,7 +601,7 @@
 
 {#snippet newFolderInput(depth: number)}
   <div class="folder-item" style="margin-left: {depth * 14}px" onclick={(e) => e.stopPropagation()} role="presentation">
-    <span class="folder-caret"></span><Icon name="folder" size={15} />
+    <span class="folder-caret"></span><Icon name="folder-solid" size={15} />
     <input class="folder-name-input" aria-label="新建文件夹名称" bind:value={newFolderName}
       maxlength={64} readonly={saving} use:focusRename onblur={submitNewFolder}
       onkeydown={(e) => {
@@ -604,14 +623,15 @@
   :global(.folder-item) {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 8px 10px;
-    margin-bottom: 3px;
-    min-height: 36px;
+    gap: 7px;
+    padding: 6px 10px;
+    margin-bottom: 2px;
+    min-height: 32px;
     transition: background 120ms, color 120ms;
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
     font-size: 13px;
+    color: #d6d6db;
     position: relative;
     user-select: none;
   }
@@ -633,15 +653,17 @@
     border-radius: 1px;
   }
   :global(.folder-item .icon) {
-    width:16px;
-    height:16px;
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     font-size: 13px;
-    opacity: 0.85;
+    color: #a2a2ab;
     flex-shrink: 0;
   }
+  /* 图标统一降到 1.7 描边：14–15px 下比默认 2 更细，密度接近 Codex 侧栏 */
+  :global(.folder-item .icon svg) { stroke-width: 1.7; }
   :global(.folder-item .label) {
     flex: 1;
     overflow: hidden;
@@ -651,14 +673,14 @@
   /* 计数 pill：宽度固定才能一眼看出是「一列数字」，长文件夹名该截断还是截断 */
   :global(.folder-item .count) {
     flex-shrink: 0;
-    min-width: 2.6em;
+    min-width: 2.5em;
     text-align: right;
     font-variant-numeric: tabular-nums;
-    font-size: 11px;
+    font-size: 10.5px;
     padding: 1px 6px;
-    border-radius: 6px;
-    background: #ffffff08;
-    color: #8a8a8e;
+    border-radius: 7px;
+    background: #ffffff0a;
+    color: #7d7d86;
   }
   :global(.folder-item .count.zero) {
     opacity: .4;
@@ -689,13 +711,12 @@
     display: inline-block;
     flex-shrink: 0;
   }
-  /* system folder：略微区分（图标色保留，但文字色偏暗；hover/active 用主色） */
+  /* system folder：略微区分（文字色偏暗；hover/active 用主色） */
   :global(.folder-item.system) {
-    color: #c2c2c8;
+    color: #c8c8ce;
   }
   :global(.folder-item.system .icon) {
-    color: #8a8a8e;
-    opacity: 1;
+    color: #a2a2ab;
   }
   :global(.folder-item.system:hover) {
     background: #27272a;
@@ -704,26 +725,50 @@
   :global(.folder-item.system.active) {
     color: #f24e4e;
   }
-  .scope-heading {
+  /* 三个分组标题（系统 / 来源目录 / 我的文件夹）= 侧栏骨架，比素材行更抢眼 */
+  .folder-group-bar {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 10px 10px;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: .06em;
-    color: var(--muted, #85858e);
-    opacity: .9;
+    padding: 15px 10px 6px;
+    border-radius: 8px;
   }
+  .folder-group {
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: .01em;
+    color: #e2e2e8;
+  }
+  /* 第二条起的分组加一条极淡分隔线，滚动时也能看出分段 */
+  .folder-group-rule { margin-top: 8px; border-top: 1px solid #ffffff0d; }
+  .group-add {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #85858e;
+    cursor: pointer;
+  }
+  .group-add:hover, .group-add:focus-visible { background: #ffffff14; color: #f0f0f3; }
+  .group-add:disabled, .group-add.quiet { opacity: .45; cursor: default; }
   .scope-caption {
-    font-size: 10px;
-    letter-spacing: 0;
-    text-transform: none;
+    font-size: 10.5px;
+    font-weight: 500;
     color: #6f6f76;
   }
-  .folder-hint { font-size: 10px; color: #85858e; padding: 4px 10px 10px; line-height: 1.7; }
-  .folder-caret { width: 12px; height: 14px; display: flex; align-items: center; flex-shrink: 0; color: #92929c; }
+  .folder-title {
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: .04em;
+    color: #7f7f88;
+  }
+  .folder-hint { font-size: 10.5px; color: #6f6f76; padding: 4px 10px 10px; line-height: 1.7; }
+  .folder-caret { width: 12px; height: 14px; display: flex; align-items: center; flex-shrink: 0; color: #6f6f76; }
   :global(.folder-item:focus-visible) { outline: none; background: #ffffff12; }
   :global(.folder-item.dragging) { opacity: .45; cursor: grabbing; }
   :global(.folder-item.drop-before) { box-shadow: 0 -2px #f24e4e; }
@@ -731,5 +776,6 @@
   .drag-hint { position: fixed; bottom: 24px; left: 20px; z-index: 80; pointer-events: none; padding: 10px 14px; border-radius: 8px; background: #333338; color: #eee; font-size: 12px; box-shadow: 0 6px 24px #0005; }
   .collapse-sidebar { border: 0; background: transparent; color: #888; padding: 4px; cursor: pointer; outline: none; box-shadow: none; }
   .collapse-sidebar:hover, .collapse-sidebar:focus-visible { color: #eee; background: transparent; border: 0; outline: none; box-shadow: none; }
-  .folder-name-input { flex: 1; min-width: 0; width: 0; padding: 1px 4px; border: 1px solid #777; border-radius: 3px; background: #151518; color: #eee; font: inherit; outline: none; user-select: text; }
+  .folder-name-input { flex: 1; min-width: 0; width: 0; padding: 2px 6px; border: 1px solid #4a4a52; border-radius: 6px; background: #151518; color: #eee; font: inherit; outline: none; user-select: text; }
+  .folder-name-input:focus { border-color: #f24e4e; }
 </style>

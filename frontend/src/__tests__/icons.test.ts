@@ -13,6 +13,10 @@ describe("lib/icons 数据契约", () => {
       "star",
       "clock",
       "folder",
+      "folder-solid",
+      // 「所有素材」的房子 + 归档提示条的归档箱
+      "home",
+      "archive",
       "plus",
       "more-vertical",
       "arrow-left",

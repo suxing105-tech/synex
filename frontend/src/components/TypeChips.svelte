@@ -12,7 +12,7 @@
 
   type Choice = ItemKind | "all";
   const chips: { kind: Choice; label: string; icon: string }[] = [
-    { kind: "all", label: "全部", icon: "layers" },
+    { kind: "all", label: "全部", icon: "home" },
     { kind: "image", label: "图片", icon: "image" },
     { kind: "video", label: "视频", icon: "video" },
     { kind: "audio", label: "音频", icon: "music" },

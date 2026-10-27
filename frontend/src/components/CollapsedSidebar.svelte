@@ -7,7 +7,7 @@
 
   // 键位写进悬停提示：Q 与 0 都回「所有素材」，其余沿用多年的单键。
   const entries: { scope: Scope; label: string; keys: string[]; icon: string }[] = [
-    { scope: 'all', label: '所有素材', keys: ['0', 'Q'], icon: 'layers' },
+    { scope: 'all', label: '所有素材', keys: ['0', 'Q'], icon: 'home' },
     { scope: 'image', label: '全部图片', keys: ['I'], icon: 'image' },
     { scope: 'video', label: '所有视频', keys: ['V'], icon: 'video' },
     { scope: 'audio', label: '全部音频', keys: ['A'], icon: 'music' },

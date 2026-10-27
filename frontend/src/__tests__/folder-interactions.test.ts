@@ -8,6 +8,7 @@ import { folders, folderId, refreshFeed, refreshFolders } from "../lib/stores";
 import { subscribeFileDrop } from '../lib/native-drop';
 import { get } from "svelte/store";
 import { clearToasts, toasts } from "../lib/toast";
+import { ICON_PATHS } from "../lib/icons";
 
 vi.mock('../lib/native-drop', () => ({ subscribeFileDrop: vi.fn(() => () => {}) }));
 vi.mock("../lib/api", () => ({ itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) }, foldersApi: { importDirectories: vi.fn(), create: vi.fn().mockResolvedValue({ id: 7 }), rename: vi.fn(), reorder: vi.fn(), move: vi.fn(), remove: vi.fn(), archive: vi.fn().mockResolvedValue({ ok: true, archived: true, hidden_media: 0, hidden_texts: 0 }), restore: vi.fn(), archived: vi.fn(async () => []), tree: vi.fn() } }));
@@ -17,6 +18,12 @@ vi.mock("../lib/stores", () => ({
   textMode: writable(false), switchContent: vi.fn(),
   stats: writable({ total_images: 0, total_videos: 0, total_audio: 0, total_texts: 0, folders: 0 }), refreshFolders: vi.fn(), refreshFeed: vi.fn(), refreshStats: vi.fn(),
 }));
+
+/** happy-dom 会把自闭合标签补成 <rect ...></rect>，归一化后才能和 ICON_PATHS 原文比对 */
+function innerSvg(el?: Element | null): string {
+  return (el?.innerHTML ?? "").replace(/<([a-z]+)([^>]*?)><\/\1>/gi, "<$1$2/>");
+}
+
 
 const node = (id: number, name: string, children: any[] = [], parent_id: number | null = null) =>
   ({ id, name, children, parent_id, order: 0, counts: { image: 0, video: 0, audio: 0, text: 0 }, total: 0 });
@@ -287,19 +294,73 @@ it('取消归档时什么都不调', async () => {
   expect(foldersApi.archive).not.toHaveBeenCalled();
 });
 
-it('侧栏说明有几个目录被归档了，并指出去哪儿恢复', async () => {
-  const entry = [{ id: 5, name: '来源', path: 'D:/watch/source', is_system: true, media: 2, texts: 0 }];
-  // 挂载与目录刷新各读一次，所以用常驻实现，别用 Once（第二次会被空数组盖掉）。
-  vi.mocked(foldersApi.archived).mockResolvedValue(entry);
-  try {
-    const screen = render(FolderTree);
-    // 本文件用假时钟，findBy* 那套 waitFor 不会自己走；把微任务与计时器一次跑空。
-    await vi.runAllTimersAsync();
-    await tick();
-    expect(screen.getByText(/已归档 1 个目录/).textContent).toContain('设置');
-  } finally {
-    vi.mocked(foldersApi.archived).mockResolvedValue([]);
-  }
+it('归档后浮一条 3 秒的居中提示，带查看与撤销；侧栏不再常驻说明', async () => {
+  folders.set([{ ...node(5, '来源', [], null), is_system: true, path: 'D:/watch/source' }]);
+  vi.stubGlobal('confirm', vi.fn(() => true));
+  const screen = render(FolderTree);
+  await fireEvent.contextMenu(screen.getByRole('button', { name: '来源' }));
+  await fireEvent.click(screen.getByRole('menuitem', { name: '归档' }));
+  await tick();
+  const list = get(toasts);
+  expect(list).toHaveLength(1);
+  expect(list[0].placement).toBe('center');
+  expect(list[0].ttl).toBe(3000);
+  expect(list[0].icon).toBe('archive');
+  expect(list[0].message).toContain('已归档「来源」');
+  expect(list[0].actions?.map((a) => a.label)).toEqual(['查看', '撤销']);
+  expect(list[0].actions?.[1].primary).toBe(true);
+  // 常驻那行字撤掉了：即使有归档目录，侧栏里也不该再出现它
+  vi.mocked(foldersApi.archived).mockResolvedValue([{ id: 5, name: '来源', path: 'D:/watch/source', is_system: true, media: 2, texts: 0 }]);
+  await vi.runAllTimersAsync();
+  await tick();
+  expect(screen.queryByText(/已归档 1 个目录/)).toBeNull();
+  vi.mocked(foldersApi.archived).mockResolvedValue([]);
+});
+
+it('提示条的撤销原地恢复目录，查看跳到设置的已归档目录', async () => {
+  folders.set([{ ...node(5, '来源', [], null), is_system: true, path: 'D:/watch/source' }]);
+  vi.stubGlobal('confirm', vi.fn(() => true));
+  vi.mocked(foldersApi.restore).mockResolvedValue({ ok: true, archived: false });
+  const screen = render(FolderTree);
+  await fireEvent.contextMenu(screen.getByRole('button', { name: '来源' }));
+  await fireEvent.click(screen.getByRole('menuitem', { name: '归档' }));
+  await tick();
+  const notice = get(toasts)[0];
+  const dispatched: string[] = [];
+  const spy = vi.spyOn(window, 'dispatchEvent').mockImplementation((e: Event) => { dispatched.push(e.type); return true; });
+  notice.actions?.[0].onClick();
+  expect(dispatched).toContain('open-archived-settings');
+  spy.mockRestore();
+  clearToasts();
+  notice.actions?.[1].onClick();
+  // 别跑假时钟：跑到底会把「已恢复」这条 1.5s 的提示一起超时关掉。
+  // 撤销里串了三层 await（restore → 目录 → 素材），手动排空微任务。
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  await tick();
+  expect(foldersApi.restore).toHaveBeenCalledWith(5);
+  expect(refreshFolders).toHaveBeenCalled();
+  expect(refreshFeed).toHaveBeenCalled();
+  expect(get(toasts).some((t) => t.message.includes('已恢复「来源」'))).toBe(true);
+});
+
+it('三个分组标题同级抢眼，文件夹行用实心文件夹字形', async () => {
+  folders.set([{ ...node(5, '来源', [], null), is_system: true, path: 'D:/watch/source' }, mine(6, '我的目录')]);
+  const screen = render(FolderTree);
+  const bars = [...screen.container.querySelectorAll<HTMLElement>('.folder-group-bar')];
+  expect(bars.map((b) => b.querySelector('.folder-group')?.textContent?.trim())).toEqual(['系统', '来源目录', '我的文件夹']);
+  // 分组标题不再走「10px + uppercase + tracking」那条小字路线
+  expect(bars.some((b) => (b.getAttribute('class') || '').includes('uppercase'))).toBe(false);
+  // 整条标题栏都是「移回根层级」的放置区
+  expect(bars.filter((b) => b.dataset.folderRoot).map((b) => b.dataset.folderRoot)).toEqual(['system', 'user']);
+  const row = screen.getByRole('button', { name: '来源' });
+  expect(innerSvg(row.querySelector('.icon svg'))).toBe(ICON_PATHS['folder-solid']);
+});
+
+it('「所有素材」换成房子图标（不再是叠层）', async () => {
+  const screen = render(FolderTree);
+  const row = screen.getByTitle('所有素材 (0 / Q)');
+  expect(innerSvg(row.querySelector('svg'))).toBe(ICON_PATHS.home);
+  expect(innerSvg(row.querySelector('svg'))).not.toBe(ICON_PATHS.layers);
 });
 
 it('我的文件夹菜单同时有归档与删除文件夹（移入回收站）', async () => {

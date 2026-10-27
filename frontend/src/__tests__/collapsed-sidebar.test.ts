@@ -22,6 +22,13 @@ describe('收起的左侧栏', () => {
     expect(screen.getByRole('button', { name: '全部图片' }).getAttribute('aria-current')).toBe('page');
   });
 
+  it('悬停提示写出快捷键，所有素材同时给出 0 与 Q', () => {
+    const screen = render(CollapsedSidebar, { onexpand: vi.fn() });
+    expect(screen.getByRole('button', { name: '所有素材' }).getAttribute('title')).toBe('所有素材 (0 / Q)');
+    expect(screen.getByRole('button', { name: '所有素材' }).getAttribute('aria-keyshortcuts')).toBe('0 q');
+    expect(screen.getByRole('button', { name: '全部文本' }).getAttribute('title')).toBe('全部文本 (T)');
+  });
+
   it('收藏与最近生成不在收起侧栏里', () => {
     const screen = render(CollapsedSidebar, { onexpand: vi.fn() });
     for (const label of ['收藏', '最近生成']) {

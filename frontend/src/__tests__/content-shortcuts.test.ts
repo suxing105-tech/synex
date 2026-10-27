@@ -24,9 +24,23 @@ describe('内容口径快捷键', () => {
     off();
   });
 
+  it('Q 回到所有素材，0 仍然有效', () => {
+    const switchTo = vi.fn();
+    const off = registerContentShortcuts(switchTo);
+    press('q');
+    press('0');
+    expect(switchTo.mock.calls).toEqual([['all'], ['all']]);
+    off();
+  });
+
   it('收藏快捷键随功能一起下线', () => {
     expect(SCOPE_BY_KEY.f).toBeUndefined();
-    expect(Object.keys(SCOPE_BY_KEY).sort()).toEqual(['0', 'a', 'i', 't', 'v']);
+    expect(Object.keys(SCOPE_BY_KEY).sort()).toEqual(['0', 'a', 'i', 'q', 't', 'v']);
+  });
+
+  it('Q 是素材口径键，自定义快捷键不能占用', () => {
+    expect(validateShortcuts({ ...defaultShortcuts, positive: 'q' })).toContain('保留');
+    expect(validateShortcuts({ ...defaultShortcuts, positive: 'ctrl+q' })).toBeNull();
   });
 
   it('输入、输入法、弹窗与预览期间不切类型', () => {

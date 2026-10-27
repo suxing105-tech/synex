@@ -2,9 +2,12 @@ import { shortcutBlocked } from './shortcut-settings';
 
 export type SwitchableScope = 'all' | 'image' | 'video' | 'audio' | 'text';
 
-/** 0 = 所有素材，a = 音频；i / v / t 沿用多年的肌肉记忆。 */
+/**
+ * 0 / Q = 所有素材（Q 在左手原位，比 0 好按得多），a = 音频，i / v / t 沿用多年的肌肉记忆。
+ */
 export const SCOPE_BY_KEY: Record<string, SwitchableScope> = {
   '0': 'all',
+  q: 'all',
   a: 'audio',
   i: 'image',
   v: 'video',

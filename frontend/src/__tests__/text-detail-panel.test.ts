@@ -97,6 +97,15 @@ describe("右侧详情栏：文本分支", () => {
     await waitFor(() => expect(textsApi.detail).toHaveBeenCalledWith(4));
   });
 
+  it("「复制文本文件」复制的是文件本身，不读正文", async () => {
+    vi.spyOn(textsApi, "copyFile").mockResolvedValue({ ok: true, id: 4, path: "D:/notes/随想4.md", method: "clipboard" } as never);
+    const ui = render(TextDetailPanel);
+    await fireEvent.click(ui.getByRole("button", { name: "更多操作" }));
+    await fireEvent.click(ui.getByRole("menuitem", { name: "复制文本文件" }));
+    await waitFor(() => expect(textsApi.copyFile).toHaveBeenCalledWith(4));
+    expect(textsApi.detail).not.toHaveBeenCalled();
+  });
+
   it("重命名：先取 version 再 move，改完右侧立刻显示新名字", async () => {
     const ui = render(TextDetailPanel);
     await fireEvent.click(ui.getByRole("button", { name: "更多操作" }));

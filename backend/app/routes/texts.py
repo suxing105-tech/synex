@@ -158,6 +158,18 @@ def asset_info(text_id: int, href: str):
     return info
 
 
+@router.post('/{text_id}/copy-file')
+@errors
+def copy_file_clipboard(text_id: int):
+    """把文本原文件复制到剪贴板（可在资源管理器里粘贴）。
+
+    和「复制全文」不是一回事：那条复制的是正文，这条复制的是文件本身。
+    """
+    from ..clipboard_routes import copy_row_file_to_clipboard
+
+    return copy_row_file_to_clipboard(text_id, texts.document_path(texts.row(text_id)['path']), '文本')
+
+
 @router.post('/{text_id}/reveal')
 @errors
 def reveal(text_id: int):

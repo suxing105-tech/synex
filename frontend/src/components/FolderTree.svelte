@@ -281,12 +281,13 @@
   let systemFolders = $derived($folders.filter((f) => !!f.is_system));
 
   // 系统区五行：一行 = 一个 scope。数字只有一个，口径写在分组标题右侧，明细在 hover 里。
-  const SYSTEM_ROWS: { scope: Scope; label: string; icon: string }[] = [
-    { scope: "all", label: "所有素材", icon: "layers" },
-    { scope: "image", label: "全部图片", icon: "image" },
-    { scope: "video", label: "所有视频", icon: "video" },
-    { scope: "audio", label: "全部音频", icon: "music" },
-    { scope: "text", label: "全部文本", icon: "text" },
+  // keys 只用于悬停提示：口径键本身在 lib/content-shortcuts.ts 里硬编码。
+  const SYSTEM_ROWS: { scope: Scope; label: string; keys: string[]; icon: string }[] = [
+    { scope: "all", label: "所有素材", keys: ["0", "Q"], icon: "layers" },
+    { scope: "image", label: "全部图片", keys: ["I"], icon: "image" },
+    { scope: "video", label: "所有视频", keys: ["V"], icon: "video" },
+    { scope: "audio", label: "全部音频", keys: ["A"], icon: "music" },
+    { scope: "text", label: "全部文本", keys: ["T"], icon: "text" },
   ];
 
   let libraryCounts = $derived<FolderCounts>({
@@ -333,6 +334,8 @@
       class:active={isActiveScope(row.scope)}
       role="button"
       tabindex="0"
+      title={`${row.label} (${row.keys.join(' / ')})`}
+      aria-keyshortcuts={row.keys.map((k) => k.toLowerCase()).join(' ')}
       onclick={() => switchContent(row.scope, true)}
       onkeydown={(e) => { if (e.key === "Enter") switchContent(row.scope, true); }}
     >

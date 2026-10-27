@@ -43,6 +43,21 @@
       busy = false;
     }
   }
+  /** 复制文件本身，可在资源管理器里直接粘贴；「复制全文」复制的是正文。 */
+  async function copyFile() {
+    const it = $selectedText;
+    if (!it) return;
+    busy = true;
+    try {
+      await textsApi.copyFile(it.id);
+      pushToast(`已复制文本文件到剪贴板（${it.filename}）`, { kind: "success" });
+    } catch (e) {
+      pushToast(`复制文本文件失败：${message(e)}`, { kind: "error" });
+    } finally {
+      busy = false;
+      menuOpen = false;
+    }
+  }
   async function reveal() {
     const it = $selectedText;
     if (!it) return;
@@ -131,6 +146,7 @@
         {#if menuOpen}
           <div class="absolute right-4 top-14 z-20 min-w-[150px] rounded-md border border-border bg-surface-2 shadow-lg py-1 text-[12px]" role="menu" aria-label="文本更多操作">
             <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={startRename}>重命名</button>
+            <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={() => void copyFile()}>复制文本文件</button>
             <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={() => void copyFull()}>复制全文</button>
             <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={() => void reveal()}>文件位置</button>
             <button type="button" class="w-full px-3 py-1.5 text-left text-red-300 hover:bg-surface-3" role="menuitem" onclick={() => { confirming = true; menuOpen = false; }}>移入回收站</button>

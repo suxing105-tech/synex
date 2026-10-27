@@ -4,6 +4,7 @@ import { get } from 'svelte/store';
 import VideoCompare from '../components/VideoCompare.svelte';
 import VideoPlayer from '../components/VideoPlayer.svelte';
 import { feedItems, multiSelectedIds } from '../lib/stores';
+import { compareMode } from '../lib/compare-mode';
 
 vi.mock('../lib/api', () => ({
   itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) },
@@ -20,18 +21,32 @@ const video = (id: number) => ({
 beforeEach(() => {
   multiSelectedIds.set(new Set());
   feedItems.set([video(1), video(2)] as any);
+  // 对比方式是跨组件偏好（还会落 localStorage），每个用例都从默认的左右并排开始。
+  compareMode.set('side');
 });
 afterEach(() => { cleanup(); multiSelectedIds.set(new Set()); feedItems.set([]); });
 
-it('VideoCompare 默认分割视图，含可拖动分割线，可切换到并排对比', async () => {
+it('视频对比默认左右并排，可切到分割视图', async () => {
   const ui = render(VideoCompare, { videos: [video(1), video(2)] as any });
-  expect(ui.getByLabelText('视频对比分割线')).toBeTruthy();
+  expect(ui.getByRole('button', { name: '并排对比' }).getAttribute('aria-pressed')).toBe('true');
+  expect(ui.queryByLabelText('视频对比分割线')).toBeNull();
   expect(ui.getByText('A · 1.mp4')).toBeTruthy();
   expect(ui.getByText('B · 2.mp4')).toBeTruthy();
-  await fireEvent.click(ui.getByRole('button', { name: '并排对比' }));
-  expect(ui.getByRole('button', { name: '并排对比' }).getAttribute('aria-pressed')).toBe('true');
   // 并排模式有输出两个 video 元素（分割模式用 clip-path 叠放两个 video，也各有 video）
   expect(ui.container.querySelectorAll('video').length).toBe(2);
+  await fireEvent.click(ui.getByRole('button', { name: '分割视图' }));
+  expect(ui.getByLabelText('视频对比分割线')).toBeTruthy();
+});
+
+it('对比开着时按 S 在左右与分割之间反复切换', async () => {
+  const ui = render(VideoCompare, { videos: [video(1), video(2)] as any });
+  expect(get(compareMode)).toBe('side');
+  await fireEvent.keyDown(window, { key: 's' });
+  expect(get(compareMode)).toBe('split');
+  expect(ui.getByLabelText('视频对比分割线')).toBeTruthy();
+  await fireEvent.keyDown(window, { key: 's' });
+  expect(get(compareMode)).toBe('side');
+  expect(ui.queryByLabelText('视频对比分割线')).toBeNull();
 });
 
 it('VideoPlayer 选中两个视频时显示对比按钮，点击进入对比模式', async () => {
@@ -54,6 +69,8 @@ it('VideoPlayer 只选中一个视频时不显示对比入口', async () => {
 
 it('VideoCompare 右键弹出同步菜单，可切换同步/取消同步', async () => {
   const ui = render(VideoCompare, { videos: [video(1), video(2)] as any });
+  // 同步状态徽标在分割视图的播放条上，先切过去再看它。
+  await fireEvent.click(ui.getByRole('button', { name: '分割视图' }));
   const rootEl = ui.container.querySelector('.video-compare') as HTMLElement;
   await fireEvent.contextMenu(rootEl);
   expect(ui.getByRole('menuitem', { name: '取消同步' })).toBeTruthy();

@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { backendUrl } from "../lib/backend-url";
+  import { compareMode, registerCompareToggle } from "../lib/compare-mode";
   import type { ImageSummary } from "../lib/types";
 
   interface Props {
@@ -10,8 +12,10 @@
   const a = $derived(videos[0]);
   const b = $derived(videos[1]);
 
-  // 视图模式：分割 / 并排
-  let mode = $state<"split" | "side">("split");
+  // 视图模式与图片共用同一份偏好（默认左右）：两种素材在中间栏是同一层同一套手势。
+  const mode = $derived($compareMode);
+  // 本组件只在对比开着时挂载，所以这里的 S 一定是在换对比方式。
+  onMount(() => registerCompareToggle(() => true));
 
   // 分割视图：分割线位置 + 同步播放
   let split = $state(50);
@@ -196,9 +200,9 @@
   {/if}
 
   <div class="mode-switch">
-    <button type="button" class="switch-btn" aria-pressed={mode === "split"} onclick={() => { mode = "split"; }}>分割视图</button>
-    <button type="button" class="switch-btn" aria-pressed={mode === "side"} onclick={() => { mode = "side"; }}>并排对比</button>
-    <span class="hint">右键画面可切换同步播放</span>
+    <button type="button" class="switch-btn" aria-pressed={mode === "split"} onclick={() => { compareMode.set("split"); }}>分割视图</button>
+    <button type="button" class="switch-btn" aria-pressed={mode === "side"} onclick={() => { compareMode.set("side"); }}>并排对比</button>
+    <span class="hint">按 S 切换对比方式 · 右键画面可切换同步播放</span>
   </div>
 
   {#if menu}

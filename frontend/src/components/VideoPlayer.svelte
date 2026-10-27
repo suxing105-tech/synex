@@ -195,7 +195,7 @@
         {#if current.duration_seconds != null}{formatDuration(current.duration_seconds)}{/if}
         {#if current.width && current.height}· {current.width}×{current.height}{/if}
       </span>
-      <span class="text-muted hidden xl:inline">Esc 返回缩略图 · ← / → 切换视频</span>
+      <span class="text-muted hidden xl:inline">Esc 返回缩略图 · ← / → 切换视频{#if compareOn && compareReady} · 按 S 切换对比方式{/if}</span>
     </footer>
   </section>
 {/if}

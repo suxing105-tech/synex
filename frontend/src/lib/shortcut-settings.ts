@@ -9,6 +9,8 @@ export const shortcutActions = [
   { id: "comfy", label: "在 ComfyUI 打开", key: "shift+c" },
   { id: "tags", label: "编辑标签", key: "shift+t" },
   { id: "preview", label: "预览图片 / 预览下一张", key: "space" },
+  { id: "focusMode", label: "沉浸浏览：侧栏→最大化→全屏→还原", key: "f" },
+  { id: "searchFocus", label: "定位到搜索框", key: "ctrl+f" },
   { id: "previous", label: "预览上一张", key: "arrowleft" },
   { id: "next", label: "预览下一张", key: "arrowright" },
 ] as const;
@@ -17,13 +19,15 @@ export type ShortcutMap = Record<ShortcutId, string>;
 export const defaultShortcuts = Object.fromEntries(shortcutActions.map(a => [a.id, a.key])) as ShortcutMap;
 const storageKey = "suxing.shortcuts.v1";
 const validKey = /^(?:(?:ctrl|alt|shift|meta)\+)*(?:[a-z0-9]|space|tab|backquote|arrowleft|arrowright|arrowup|arrowdown|f[1-9]|f1[0-2]|home|end|pageup|pagedown)$/;
+/** 素材口径键在 lib/content-shortcuts.ts 里硬编码，自定义快捷键不能占用。 */
+export const RESERVED_SCOPE_KEYS = ["0", "a", "i", "v", "t", "q"];
 export function validateShortcuts(value: ShortcutMap): string | null {
   const seen = new Map<string, string>();
   for (const a of shortcutActions) {
     const key = value[a.id];
     if (typeof key !== "string" || (key && !validKey.test(key))) return `${a.label}：不支持该按键`;
     if (!key) continue;
-    if (["0", "a", "i", "v", "t"].includes(key)) return `${a.label}：0 / A / I / V / T 保留用于切换素材类型`;
+    if (RESERVED_SCOPE_KEYS.includes(key)) return `${a.label}：0 / A / I / V / T / Q 保留用于切换素材类型`;
     const parts = key.split("+");
     const canonical = [...new Set(parts.slice(0, -1))].sort().concat(parts.at(-1)!).join("+");
     if (seen.has(canonical)) return `「${a.label}」与「${seen.get(canonical)}」的快捷键冲突`;
@@ -36,7 +40,7 @@ export function loadShortcuts(): ShortcutMap {
     const saved = JSON.parse(localStorage.getItem(storageKey) || "null");
     const value = { ...defaultShortcuts, ...saved };
     for (const action of shortcutActions) {
-      if (['0', 'a', 'i', 'v', 't'].includes(value[action.id])) value[action.id] = action.id === 'tags' && value[action.id] === 't' ? 'shift+t' : '';
+      if (RESERVED_SCOPE_KEYS.includes(value[action.id])) value[action.id] = action.id === 'tags' && value[action.id] === 't' ? 'shift+t' : '';
     }
     if (!validateShortcuts(value)) return value;
   } catch { /* 损坏或不可用的本地存储使用默认值 */ }

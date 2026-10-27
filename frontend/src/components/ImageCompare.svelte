@@ -1,7 +1,8 @@
 <script lang="ts">
   import { backendUrl } from '../lib/backend-url';
   import type { ImageSummary } from '../lib/types';
-  let { images, mode = "split" }: { images: ImageSummary[]; mode?: "split" | "side" } = $props();
+  // 默认与 lib/compare-mode 的默认一致：左右并排看得清两张，分割擦除留给需要逐像素比的时候。
+  let { images, mode = "side" }: { images: ImageSummary[]; mode?: "split" | "side" } = $props();
   let split = $state(50);
   let stage = $state<HTMLDivElement>();
   let pointer: number | null = null;

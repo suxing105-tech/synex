@@ -117,6 +117,10 @@ export const imagesApi = {
   reveal(id: number): Promise<{ ok: boolean; id: number; path: string; method: string }> {
     return http(`/api/images/${id}/reveal`, { method: "POST" });
   },
+  /** 把素材原文件放进系统剪贴板（音频的「复制音频」走这条，粘进文件夹就是文件本身）。 */
+  copyFile(id: number): Promise<{ ok: boolean; id: number; path: string; method: string }> {
+    return http(`/api/images/${id}/copy-file`, { method: "POST" });
+  },
   openPhotoshop(id: number): Promise<{ ok: boolean; id: number; path: string; method: string }> {
     return http(`/api/images/${id}/open-photoshop`, { method: "POST" });
   },

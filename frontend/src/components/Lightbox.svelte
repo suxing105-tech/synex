@@ -1,5 +1,6 @@
 <script lang="ts">
   import ImageCompare from "./ImageCompare.svelte";
+  import { compareMode, registerCompareToggle } from "../lib/compare-mode";
   import { multiSelectedIds, removeImageFromFeed, refreshFolders } from "../lib/stores";
   import { copyOriginalImage } from "../lib/image-clipboard";
   import { isPsdFilename } from "../lib/media-format";
@@ -26,7 +27,6 @@
   let { open = $bindable(), index = $bindable(), selectedId = $bindable() }: Props = $props();
 
   let compareEnabled = $state(true);
-  let compareMode = $state<"split" | "side">("split");
   let compareImages = $derived($mediaItems.filter(it => $multiSelectedIds.has(it.id)));
   let comparing = $derived(compareEnabled && compareImages.length === 2);
 
@@ -206,13 +206,27 @@
     open = false;
     compareEnabled = true;
     originalUrl = null;
-    compareMode = "split";
     resetZoom();
   }
 
   function toggleCompare() {
     compareEnabled = !compareEnabled;
   }
+
+  // App 也能把 open 直接置 false（Ctrl+F 先退层再聚焦搜索框），这条兜住没走 close() 的路径，
+  // 免得下次打开还停在上一张的 100% 缩放里。
+  $effect(() => {
+    if (open) return;
+    if (compareEnabled && zoomMode === "fit" && zoomScale === 1 && !isDragging && dragPointerId < 0) return;
+    compareEnabled = true;
+    resetZoom();
+  });
+
+  // S 键换对比方式：只在对比开着时接管，退出对比后 S 仍是详情栏的「复制 Seed」。
+  $effect(() => {
+    if (!comparing) return;
+    return registerCompareToggle(() => comparing);
+  });
 
   function prev() {
     if ($mediaItems.length === 0) return;
@@ -398,8 +412,8 @@
       <span class="flex-1 min-w-0 truncate text-xs text-muted" title={it.filename}>{it.filename}</span>
       {#if comparing}
         <div class="compare-mode-switch" role="group" aria-label="图片对比方式">
-          <button class:active={compareMode === "split"} type="button" aria-label="分割对比" aria-pressed={compareMode === "split"} onclick={() => compareMode = "split"}>分割对比</button>
-          <button class:active={compareMode === "side"} type="button" aria-label="左右对比" aria-pressed={compareMode === "side"} onclick={() => compareMode = "side"}>左右对比</button>
+          <button class:active={$compareMode === "split"} type="button" aria-label="分割对比" aria-pressed={$compareMode === "split"} onclick={() => compareMode.set("split")}>分割对比</button>
+          <button class:active={$compareMode === "side"} type="button" aria-label="左右对比" aria-pressed={$compareMode === "side"} onclick={() => compareMode.set("side")}>左右对比</button>
         </div>
       {/if}
       {#if compareImages.length === 2}<button class="rounded-lg px-3 py-2 text-xs" aria-pressed={comparing} onclick={toggleCompare}>{comparing ? "查看单图" : "对比图片"}</button>{/if}
@@ -439,7 +453,7 @@
         <div class="absolute inset-0 flex items-center justify-center text-sm text-muted" role="status">图片预览不可用</div>
       {/if}
       <div class="absolute inset-0" class:hidden={!comparing}>
-        {#if compareImages.length === 2}<ImageCompare images={compareImages} mode={compareMode} />{/if}
+        {#if compareImages.length === 2}<ImageCompare images={compareImages} mode={$compareMode} />{/if}
       </div>
     </div>
     <footer class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 shrink-0 border-t border-border bg-surface text-xs">
@@ -450,7 +464,7 @@
       </div>
       <span class="text-muted">{#if it.width && it.height}{it.width} × {it.height} · {/if}{formatSize(it.size_bytes)}</span>
       {/if}
-      <span class="text-muted">{comparing ? (compareMode === "split" ? "拖动分割线对比 · Delete 删除两张图片" : "左右并排查看 · Delete 删除两张图片") : zoomMode === "zoom" ? "滚轮缩放 · 拖动查看细节 · 双击适应窗口" : "滚轮缩放 · 双击图片查看 100%"}</span>
+      <span class="text-muted">{comparing ? ($compareMode === "split" ? "拖动分割线对比" : "左右并排查看") + " · 按 S 切换对比方式 · Delete 删除两张图片" : zoomMode === "zoom" ? "滚轮缩放 · 拖动查看细节 · 双击适应窗口" : "滚轮缩放 · 双击图片查看 100%"}</span>
     </footer>
   </section>
 {/if}

@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 
+from ..clipboard_routes import copy_row_file_to_clipboard as _copy_row_file_to_clipboard
 from ..db import get_pool
 from ..thumbnails import generate_video_thumbnail, generate_video_cover, save_video_cover_image
 
@@ -184,22 +185,4 @@ async def upload_video_cover(video_id: int, file: UploadFile = File(...)):
 @router.post("/{video_id}/copy")
 def copy_video_clipboard(video_id: int):
     """把视频文件复制到系统剪贴板（可粘贴到资源管理器等）。"""
-    import subprocess
-    row = _row(video_id)
-    p = Path(row["path"])
-    if not p.exists():
-        raise HTTPException(404, "视频文件不存在")
-    if os.name == "nt":
-        env = {**os.environ, "SUXING_COPY_PATH": str(p)}
-        cmd = ["powershell", "-NoProfile", "-Command", "Set-Clipboard -LiteralPath $env:SUXING_COPY_PATH"]
-        try:
-            proc = subprocess.run(
-                cmd, env=env, capture_output=True, text=True,
-                encoding="utf-8", errors="replace", timeout=30,
-            )
-        except (OSError, subprocess.SubprocessError) as e:
-            raise HTTPException(500, f"复制失败：{e}")
-        if proc.returncode != 0:
-            raise HTTPException(500, f"复制失败：{proc.stderr.strip() or '未知错误'}")
-        return {"ok": True, "id": video_id, "path": str(p), "method": "clipboard"}
-    raise HTTPException(501, "当前平台仅支持在 Windows 上复制视频文件到剪贴板")
+    return _copy_row_file_to_clipboard(video_id, _row(video_id)["path"], "视频")

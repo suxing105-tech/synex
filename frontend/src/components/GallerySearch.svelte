@@ -1,13 +1,21 @@
 <script lang="ts">
   import { query } from "../lib/stores";
+  import { registerGallerySearchElement } from "../lib/search-focus";
   let { value, onsearch, onfocus, label = '搜索图片', placeholder = '搜索 prompt、文件名、标签…' }: {
     value?: string; onsearch?: (value: string) => void; onfocus?: () => void; label?: string; placeholder?: string;
   } = $props();
   /* 拿到焦点（点进去 / Tab 过来）就撤掉 placeholder：光标已经在那儿了，提示文字只是噪音。
      失焦再放回去，空框不至于看起来像坏掉的控件。外部 onfocus（文本工作区靠它展开列表）照常触发。 */
   let focused = $state(false);
+  let inputEl = $state<HTMLInputElement>();
+  // Ctrl+F 要能把光标送进这个框，所以挂载期间把元素交给 search-focus；卸载时交还。
+  $effect(() => {
+    if (!inputEl) return;
+    registerGallerySearchElement(inputEl);
+    return () => registerGallerySearchElement(null);
+  });
 </script>
 <div class="gallery-search relative w-full max-w-[480px] mx-auto min-w-0">
   <svg class="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
-  <input type="search" aria-label={label} placeholder={focused ? '' : placeholder} onfocus={() => { focused = true; onfocus?.(); }} onblur={() => { focused = false; }} autocomplete="off" class="w-full bg-bg text-zinc-200 py-2 pl-9 pr-4 rounded-full text-xs outline-none border-0 focus:bg-surface-3" value={value ?? $query} oninput={(e) => onsearch ? onsearch(e.currentTarget.value) : query.set(e.currentTarget.value)} />
+  <input bind:this={inputEl} type="search" aria-label={label} placeholder={focused ? '' : placeholder} onfocus={() => { focused = true; onfocus?.(); }} onblur={() => { focused = false; }} autocomplete="off" class="w-full bg-bg text-zinc-200 py-2 pl-9 pr-4 rounded-full text-xs outline-none border-0 focus:bg-surface-3" value={value ?? $query} oninput={(e) => onsearch ? onsearch(e.currentTarget.value) : query.set(e.currentTarget.value)} />
 </div>

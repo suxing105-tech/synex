@@ -71,11 +71,11 @@ afterEach(() => {
 });
 
 describe("文本卡右键菜单", () => {
-  it("菜单里有阅读 / 就地编辑 / 复制全文 / 文件位置 / 重命名 / 移入回收站", async () => {
+  it("菜单里有阅读 / 就地编辑 / 复制文本文件 / 复制全文 / 文件位置 / 重命名 / 移入回收站", async () => {
     const ui = renderFeed();
     await tick();
     await fireEvent.contextMenu(textCard(ui.container));
-    for (const label of ["阅读", "就地编辑", "复制全文", "文件位置", "重命名", "移入回收站"]) {
+    for (const label of ["阅读", "就地编辑", "复制文本文件", "复制全文", "文件位置", "重命名", "移入回收站"]) {
       expect(ui.queryByRole("menuitem", { name: label })).toBeTruthy();
     }
   });

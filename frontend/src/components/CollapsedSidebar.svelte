@@ -5,12 +5,13 @@
 
   let { onexpand }: { onexpand: () => void } = $props();
 
-  const entries: { scope: Scope; label: string; key: string; icon: string }[] = [
-    { scope: 'all', label: '所有素材', key: '0', icon: 'layers' },
-    { scope: 'image', label: '全部图片', key: 'I', icon: 'image' },
-    { scope: 'video', label: '所有视频', key: 'V', icon: 'video' },
-    { scope: 'audio', label: '全部音频', key: 'A', icon: 'music' },
-    { scope: 'text', label: '全部文本', key: 'T', icon: 'text' },
+  // 键位写进悬停提示：Q 与 0 都回「所有素材」，其余沿用多年的单键。
+  const entries: { scope: Scope; label: string; keys: string[]; icon: string }[] = [
+    { scope: 'all', label: '所有素材', keys: ['0', 'Q'], icon: 'layers' },
+    { scope: 'image', label: '全部图片', keys: ['I'], icon: 'image' },
+    { scope: 'video', label: '所有视频', keys: ['V'], icon: 'video' },
+    { scope: 'audio', label: '全部音频', keys: ['A'], icon: 'music' },
+    { scope: 'text', label: '全部文本', keys: ['T'], icon: 'text' },
   ];
 
   function active(next: Scope) {
@@ -25,9 +26,9 @@
   {#each entries as entry (entry.scope)}
     <button
       class:active={active(entry.scope)}
-      title={`${entry.label} (${entry.key})`}
+      title={`${entry.label} (${entry.keys.join(' / ')})`}
       aria-label={entry.label}
-      aria-keyshortcuts={entry.key.toLowerCase()}
+      aria-keyshortcuts={entry.keys.map((k) => k.toLowerCase()).join(' ')}
       aria-current={active(entry.scope) ? 'page' : undefined}
       onclick={() => switchContent(entry.scope, true)}
     >

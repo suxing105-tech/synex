@@ -328,6 +328,21 @@ def rename_image(image_id: int, payload: dict):
     return updated
 
 
+@router.post("/{image_id}/copy-file")
+def copy_image_file_clipboard(image_id: int):
+    """把素材原文件放进系统剪贴板，可直接粘贴进资源管理器。
+
+    音频走这条：浏览器剪贴板写不出「一个音频文件」，必须落回原生文件组。
+    图片 / 视频仍各自保留自己的位图复制与文件复制入口，这里只是补齐音频缺口。
+    """
+    from ..clipboard_routes import copy_row_file_to_clipboard
+
+    path_str = repository.image_reveal_path(image_id)
+    if not path_str:
+        raise HTTPException(404, "图片或文件不存在")
+    return copy_row_file_to_clipboard(image_id, path_str, "素材")
+
+
 @router.post("/{image_id}/reveal")
 def reveal_image(image_id: int):
     """在操作系统默认文件管理器里打开图片所在位置。

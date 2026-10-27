@@ -29,6 +29,14 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('真实文件夹组件交互', () => {
+  it('系统区五行把口径键写在悬停提示里', async () => {
+    const screen = render(FolderTree);
+    // 行的可访问名里带着计数，所以按 title 取行；提示本身就是这条用例要验的东西。
+    const all = screen.getByTitle('所有素材 (0 / Q)');
+    expect(all.getAttribute('aria-keyshortcuts')).toBe('0 q');
+    expect(screen.getByTitle('全部音频 (A)').getAttribute('aria-keyshortcuts')).toBe('a');
+  });
+
   it('侧栏原生拖入目录后刷新树和缩略图并选中导入目录', async () => {
     const screen = render(FolderTree);
     const [region, hover, drop] = vi.mocked(subscribeFileDrop).mock.calls[0];

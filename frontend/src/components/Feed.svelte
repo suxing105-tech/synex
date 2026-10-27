@@ -154,6 +154,7 @@
     return [
       { label: "阅读", onClick: () => openTextReader(it) },
       { label: "就地编辑", onClick: () => openTextReader(it, undefined, true) },
+      { label: "复制文本文件", onClick: () => void copyTextFile(it) },
       { label: "复制全文", onClick: () => void copyTextBody(it) },
       { label: "文件位置", onClick: () => void revealTextFile(it) },
       { label: "重命名", onClick: () => startTextRename(it) },
@@ -162,6 +163,13 @@
     ];
   });
 
+  /** 复制的是文件本身（可在资源管理器里粘贴），和「复制全文」的正文不是一回事。 */
+  async function copyTextFile(it: TextFeedItem) {
+    try {
+      await textsApi.copyFile(it.id);
+      notify(`已复制文本文件到剪贴板（${it.filename}）`);
+    } catch (e) { notify(`复制文本文件失败：${e instanceof Error ? e.message : String(e)}`); }
+  }
   async function copyTextBody(it: TextFeedItem) {
     try {
       const detail = await textsApi.detail(it.id);
@@ -539,8 +547,12 @@
       const isAudio = t.kind === "audio";
       const noun = isAudio ? "音频" : isVideo ? "视频" : "图片";
       return [
+        // 音频没有「位图复制」这条路，复制的必须是文件本身，否则粘进文件夹是空的。
         ...(isAudio
-          ? [{ label: $playingAudio?.id === t.id ? "暂停" : "播放", onClick: () => toggleAudio(t) }]
+          ? [
+              { label: "复制音频", onClick: () => copyMediaFileToClipboard(t, "音频") },
+              { label: $playingAudio?.id === t.id ? "暂停" : "播放", onClick: () => toggleAudio(t) },
+            ]
           : [{ label: isVideo ? "复制视频" : "复制图片", onClick: () => isVideo ? copyVideoToClipboard(t) : copyImageToClipboard(t) }]),
         ...(isPsdFilename(t.filename) ? [{ label: "在 Photoshop 中打开", onClick: () => openInPhotoshop(t) }] : []),
         { label: "重命名", onClick: () => renameImage(t) },
@@ -572,6 +584,14 @@
       const error = e as Error & { detail?: string };
       notify(error.detail ?? `在 Photoshop 中打开失败：${error.message}`);
     }
+  }
+
+  /** 音频的右键复制：后端写 CF_HDROP，粘出去就是那个文件。 */
+  async function copyMediaFileToClipboard(it: MediaFeedItem, noun = "素材") {
+    try {
+      await imagesApi.copyFile(it.id);
+      notify(`已复制${noun}文件到剪贴板（${it.filename}）`);
+    } catch (e) { notify(`复制${noun}文件失败：${(e as Error).message}`); }
   }
 
   async function copyVideoToClipboard(it: MediaFeedItem) {

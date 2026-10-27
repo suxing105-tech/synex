@@ -6,6 +6,7 @@ import Feed from '../components/Feed.svelte';
 import Lightbox from '../components/Lightbox.svelte';
 import ImageCompare from '../components/ImageCompare.svelte';
 import { feedItems, feedLoading, multiSelectedIds, selectedId } from '../lib/stores';
+import { compareMode } from '../lib/compare-mode';
 import { getOrientedImageSize } from '../lib/image-dims';
 import { foldersApi, imagesApi } from '../lib/api';
 vi.mock('../lib/api', () => ({
@@ -28,6 +29,8 @@ beforeEach(() => {
   vi.mocked(imagesApi.list).mockImplementation(async () => ({ items: get(feedItems), total: get(feedItems).length }) as any);
   vi.mocked(foldersApi.tree).mockResolvedValue([] as any);
   feedLoading.set(false); feedItems.set(items as any); multiSelectedIds.set(new Set()); selectedId.set(null);
+  // 对比方式是跨组件偏好（还会落 localStorage），每个用例都从默认的左右并排开始。
+  compareMode.set('side');
   vi.mocked(imagesApi.remove).mockReset().mockResolvedValue({ ok: true, cleaned_previews: 1 } as any);
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.mocked(imagesApi.list).mockResolvedValue({ items: [], total: 0 } as any); feedItems.set([]); multiSelectedIds.set(new Set()); });
@@ -36,27 +39,29 @@ it('两张选中图片预览自动进入对比，并可切换单图', async () =
   const screen = render(Lightbox, { open: true, index: 0, selectedId: 1 });
   expect(screen.getByAltText('A：1.jpg').getAttribute('src')).toMatch(/\/1\/file\?cache=2$/);
   expect(screen.getByAltText('B：2.jpg').getAttribute('src')).toMatch(/\/2\/file\?cache=2$/);
-  expect(screen.getByRole('button', { name: '分割对比' }).getAttribute('aria-pressed')).toBe('true');
+  // 默认左右并排：分割擦除一次只看得清一张，不适合当默认。
+  expect(screen.getByRole('button', { name: '左右对比' }).getAttribute('aria-pressed')).toBe('true');
+  expect(screen.queryByLabelText('图片对比分割线')).toBeNull();
+  expect(screen.getByText(/按 S 切换对比方式/)).toBeTruthy();
   await fireEvent.click(screen.getByRole('button', { name: '查看单图' }));
   await tick();
   expect(screen.getByRole('button', { name: '对比图片' })).toBeTruthy();
   expect(screen.container.querySelector('.viewer-canvas > div:nth-child(2)')?.classList.contains('hidden')).toBe(true);
   expect(screen.getByAltText('1.jpg')).toBeTruthy();
 });
-it('图片对比可在默认分割模式和左右并排模式间切换', async () => {
+it('图片对比默认左右并排，可切到分割对比再切回', async () => {
   multiSelectedIds.set(new Set([1, 2]));
   const screen = render(Lightbox, { open: true, index: 0, selectedId: 1 });
-  expect(screen.getByLabelText('图片对比分割线')).toBeTruthy();
-  await fireEvent.click(screen.getByRole('button', { name: '左右对比' }));
-  expect(screen.getByRole('button', { name: '左右对比' }).getAttribute('aria-pressed')).toBe('true');
   expect(screen.getByAltText('A：1.jpg')).toBeTruthy();
   expect(screen.getByAltText('B：2.jpg')).toBeTruthy();
   expect(screen.container.querySelector('.side-stage')).toBeTruthy();
   await fireEvent.click(screen.getByRole('button', { name: '分割对比' }));
   expect(screen.getByLabelText('图片对比分割线')).toBeTruthy();
+  await fireEvent.click(screen.getByRole('button', { name: '左右对比' }));
+  expect(screen.container.querySelector('.side-stage')).toBeTruthy();
 });
 it('分割线位置改变裁切范围，原图不拉伸', async () => {
-  const screen = render(ImageCompare, { images: items.slice(0, 2) as any });
+  const screen = render(ImageCompare, { images: items.slice(0, 2) as any, mode: 'split' });
   await fireEvent.input(screen.getByLabelText('图片对比分割线'), { target: { value: '25' } });
   expect(screen.container.querySelector('.compare-overlay')?.getAttribute('style')).toContain('75%');
 });

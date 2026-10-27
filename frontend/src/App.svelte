@@ -21,7 +21,14 @@
     () => true,
   ));
   import { registerContentShortcuts } from './lib/content-shortcuts';
+  import { registerShortcuts } from './lib/shortcuts';
+  import { applyFocusStage, nextFocusStage, windowIsMaximized, type FocusStage } from './lib/window-focus';
+  import { focusGallerySearch, registerSearchFocusShortcut } from './lib/search-focus';
+  import { pushToast } from './lib/toast';
   onMount(() => registerContentShortcuts(type => switchContent(type, false, true), () => viewerOpen() || settingsOpen || onboardingOpen));
+  // F = 沉浸循环（在输入框里打字不算），Ctrl+F = 光标进搜索框（正在打字时也能按）。
+  onMount(() => registerShortcuts([{ key: "f", action: "focusMode", handler: () => cycleFocusMode() }]));
+  onMount(() => registerSearchFocusShortcut(() => { closeOpenViewers(); void focusGallerySearch(); }));
   import { switchContent, readerItem, readerTerm } from './lib/stores';
   import Feed from "./components/Feed.svelte";
   import TextReader from "./components/TextReader.svelte";
@@ -177,6 +184,39 @@
   }
 
   let drawerOpen = $state(false);
+
+  // ============ F 键沉浸循环 ============
+  //
+  // 收起两侧 → 最大化 → 全屏 → 还原，再从头开始。最后一步连侧栏一起还原成
+  // 进入循环前的样子，否则按一圈下来侧栏永远回不来。
+  let focusStage = $state<FocusStage>("normal");
+  let sidebarsBeforeFocus = { left: false, right: false };
+  // 大多数人日常是把窗口最大化的，最后一步得回到那个状态，而不是把窗口甩成小的。
+  let windowMaximizedBeforeFocus = false;
+  function cycleFocusMode() {
+    // 弹窗开着时不接管 F：先把对话框处理完，别在背后把窗口和侧栏改了。
+    if (document.querySelector('[aria-modal="true"], [role="dialog"]')) return;
+    const next = nextFocusStage(focusStage);
+    if (next === "sidebars") {
+      sidebarsBeforeFocus = { left: sidebarCollapsed, right: detailCollapsed };
+      sidebarCollapsed = true;
+      detailCollapsed = true;
+      void windowIsMaximized().then((value) => { windowMaximizedBeforeFocus = value; });
+    } else if (next === "normal") {
+      sidebarCollapsed = sidebarsBeforeFocus.left;
+      detailCollapsed = sidebarsBeforeFocus.right;
+    }
+    focusStage = next;
+    void applyFocusStage(next, windowMaximizedBeforeFocus).then((error) => { if (error) pushToast(error, { kind: "error" }); });
+  }
+
+  /** Ctrl+F 前要先退掉内嵌层：搜索框在网格工具栏里，层开着时整块是 inert，聚焦会被拒。 */
+  function closeOpenViewers() {
+    lightboxOpen = false;
+    videoPlayerOpen = false;
+    // 阅读层自己负责先落盘再关，这里不能直接把 readerItem 清掉。
+    if ($readerItem) window.dispatchEvent(new Event("close-text-reader"));
+  }
 
   function startDetailDrag(e: PointerEvent) {
     e.preventDefault();

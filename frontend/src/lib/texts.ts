@@ -33,6 +33,8 @@ export const textsApi = {
   create: (payload: { directory: string; name: string; body?: string; folder_id?: number | null }) => request<TextDetail>('', 'POST', payload),
   save: (id: number, body: string, version: string, encoding: string | null, resolving_conflict = false) => request<TextDetail>(`/${id}`, 'PUT', { body, version, encoding, resolving_conflict }),
   reveal: (id: number) => request(`/${id}/reveal`, 'POST'),
+  /** 复制文本文件本身（区别于复制正文）。 */
+  copyFile: (id: number) => request<{ ok: boolean; id: number; path: string; method: string }>(`/${id}/copy-file`, 'POST'),
   meta: (id: number, payload: { tags?: string[] }) => request<TextSummary>(`/${id}`, 'PATCH', payload),
   move: (id: number, directory: string, name: string, version: string) => request<TextDetail>(`/${id}/move`, 'POST', { directory, name, version }),
   trash: (id: number, version: string) => request(`/${id}/trash`, 'POST', { version }),

@@ -167,7 +167,26 @@
     if (matchesAction(e, 'previous')) { e.preventDefault(); e.stopImmediatePropagation(); void openAdjacent(-1); return; }
     if (matchesAction(e, 'next')) { e.preventDefault(); e.stopImmediatePropagation(); void openAdjacent(1); }
   }
-  onMount(() => { window.addEventListener('keydown', onKey, true); return () => window.removeEventListener('keydown', onKey, true); });
+  /** 复制文件本身（粘进文件夹就是那个文件）；顶栏的「复制全文」复制的是正文。 */
+  async function copyTextFile() {
+    const it = item;
+    if (!it) return;
+    try {
+      await textsApi.copyFile(it.id);
+      pushToast(`已复制文本文件到剪贴板（${it.filename}）`, { kind: 'success' });
+    } catch (e) { pushToast(`复制文本文件失败：${message(e)}`, { kind: 'error' }); }
+  }
+
+  onMount(() => {
+    window.addEventListener('keydown', onKey, true);
+    // Ctrl+F 要先退出阅读层才能聚焦搜索框，退出必须走这里（先落盘再关）。
+    const closeOnRequest = () => { if (open) void close(); };
+    window.addEventListener('close-text-reader', closeOnRequest);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('close-text-reader', closeOnRequest);
+    };
+  });
   // ---------- 文档操作 ----------
   let menuOpen = $state(false);
   let menuX = $state(0);
@@ -179,6 +198,7 @@
     { label: '重命名 / 移动原文件', onClick: () => showMove() },
     { label: '标签', onClick: () => openTags(false) },
     { label: '重新选择编码', onClick: () => openTags(true) },
+    { label: '复制文本文件', onClick: () => void copyTextFile() },
     { label: '文件位置', onClick: () => void reveal() },
     { kind: 'sep' },
     { label: '移入回收站', danger: true, onClick: () => { modal = 'trash'; modalError = ''; } },

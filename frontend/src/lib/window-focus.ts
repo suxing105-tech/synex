@@ -59,7 +59,10 @@ export async function applyFocusStage(stage: FocusStage, restoreMaximized = fals
       else await win.unmaximize();
     }
     return null;
-  } catch {
+  } catch (error) {
+    // 最常见的原因是 Tauri 能力（capabilities）没给这条窗口命令放行 —— 那属于漏配权限，
+    // 不是用户能重试好的，真实原因留在控制台里，别只给用户一句「请重试」。
+    console.warn("[seekx] 窗口操作失败", stage, error);
     return "窗口操作失败，请重试";
   }
 }

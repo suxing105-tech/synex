@@ -29,13 +29,27 @@ async fn signed_download_rejects_tampering_and_ignores_older_releases() {
                     std::thread::sleep(Duration::from_millis(10));
                     continue;
                 };
+                // Windows 上 accept 出来的套接字会继承监听套接字的非阻塞位，
+                // 直接 read 会立刻拿到 WouldBlock(10035) 而不是等请求进来 —— 请求到位的
+                // 快慢决定它跑不跑，这个用例因此一直在飘。拉回阻塞 + 读到请求头结束。
+                socket.set_nonblocking(false).unwrap();
                 socket
                     .set_read_timeout(Some(Duration::from_secs(3)))
                     .unwrap();
-                let mut request = [0; 8192];
-                let n = socket.read(&mut request).unwrap();
+                let mut request: Vec<u8> = Vec::new();
+                let mut chunk = [0u8; 8192];
+                loop {
+                    let n = socket.read(&mut chunk).unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(&chunk[..n]);
+                    if request.windows(4).any(|w| w == b"\r\n\r\n") {
+                        break;
+                    }
+                }
                 let body =
-                    if String::from_utf8_lossy(&request[..n]).starts_with("GET /latest.json ") {
+                    if String::from_utf8_lossy(&request).starts_with("GET /latest.json ") {
                         manifest.as_bytes().to_vec()
                     } else if tamper {
                         b"tampered package".to_vec()

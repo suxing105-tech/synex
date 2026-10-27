@@ -707,9 +707,11 @@
     background: #323237;
     color: #e4e4e7;
   }
+  /* 系统行没有展开箭头，占位仍要留出 12px，否则图标比文件夹行列偏左 */
   :global(.caret-spacer) {
     display: inline-block;
     flex-shrink: 0;
+    width: 12px;
   }
   /* system folder：略微区分（文字色偏暗；hover/active 用主色） */
   :global(.folder-item.system) {

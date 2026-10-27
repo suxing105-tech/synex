@@ -86,7 +86,20 @@ describe("F 键沉浸循环", () => {
     expect(APP_SOURCE).toContain("sidebarsBeforeFocus");
     expect(APP_SOURCE).toContain("windowIsMaximized()");
     expect(APP_SOURCE).toContain("applyFocusStage(next, windowMaximizedBeforeFocus)");
-    // 弹窗（设置、新建文本、回收站确认…）开着时先不接管 F。
+  });
+
+  it("全屏那一步只剩缩略图：标题栏、两条侧栏、工具栏全部退场", () => {
+    // 用户要的是「屏幕上只有缩略图这部分」，所以沉浸时窗口标题栏和侧栏都得消失，
+    // 不是把侧栏缩成 44px 的窄条。
+    expect(APP_SOURCE).toContain("const immersive = $derived(focusStage === \"fullscreen\")");
+    expect(APP_SOURCE).toContain("{#if desktop && !immersive}<DesktopTitlebar");
+    expect(APP_SOURCE).toContain("class:immersive={immersive}");
+    expect(APP_SOURCE).toContain("grid-template-columns: {immersive ? '1fr'");
+    expect(APP_SOURCE).toContain("immersive={immersive}");
+    expect(APP_SOURCE).toMatch(/\.app-grid\.immersive > aside,[\s\S]{0,80}display: none/);
+  });
+
+  it("弹窗（设置、新建文本、回收站确认…）开着时先不接管 F", () => {
     expect(APP_SOURCE).toContain("if (document.querySelector('[aria-modal=\"true\"]");
   });
 });

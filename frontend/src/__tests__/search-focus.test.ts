@@ -124,12 +124,29 @@ describe("Ctrl+F 定位搜索框", () => {
     off();
   });
 
+  it("弹窗开着时不抢焦点，光标留在对话框里", () => {
+    const fired: number[] = [];
+    const off = registerSearchFocusShortcut(() => fired.push(1));
+    const modal = document.createElement("div");
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    document.body.append(modal);
+    const area = document.createElement("textarea");
+    modal.append(area);
+    area.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true }));
+    expect(fired).toEqual([]);
+    modal.remove();
+    off();
+  });
+
   it("App 用可改键的 searchFocus 接线，并先退掉内嵌层", () => {
     expect(APP_SOURCE).toContain("registerSearchFocusShortcut(");
-    expect(APP_SOURCE).toContain("closeOpenViewers(); void focusGallerySearch()");
+    expect(APP_SOURCE).toContain("closeOpenViewers();");
     // 阅读层必须先落盘再关，所以 App 只发事件，不直接清 readerItem。
     expect(APP_SOURCE).toContain('new Event("close-text-reader")');
     expect(READER_SOURCE).toContain("'close-text-reader'");
     expect(READER_SOURCE).toContain("if (open) void close()");
+    // 满屏那一步没有工具栏，Ctrl+F 要先退出满屏再聚焦，否则这一下按下去毫无反应。
+    expect(APP_SOURCE).toContain('if (focusStage === "fullscreen") leaveFocusMode();');
   });
 });

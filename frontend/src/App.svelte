@@ -28,7 +28,12 @@
   onMount(() => registerContentShortcuts(type => switchContent(type, false, true), () => viewerOpen() || settingsOpen || onboardingOpen));
   // F = 沉浸循环（在输入框里打字不算），Ctrl+F = 光标进搜索框（正在打字时也能按）。
   onMount(() => registerShortcuts([{ key: "f", action: "focusMode", handler: () => cycleFocusMode() }]));
-  onMount(() => registerSearchFocusShortcut(() => { closeOpenViewers(); void focusGallerySearch(); }));
+  onMount(() => registerSearchFocusShortcut(() => {
+    closeOpenViewers();
+    // 满屏那一步把工具栏整条摘了，搜索框不在页面上；先退出满屏再聚焦，别让人按了没反应。
+    if (focusStage === "fullscreen") leaveFocusMode();
+    void focusGallerySearch();
+  }));
   import { switchContent, readerItem, readerTerm } from './lib/stores';
   import Feed from "./components/Feed.svelte";
   import TextReader from "./components/TextReader.svelte";
@@ -190,21 +195,29 @@
   // 收起两侧 → 最大化 → 全屏 → 还原，再从头开始。最后一步连侧栏一起还原成
   // 进入循环前的样子，否则按一圈下来侧栏永远回不来。
   let focusStage = $state<FocusStage>("normal");
+  // 沉浸那一步 = 屏幕上只剩缩略图：标题栏、两条侧栏、分隔线、网格工具栏全部退场。
+  const immersive = $derived(focusStage === "fullscreen");
   let sidebarsBeforeFocus = { left: false, right: false };
   // 大多数人日常是把窗口最大化的，最后一步得回到那个状态，而不是把窗口甩成小的。
   let windowMaximizedBeforeFocus = false;
+  /** 回到循环原点：侧栏还原成进入前的样子，窗口退出全屏（原本最大化的保持最大化）。 */
+  function leaveFocusMode() {
+    focusStage = "normal";
+    sidebarCollapsed = sidebarsBeforeFocus.left;
+    detailCollapsed = sidebarsBeforeFocus.right;
+    void applyFocusStage("normal", windowMaximizedBeforeFocus).then((error) => { if (error) pushToast(error, { kind: "error" }); });
+  }
+
   function cycleFocusMode() {
     // 弹窗开着时不接管 F：先把对话框处理完，别在背后把窗口和侧栏改了。
     if (document.querySelector('[aria-modal="true"], [role="dialog"]')) return;
     const next = nextFocusStage(focusStage);
+    if (next === "normal") { leaveFocusMode(); return; }
     if (next === "sidebars") {
       sidebarsBeforeFocus = { left: sidebarCollapsed, right: detailCollapsed };
       sidebarCollapsed = true;
       detailCollapsed = true;
       void windowIsMaximized().then((value) => { windowMaximizedBeforeFocus = value; });
-    } else if (next === "normal") {
-      sidebarCollapsed = sidebarsBeforeFocus.left;
-      detailCollapsed = sidebarsBeforeFocus.right;
     }
     focusStage = next;
     void applyFocusStage(next, windowMaximizedBeforeFocus).then((error) => { if (error) pushToast(error, { kind: "error" }); });
@@ -245,15 +258,16 @@
   });
 </script>
 
-<div class="app-shell" class:desktop-shell={desktop} style:--desktop-titlebar-height={desktop ? (desktopMaximized ? "24px" : "28px") : "0px"}>
-{#if desktop}<DesktopTitlebar bind:maximized={desktopMaximized} />{/if}
+<div class="app-shell" class:desktop-shell={desktop} style:--desktop-titlebar-height={desktop && !immersive ? (desktopMaximized ? "24px" : "28px") : "0px"}>
+{#if desktop && !immersive}<DesktopTitlebar bind:maximized={desktopMaximized} />{/if}
 <div class="h-full w-full flex flex-col bg-bg text-zinc-200" ondragover={swallowDrag} ondrop={swallowDrag} role="application">
   <ScanProgressBar />
   <div
     class="flex-1 min-h-0 grid app-grid"
     class:drawer-mode={narrowMode}
     class:sidebar-collapsed={sidebarCollapsed}
-    style="--sidebar-width: {sidebarCollapsed ? 44 : 260}px; grid-template-columns: var(--sidebar-width) 1fr 6px {detailCollapsed ? 44 : detailWidth}px;"
+    class:immersive={immersive}
+    style="--sidebar-width: {sidebarCollapsed ? 44 : 260}px; grid-template-columns: {immersive ? '1fr' : `var(--sidebar-width) 1fr 6px ${detailCollapsed ? 44 : detailWidth}px`};"
   >
     <aside class="border-r border-border bg-surface flex flex-col min-h-0">
       {#if sidebarCollapsed}
@@ -279,6 +293,7 @@
         bind:lightboxOpen
         bind:lightboxIndex
         overlayOpen={lightboxOpen || videoPlayerOpen || Boolean($readerItem)}
+        immersive={immersive}
       />
       </div>
       <AudioEngine />
@@ -340,6 +355,9 @@
   .sidebar-actions { gap: 8px; }
   .sidebar-actions.collapsed-actions { flex-direction: column-reverse; gap: 4px; }
   .app-shell { height: 100%; padding-top: var(--desktop-titlebar-height); }
+  /* 沉浸满屏：左右两栏和分隔线整块退场，网格独占整屏（0 宽会漏出内容，所以直接 display:none）。 */
+  .app-grid.immersive > aside,
+  .app-grid.immersive .splitter { display: none; }
   .desktop-shell :global(.fixed.inset-0) { top: var(--desktop-titlebar-height); }
 
   main { container-type:inline-size; }

@@ -45,8 +45,10 @@
     lightboxIndex: number;
     /** 中间栏被图片 / 文本 / 视频内嵌层盖住：网格的 Delete / Esc / 空格要让位。 */
     overlayOpen?: boolean;
+    /** F 键沉浸满屏：只剩缩略图，工具栏（标题、搜索、类型 chips、列数）整条不渲染。 */
+    immersive?: boolean;
   }
-  let { selectedId = $bindable(), lightboxOpen = $bindable(), lightboxIndex = $bindable(), overlayOpen = false }: Props = $props();
+  let { selectedId = $bindable(), lightboxOpen = $bindable(), lightboxIndex = $bindable(), overlayOpen = false, immersive = false }: Props = $props();
 
   // 右键菜单状态
   let menuOpen = $state(false);
@@ -874,6 +876,9 @@
 
 <svelte:window onkeydown={handleKey} />
 
+<!-- display:contents：壳子不参与布局，工具栏仍然是这一列的 flex item。 -->
+<div class="toolbar-slot" style="display:contents">
+  {#if !immersive}
 <div class="gallery-toolbar px-4 py-3 items-center border-b border-border bg-surface shrink-0">
   <div class="toolbar-info flex items-center gap-3 min-w-0">
   <div>
@@ -916,6 +921,8 @@
       style="--value: {$targetColumns}"
     />
   </div>
+</div>
+  {/if}
 </div>
 
 <div

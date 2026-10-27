@@ -24,20 +24,30 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
   const providerModels = $derived(preset?.models ?? []);
   const endpoint = $derived((draft.base_url || "").trim().replace(/\/+$/, "").replace(/\/chat\/completions$/, "") + "/chat/completions");
   const canSave = $derived(!!draft.model?.trim() && (isPreset ? true : !!(draft.name?.trim() && draft.base_url?.trim())));
-  onMount(() => {
-    run(async () => {
-      await refreshProviderPresets();
-      await refreshReverseConfig();
-      preferences = $reverseSettings ? { ...$reverseSettings } : null;
+  // 两份偏好在两张卡片里各自渲染，所以任一半读失败都单独标记，卡片给「重新加载」而不是卡在「正在读取…」。
+  let loadFailed = $state(false);
+  async function loadReversePart() {
+    await refreshProviderPresets();
+    await refreshReverseConfig();
+    preferences = $reverseSettings ? { ...$reverseSettings } : null;
+    if (!editingId && draft.provider === CUSTOM && $providerPresets.length) {
+      applyProvider($providerPresets[0].id);
+    }
+  }
+  async function loadVideoPart() {
+    try {
+      await refreshVideoPromptSettings();
       videoPrefs = $videoPromptSettings ? { ...$videoPromptSettings } : null;
-      refreshVideoPromptSettings()
-        .then(() => { videoPrefs = $videoPromptSettings ? { ...$videoPromptSettings } : null; })
-        .catch(() => { videoPrefs = null; });
-      if (!editingId && draft.provider === CUSTOM && $providerPresets.length) {
-        applyProvider($providerPresets[0].id);
-      }
-    });
-  });
+    } catch (e) { videoPrefs = null; throw e; }
+  }
+  function loadAll() {
+    loadFailed = false;
+    // 视频那半不等：它慢或挂了都不该让图片这半一直转圈、按钮一直禁用。
+    void loadVideoPart().catch(() => { loadFailed = true; });
+    return loadReversePart().catch(() => { loadFailed = true; });
+  }
+  const reloadSettings = () => run(loadAll);
+  onMount(() => { void run(loadAll); });
   async function run(action: () => Promise<void>) {
     busy = true; error = ""; notice = "";
     try { await action(); } catch (e) { error = errorMessage(e); } finally { busy = false; }
@@ -153,77 +163,82 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
     </div>
   </div>
 
-  <h4 class="settings-group-label">反推指令</h4>
+  <h4 class="settings-group-label">图片反推</h4>
   <div class="settings-card">
     <div class="settings-model-body">
-      {#if preferences || videoPrefs}
-        <div class="settings-card-body">
-          {#if preferences}
-            <fieldset disabled={busy} class="space-y-3">
-              <legend>图片反推</legend>
-              <label>默认模型<select aria-label="默认模型" bind:value={preferences.default_model_id}>
-                <option value={null}>请选择模型</option>
-                {#each $modelConfigs as model}<option value={model.id}>{model.name} · {model.model}</option>{/each}
-              </select></label>
-              <label>反推指令<textarea aria-label="反推指令" rows="5" bind:value={preferences.instruction}></textarea></label>
-              <p class="settings-hint">可修改内容和风格偏好，程序始终要求输出中文与英文两个版本。</p>
-            </fieldset>
-          {/if}
-          {#if videoPrefs}
-            <fieldset disabled={busy} class="space-y-3">
-              <legend>视频反推（Seedance 2.0 / MiniMax H3）</legend>
-              <label>默认模型<select aria-label="视频反推默认模型" bind:value={videoPrefs.default_model_id}>
-                <option value={null}>跟随图片反推默认模型</option>
-                {#each $modelConfigs as model}<option value={model.id}>{model.name} · {model.model}</option>{/each}
-              </select></label>
-              <div class="grid grid-cols-2 gap-2">
-                <label>默认 Seedance 模式<select aria-label="默认 Seedance 模式" bind:value={videoPrefs.default_mode_seedance}>
-                  {#each SEEDANCE_MODES as option}<option value={option}>{MODE_LABELS[option]}</option>{/each}
-                </select></label>
-                <label>默认 H3 模式<select aria-label="默认 H3 模式" bind:value={videoPrefs.default_mode_h3}>
-                  {#each H3_MODES as option}<option value={option}>{MODE_LABELS[option]}</option>{/each}
-                </select></label>
-              </div>
-              <div class="grid grid-cols-3 gap-2">
-                <label>帧数上限<input aria-label="视频帧数上限" type="number" min="4" max="16" bind:value={videoPrefs.frame_limit} /></label>
-                <label>单元时长上限（秒）<input aria-label="单元时长上限" type="number" min="5" max="15" bind:value={videoPrefs.max_unit_seconds} /></label>
-                <label>单元数上限<input aria-label="单元数上限" type="number" min="1" max="24" bind:value={videoPrefs.max_units} /></label>
-              </div>
-              <p class="settings-hint">每段按镜头切点装箱，不超单元时长上限；超过单元数上限会要求缩小区间或调大设置。帧数越多越贵。</p>
-              <label>分镜方案指令
-                <textarea aria-label="分镜方案指令" rows="4" bind:value={videoPrefs.instruction_plan}></textarea>
-              </label>
-              <button class="setting-button setting-button-ghost restore-plan" onclick={() => { if (videoPrefs) videoPrefs.instruction_plan = videoPrefs.defaults.instruction_plan; }}>恢复默认（分镜方案）</button>
-              <label>Seedance 2.0 指令
-                <textarea aria-label="Seedance 指令" rows="5" bind:value={videoPrefs.instruction_seedance}></textarea>
-              </label>
-              <button class="setting-button setting-button-ghost restore-seedance" onclick={() => { if (videoPrefs) videoPrefs.instruction_seedance = videoPrefs.defaults.instruction_seedance; }}>恢复默认（Seedance）</button>
-              <label>MiniMax H3 指令
-                <textarea aria-label="H3 指令" rows="5" bind:value={videoPrefs.instruction_h3}></textarea>
-              </label>
-              <button class="setting-button setting-button-ghost restore-h3" onclick={() => { if (videoPrefs) videoPrefs.instruction_h3 = videoPrefs.defaults.instruction_h3; }}>恢复默认（H3）</button>
-            </fieldset>
-          {/if}
-        </div>
+      {#if preferences}
+        <fieldset disabled={busy} class="space-y-3">
+          <label>默认模型<select aria-label="默认模型" bind:value={preferences.default_model_id}>
+            <option value={null}>请选择模型</option>
+            {#each $modelConfigs as model}<option value={model.id}>{model.name} · {model.model}</option>{/each}
+          </select></label>
+          <label>反推指令<textarea aria-label="反推指令" rows="5" bind:value={preferences.instruction}></textarea></label>
+          <p class="settings-hint">可修改内容和风格偏好，程序始终要求输出中文与英文两个版本。</p>
+        </fieldset>
       {:else}
-        <div class="settings-load-state" role="status"><p>正在读取反推指令…</p></div>
+        <div class="settings-load-state" role="status"><p>{loadFailed ? "暂时读取不到图片反推设置，可以重试。" : "正在读取图片反推设置…"}</p>{#if loadFailed}<button class="setting-button" onclick={reloadSettings}>重新加载</button>{/if}</div>
       {/if}
     </div>
-    <div class="settings-card-footer">
-      <span class="settings-hint">图片与视频的正文各自独立保存，互不覆盖</span>
-      {#if preferences}
+    {#if preferences}
+      <div class="settings-card-footer">
+        <span class="settings-hint">默认模型与指令一起保存</span>
         <button class="setting-button" onclick={() => { if (preferences) preferences.instruction = preferences.default_instruction; }}>恢复默认（图片指令）</button>
         <button class="setting-button bg-accent text-bg" onclick={() => run(async () => { if (preferences) { preferences = await reverseApi.saveSettings(preferences); await refreshReverseConfig(); notice = "反推偏好已保存"; } })}>保存反推偏好</button>
-      {/if}
+      </div>
+    {/if}
+  </div>
+
+  <h4 class="settings-group-label">视频反推（Seedance 2.0 / MiniMax H3）</h4>
+  <div class="settings-card">
+    <div class="settings-model-body">
       {#if videoPrefs}
+        <fieldset disabled={busy} class="space-y-3">
+          <label>默认模型<select aria-label="视频反推默认模型" bind:value={videoPrefs.default_model_id}>
+            <option value={null}>跟随图片反推默认模型</option>
+            {#each $modelConfigs as model}<option value={model.id}>{model.name} · {model.model}</option>{/each}
+          </select></label>
+          <div class="grid grid-cols-2 gap-2">
+            <label>默认 Seedance 模式<select aria-label="默认 Seedance 模式" bind:value={videoPrefs.default_mode_seedance}>
+              {#each SEEDANCE_MODES as option}<option value={option}>{MODE_LABELS[option]}</option>{/each}
+            </select></label>
+            <label>默认 H3 模式<select aria-label="默认 H3 模式" bind:value={videoPrefs.default_mode_h3}>
+              {#each H3_MODES as option}<option value={option}>{MODE_LABELS[option]}</option>{/each}
+            </select></label>
+          </div>
+          <div class="grid grid-cols-3 gap-2">
+            <label>帧数上限<input aria-label="视频帧数上限" type="number" min="4" max="16" bind:value={videoPrefs.frame_limit} /></label>
+            <label>单元时长上限（秒）<input aria-label="单元时长上限" type="number" min="5" max="15" bind:value={videoPrefs.max_unit_seconds} /></label>
+            <label>单元数上限<input aria-label="单元数上限" type="number" min="1" max="24" bind:value={videoPrefs.max_units} /></label>
+          </div>
+          <p class="settings-hint">每段按镜头切点装箱，不超单元时长上限；超过单元数上限会要求缩小区间或调大设置。帧数越多越贵。</p>
+          <label>分镜方案指令
+            <textarea aria-label="分镜方案指令" rows="4" bind:value={videoPrefs.instruction_plan}></textarea>
+          </label>
+          <button class="setting-button setting-button-ghost restore-plan" onclick={() => { if (videoPrefs) videoPrefs.instruction_plan = videoPrefs.defaults.instruction_plan; }}>恢复默认（分镜方案）</button>
+          <label>Seedance 2.0 指令
+            <textarea aria-label="Seedance 指令" rows="5" bind:value={videoPrefs.instruction_seedance}></textarea>
+          </label>
+          <button class="setting-button setting-button-ghost restore-seedance" onclick={() => { if (videoPrefs) videoPrefs.instruction_seedance = videoPrefs.defaults.instruction_seedance; }}>恢复默认（Seedance）</button>
+          <label>MiniMax H3 指令
+            <textarea aria-label="H3 指令" rows="5" bind:value={videoPrefs.instruction_h3}></textarea>
+          </label>
+          <button class="setting-button setting-button-ghost restore-h3" onclick={() => { if (videoPrefs) videoPrefs.instruction_h3 = videoPrefs.defaults.instruction_h3; }}>恢复默认（H3）</button>
+        </fieldset>
+      {:else}
+        <div class="settings-load-state" role="status"><p>{loadFailed ? "暂时读取不到视频反推设置，可以重试。" : "正在读取视频反推设置…"}</p>{#if loadFailed}<button class="setting-button" onclick={reloadSettings}>重新加载</button>{/if}</div>
+      {/if}
+    </div>
+    {#if videoPrefs}
+      <div class="settings-card-footer">
+        <span class="settings-hint">两种格式的正文各自独立保存，互不覆盖；正文语言由上面的指令决定</span>
         <button class="setting-button bg-accent text-bg" onclick={() => run(async () => {
           if (!videoPrefs) return;
           videoPrefs = await videoPromptApi.saveSettings(videoPrefs);
           await refreshVideoPromptSettings();
           notice = "视频反推偏好已保存";
         })}>保存视频反推偏好</button>
-      {/if}
-    </div>
+      </div>
+    {/if}
   </div>
 
   {#if busy}<p class="settings-hint" role="status">处理中…</p>{/if}

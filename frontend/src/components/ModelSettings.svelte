@@ -251,9 +251,10 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
   .model-settings { width: 100%; }
   /* 卡片内表单自己的内边距：保存条挂在卡片底部时要通到边，所以不能给整张卡片加 padding。 */
   .settings-model-body { padding: 20px; }
-  /* 竖排表单跟着卡片加宽（原来固定 620px，卡片一变宽右边就空一块），
-     但封顶在卡片内宽附近，别把输入框拉成一整条横线。 */
-  .model-settings fieldset { max-width: min(100%, 1160px); }
+  /* 竖排表单铺满卡片：右边缘要和卡片、右下角保存条对齐（固定宽度会在右边留一条空白）。 */
+  .model-settings fieldset { max-width: none; }
+  /* 指令框里是长段文字：白字压黑底太刺眼，行距也偏挤，所以压灰一档、行距放到 1.9。 */
+  .model-settings textarea { color: #c2c2ca; line-height: 1.9; letter-spacing: .01em; }
   .model-chips { display: flex; gap: 8px; flex-wrap: wrap; }
   fieldset { margin-top: 18px; }
   fieldset:first-child { margin-top: 0; }

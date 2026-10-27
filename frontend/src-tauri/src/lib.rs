@@ -66,6 +66,7 @@ pub fn run() {
             commands::restart_sidecar,
             updates::get_update_status,
             updates::set_update_automatic,
+            updates::set_update_auto_update,
             updates::check_update,
             updates::download_update,
             updates::install_update,

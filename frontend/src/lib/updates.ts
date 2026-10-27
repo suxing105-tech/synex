@@ -4,7 +4,7 @@ import { isTauri } from "./tauri";
 export interface UpdateStatus {
   current_version: string; configured: boolean; installable: boolean;
   phase: string; message: string; version: string | null; notes: string;
-  downloaded: number; total: number | null; automatic: boolean; last_check: number;
+  downloaded: number; total: number | null; automatic: boolean; auto_update: boolean; last_check: number;
 }
 export const updateStatus = writable<UpdateStatus | null>(null);
 export const updateError = writable("");
@@ -41,10 +41,27 @@ export async function installLatestUpdate() {
     if (installed?.phase === "ready") updateError.set(installed.message);
   } finally { oneClickUpdating.set(false); }
 }
+/**
+ * 自动更新：检查到新版本后自动下载并安装，复用侧栏那条一键更新链路
+ * （download_update → install_update），不另起一套安装路径。
+ * 只有用户显式打开开关、且安装位置已确认（非便携版）时才动手。
+ */
+export function shouldAutoInstall(status: UpdateStatus | null): status is UpdateStatus {
+  return !!status?.auto_update && status.phase === "available" && !!status.version
+    && status.installable && status.configured;
+}
 export function startUpdates() {
   if (!isTauri()) return () => {};
   let disposed = false;
   let unsubscribe: (() => void) | undefined;
+  // 本次运行同一个版本只自动走一次，免得装完重启前被状态事件反复触发。
+  let autoTarget: string | null = null;
+  const watching = updateStatus.subscribe((status) => {
+    if (disposed || !shouldAutoInstall(status)) return;
+    if (autoTarget === status.version) return;
+    autoTarget = status.version;
+    void installLatestUpdate();
+  });
   // 启动后尽快检查一次：Rust 侧对「本次启动还没检查成功」放行，不再被每日节流挡住。
   const timer = setTimeout(() => { if (!disposed) void updateAction("check_update", { automatic: true }); }, 3000);
   const retry = setInterval(() => { if (!disposed) void updateAction("check_update", { automatic: true }); }, 60000);
@@ -58,5 +75,5 @@ export function startUpdates() {
       await updateAction("get_update_status");
     } catch (error) { if (!disposed) updateError.set(String(error)); }
   })();
-  return () => { disposed = true; clearTimeout(timer); clearInterval(retry); unsubscribe?.(); };
+  return () => { disposed = true; clearTimeout(timer); clearInterval(retry); unsubscribe?.(); watching(); };
 }

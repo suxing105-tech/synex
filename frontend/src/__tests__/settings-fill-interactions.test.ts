@@ -21,7 +21,11 @@ describe("设置与反推使用底色交互", () => {
     expect(source).toMatch(/\.section-description \{[^}]*max-width: 88ch/);
     expect(read('app.css')).toMatch(/\.setting-row-desc \{[^}]*max-width: 88ch/);
     expect(read('app.css')).toMatch(/\.settings-hint \{[^}]*max-width: 88ch/);
-    expect(read('components/ModelSettings.svelte')).toMatch(/fieldset \{ max-width: min\(100%, 1160px\)/);
+    // 竖排表单右边缘必须与卡片/保存条对齐（固定宽度会在右边留一条空白）
+    const modelCss = read('components/ModelSettings.svelte');
+    expect(modelCss).toMatch(/\.model-settings fieldset \{ max-width: none; \}/);
+    // 指令框文字压灰一档并加行距，白字压黑底太刺眼
+    expect(modelCss).toMatch(/\.model-settings textarea \{ color: #c2c2ca; line-height: 1\.9/);
     expect(source).not.toMatch(/max-w-\[94vw\]|88vh|bg-black\/75/);
   });
   it("底部保留设置入口，导入目录进入通用设置", () => {

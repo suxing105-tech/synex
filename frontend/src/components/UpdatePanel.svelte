@@ -5,6 +5,13 @@
   const busy = $derived(isUpdateBusy($updateStatus?.phase ?? ""));
   const percent = $derived(downloadPercent($updateStatus?.downloaded ?? 0, $updateStatus?.total ?? null));
   const downloadedLabel = $derived($updateStatus && $updateStatus.total === null ? `${($updateStatus.downloaded / 1048576).toFixed(1)} MB` : "");
+  // 自动更新要先把检查打开；安装位置没确认（便携版）时永远不自动装。
+  const autoHint = $derived(
+    !$updateStatus?.automatic ? "需要先打开「自动检查更新」，才知道有没有新版本。"
+      : !$updateStatus?.installable ? "便携版或安装位置未确认时不会自动安装，请用完整安装包升级。"
+      : $updateStatus?.auto_update ? "安装会先备份图库数据，再关闭并重启应用；正在导入素材时建议先关掉。"
+      : "打开后，检查到新版本的下一步就是下载并安装，不再弹窗询问。",
+  );
 </script>
 
 <section class="update-settings" aria-label="软件更新">
@@ -20,6 +27,15 @@
           {#snippet control()}
             <label class="settings-switch"><input type="checkbox" aria-label="自动检查更新" checked={$updateStatus.automatic} disabled={busy || !$updateStatus.configured}
               onchange={(e) => updateAction("set_update_automatic", { enabled: e.currentTarget.checked })} /><span class="switch-track"></span></label>
+          {/snippet}
+        </SettingsRow>
+        <SettingsRow title="自动更新" description="发现新版本后不用点：自动下载、校验并安装，装完自动重启图库。">
+          {#snippet control()}
+            <label class="settings-switch"><input type="checkbox" aria-label="发现新版本后自动更新" checked={$updateStatus.auto_update} disabled={busy || !$updateStatus.configured || !$updateStatus.automatic}
+              onchange={(e) => updateAction("set_update_auto_update", { enabled: e.currentTarget.checked })} /><span class="switch-track"></span></label>
+          {/snippet}
+          {#snippet children()}
+            <p class="settings-hint">{autoHint}</p>
           {/snippet}
         </SettingsRow>
         {#if !$updateStatus.installable}

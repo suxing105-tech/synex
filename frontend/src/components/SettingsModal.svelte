@@ -9,6 +9,8 @@
   import ModelSettings from "./ModelSettings.svelte";
   import UpdatePanel from "./UpdatePanel.svelte";
   import SettingsRow from "./SettingsRow.svelte";
+  import wechatContact from "../assets/about/wechat-contact.png";
+  import rewardQr from "../assets/about/reward-qr.png";
   import { pushToast } from "../lib/toast";
   import { onMount, tick, untrack } from "svelte";
 
@@ -62,6 +64,22 @@
   let configError = $state(false);
   let scroller = $state<HTMLDivElement | null>(null);
   let filter = $state("");
+  // 「关于」里的两张码：微信联系方式与赞赏收款码，点开看大图。
+  let qr = $state<"wechat" | "reward" | null>(null);
+  const qrImage = $derived(qr === "reward" ? rewardQr : wechatContact);
+  const qrLabel = $derived(qr === "reward" ? "微信收款码" : "微信二维码");
+  $effect(() => {
+    if (!qr) return;
+    // 捕获阶段先吃掉 Esc，否则关掉大图的同时把整个设置页也关了。
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      event.preventDefault();
+      qr = null;
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  });
 
   const searchTokens = $derived(filter.trim().toLowerCase().split(/\s+/).filter(Boolean));
   function shown(id: string) {
@@ -437,6 +455,21 @@
                     <span class="setting-row-mono">{$updateStatus ? `v${$updateStatus.current_version}` : "网页版"}</span>
                   {/snippet}
                 </SettingsRow>
+                <SettingsRow title="开发者" description="苏醒。有问题、想要新功能，或者只是想说一句好用，都可以直接找我。" top>
+                  {#snippet children()}
+                    <div class="about-contacts">
+                      <button class="about-qr" onclick={() => (qr = "wechat")}>
+                        <img src={wechatContact} alt="微信二维码：扫码添加开发者苏醒" width="408" height="408" />
+                        <span>联系开发者</span>
+                      </button>
+                      <button class="about-qr" onclick={() => (qr = "reward")}>
+                        <img src={rewardQr} alt="微信收款码：请开发者喝一杯" width="408" height="408" />
+                        <span>赞赏支持</span>
+                      </button>
+                      <p class="settings-hint">左边加微信，右边请我喝杯咖啡。都是自愿，用着开心最重要。</p>
+                    </div>
+                  {/snippet}
+                </SettingsRow>
                 {#if onOpenOnboarding}
                   <SettingsRow title="新手引导" description="重新走一遍导入目录、监听与对比的用法。">
                     {#snippet control()}
@@ -454,6 +487,16 @@
         </div>
       </div>
     </div>
+    {#if qr}
+      <div class="about-zoom" role="dialog" aria-modal="true" aria-label={qrLabel} tabindex="-1" onclick={() => (qr = null)}
+        onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") qr = null; }}>
+        <figure class="about-zoom-figure">
+          <img src={qrImage} alt={qrLabel} />
+          <figcaption>{qr === "reward" ? "赞赏支持：扫码请开发者喝一杯" : "联系方式：扫码添加苏醒的微信"}</figcaption>
+        </figure>
+        <button class="setting-button" onclick={() => (qr = null)}>关闭</button>
+      </div>
+    {/if}
   </div>
 {/if}
 
@@ -489,6 +532,15 @@
   .settings-section h3 { margin-bottom: 6px; font-size: 21px; font-weight: 600; letter-spacing: -.02em; }
   .section-description { margin-bottom: 22px; max-width: 88ch; font-size: 13px; line-height: 1.7; color: #85858f; }
   .settings-load-state { display: flex; align-items: center; gap: 12px; padding: 18px 20px; font-size: 13px; color: #a1a1aa; flex-wrap: wrap; }
+  .about-contacts { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 16px; }
+  /* 缩略图也要能直接扫出来，所以给到 168px；点开还有大图。 */
+  .about-qr { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 190px; padding: 10px; border-radius: 10px; background: #101013; font-size: 12px; line-height: 1.5; color: #a1a1aa; }
+  .about-qr img { width: 168px; height: auto; border-radius: 6px; background: #fafafa; }
+  .about-contacts .settings-hint { flex: 1 1 220px; }
+  .about-zoom { position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 32px; background: rgba(8, 8, 10, .88); }
+  .about-zoom-figure { display: flex; flex-direction: column; align-items: center; gap: 14px; margin: 0; }
+  .about-zoom img { max-width: min(90vw, 440px); max-height: 62%; border-radius: 10px; background: #fafafa; }
+  .about-zoom figcaption { font-size: 13px; color: #a1a1aa; }
   @media (max-width: 1180px) {
     .settings-shell { grid-template-columns: 228px minmax(0, 1fr); }
   }

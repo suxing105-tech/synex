@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import SidebarUpdateButton from '../components/SidebarUpdateButton.svelte';
 import { updateStatus, updateError, oneClickUpdating, installLatestUpdate, updateAction, type UpdateStatus } from '../lib/updates';
 
-const status = (phase = 'available'): UpdateStatus => ({ current_version: '0.2.10', configured: true, installable: true, phase, message: '更新状态', version: '0.2.11', notes: '', downloaded: 0, total: null, automatic: true, last_check: 0 });
+const status = (phase = 'available'): UpdateStatus => ({ current_version: '0.2.10', configured: true, installable: true, phase, message: '更新状态', version: '0.2.11', notes: '', downloaded: 0, total: null, automatic: true, auto_update: false, last_check: 0 });
 let invoke: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   invoke = vi.fn(); (window as any).__TAURI__ = { core: { invoke } };

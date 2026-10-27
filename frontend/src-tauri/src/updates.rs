@@ -16,6 +16,9 @@ use tauri_plugin_updater::{Update, UpdaterExt};
 #[serde(default)]
 pub struct Preferences {
     pub automatic: bool,
+    /// 发现新版本后自动下载并安装（会关闭并重启图库）。默认关，必须由用户打开。
+    /// 老版本偏好文件里没有这个键，靠 #[serde(default)] 读成 false。
+    pub auto_update: bool,
     pub last_check: u64,
     pub last_attempt: u64,
 }
@@ -23,6 +26,7 @@ impl Default for Preferences {
     fn default() -> Self {
         Self {
             automatic: true,
+            auto_update: false,
             last_check: 0,
             last_attempt: 0,
         }
@@ -62,6 +66,7 @@ pub struct Status {
     pub downloaded: u64,
     pub total: Option<u64>,
     pub automatic: bool,
+    pub auto_update: bool,
     pub last_check: u64,
 }
 pub struct Updates {
@@ -191,6 +196,7 @@ impl Updates {
                 downloaded: 0,
                 total: None,
                 automatic: preferences.automatic,
+                auto_update: preferences.auto_update,
                 last_check: preferences.last_check,
             }),
             preferences: Mutex::new(preferences),
@@ -274,6 +280,25 @@ pub async fn set_update_automatic(
     state.preferences.lock().unwrap().automatic = enabled;
     state.save()?;
     state.status.lock().unwrap().automatic = enabled;
+    let _ = app.emit("update-status", state.snapshot());
+    Ok(state.snapshot())
+}
+/// 自动更新开关。打开后，检查到新版本的下载与安装由前端 watcher 自动串起来
+/// （复用手动更新那条已经跑过的 download_update → install_update 链路），
+/// Rust 侧只负责把开关持久化并广播给界面。
+#[tauri::command]
+pub async fn set_update_auto_update(
+    app: AppHandle,
+    state: State<'_, Updates>,
+    enabled: bool,
+) -> Result<Status, String> {
+    let _guard = state
+        .operation
+        .try_lock()
+        .map_err(|_| "更新正在进行，请稍后再试")?;
+    state.preferences.lock().unwrap().auto_update = enabled;
+    state.save()?;
+    state.status.lock().unwrap().auto_update = enabled;
     let _ = app.emit("update-status", state.snapshot());
     Ok(state.snapshot())
 }
@@ -548,11 +573,21 @@ mod tests {
     fn future_clock_does_not_trigger_repeated_checks() {
         let p = Preferences {
             automatic: true,
+            auto_update: false,
             last_check: 200000,
             last_attempt: 200000,
         };
         assert!(!due(&p, 100000, false, 0));
         assert!(!due(&p, 100000, true, 0));
+    }
+    #[test]
+    fn auto_update_is_off_by_default_and_old_preference_files_still_load() {
+        assert!(!Preferences::default().auto_update);
+        // 0.2.23 及更早的 update-preferences.json 里没有 auto_update 这个键。
+        let legacy = r#"{ "automatic": true, "last_check": 5, "last_attempt": 7 }"#;
+        let parsed: Preferences = serde_json::from_str(legacy).unwrap();
+        assert!(!parsed.auto_update);
+        assert_eq!(parsed.last_check, 5);
     }
     #[test]
     fn cached_available_update_survives_restart_only_for_same_version() {

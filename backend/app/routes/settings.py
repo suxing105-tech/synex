@@ -82,6 +82,8 @@ async def import_directory(payload: dict, background: BackgroundTasks):
             except Exception:
                 log.exception("watch new directory failed")
                 raise HTTPException(500, "目录已添加，但监听未启动，请检查权限后重试")
+            # 空目录也得先在侧栏露出来：不等到第一个文件被索引才有节点。
+            repository.ensure_source_root_folder(target)
             indexer._set_progress(running=True, scanned=0, indexed=0, total=0, current_path="", error=None)
             background.add_task(run_scans, indexer, [target])
             return {"ok": True, "path": str(target)}

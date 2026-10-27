@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import sqlite3
-import asyncio
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -33,6 +32,9 @@ def list_folders():
     indexer = get_indexer()
     with indexer._live_lock:
         folder_storage.sync_user_folders(indexer)
+        # 老库里来源目录根上没有节点（只有摊平的一级子目录），在这里顺手自愈一次；
+        # 磁盘没插盘之类的失败在函数内部逐条吞掉，不能把「读侧栏」搞成 500。
+        repository.ensure_source_root_folders([*indexer.config.watch_dirs, *texts.root_paths()])
         tree = repository.folder_tree()
     # 文本计数：每篇文本给自己的各级父目录各记一次，节点查表即得「本目录及子目录内文本数」。
     # 旧实现是每个节点重扫一遍全部文本，文件一多就线性放大。
@@ -70,36 +72,9 @@ async def update_folder(folder_id: int, payload: FolderUpdate):
         raise HTTPException(400, "来源文件夹不可改变层级；可修改显示名称和排序")
     try:
         if payload.name is not None and payload.order is None and "parent_id" not in payload.model_fields_set:
-            from pathlib import Path
-            from ..indexer import get_indexer
-            indexer = get_indexer()
-            row = repository.get_pool().main().execute('SELECT name,path FROM folders WHERE id=?', (folder_id,)).fetchone()
-            if not row:
-                raise HTTPException(404, '文件夹不存在')
-            old_path = Path(row['path']).resolve() if row['path'] else None
-            watch_dirs = list(indexer.config.watch_dirs)
-            root_index = next((i for i, value in enumerate(watch_dirs)
-                               if old_path and Path(value).resolve() == old_path), None)
-            was_watching = indexer._observer is not None
-            if was_watching:
-                await indexer.stop_watching()
-            try:
-                with indexer._live_lock:
-                    result = folder_storage.rename_folder(folder_id, payload.name)
-                if root_index is not None and old_path:
-                    watch_dirs[root_index] = str(old_path.with_name(payload.name))
-                    indexer.update_config(watch_dirs=watch_dirs)
-                return result
-            except Exception:
-                if root_index is not None and old_path:
-                    try:
-                        indexer.update_config(watch_dirs=watch_dirs)
-                    except Exception:
-                        pass
-                raise
-            finally:
-                if was_watching:
-                    await indexer.start_watching(asyncio.get_running_loop())
+            # 改名不再动磁盘：来源目录是外部程序在写的目录（ComfyUI 的 output、素材盘），
+            # 图库没有权利替它改名；我的文件夹改名仍会同步物理目录（在 rename_folder 里）。
+            return folder_storage.rename_folder(folder_id, payload.name)
         parent_id = payload.parent_id if "parent_id" in payload.model_fields_set else ...
         return repository.folder_update(
             folder_id,

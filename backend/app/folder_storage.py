@@ -136,6 +136,11 @@ def rename_folder(folder_id: int, name: str) -> dict:
     if not row or not row['path']:
         return repository.folder_update(folder_id, name=name)
     name = valid_name(name)
+    if row['is_system']:
+        # 来源目录是别人的目录：外部程序（ComfyUI、剪辑工程）正按原路径往里写，
+        # 图库替它改名会把那条流水线打断。「来源目录不移动文件」同样适用于目录本身，
+        # 所以这里只改图库里的显示名，磁盘与索引路径一个字节都不动。
+        return repository.folder_update(folder_id, name=name)
     old = Path(row['path']).resolve()
     new = old.with_name(name)
     if old == new:
@@ -182,6 +187,14 @@ def relocate_folder(folder_id: int, target_id: int | None, position: str) -> Non
     if target and source['is_system'] != target['is_system']:
         raise ValueError('请在来源目录或我的文件夹各自区域内移动')
     parent_id = None if position == 'root' else target['id'] if position == 'inside' else target['parent_id']
+    if position == 'root' and source['is_system']:
+        # 来源目录的「顶层」是根节点自己，不是 NULL。拖到「来源目录」标题上 = 拖回根下；
+        # 落到 NULL 会把目录甩到来源根之外，从此脱离监听，素材直接从图库里消失。
+        top = source
+        while top is not None and top['parent_id'] is not None:
+            top = conn.execute('SELECT * FROM folders WHERE id=?', (top['parent_id'],)).fetchone()
+        if top is not None and top['is_system'] and top['id'] != folder_id:
+            parent_id = top['id']
     descendants = repository.get_folder_descendants(folder_id)
     if parent_id in descendants or target_id == folder_id:
         raise ValueError('不能把文件夹移到自身或其后代')

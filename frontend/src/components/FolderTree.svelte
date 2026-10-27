@@ -11,6 +11,7 @@
   import Icon from "./Icon.svelte";
   import type { FolderNode } from "../lib/types";
   import { foldersApi } from "../lib/api";
+  import { addSourceDirectory, directoryBaseName } from "../lib/source-import";
   import { refreshFolders, refreshFeed, refreshStats } from "../lib/stores";
 
   let sidebarRegion: HTMLDivElement;
@@ -41,6 +42,7 @@
 
   let { oncollapse = () => {} }: { oncollapse?: () => void } = $props();
 
+  let addingSource = $state(false);
   let menuFor = $state<number | null>(null);
   let blankMenu = $state(false);
   let menuPos = $state<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -273,6 +275,19 @@
     } finally { saving = false; }
   }
 
+  // 「+ 添加来源目录」：登记一个本地文件夹并开始监听，原文件留在原地不动。
+  // 走的是和首次引导同一个入口（后端把目录接进正在跑的监听器，再扫一遍）。
+  async function addSource() {
+    if (addingSource) return;
+    addingSource = true;
+    try {
+      const path = await addSourceDirectory();
+      if (path) pushToast(`开始监听「${directoryBaseName(path)}」— 来源目录只登记位置，不移动原文件`);
+    } catch (error) {
+      pushToast(`添加来源目录失败：${error instanceof Error ? error.message : String(error)}`, { kind: "error" });
+    } finally { addingSource = false; }
+  }
+
   function closeAll() { menuFor = null; blankMenu = false; }
 
   // 把 folder 树按 is_system 拆成两份：user / system。
@@ -347,16 +362,26 @@
   {/each}
 
 
-  {#if systemFolders.length > 0}
-    <div class="flex items-center justify-between px-[10px] pt-[14px] pb-[4px]">
-      <div data-folder-root="system" class:root-drop={drop?.position === "root" && !!dragging?.is_system} class="text-[10px] uppercase text-muted tracking-wider opacity-70">
-        来源目录
-      </div>
+  <div class="flex items-center justify-between px-[10px] pt-[14px] pb-[4px]">
+    <div data-folder-root="system" class:root-drop={drop?.position === "root" && !!dragging?.is_system} class="text-[10px] uppercase text-muted tracking-wider opacity-70">
+      来源目录
     </div>
-    {#each systemFolders as f (f.id)}
-      {@render systemFolderItem(f, 0)}
-    {/each}
+    <button
+      class="bg-transparent border-0 text-muted text-[12px] hover:text-zinc-200 disabled:opacity-40"
+      disabled={addingSource}
+      title="添加来源目录：只登记位置并开始监听，不复制也不移动原文件"
+      aria-label="添加来源目录"
+      onclick={(e) => { e.stopPropagation(); void addSource(); }}
+    >
+      <Icon name="plus" size={12} />
+    </button>
+  </div>
+  {#if systemFolders.length === 0 && !addingSource}
+    <div class="text-[12px] text-muted px-3 pb-2 leading-relaxed">还没有来源目录。点这里右边的 + 选一个文件夹，图库只读取并监听它，原文件留在原地。</div>
   {/if}
+  {#each systemFolders as f (f.id)}
+    {@render systemFolderItem(f, 0)}
+  {/each}
 
   <div class="flex items-center justify-between px-[10px] pt-[14px] pb-[4px]">
     <div data-folder-root="user" class:root-drop={drop?.position === "root" && !dragging?.is_system} class="text-[10px] uppercase text-muted tracking-wider opacity-70">我的文件夹</div>

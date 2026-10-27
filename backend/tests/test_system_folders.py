@@ -64,7 +64,7 @@ def test_ensure_system_folder_chain_nested(tmp_data_dir):
     folder_id = repository.ensure_system_folder_chain(c, watch)
     assert folder_id is not None
 
-    # 三层：krea2 / foo / bar -> 各自应有一个 system folder 记录
+    # 四层：watch（来源根）/ krea2 / foo -> 各自应有一个 system folder 记录
     rows = repository.folder_tree()
     flat = []
     def walk(nodes):
@@ -73,11 +73,13 @@ def test_ensure_system_folder_chain_nested(tmp_data_dir):
             walk(n["children"])
     walk(rows)
     names = {n["name"] for n in flat if n["is_system"]}
-    assert names == {"krea2", "foo"}
-    # chain 顺序：krea2 是根（parent_id=None），foo 的 parent 是 krea2
+    assert names == {"watch", "krea2", "foo"}
+    # chain 顺序：watch 在顶层，krea2 在它下面，foo 的 parent 是 krea2
+    watch_node = next(n for n in flat if n["name"] == "watch" and n["is_system"])
     krea2 = next(n for n in flat if n["name"] == "krea2" and n["is_system"])
     foo = next(n for n in flat if n["name"] == "foo" and n["is_system"])
-    assert krea2["parent_id"] is None
+    assert watch_node["parent_id"] is None
+    assert krea2["parent_id"] == watch_node["id"]
     assert foo["parent_id"] == krea2["id"]
 
 
@@ -96,18 +98,22 @@ def test_ensure_system_folder_chain_idempotent(tmp_data_dir):
 
     rows = repository.folder_tree()
     system_rows = [n for n in rows if n["is_system"]]
-    assert len(system_rows) == 1  # 只一个根 system folder
-    assert system_rows[0]["name"] == "sub"
+    assert len(system_rows) == 1              # 顶层只有来源根自己
+    assert system_rows[0]["name"] == "watch"
+    assert [c["name"] for c in system_rows[0]["children"]] == ["sub"]
 
 
-def test_ensure_system_folder_chain_top_level_returns_none(tmp_data_dir):
-    """文件直接放在 watch root 下 → 返回 None（不属于任何 system folder）。"""
+def test_ensure_system_folder_chain_top_level_returns_root_node(tmp_data_dir):
+    """文件直接放在来源根下 → 返回根节点：侧栏点根目录就看到它（以前只能在全库里找）。"""
     init_pool()
     watch = tmp_data_dir / "watch"
     watch.mkdir()
     f = watch / "img.png"
     f.write_bytes(b"x")
-    assert repository.ensure_system_folder_chain(f, watch) is None
+    folder_id = repository.ensure_system_folder_chain(f, watch)
+    assert folder_id is not None
+    row = get_pool().main().execute("SELECT name, parent_id FROM folders WHERE id=?", (folder_id,)).fetchone()
+    assert row["name"] == "watch" and row["parent_id"] is None
 
 
 def test_ensure_system_folder_chain_outside_watch_returns_none(tmp_data_dir):
@@ -255,8 +261,8 @@ def test_indexer_auto_assigns_system_folder_on_process(tmp_data_dir):
     assert sys_folders[0]["image_id"] == payload["id"]
 
 
-def test_indexer_auto_assign_skipped_for_top_level(tmp_data_dir):
-    """图片直接在 watch root 下（无子目录）→ 不挂 system folder。"""
+def test_indexer_auto_assign_uses_root_folder_for_top_level(tmp_data_dir):
+    """图片直接在来源根下（无子目录）→ 挂到来源根节点上。"""
     init_pool()
     watch = tmp_data_dir / "watch"
     watch.mkdir()
@@ -271,7 +277,11 @@ def test_indexer_auto_assign_skipped_for_top_level(tmp_data_dir):
         "SELECT COUNT(*) AS c FROM image_folders if_ "
         "JOIN folders f ON f.id = if_.folder_id WHERE f.is_system = 1"
     ).fetchone()["c"]
-    assert n == 0
+    assert n == 1
+    assert get_pool().main().execute(
+        "SELECT f.name FROM image_folders if_ JOIN folders f ON f.id = if_.folder_id "
+        "WHERE f.is_system = 1"
+    ).fetchone()["name"] == "watch"
 
 
 def test_indexer_auto_assign_preserves_user_assignment(tmp_data_dir):
@@ -310,8 +320,8 @@ def test_indexer_auto_assign_preserves_user_assignment(tmp_data_dir):
 # ---------- API 校验 ----------
 
 
-def test_api_patch_system_folder_renames_disk_directory(tmp_data_dir):
-    """PATCH system folder renames its physical directory and stored path."""
+def test_api_patch_system_folder_renames_label_only(tmp_data_dir):
+    """PATCH system folder 只改图库里的名字：来源目录是别人的目录，磁盘与路径都不动。"""
     from fastapi.testclient import TestClient
 
     from app.main import app
@@ -332,9 +342,8 @@ def test_api_patch_system_folder_renames_disk_directory(tmp_data_dir):
     r = client.patch(f"/api/folders/{fid}", json={"name": "新名字"})
     assert r.status_code == 200
     assert r.json()["name"] == "新名字"
-    renamed = tmp_data_dir / '新名字'
-    assert renamed.is_dir() and not disk_dir.exists()
-    assert Path(conn.execute("SELECT path FROM folders WHERE id = ?", (fid,)).fetchone()["path"]) == renamed
+    assert disk_dir.is_dir() and not (tmp_data_dir / "新名字").exists()
+    assert Path(conn.execute("SELECT path FROM folders WHERE id = ?", (fid,)).fetchone()["path"]) == disk_dir
 
 
 def test_api_delete_system_folder_removes_disk_and_record(tmp_data_dir):
@@ -410,8 +419,18 @@ def test_api_feed_system_folder_returns_descendant_images(tmp_data_dir):
         idx._process_path_sync(p)
 
     client = TestClient(app)
+
+    def find(nodes, name):
+        for node in nodes:
+            if node["is_system"] and node["name"] == name:
+                return node
+            hit = find(node["children"], name)
+            if hit:
+                return hit
+        raise AssertionError("树里没有 " + name)
+
     tree = client.get("/api/folders").json()
-    krea2 = next(n for n in tree if n["is_system"] and n["name"] == "krea2")
+    krea2 = find(tree, "krea2")     # 在来源根 watch 里面，不在顶层
     r = client.get(f"/api/images?folder_id={krea2['id']}")
     assert r.status_code == 200
     data = r.json()
@@ -448,9 +467,9 @@ def test_prune_removes_deleted_system_folder(tmp_data_dir):
     assert removed == 1
 
     rows = repository.folder_tree()
-    names = [n["name"] for n in rows if n["is_system"]]
-    assert "gone" not in names
-    assert "keep" in names
+    root = next(n for n in rows if n["is_system"])
+    assert root["name"] == "watch"                     # 根还在磁盘上，不该被清
+    assert [n["name"] for n in root["children"]] == ["keep"]
 
 
 def test_prune_does_not_touch_user_folders(tmp_data_dir):
@@ -512,7 +531,9 @@ def test_prune_deletes_descendants_and_assignments(tmp_data_dir):
         removed = repository.prune_missing_system_folders([watch])
         assert removed >= 1
         conn = get_pool().main()
-        assert conn.execute("SELECT COUNT(*) AS c FROM folders WHERE is_system=1").fetchone()["c"] == 0
+        # 只剩来源根自己（磁盘上还在）；它镜像的 parent/child 已级联清掉
+        assert [r["name"] for r in conn.execute(
+            "SELECT name FROM folders WHERE is_system=1").fetchall()] == ["watch"]
         assert conn.execute("SELECT COUNT(*) AS c FROM image_folders").fetchone()["c"] == 0
     finally:
         idx.shutdown()

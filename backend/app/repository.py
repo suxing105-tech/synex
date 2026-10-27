@@ -1040,6 +1040,114 @@ def _normalize_folder_path(p: Path) -> str:
     return str(p).replace("\\", "/")
 
 
+def _folder_key(path: str | Path) -> str:
+    """目录路径的比对键：正斜杠 + 去尾斜杠 + 小写（Windows 路径大小写不敏感）。"""
+    return str(path).replace("\\", "/").rstrip("/")
+
+_FOLDER_KEY_SQL = "lower(replace(path, char(92), '/'))"
+
+
+def _find_folder_by_path(conn, key: str):
+    """按磁盘路径查 system folder；SQLite 的 = 是大小写敏感的，Windows 上必须归一后再比。"""
+    return conn.execute(
+        f"SELECT id, parent_id, name FROM folders "
+        f"WHERE is_system = 1 AND path IS NOT NULL AND {_FOLDER_KEY_SQL} = lower(?)",
+        (key,),
+    ).fetchone()
+
+
+def _parent_key(path: str) -> str:
+    normalized = str(path).replace("\\", "/").rstrip("/")
+    return normalized.rsplit("/", 1)[0] if "/" in normalized else normalized
+
+
+def ensure_source_root_folder(root: Path, conn=None) -> int | None:
+    """为来源目录本身建立顶层 system folder 节点，返回 id；磁盘上取不到就返回 None。
+
+    为什么非要有这一步：``ensure_system_folder_chain`` 是**按文件**建链的，它找不到根节点
+    时把一级子目录的 parent_id 直接设成 NULL —— 侧栏「来源目录」于是被摊平成一片兄弟节点
+    （导入 ComfyUI 的 output 就变成 Audio / krea2 / MiniMaxH3 … 平铺，看不出它们属于谁）。
+    只有文本关联那条路会给根建节点，纯图片目录不会，两边行为不一致。
+    """
+    conn = conn or get_pool().main()
+    # 先查库：这个函数是**每个文件**都会走一遍的，命中就不该再碰磁盘（网络盘上 resolve 很贵）。
+    row = _find_folder_by_path(conn, _folder_key(_normalize_folder_path(Path(root))))
+    if row:
+        return row["id"]
+    try:
+        resolved = Path(root).expanduser().resolve()
+    except (OSError, RuntimeError):
+        return None
+    if not resolved.is_dir():
+        return None
+    key = _folder_key(_normalize_folder_path(resolved))
+    row = _find_folder_by_path(conn, key)
+    if row:
+        return row["id"]
+    try:
+        with transaction() as c:
+            cur = c.execute(
+                'INSERT INTO folders(parent_id, name, "order", is_system, path) '
+                "VALUES(NULL, ?, (SELECT COALESCE(MAX(\"order\"), -1) + 1 FROM folders WHERE parent_id IS NULL), 1, ?)",
+                (resolved.name, _normalize_folder_path(resolved)),
+            )
+            return cur.lastrowid
+    except sqlite3.IntegrityError:
+        # 同名顶层节点或并发创建：认路径，谁先落库谁算。
+        row = _find_folder_by_path(conn, key)
+        if row is None:
+            logger.warning("来源目录 %s 的根节点建不出来：顶层已有同名文件夹", root)
+        return None if row is None else row["id"]
+
+
+def ensure_source_root_folders(roots: Iterable[str | Path]) -> dict:
+    """补齐所有来源目录的顶层节点，并把摊平的一级子目录挂回根下。幂等，可在读接口里调。
+
+    嵌套的来源根（A 在 B 里面）保持各自顶层：``find_watch_root`` 取最深匹配，
+    把 A 塞进 B 的节点下会让两棵树的归属口径打架。
+    """
+    conn = get_pool().main()
+    created = reparented = 0
+    nodes: dict[str, int] = {}
+    for raw in roots:
+        try:
+            resolved = Path(raw).expanduser().resolve()
+        except (OSError, RuntimeError):
+            continue
+        if not resolved.is_dir():
+            continue
+        key = _folder_key(_normalize_folder_path(resolved))
+        existing = _find_folder_by_path(conn, key)
+        if existing:
+            nodes[key.lower()] = existing["id"]
+            continue
+        folder_id = ensure_source_root_folder(resolved, conn=conn)
+        if folder_id is None:
+            continue
+        nodes[key.lower()] = folder_id
+        created += 1
+    if not nodes:
+        return {"created": created, "reparented": reparented}
+    root_keys = set(nodes)
+    orphans = conn.execute(
+        "SELECT id, path FROM folders "
+        "WHERE is_system = 1 AND parent_id IS NULL AND path IS NOT NULL"
+    ).fetchall()
+    with transaction() as c:
+        for orphan in orphans:
+            if orphan["id"] in nodes.values():
+                continue
+            key = _folder_key(orphan["path"]).lower()
+            if key in root_keys:
+                continue        # 它自己也是来源根，保持顶层
+            if _parent_key(orphan["path"]).lower() not in nodes:
+                continue
+            c.execute("UPDATE folders SET parent_id = ? WHERE id = ?",
+                      (nodes[_parent_key(orphan["path"]).lower()], orphan["id"]))
+            reparented += 1
+    return {"created": created, "reparented": reparented}
+
+
 def is_system_folder(folder_id: int) -> bool:
     conn = get_pool().main()
     row = conn.execute(
@@ -1065,7 +1173,8 @@ def find_watch_root(file_path: Path, watch_roots: list[Path]) -> Path | None:
 def ensure_system_folder_chain(file_path: Path, watch_root: Path) -> int | None:
     """为 file_path 在 watch_root 下的子目录链建立 system folder 记录。
 
-    返回最深一层 folder 的 id；若文件就在 watch_root 顶层（无子目录），返回 None。
+    返回最深一层 folder 的 id；文件就在 watch_root 顶层（无子目录）时返回**根节点**自己，
+    这样来源目录根上的文件也能在侧栏点得开（以前是 None，文件只出现在「所有素材」里）。
     已存在的 system folder 复用其 id，仅在 parent 指向错误时修正。
     """
     file_path = Path(file_path).resolve()
@@ -1075,12 +1184,12 @@ def ensure_system_folder_chain(file_path: Path, watch_root: Path) -> int | None:
     except ValueError:
         return None
     parts = rel.parts[:-1]  # 去掉文件名
-    if not parts:
-        return None
     conn = get_pool().main()
-    root_row = conn.execute('SELECT id FROM folders WHERE path=?', (_normalize_folder_path(watch_root),)).fetchone()
-    parent_id: int | None = root_row['id'] if root_row else None
-    deepest_id: int | None = None
+    # 根节点缺失就补一个：来源目录在侧栏里必须先是它自己，子目录才是它的孩子。
+    deepest_id: int | None = ensure_source_root_folder(watch_root, conn=conn)
+    parent_id: int | None = deepest_id
+    if not parts:
+        return deepest_id
     cumulative = watch_root
     for part in parts:
         cumulative = cumulative / part

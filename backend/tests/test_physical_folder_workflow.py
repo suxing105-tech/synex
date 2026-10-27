@@ -250,28 +250,35 @@ def test_user_folders_added_on_disk_are_mirrored_in_sidebar(indexer, tmp_path, m
     assert sum(node['name'] == 'direct-drop' and not node['is_system'] for node in second) == 1
 
 
-def test_renaming_source_folder_renames_disk_tree_and_watch_root(indexer, tmp_path):
+def test_renaming_source_folder_is_label_only(indexer, tmp_path):
+    """来源目录改名只是图库里的标签：真实目录、索引路径、监听配置一个都不动。
+
+    2026-10-27 改掉的行为：以前会把真实目录一起改名。来源目录是外部程序正在写的目录
+    （ComfyUI 的 output、素材盘），图库替它改名等于替别人打断一条流水线；
+    而「来源目录不移动文件位置」本来就是它存在的理由。
+    """
     from app.db import get_pool
     from app import repository
     from app.main import app
     client = TestClient(app)
-    root = tmp_path / 'watch-root'
-    nested = root / 'nested'
+    root = tmp_path / "watch-root"
+    nested = root / "nested"
     nested.mkdir(parents=True)
-    media = make_png(nested / 'sample.png')
+    media = make_png(nested / "sample.png")
     indexer.update_config(watch_dirs=[str(root)])
     conn = get_pool().main()
-    root_id = conn.execute('INSERT INTO folders(name,is_system,path) VALUES(?,1,?)', ('watch-root', repository._normalize_path(root))).lastrowid
-    child_id = conn.execute('INSERT INTO folders(name,parent_id,is_system,path) VALUES(?,?,1,?)',
-                             ('nested', root_id, repository._normalize_path(nested))).lastrowid
+    root_id = conn.execute("INSERT INTO folders(name,is_system,path) VALUES(?,1,?)", ("watch-root", repository._normalize_path(root))).lastrowid
+    child_id = conn.execute("INSERT INTO folders(name,parent_id,is_system,path) VALUES(?,?,1,?)",
+                            ("nested", root_id, repository._normalize_path(nested))).lastrowid
     event = indexer._process_path_sync(media)
     assert event
-    repository.assign_folder(event['id'], child_id)
-    response = client.patch(f'/api/folders/{root_id}', json={'name':'renamed-root'})
+    repository.assign_folder(event["id"], child_id)
+    image_path = Path(repository.image_detail(event["id"])["path"])
+    response = client.patch(f"/api/folders/{child_id}", json={"name": "出图批次"})
     assert response.status_code == 200, response.text
-    new_root = root.with_name('renamed-root')
-    assert new_root.is_dir() and not root.exists()
-    assert (new_root / 'nested' / 'sample.png').is_file()
-    assert Path(repository.image_detail(event['id'])['path']) == new_root / 'nested' / 'sample.png'
-    assert Path(conn.execute('SELECT path FROM folders WHERE id=?',(child_id,)).fetchone()['path']) == new_root / 'nested'
-    assert indexer.config.watch_dirs == [str(new_root)]
+    assert response.json()["name"] == "出图批次"
+    assert nested.is_dir() and (nested / "sample.png").is_file()
+    assert not (root / "出图批次").exists()
+    assert Path(repository.image_detail(event["id"])["path"]) == image_path
+    assert Path(conn.execute("SELECT path FROM folders WHERE id=?", (child_id,)).fetchone()["path"]) == nested
+    assert indexer.config.watch_dirs == [str(root)]

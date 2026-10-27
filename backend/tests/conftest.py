@@ -25,13 +25,33 @@ def tmp_data_dir(tmp_path: Path, monkeypatch):
     return tmp_path
 
 
+def _resync_indexer_singleton():
+    """让会话级单例 Indexer 的配置跟着当前临时数据目录走。
+
+    以前没人依赖它，但 ``GET /api/folders`` 会照 ``config.watch_dirs`` 补来源目录根节点：
+    单例是会话级的，留着上一个测试写进去的目录，就会在下一个测试的库里长出野节点。
+    """
+    from pathlib import Path
+
+    from app import indexer as indexer_module
+    from app.config import load_config
+
+    instance = indexer_module._INDEXER
+    if instance is None:
+        return
+    instance._cfg = load_config()
+    instance._watch_roots = [Path(d) for d in instance._cfg.watch_dirs]
+
+
 @pytest.fixture
 def init_db(tmp_data_dir):
     from app.db import init_pool
 
     pool = init_pool()
     pool.initialize()
+    _resync_indexer_singleton()
     yield pool
+    _resync_indexer_singleton()
 
 
 # ---------- 测试用 PNG 生成器 ----------

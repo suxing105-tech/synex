@@ -28,7 +28,8 @@ export function gallerySearchElement(): HTMLInputElement | null {
 export function registerSearchFocusShortcut(trigger: () => void): () => void {
   const handle = (e: KeyboardEvent) => {
     if (e.isComposing || e.repeat || e.defaultPrevented) return;
-    if (document.querySelector("[data-settings-dialog]")) return;
+    // 弹窗开着时不抢焦点：把光标从「新建文本」这类对话框里抽走，比按不动更糟。
+    if (document.querySelector("[data-settings-dialog], [aria-modal=\"true\"], [role=\"dialog\"]")) return;
     const wanted = get(shortcutSettings).searchFocus;
     if (!wanted || eventShortcut(e) !== wanted) return;
     e.preventDefault();

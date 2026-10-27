@@ -159,6 +159,11 @@ def index(p: Path, chosen: str | None = None):
     return r
 
 
+def root_paths() -> list[str]:
+    """已关联的文本来源根：与 ``watch_dirs`` 并列的第二类来源目录。"""
+    return [r["path"] for r in conn().execute('SELECT path FROM text_roots')]
+
+
 def ensure_folder_chain(p: Path):
     """Mirror subdirectories of explicitly associated text roots into the shared tree."""
     from . import repository

@@ -18,23 +18,25 @@ def test_reorder_persists_and_keeps_children(init_db):
     assert [n['id'] for n in repository.folder_tree()] == [a['id'], b['id'], c['id']]
 
 
-def test_source_alias_and_equal_order_reordering_preserve_paths(init_db, tmp_path):
-    root = tmp_path / 'watch'
-    for name in ('A', 'B', 'C'):
+def test_source_label_and_equal_order_reordering_preserve_paths(init_db, tmp_path):
+    """来源目录：改标签与同级排序都不碰磁盘，节点始终按目录本身认人。"""
+    root = tmp_path / "watch"
+    for name in ("A", "B", "C"):
         (root / name).mkdir(parents=True)
-        (root / name / 'x.png').write_bytes(b'fixture')
-    ids = [repository.ensure_system_folder_chain(root / name / 'x.png', root) for name in ('A', 'B', 'C')]
+        (root / name / "x.png").write_bytes(b"fixture")
+    ids = [repository.ensure_system_folder_chain(root / name / "x.png", root) for name in ("A", "B", "C")]
+    root_id = next(n["id"] for n in repository.folder_tree() if n["name"] == "watch")
     client = TestClient(app)
-    assert client.patch(f'/api/folders/{ids[0]}', json={'name': '显示名称'}).status_code == 200
-    repository.folder_reorder(ids[2], ids[0], 'before')
-    tree = repository.folder_tree()
-    assert [n['id'] for n in tree] == [ids[2], ids[0], ids[1]]
-    assert tree[1]['name'] == '显示名称'
-    assert tree[1]['path'].endswith('/显示名称')
-    assert (root / '显示名称').is_dir() and not (root / 'A').exists()
-    assert repository.ensure_system_folder_chain(root / '显示名称' / 'y.png', root) == ids[0]
-    assert next(n for n in repository.folder_tree() if n['id'] == ids[0])['name'] == '显示名称'
-    assert client.patch(f'/api/folders/{ids[0]}', json={'parent_id': ids[1]}).status_code == 400
+    assert client.patch(f"/api/folders/{ids[0]}", json={"name": "显示名称"}).status_code == 200
+    repository.folder_reorder(ids[2], ids[0], "before")
+    children = next(n for n in repository.folder_tree() if n["id"] == root_id)["children"]
+    assert [n["id"] for n in children] == [ids[2], ids[0], ids[1]]
+    assert children[1]["name"] == "显示名称"
+    # 标签改了，磁盘与索引路径仍是原目录；再索引一次也不会拆成两个节点
+    assert children[1]["path"].endswith("/A")
+    assert (root / "A").is_dir() and not (root / "显示名称").exists()
+    assert repository.ensure_system_folder_chain(root / "A" / "y.png", root) == ids[0]
+    assert client.patch(f"/api/folders/{ids[0]}", json={"parent_id": ids[1]}).status_code == 400
 
 
 def test_invalid_moves_and_blank_rename_leave_tree_unchanged(init_db, tmp_path):

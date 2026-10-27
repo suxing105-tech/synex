@@ -32,9 +32,10 @@
 - 输入 API Key 保存即可使用；也保留**手动自定义**入口
 - 支持简单 / 详细两档提示词输出
 
-
 ### 整理 & 搜索
 - 文件夹树：来源目录 + 我的文件夹，支持**新建 / 重命名 / 上移 / 下移 / 所在文件夹位置 / 删除**
+- **来源目录 = 导入的那个文件夹本身**：它先是一个节点，里面的子目录逐级展开在它下面；标题右边的 `+` 直接添加来源目录
+- 来源目录只登记位置 + 递归监听，**不复制也不移动任何文件**；改它的名字只是图库里的显示标签，磁盘上的真实目录不动（「我的文件夹」住在图库数据目录里，改名仍同步物理目录）
 - 标签（逗号分隔，自动去重）
 - 侧栏计数只有一个口径：每行显示当前类型的数量，分组标题右侧写明「计数 · 音频」，hover 给出四类明细；一万以上折成「1.2万」
 - 全文搜索（SQLite FTS5 + 模糊双轨）
@@ -110,8 +111,8 @@ pnpm dev        # http://localhost:5173（代理到 8765）
 
 ## 🧪 测试
 
-- 后端：`551 passed + 1 skipped`（parser / indexer / repository / api / video / audio / folders / text / psd / 迁移 / 发布脚本；需在 `backend\.venv` 里跑，那里才有 `psd_tools`，用系统 Python 会跳过 1 条 PSD 用例）
-- 前端：`859 passed`（104 个测试文件）
+- 后端：`558 passed + 1 skipped`（parser / indexer / repository / api / video / audio / folders / text / psd / 迁移 / 发布脚本；需在 `backend\.venv` 里跑，那里才有 `psd_tools`，用系统 Python 会跳过 1 条 PSD 用例）
+- 前端：`876 passed`（107 个测试文件）
 - Rust：`43 passed` + 1 个集成测试（另有 1 个需真机环境的集成测试默认 ignore）
 - `svelte-check`：`0 errors`
 

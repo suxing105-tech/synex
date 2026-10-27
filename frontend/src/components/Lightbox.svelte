@@ -1,5 +1,6 @@
 <script lang="ts">
   import ImageCompare from "./ImageCompare.svelte";
+  import CompareModeSwitch from "./CompareModeSwitch.svelte";
   import { compareMode, registerCompareToggle } from "../lib/compare-mode";
   import { multiSelectedIds, removeImageFromFeed, refreshFolders } from "../lib/stores";
   import { copyOriginalImage } from "../lib/image-clipboard";
@@ -410,17 +411,16 @@
     <header class="lightbox-header flex items-center gap-2 px-4 py-3 shrink-0 border-b border-border bg-surface">
       <button class="rounded-lg px-3 py-2 text-xs" onclick={close} title="返回缩略图（Esc）">← 返回</button>
       <span class="flex-1 min-w-0 truncate text-xs text-muted" title={it.filename}>{it.filename}</span>
-      {#if comparing}
-        <div class="compare-mode-switch" role="group" aria-label="图片对比方式">
-          <button class:active={$compareMode === "split"} type="button" aria-label="分割对比" aria-pressed={$compareMode === "split"} onclick={() => compareMode.set("split")}>分割对比</button>
-          <button class:active={$compareMode === "side"} type="button" aria-label="左右对比" aria-pressed={$compareMode === "side"} onclick={() => compareMode.set("side")}>左右对比</button>
-        </div>
-      {/if}
       {#if compareImages.length === 2}<button class="rounded-lg px-3 py-2 text-xs" aria-pressed={comparing} onclick={toggleCompare}>{comparing ? "查看单图" : "对比图片"}</button>{/if}
       {#if !comparing}
       <button class="rounded-lg px-3 py-2 text-xs" aria-pressed={zoomMode === "fit"} onclick={resetZoom}>适应窗口</button>
       <button class="rounded-lg px-3 py-2 text-xs" aria-pressed={zoomMode === "zoom"} onclick={() => { zoomMode = "zoom"; zoomScale = 1; pan = { x: 0, y: 0 }; }}>100%</button>
       <span class="text-xs text-muted">{Math.round((zoomMode === "fit" ? fitRatio : zoomScale) * 100)}%</span>
+      {/if}
+      {#if comparing}
+        <!-- 顶栏正中间的开关，排在本段最后：Svelte 5 的事件委托里，组件排在
+             同分支兄弟元素之前会让后面的按钮点不动。 -->
+        <CompareModeSwitch label="图片对比方式" />
       {/if}
     </header>
     <div class="viewer-canvas relative flex-1 min-h-0 overflow-hidden" bind:clientWidth={viewportW} bind:clientHeight={viewportH} oncontextmenu={openMenu} ondblclick={(e) => { if (!comparing && e.target === e.currentTarget) close(); }} use:wheelZoom>
@@ -477,10 +477,6 @@
 
 <style>
   .lightbox-header { position:relative; }
-  .compare-mode-switch { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); display:flex; gap:3px; padding:3px; border:1px solid #343438; border-radius:9px; background:#111113; }
-  .compare-mode-switch button { padding:5px 12px; border:0; border-radius:6px; color:#a1a1aa; background:transparent; font-size:12px; cursor:pointer; white-space:nowrap; }
-  .compare-mode-switch button:hover { color:#f4f4f5; }
-  .compare-mode-switch button.active { color:#fff; background:#3f3f46; }
   .lightbox-img {
     max-width: none;
     -webkit-user-drag: none;

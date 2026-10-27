@@ -10,7 +10,7 @@ import { get } from "svelte/store";
 import { clearToasts, toasts } from "../lib/toast";
 
 vi.mock('../lib/native-drop', () => ({ subscribeFileDrop: vi.fn(() => () => {}) }));
-vi.mock("../lib/api", () => ({ itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) }, foldersApi: { importDirectories: vi.fn(), create: vi.fn().mockResolvedValue({ id: 7 }), rename: vi.fn(), reorder: vi.fn(), move: vi.fn(), remove: vi.fn(), tree: vi.fn() } }));
+vi.mock("../lib/api", () => ({ itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) }, foldersApi: { importDirectories: vi.fn(), create: vi.fn().mockResolvedValue({ id: 7 }), rename: vi.fn(), reorder: vi.fn(), move: vi.fn(), remove: vi.fn(), archive: vi.fn().mockResolvedValue({ ok: true, archived: true, hidden_media: 0, hidden_texts: 0 }), restore: vi.fn(), archived: vi.fn(async () => []), tree: vi.fn() } }));
 vi.mock("../lib/stores", () => ({
   folders: writable([]), folderId: writable(null), scope: writable("all"),
   query: writable(""), tag: writable(null),
@@ -20,11 +20,14 @@ vi.mock("../lib/stores", () => ({
 
 const node = (id: number, name: string, children: any[] = [], parent_id: number | null = null) =>
   ({ id, name, children, parent_id, order: 0, counts: { image: 0, video: 0, audio: 0, text: 0 }, total: 0 });
+// 我的文件夹住在图库数据目录里，所以真实数据一定带 path（有 path 才允许连磁盘一起删）
+const mine = (id: number, name: string, children: any[] = [], parent_id: number | null = null) =>
+  ({ ...node(id, name, children, parent_id), path: `D:/data/folders/${name}` });
 
 beforeEach(() => {
   vi.useFakeTimers(); vi.clearAllMocks();
   clearToasts();
-  folders.set([node(1, '父目录', [node(2, '子目录', [], 1)]), node(3, '另一个目录')]);
+  folders.set([mine(1, '父目录', [mine(2, '子目录', [], 1)]), mine(3, '另一个目录')]);
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
@@ -150,11 +153,15 @@ describe('真实文件夹组件交互', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  it('虚拟分类不伪造磁盘位置', async () => {
+  it('虚拟分类不伪造磁盘位置，也没有删除文件夹可点', async () => {
+    folders.set([node(1, '父目录', [node(2, '子目录', [], 1)])]);   // 老分类没有 path
     const screen = render(FolderTree);
     await fireEvent.contextMenu(screen.getByRole('button', { name: '父目录' }));
     expect((screen.getByRole('menuitem', { name: '所在文件夹位置' }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText('图库分类，无磁盘位置')).toBeTruthy();
+    // 没有磁盘位置就没有「移入回收站」可言，只留归档
+    expect(screen.queryByRole('menuitem', { name: '删除文件夹（移入回收站）' })).toBeNull();
+    expect(screen.getByRole('menuitem', { name: '归档' })).toBeTruthy();
   });
 
   it('左侧栏空白处右键显示新建文件夹，并在侧栏内编辑', async () => {
@@ -248,24 +255,59 @@ it('取消新建不创建目录，顶部按钮只收起侧栏', async () => {
  });
 
 
-it('来源目录菜单包含新建/重命名/上移/下移/所在文件夹位置/删除文件夹', async () => {
+it('来源目录菜单是新建/重命名/上移/下移/所在文件夹位置/归档，没有删除文件夹', async () => {
   folders.set([{ ...node(5, '来源', [], null), is_system: true, path: 'D:/watch/source' }]);
   const screen = render(FolderTree);
   await fireEvent.contextMenu(screen.getByRole('button', { name: '来源' }));
   const items = Array.from(screen.getByRole('menu').querySelectorAll('button')).map((b) => b.textContent?.trim());
-  expect(items).toEqual(['新建文件夹', '重命名', '上移', '下移', '所在文件夹位置', '删除文件夹']);
+  expect(items).toEqual(['新建文件夹', '重命名', '上移', '下移', '所在文件夹位置', '归档']);
 });
 
-it('删除来源目录触发破坏性确认并调用 remove', async () => {
+it('归档来源目录：只调 archive，绝不调 remove，确认语说明磁盘不动', async () => {
   folders.set([{ ...node(5, '来源', [], null), is_system: true, path: 'D:/watch/source' }]);
   const c = vi.fn((_msg: string) => true);
   vi.stubGlobal('confirm', c);
   const screen = render(FolderTree);
   await fireEvent.contextMenu(screen.getByRole('button', { name: '来源' }));
-  await fireEvent.click(screen.getByText('删除文件夹'));
-  expect(c).toHaveBeenCalled();
-  expect(String(c.mock.calls[0][0])).toContain('移入回收站');
-  expect(foldersApi.remove).toHaveBeenCalledWith(5);
+  await fireEvent.click(screen.getByRole('menuitem', { name: '归档' }));
+  expect(String(c.mock.calls[0][0])).toContain('磁盘上的文件夹与文件都留在原地');
+  expect(String(c.mock.calls[0][0])).toContain('已归档目录');
+  await tick();
+  expect(foldersApi.archive).toHaveBeenCalledWith(5);
+  expect(foldersApi.remove).not.toHaveBeenCalled();
+  expect(refreshFeed).toHaveBeenCalled();
+});
+
+it('取消归档时什么都不调', async () => {
+  folders.set([{ ...node(5, '来源', [], null), is_system: true, path: 'D:/watch/source' }]);
+  vi.stubGlobal('confirm', vi.fn(() => false));
+  const screen = render(FolderTree);
+  await fireEvent.contextMenu(screen.getByRole('button', { name: '来源' }));
+  await fireEvent.click(screen.getByRole('menuitem', { name: '归档' }));
+  expect(foldersApi.archive).not.toHaveBeenCalled();
+});
+
+it('侧栏说明有几个目录被归档了，并指出去哪儿恢复', async () => {
+  const entry = [{ id: 5, name: '来源', path: 'D:/watch/source', is_system: true, media: 2, texts: 0 }];
+  // 挂载与目录刷新各读一次，所以用常驻实现，别用 Once（第二次会被空数组盖掉）。
+  vi.mocked(foldersApi.archived).mockResolvedValue(entry);
+  try {
+    const screen = render(FolderTree);
+    // 本文件用假时钟，findBy* 那套 waitFor 不会自己走；把微任务与计时器一次跑空。
+    await vi.runAllTimersAsync();
+    await tick();
+    expect(screen.getByText(/已归档 1 个目录/).textContent).toContain('设置');
+  } finally {
+    vi.mocked(foldersApi.archived).mockResolvedValue([]);
+  }
+});
+
+it('我的文件夹菜单同时有归档与删除文件夹（移入回收站）', async () => {
+  const screen = render(FolderTree);
+  await fireEvent.contextMenu(screen.getByRole('button', { name: '父目录' }));
+  const items = Array.from(screen.getByRole('menu').querySelectorAll('button')).map((b) => b.textContent?.trim());
+  expect(items).toContain('归档');
+  expect(items).toContain('删除文件夹（移入回收站）');
 });
 
 
@@ -274,7 +316,7 @@ it('删除父目录后退出选中的子目录并刷新媒体列表', async () =
   vi.stubGlobal('confirm', vi.fn(() => true));
   const screen = render(FolderTree);
   await fireEvent.contextMenu(screen.getByRole('button', { name: '父目录' }));
-  await fireEvent.click(screen.getByText('删除文件夹'));
+  await fireEvent.click(screen.getByRole('menuitem', { name: '删除文件夹（移入回收站）' }));
   await tick();
   expect(foldersApi.remove).toHaveBeenCalledWith(1);
   expect(get(folderId)).toBeNull();
@@ -286,7 +328,7 @@ it('取消文件夹删除时保留当前目录且不调用删除接口', async (
   vi.stubGlobal('confirm', vi.fn(() => false));
   const screen = render(FolderTree);
   await fireEvent.contextMenu(screen.getByRole('button', { name: '父目录' }));
-  await fireEvent.click(screen.getByText('删除文件夹'));
+  await fireEvent.click(screen.getByRole('menuitem', { name: '删除文件夹（移入回收站）' }));
   expect(foldersApi.remove).not.toHaveBeenCalled();
   expect(get(folderId)).toBe(2);
 });

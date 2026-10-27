@@ -1,6 +1,7 @@
 import { backendUrl } from "./backend-url";
 import type { MoveResult } from "./move-result";
 import type {
+  ArchivedFolder,
   ComfyuiConfigUpdate,
   ComfyuiStatus,
   ConfigOut,
@@ -219,6 +220,16 @@ export const foldersApi = {
   },
   remove(id: number): Promise<{ ok: boolean }> {
     return http(`/api/folders/${id}`, { method: "DELETE" });
+  },
+  // 归档 = 只在图库里收起来，磁盘上的目录和文件一律不动（删除文件夹才是移进回收站）。
+  archive(id: number): Promise<{ ok: boolean; archived: boolean; hidden_media: number; hidden_texts: number }> {
+    return http(`/api/folders/${id}/archive`, { method: "POST" });
+  },
+  restore(id: number): Promise<{ ok: boolean; archived: boolean }> {
+    return http(`/api/folders/${id}/restore`, { method: "POST" });
+  },
+  archived(): Promise<ArchivedFolder[]> {
+    return http<ArchivedFolder[]>("/api/folders?archived=1");
   },
 };
 

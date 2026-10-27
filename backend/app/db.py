@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS folders (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     is_system INTEGER NOT NULL DEFAULT 0,
     path TEXT,
+    archived INTEGER NOT NULL DEFAULT 0,
     UNIQUE(parent_id, name)
 );
 -- 注意：idx_folders_path 唯一索引不在这里建，留给 migrate_system_folders
@@ -367,6 +368,9 @@ def migrate_system_folders(conn: sqlite3.Connection) -> None:
     if "folders" not in tables:
         return
     cols = {row["name"] for row in conn.execute("PRAGMA table_info(folders)").fetchall()}
+    if "archived" not in cols:
+        # 归档 = 图库里不再显示这个目录及其素材，磁盘上一律不动（见 routes/folders.py）。
+        conn.execute("ALTER TABLE folders ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
     if "is_system" not in cols:
         conn.execute(
             "ALTER TABLE folders ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0"
@@ -377,9 +381,8 @@ def migrate_system_folders(conn: sqlite3.Connection) -> None:
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_folders_path "
         "ON folders(path) WHERE path IS NOT NULL"
     )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_folders_is_system ON folders(is_system)"
-    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_folders_archived ON folders(archived)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_folders_is_system ON folders(is_system)")
 
 
 def migrate_media_kind(conn: sqlite3.Connection) -> None:

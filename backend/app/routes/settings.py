@@ -83,7 +83,11 @@ async def import_directory(payload: dict, background: BackgroundTasks):
                 log.exception("watch new directory failed")
                 raise HTTPException(500, "目录已添加，但监听未启动，请检查权限后重试")
             # 空目录也得先在侧栏露出来：不等到第一个文件被索引才有节点。
-            repository.ensure_source_root_folder(target)
+            root_id = repository.ensure_source_root_folder(target)
+            # 重新导入 = 用户明确要重新看见这个目录。之前归档过的话在这里放回来，
+            # 否则点「+」选完目录什么都没发生，看起来像功能坏了。
+            if root_id is not None and repository.folder_is_archived(root_id):
+                repository.folder_set_archived(root_id, False)
             indexer._set_progress(running=True, scanned=0, indexed=0, total=0, current_path="", error=None)
             background.add_task(run_scans, indexer, [target])
             return {"ok": True, "path": str(target)}

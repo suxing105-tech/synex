@@ -235,6 +235,25 @@
     }
   }
 
+  async function archive(id: number) {
+    const node = findNode($folders, id);
+    if (!node) return;
+    const msg = `归档「${node.name}」？\n\n图库不再显示这个目录和它里面的 ${node.total} 项素材；磁盘上的文件夹与文件都留在原地，标签也留着。\n\n想找回：设置 → 通用 → 已归档目录 → 恢复。\n\n${node.path || ''}`;
+    if (!confirm(msg)) return;
+    const containsSelected = (item: FolderNode): boolean => item.id === $folderId || item.children.some(containsSelected);
+    const hidingSelected = containsSelected(node);
+    try {
+      const result = await foldersApi.archive(id);
+      menuFor = null;
+      if (hidingSelected) folderId.set(null);
+      await refreshFolders();
+      await Promise.all([refreshFeed(), refreshStats()]);
+      pushToast(`已归档「${node.name}」，磁盘上的文件没有动`);
+    } catch (error) {
+      pushToast(`归档失败：${error instanceof Error ? error.message : error}`, { kind: 'error' });
+    }
+  }
+
   async function revealSystemFolder(id: number, path?: string | null) {
     menuFor = null;
     try {
@@ -294,6 +313,15 @@
   // 注意：后端 folder_tree() 已经按 parent_id 嵌套好了；这里只是按根节点过滤。
   let userFolders = $derived($folders.filter((f) => !f.is_system));
   let systemFolders = $derived($folders.filter((f) => !!f.is_system));
+
+  // 归档掉的目录不在树里，侧栏必须说一句「东西没丢，在设置里恢复」，
+  // 否则用户点开右键归档以后会以为整个文件夹被删了。
+  let archivedCount = $state(0);
+  async function loadArchivedCount() {
+    try { archivedCount = (await foldersApi.archived()).length; } catch { archivedCount = 0; }
+  }
+  // 挂载时 $folders 就会触发一次，不需要额外的 onMount
+  $effect(() => { $folders; void loadArchivedCount(); });
 
   // 系统区五行：一行 = 一个 scope。数字只有一个，口径写在分组标题右侧，明细在 hover 里。
   // keys 只用于悬停提示：口径键本身在 lib/content-shortcuts.ts 里硬编码。
@@ -382,6 +410,11 @@
   {#each systemFolders as f (f.id)}
     {@render systemFolderItem(f, 0)}
   {/each}
+  {#if archivedCount > 0}
+    <div class="text-[11px] text-muted px-3 pb-2 leading-relaxed">
+      已归档 {archivedCount} 个目录 · 文件还在磁盘上，恢复在设置 → 通用 → 已归档目录
+    </div>
+  {/if}
 
   <div class="flex items-center justify-between px-[10px] pt-[14px] pb-[4px]">
     <div data-folder-root="user" class:root-drop={drop?.position === "root" && !dragging?.is_system} class="text-[10px] uppercase text-muted tracking-wider opacity-70">我的文件夹</div>
@@ -463,12 +496,20 @@
       <div class="px-3 pb-1 text-muted text-[11px]">图库分类，无磁盘位置</div>
     {/if}
     <div class="border-t border-border my-1"></div>
-    <button
-      class="block w-full text-left px-3 py-1 hover:bg-danger/30 text-danger"
-      onclick={() => menuFor !== null && remove(menuFor)}
+    <button role="menuitem" class="block w-full text-left px-3 py-1 hover:bg-surface-3"
+      title="只在图库里收起来，磁盘上的文件夹和文件都不动；恢复在设置 → 通用 → 已归档目录"
+      onclick={() => menuFor !== null && archive(menuFor)}
     >
-      删除文件夹
+      归档
     </button>
+    {#if menuNode?.path && !menuNode?.is_system}
+      <button role="menuitem" class="block w-full text-left px-3 py-1 hover:bg-danger/30 text-danger"
+        title="把真实文件夹移入系统回收站（我的文件夹住在图库数据目录里，所以可以连磁盘一起删）"
+        onclick={() => menuFor !== null && remove(menuFor)}
+      >
+        删除文件夹（移入回收站）
+      </button>
+    {/if}
   </div>
 {/if}
 

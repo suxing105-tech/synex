@@ -62,6 +62,15 @@ export interface FolderNode {
   children: FolderNode[];
 }
 
+export interface ArchivedFolder {
+  id: number;
+  name: string;
+  path: string | null;
+  is_system: boolean;
+  media: number; // 藏起来的图片 / 视频 / 音频数
+  texts: number; // 藏起来的文本数
+}
+
 export interface TagInfo {
   name: string;
   count: number;

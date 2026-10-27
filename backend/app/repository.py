@@ -124,11 +124,16 @@ ITEM_KINDS = MEDIA_KINDS + ("text",)
 
 def folder_tree() -> list[dict]:
     conn = get_pool().main()
+    propagate_archived_flags(conn)
     rows = conn.execute(
-        "SELECT id, parent_id, name, \"order\", is_system, path FROM folders ORDER BY parent_id, \"order\", name"
+        "SELECT id, parent_id, name, \"order\", is_system, path, archived FROM folders "
+        "ORDER BY parent_id, \"order\", name"
     ).fetchall()
+    # 归档（archived=1）的目录连同整棵子树都不进侧栏；父级计数也不该把它们算进去。
+    live = [r for r in rows if not r["archived"]]
+    live_ids = {r["id"] for r in live}
     by_parent: dict[int | None, list[dict]] = {}
-    for r in rows:
+    for r in live:
         by_parent.setdefault(r["parent_id"], []).append(
             {"id": r["id"], "parent_id": r["parent_id"], "name": r["name"], "order": r["order"], "is_system": bool(r["is_system"]), "path": r["path"]}
         )
@@ -145,8 +150,8 @@ def folder_tree() -> list[dict]:
 
     # 先把所有子节点 id 收集好（用于递归计数）
     children_map: dict[int, list[int]] = {}
-    for fid, parent in [(r["id"], r["parent_id"]) for r in rows]:
-        if parent is not None:
+    for fid, parent in [(r["id"], r["parent_id"]) for r in live]:
+        if parent is not None and parent in live_ids:
             children_map.setdefault(parent, []).append(fid)
 
     def recursive_counts(fid: int) -> dict[str, int]:
@@ -176,6 +181,165 @@ def folder_tree() -> list[dict]:
     return build(None)
 
 
+
+# ---------- 归档（archive）：在图库里收起来，磁盘一律不动 ----------
+
+
+def parent_archived_flag(conn: sqlite3.Connection, parent_id: int | None) -> int:
+    """新建子目录继承父目录的归档位。
+
+    为什么必须继承：来源目录是外部程序正在写的目录（ComfyUI 的 output、素材盘）。
+    归档之后它继续往里写，新的子目录是这一刻才建出来的；如果它从默认的 0 开始，
+    里面的新素材会自己冒回统一流和统计里，等于归档白做。
+    """
+    if parent_id is None:
+        return 0
+    row = conn.execute("SELECT archived FROM folders WHERE id = ?", (parent_id,)).fetchone()
+    return int(row["archived"]) if row and row["archived"] else 0
+
+
+def propagate_archived_flags(conn: sqlite3.Connection | None = None) -> int:
+    """把归档位补齐到整棵子树，返回补了几个节点。
+
+    归档时是一次性写下整棵子树的，但两种情况会漏：
+    1. 归档以后磁盘上新长出来的子目录（见 parent_archived_flag，新建已继承，这里是兜底）；
+    2. 这次修复之前就已经漏在库里的老节点。
+    逐层往下刷，直到没有新的节点需要归档 —— 目录量级只有几百，一次读侧栏扫一遍不心疼。
+    连接是 autocommit（``isolation_level=None``），所以这里不用管事务。
+    """
+    conn = conn or get_pool().main()
+    fixed = 0
+    while True:
+        cur = conn.execute(
+            "UPDATE folders SET archived = 1 WHERE archived = 0 AND parent_id IN "
+            "(SELECT id FROM folders WHERE archived = 1)"
+        )
+        fixed += cur.rowcount
+        if not cur.rowcount:
+            break
+    return fixed
+
+
+def folder_is_archived(folder_id: int) -> bool:
+    """节点自己是不是归档位为 1（不关心祖先）。"""
+    row = get_pool().main().execute("SELECT archived FROM folders WHERE id = ?", (folder_id,)).fetchone()
+    return bool(row and row["archived"])
+
+
+def unarchived_media_sql(alias: str = "images") -> str:
+    """素材还属于至少一个未归档目录的判定式。
+
+    归档目录时整棵子树都带 archived=1，所以「全部归属都被归档」才算消失：
+    同一张图被拖进「我的文件夹」时照常可见。没有任何归属的素材（收件箱）
+    也照常可见 —— 它压根不在子查询里。
+    """
+    return (
+        f"{alias}.id NOT IN ("
+        "SELECT j.image_id FROM image_folders j JOIN folders f ON f.id = j.folder_id "
+        "WHERE f.archived = 1 AND j.image_id NOT IN ("
+        "SELECT j2.image_id FROM image_folders j2 JOIN folders f2 ON f2.id = j2.folder_id "
+        "WHERE f2.archived = 0))"
+    )
+
+
+def archived_anchor_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """归档锚点：自己 archived=1 且父节点没归档（子树整体已被锚点覆盖）。"""
+    out: list[sqlite3.Row] = []
+    for row in conn.execute(
+        "SELECT id, parent_id, name, path, is_system FROM folders WHERE archived = 1 ORDER BY id"
+    ).fetchall():
+        if row["parent_id"] is not None:
+            parent = conn.execute(
+                "SELECT archived FROM folders WHERE id = ?", (row["parent_id"],)
+            ).fetchone()
+            if parent and parent["archived"]:
+                continue
+        out.append(row)
+    return out
+
+
+def disk_prefix(path: str | Path) -> str:
+    """目录路径 → 素材路径的归属前缀（带尾分隔符，反斜杠按本机 os.sep）。"""
+    return str(Path(path)) + os.sep
+
+
+def _text_prefix_filters(
+    prefixes: Iterable[str], *, inside: bool
+) -> tuple[list[str], list[object]]:
+    """按磁盘前缀筛选 texts：``inside=True`` 只要前缀里面的，False 正好相反。
+
+    texts.path 存反斜杠、folders.path 存正斜杠，两边都换成斜杠再小写比对；
+    replace 不改长度，所以 substr 用原始前缀长度即可。
+    """
+    op = "=" if inside else "<>"
+    where: list[str] = []
+    params: list[object] = []
+    for prefix in prefixes:
+        where.append(f"(lower(replace(substr(path, 1, ?), char(92), '/')) {op} lower(?))")
+        params.extend((len(prefix), str(prefix).replace("\\", "/")))
+    return where, params
+
+
+def archived_text_filters(conn: sqlite3.Connection) -> tuple[list[str], list[object]]:
+    """列表与总数都要用的排除条件：正文在任一已归档目录下的文本不再出现。"""
+    prefixes = [disk_prefix(r["path"]) for r in archived_anchor_rows(conn) if r["path"]]
+    return _text_prefix_filters(prefixes, inside=False)
+
+
+def folder_set_archived(folder_id: int, archived: bool) -> dict:
+    """把目录及其全部后代的归档位一次翻到位；只写 folders.archived，不碰磁盘。"""
+    conn = get_pool().main()
+    row = conn.execute("SELECT id, name, path, is_system FROM folders WHERE id = ?", (folder_id,)).fetchone()
+    if row is None:
+        raise ValueError("文件夹不存在")
+    ids = folder_descendant_ids(conn, folder_id)
+    placeholders = ",".join("?" * len(ids))
+    with transaction() as c:
+        c.execute(
+            f"UPDATE folders SET archived = ? WHERE id IN ({placeholders})",
+            [1 if archived else 0, *ids],
+        )
+    return {
+        "ok": True,
+        "id": folder_id,
+        "name": row["name"],
+        "path": row["path"],
+        "is_system": bool(row["is_system"]),
+        "archived": bool(archived),
+        "folders": len(ids),
+    }
+
+
+def archived_folder_list() -> list[dict]:
+    """设置页「已归档目录」清单：锚点 + 各自藏起来的素材数。"""
+    conn = get_pool().main()
+    out: list[dict] = []
+    for row in archived_anchor_rows(conn):
+        ids = folder_descendant_ids(conn, row["id"])
+        placeholders = ",".join("?" * len(ids))
+        media = conn.execute(
+            "SELECT COUNT(*) AS c FROM images WHERE id IN "
+            f"(SELECT image_id FROM image_folders WHERE folder_id IN ({placeholders}))",
+            ids,
+        ).fetchone()["c"]
+        texts_hidden = 0
+        if row["path"]:
+            where, params = _text_prefix_filters([disk_prefix(row["path"])], inside=True)
+            texts_hidden = conn.execute(
+                f"SELECT COUNT(*) AS c FROM texts WHERE missing = 0 AND {' AND '.join(where)}",
+                params,
+            ).fetchone()["c"]
+        out.append({
+            "id": row["id"],
+            "name": row["name"],
+            "path": row["path"],
+            "is_system": bool(row["is_system"]),
+            "media": media,
+            "texts": texts_hidden,
+        })
+    return out
+
+
 def folder_create(name: str, parent_id: int | None, is_system: bool = False) -> dict:
     name = name.strip()
     if not name:
@@ -189,8 +353,9 @@ def folder_create(name: str, parent_id: int | None, is_system: bool = False) -> 
     order = (row["m"] if row else -1) + 1
     with transaction() as c:
         cur = c.execute(
-            "INSERT INTO folders(parent_id, name, \"order\", is_system) VALUES(?, ?, ?, ?)",
-            (parent_id, name, order, 1 if is_system else 0),
+            "INSERT INTO folders(parent_id, name, \"order\", is_system, archived) "
+            "VALUES(?, ?, ?, ?, ?)",
+            (parent_id, name, order, 1 if is_system else 0, parent_archived_flag(conn, parent_id)),
         )
         folder_id = cur.lastrowid
     return {"id": folder_id, "parent_id": parent_id, "name": name, "order": order,
@@ -763,10 +928,13 @@ def unified_feed(
     requested = [k for k in (list(kinds) if kinds else list(ITEM_KINDS)) if k in ITEM_KINDS]
     wanted = list(dict.fromkeys(requested)) or list(ITEM_KINDS)
 
-    media_where: list[str] = []
+    media_where: list[str] = [unarchived_media_sql()]
     media_params: list[object] = []
     text_where: list[str] = ["missing = 0"]
     text_params: list[object] = []
+    archived_where, archived_params = archived_text_filters(conn)
+    text_where.extend(archived_where)
+    text_params.extend(archived_params)
 
     if folder_id is not None:
         ids = folder_descendant_ids(conn, folder_id)
@@ -910,7 +1078,7 @@ def feed(
 ) -> tuple[list[dict], int]:
     """返回 (items, total)。``new_ids`` 用于标记 NEW 徽标。"""
     conn = get_pool().main()
-    where: list[str] = []
+    where: list[str] = [unarchived_media_sql()]
     params: list[object] = []
 
     if folder_id is not None:
@@ -998,11 +1166,15 @@ def _build_fts_query(q: str) -> str:
 
 def tag_list() -> list[dict]:
     conn = get_pool().main()
+    # 标签数只数还看得见的素材：归档目录里的素材不算进来，
+    # 否则侧栏会出现「点了以后一片空白」的标签。
+    visible = unarchived_media_sql("i")
     return [
         dict(r)
         for r in conn.execute(
-            "SELECT t.name, COUNT(it.image_id) AS count FROM tags t "
-            "LEFT JOIN image_tags it ON it.tag_id = t.id "
+            f"SELECT t.name, COUNT(CASE WHEN {visible} THEN it.image_id END) AS count FROM tags t "
+            "JOIN image_tags it ON it.tag_id = t.id "
+            "JOIN images i ON i.id = it.image_id "
             "GROUP BY t.id, t.name HAVING count > 0 ORDER BY count DESC, t.name ASC"
         ).fetchall()
     ]
@@ -1014,14 +1186,19 @@ def tag_list() -> list[dict]:
 def stats() -> dict:
     conn = get_pool().main()
     totals = {kind: 0 for kind in MEDIA_KINDS}
+    visible = unarchived_media_sql()
     for row in conn.execute(
-        "SELECT kind, COUNT(*) AS c FROM images GROUP BY kind"
+        f"SELECT kind, COUNT(*) AS c FROM images WHERE {visible} GROUP BY kind"
     ).fetchall():
         totals[row["kind"] or "image"] = row["c"]
+    archived_where, archived_params = archived_text_filters(conn)
+    text_clause = " AND ".join(["missing = 0", *archived_where])
     total_texts = conn.execute(
-        "SELECT COUNT(*) AS c FROM texts WHERE missing = 0"
+        f"SELECT COUNT(*) AS c FROM texts WHERE {text_clause}", archived_params
     ).fetchone()["c"]
-    folders = conn.execute("SELECT COUNT(*) AS c FROM folders").fetchone()["c"]
+    folders = conn.execute(
+        "SELECT COUNT(*) AS c FROM folders WHERE archived = 0"
+    ).fetchone()["c"]
     return {
         "total_images": totals["image"],
         "total_videos": totals["video"],
@@ -1205,11 +1382,19 @@ def ensure_system_folder_chain(file_path: Path, watch_root: Path) -> int | None:
                     "UPDATE folders SET parent_id = ? WHERE id = ?",
                     (parent_id, deepest_id),
                 )
+                # 换爹也要跟着新爹走：挂进已归档的父目录，这一支继续藏着。
+                flag = parent_archived_flag(conn, parent_id)
+                if flag:
+                    ids = folder_descendant_ids(conn, deepest_id)
+                    conn.execute(
+                        f"UPDATE folders SET archived = 1 WHERE id IN ({','.join('?' * len(ids))})",
+                        ids,
+                    )
         else:
             cur = conn.execute(
-                "INSERT INTO folders(parent_id, name, \"order\", is_system, path) "
-                "VALUES(?, ?, 0, 1, ?)",
-                (parent_id, part, cumulative_norm),
+                "INSERT INTO folders(parent_id, name, \"order\", is_system, path, archived) "
+                "VALUES(?, ?, 0, 1, ?, ?)",
+                (parent_id, part, cumulative_norm, parent_archived_flag(conn, parent_id)),
             )
             deepest_id = cur.lastrowid
         parent_id = deepest_id

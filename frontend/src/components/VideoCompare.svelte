@@ -92,14 +92,45 @@
     bSideEl.currentTime = aSideEl.currentTime;
   }
 
-  // 右键菜单：同步播放开关
+  // 当前模式下的两路视频：A 是基准，B 跟随
+  function pair(): [HTMLVideoElement | undefined, HTMLVideoElement | undefined] {
+    return mode === "split" ? [aEl, bEl] : [aSideEl, bSideEl];
+  }
+
+  function safePlay(el?: HTMLVideoElement) {
+    try {
+      void el?.play()?.catch?.(() => {});
+    } catch {
+      /* 自动播放被拦或宿主不支持时忽略：用户会再点一次 */
+    }
+  }
+
+  // 同步播放：把 B 重新拉到 A 的进度，然后两个一起放 —— 跑歪了以后一键拉回来
+  function syncPlay() {
+    const [A, B] = pair();
+    menu = null;
+    synced = true;
+    if (!A || !B) return;
+    B.currentTime = A.currentTime;
+    safePlay(A);
+    safePlay(B);
+  }
+
+  // 同步停止：两个都停下（不追进度，位置留着）
+  function syncStop() {
+    const [A, B] = pair();
+    menu = null;
+    try { A?.pause(); B?.pause(); } catch { /* 已停就没什么可做 */ }
+  }
+
+  // 右键菜单：同步播放 / 同步停止 / 是否保持同步
   function openMenu(e: MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
     if (!root) return;
     const rect = root.getBoundingClientRect();
     const x = Math.max(4, Math.min(e.clientX - rect.left, rect.width - 150));
-    const y = Math.max(4, Math.min(e.clientY - rect.top, rect.height - 46));
+    const y = Math.max(4, Math.min(e.clientY - rect.top, rect.height - 150));
     menu = { x, y };
   }
   function closeMenu() {
@@ -199,17 +230,15 @@
     </div>
   {/if}
 
-  <div class="mode-switch">
-    <button type="button" class="switch-btn" aria-pressed={mode === "split"} onclick={() => { compareMode.set("split"); }}>分割视图</button>
-    <button type="button" class="switch-btn" aria-pressed={mode === "side"} onclick={() => { compareMode.set("side"); }}>并排对比</button>
-    <span class="hint">按 S 切换对比方式 · 右键画面可切换同步播放</span>
-  </div>
-
   {#if menu}
     <div class="ctx-menu" style:left={`${menu.x}px`} style:top={`${menu.y}px`} role="menu" onclick={(e) => e.stopPropagation()}>
+      <button type="button" role="menuitem" class="ctx-item" onclick={syncPlay}>同步播放</button>
+      <button type="button" role="menuitem" class="ctx-item" onclick={syncStop}>同步停止</button>
+      <div class="ctx-sep"></div>
       <button type="button" role="menuitem" class="ctx-item" onclick={toggleSync}>
-        {synced ? "取消同步" : "同步播放"}
+        {synced ? "取消同步" : "开启同步"}
       </button>
+      <p class="ctx-hint">{synced ? "B 跟着 A 走" : "两个视频各自播放"}</p>
     </div>
   {/if}
 </div>
@@ -235,11 +264,9 @@
   .side-panel { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   .side-video { width: 100%; flex: 1; min-height: 0; object-fit: contain; background: #000; border-radius: 8px; }
   .side-label { color: #ccc; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
-  .mode-switch { display: flex; justify-content: center; align-items: center; gap: 8px; flex-shrink: 0; }
-  .switch-btn { padding: 5px 12px; border-radius: 6px; font-size: 12px; background: #fff1; color: #ddd; }
-  .switch-btn[aria-pressed="true"] { background: #f24e4e; color: #fff; }
-  .hint { font-size: 11px; color: #888; margin-left: 6px; }
   .ctx-menu { position: absolute; z-index: 20; min-width: 128px; padding: 4px; background: #26262a; border: 1px solid #3a3a40; border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); }
   .ctx-item { display: block; width: 100%; text-align: left; padding: 7px 10px; border-radius: 6px; font-size: 13px; color: #eee; background: transparent; }
   .ctx-item:hover { background: #f24e4e; color: #fff; }
+  .ctx-sep { height: 1px; margin: 4px 2px; background: #3a3a40; }
+  .ctx-hint { margin: 0; padding: 4px 10px 2px; font-size: 11px; color: #8a8a92; }
 </style>

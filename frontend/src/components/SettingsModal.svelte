@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { settingsApi, comfyuiApi, healthApi } from "../lib/api";
+  import { foldersApi, settingsApi, comfyuiApi, healthApi } from "../lib/api";
   import { describeMediaTools } from "../lib/media-tools";
   import { comfyuiStatus } from "../lib/stores";
-  import type { ConfigOut } from "../lib/types";
+  import type { ArchivedFolder, ConfigOut } from "../lib/types";
+  import { refreshFeed, refreshFolders, refreshStats } from "../lib/stores";
   import ShortcutSettings from "./ShortcutSettings.svelte";
   import UpdatePanel from "./UpdatePanel.svelte";
   import ModelSettings from "./ModelSettings.svelte";
@@ -60,6 +61,27 @@
       void tick().then(() => { if (open) goToSection(initialTab); });
     }
   });
+
+  // 已归档目录：只在图库里收起来的目录，素材和标签都还在库里，随时可恢复。
+  let archivedFolders = $state<ArchivedFolder[]>([]);
+  let restoringId = $state<number | null>(null);
+
+  async function loadArchived() {
+    try { archivedFolders = await foldersApi.archived(); } catch { archivedFolders = []; }
+  }
+
+  async function restoreArchived(entry: ArchivedFolder) {
+    restoringId = entry.id;
+    try {
+      await foldersApi.restore(entry.id);
+      await Promise.all([loadArchived(), refreshFolders(), refreshFeed(), refreshStats()]);
+      pushToast(`已恢复「${entry.name}」`);
+    } catch (error) {
+      pushToast(`恢复失败：${error instanceof Error ? error.message : error}`, { kind: "error" });
+    } finally { restoringId = null; }
+  }
+
+  $effect(() => { if (open) void loadArchived(); });
 
   onMount(async () => {
     await loadConfig();
@@ -196,6 +218,20 @@
                   <div class="directory-add">
                     <input type="text" aria-label="新增监听目录" bind:value={newDir} placeholder="输入本地目录路径…" onkeydown={(e) => { if (e.key === 'Enter') addDir(); }} />
                     <button class="setting-button" disabled={!newDir.trim()} onclick={addDir}>添加目录</button>
+                  </div>
+                </div>
+                <div class="setting-group">
+                  <h4>已归档目录</h4>
+                  <p class="setting-description">在目录右键点「归档」的目录。图库不再显示它们，但磁盘上的文件夹与文件都没动，恢复后素材原样回来。</p>
+                  <div class="directory-list">
+                    {#each archivedFolders as entry (entry.id)}
+                      <div class="directory-row">
+                        <span title={entry.path || entry.name}>{entry.name} · 藏起 {entry.media + entry.texts} 项</span>
+                        <button class="directory-remove" aria-label={`恢复目录 ${entry.name}`} disabled={restoringId === entry.id}
+                          onclick={() => void restoreArchived(entry)}>{restoringId === entry.id ? "恢复中…" : "恢复"}</button>
+                      </div>
+                    {/each}
+                    {#if archivedFolders.length === 0}<p class="setting-description">没有已归档的目录。想收起某个目录：在左侧目录上点右键 → 归档。</p>{/if}
                   </div>
                 </div>
                 <div class="setting-group">

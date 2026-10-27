@@ -24,7 +24,10 @@ def import_directories(payload: DirectoryDrop):
 
 
 @router.get("")
-def list_folders():
+def list_folders(archived: bool = False):
+    if archived:
+        # 设置页「已归档目录」清单：只列锚点，带各自藏起来的素材数。
+        return repository.archived_folder_list()
     from collections import Counter
     from pathlib import Path
     from ..indexer import get_indexer
@@ -105,6 +108,33 @@ def reorder_folder(folder_id: int, payload: FolderReorder):
     except (ValueError, OSError) as e:
         raise HTTPException(400, str(e)) from e
     return {"ok": True}
+
+
+@router.post("/{folder_id}/archive")
+def archive_folder(folder_id: int):
+    """归档：图库里收起这个目录和它的素材，磁盘上的文件夹与文件一律不动。
+
+    和「删除文件夹」的分工很明确 —— 删除要把真实目录送进回收站（只适用于
+    住在图库数据目录里的「我的文件夹」），归档只是让图库别再显示它。来源目录
+    是外部程序正在写的目录，永远只该有归档这一条路。
+    """
+    try:
+        result = repository.folder_set_archived(folder_id, True)
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from e
+    entry = next((row for row in repository.archived_folder_list() if row["id"] == folder_id), None)
+    result["hidden_media"] = entry["media"] if entry else 0
+    result["hidden_texts"] = entry["texts"] if entry else 0
+    return result
+
+
+@router.post("/{folder_id}/restore")
+def restore_folder(folder_id: int):
+    """恢复归档：只翻归档位。素材一直在库里，所以不需要重新扫描磁盘。"""
+    try:
+        return repository.folder_set_archived(folder_id, False)
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from e
 
 
 @router.delete("/{folder_id}")

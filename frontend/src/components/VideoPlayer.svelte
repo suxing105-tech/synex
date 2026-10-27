@@ -6,13 +6,14 @@
    * 尺寸不能再按 vh/vw 算（那样会把左右侧栏算进来，画面顶出框外），
    * 全部交给 flex + object-contain 按容器自适应。
    */
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { backendUrl } from "../lib/backend-url";
   import { mediaItems, multiSelectedIds } from "../lib/stores";
   import { videosApi } from "../lib/api";
   import { pushToast } from "../lib/toast";
   import type { MediaFeedItem } from "../lib/types";
   import Icon from "./Icon.svelte";
+  import CompareModeSwitch from "./CompareModeSwitch.svelte";
   import VideoCompare from "./VideoCompare.svelte";
 
   interface Props {
@@ -39,11 +40,25 @@
     ),
   );
   const compareReady = $derived(selectedVideos.length === 2);
-  // 自动进入对比：仅当打开的视频本身就在选中的两个视频里（否则由用户点「对比」）
+  // 自动进入对比：打开的视频正好在选中的两个里时自动开一次。
+  // 必须记住「这一组已经自动开过」，否则用户点「退出对比」会被这个 effect 顶回去；
+  // 换一组选中或换一支视频（key 变了）才再自动开。
+  const autoCompareKey = $derived(
+    compareReady && current && selectedVideos.some((v) => v.id === current.id)
+      ? `${selectedVideos.map((v) => v.id).join("+")}@${current.id}`
+      : null,
+  );
+  let autoOpenedKey: string | null = $state(null);
   $effect(() => {
-    if (open && compareReady && current && selectedVideos.some((v) => v.id === current.id)) {
-      compareOn = true;
-    }
+    if (!open) { untrack(() => { autoOpenedKey = null; }); return; }
+    const key = autoCompareKey;
+    untrack(() => {
+      if (!key) { autoOpenedKey = null; return; }   // 选中不再是两个：忘记「这一组开过」，重新选上还能自动开
+      if (key !== autoOpenedKey) {
+        autoOpenedKey = key;
+        compareOn = true;
+      }
+    });
   });
 
   function openAt(id: number): void {
@@ -110,7 +125,7 @@
 </script>
 {#if open && current}
   <section class="inline-viewer absolute inset-0 z-20 flex flex-col bg-bg overflow-hidden" aria-label="视频播放器">
-    <header class="flex items-center gap-2 px-4 py-3 shrink-0 border-b border-border bg-surface">
+    <header class="video-header relative flex items-center gap-2 px-4 py-3 shrink-0 border-b border-border bg-surface">
       <button
         type="button"
         class="rounded-lg px-3 py-2 text-xs"
@@ -124,6 +139,9 @@
       {#if compareOn && compareReady}
         <span class="text-[11px] text-muted">对比已选中的两个视频</span>
         <button type="button" class="rounded-lg px-3 py-2 text-xs" aria-pressed="true" onclick={() => { compareOn = false; }}>退出对比</button>
+        <!-- 与图片同一处、同一套按钮：顶栏正中间。必须排在本段最后：
+             Svelte 5 的事件委托里，组件排在同分支的兄弟元素之前会让后面的按钮点不动。 -->
+        <CompareModeSwitch label="视频对比方式" />
       {:else if compareReady}
         <button type="button" class="rounded-lg px-3 py-2 text-xs" title="对比选中的两个视频" aria-label="对比视频" onclick={() => { compareOn = true; }}>对比</button>
       {/if}
@@ -195,7 +213,7 @@
         {#if current.duration_seconds != null}{formatDuration(current.duration_seconds)}{/if}
         {#if current.width && current.height}· {current.width}×{current.height}{/if}
       </span>
-      <span class="text-muted hidden xl:inline">Esc 返回缩略图 · ← / → 切换视频{#if compareOn && compareReady} · 按 S 切换对比方式{/if}</span>
+      <span class="text-muted hidden xl:inline">Esc 返回缩略图 · ← / → 切换视频{#if compareOn && compareReady} · 按 S 切换对比方式 · 右键画面可同步播放 / 同步停止{/if}</span>
     </footer>
   </section>
 {/if}

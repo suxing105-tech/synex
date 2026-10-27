@@ -60,9 +60,10 @@ export async function applyFocusStage(stage: FocusStage, restoreMaximized = fals
     }
     return null;
   } catch (error) {
-    // 最常见的原因是 Tauri 能力（capabilities）没给这条窗口命令放行 —— 那属于漏配权限，
-    // 不是用户能重试好的，真实原因留在控制台里，别只给用户一句「请重试」。
+    // 上一版这里只留一句「请重试」，结果权限漏配和系统真的拒绝看起来一模一样，白跑一轮。
+    // 打包版打不开控制台，所以把原因直接带进提示里：读到 not allowed 就是能力清单少一条。
+    const reason = (error instanceof Error ? error.message : String(error)).trim().slice(0, 90);
     console.warn("[seekx] 窗口操作失败", stage, error);
-    return "窗口操作失败，请重试";
+    return `窗口操作失败（${reason || "未知原因"}）`;
   }
 }

@@ -69,9 +69,14 @@ describe("F 键沉浸循环", () => {
     expect(await windowIsMaximized()).toBe(false);
   });
 
-  it("窗口 API 失败时给出中文提示，不抛异常", async () => {
-    tauriWindow({ maximize: vi.fn(async () => { throw new Error("denied"); }) });
-    expect(await applyFocusStage("maximized")).toContain("窗口操作失败");
+  it("窗口 API 失败时给出中文提示并把原因带上，不抛异常", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    tauriWindow({ maximize: vi.fn(async () => { throw new Error("maximize not allowed by capabilities"); }) });
+    const message = await applyFocusStage("maximized");
+    expect(message).toContain("窗口操作失败");
+    // 打包版没有控制台：提示里必须能看到「not allowed」这类真实原因，否则又是白跑一轮。
+    expect(message).toContain("not allowed");
+    expect(warn).toHaveBeenCalled();
   });
 
   it("App 用可改键的 focusMode 动作接线，并在还原一步补回侧栏", () => {

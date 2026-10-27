@@ -25,7 +25,8 @@ it('0、1、2、3 张选中时搜索和列数始终占用原来的工具栏位�
     expect(toolbar.children).toHaveLength(3);
     expect(toolbar.children[1]).toBe(searchSlot);
     expect(toolbar.children[2]).toBe(columnsSlot);
-    if (count === 2) expect(toolbar.children[0].contains(screen.getByText('对比图片'))).toBe(true);
+    // 选中两张图片也不会在标题旁冒出「对比图片」：对比入口只在预览层里
+    if (count === 2) expect(toolbar.children[0].textContent).not.toContain('对比图片');
   }
 });
 it('改名输入框使用紧凑宽度，保留完整文件名供编辑', async () => {

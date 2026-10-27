@@ -109,10 +109,11 @@ it('单图滚轮向前放大、向后缩小，适应窗口可复位', async () =
   expect(parseFloat(img.style.width)).toBeCloseTo(before, 0);
 });
 
-it('双选后双击保留对比对象，工具栏提供对比入口', async () => {
+it('双选后双击保留对比对象，工具栏不再给对比入口', async () => {
   multiSelectedIds.set(new Set([1, 2]));
   const screen = render(Feed, { selectedId: 1, lightboxOpen: false, lightboxIndex: 0 });
-  expect(screen.getByText('对比图片')).toBeTruthy();
+  // 对比从预览层进（Lightbox 顶部「对比图片」），网格工具栏不留重复入口
+  expect(screen.queryByText('对比图片')).toBeNull();
   const image = screen.getByAltText('1.jpg');
   await fireEvent.click(image);
   await fireEvent.doubleClick(image);

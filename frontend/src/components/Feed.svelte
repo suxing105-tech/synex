@@ -103,10 +103,6 @@
   let totalLabel = $derived(mediaSummary($feedCounts));
   let selectedKinds = $derived(kindsIn($mediaItems.filter((it) => $multiSelectedIds.has(it.id))));
   let selectedLabel = $derived(selectionSummary(selectedCount, selectedKinds));
-  // 「对比」只认恰好两张图片：混排流里选到视频/音频/文本时按钮不出现，避免点了没反应。
-  let comparePair = $derived(
-    selectedCount === 2 && $mediaItems.filter((it) => $multiSelectedIds.has(it.id)).every((it) => it.kind === "image"),
-  );
   async function openInComfyui(it: MediaFeedItem) {
     try {
       notify("正在打开工作流…");
@@ -898,9 +894,6 @@
       {/if}
     </div>
   </div>
-  {#if comparePair}
-    <button class="compare-trigger shrink-0 rounded-lg px-2 py-2 text-xs" onclick={() => { const media = $mediaItems; const i = media.findIndex(it => $multiSelectedIds.has(it.id)); if (i >= 0) openLightbox(media[i], i); }}>对比图片</button>
-  {/if}
   </div>
   <GallerySearch label={$scope === 'all' ? '搜索图片、视频、音频、文本' : $scope === 'video' ? '搜索视频' : $scope === 'audio' ? '搜索音频' : $scope === 'text' ? '搜索文本' : '搜索图片'} />
   <div class="toolbar-actions flex flex-wrap items-center text-[12.5px] text-muted">

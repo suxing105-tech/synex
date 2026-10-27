@@ -4,7 +4,7 @@ import SettingsModal from '../components/SettingsModal.svelte';
 import { settingsApi } from '../lib/api';
 vi.mock('../lib/api', () => ({
   itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) },
-settingsApi: { get: vi.fn(async () => ({ watch_dirs: ['C:/素材'], live_enabled: true })), update: vi.fn(async (cfg) => cfg) },
+  settingsApi: { get: vi.fn(async () => ({ watch_dirs: ['C:/素材'], live_enabled: true })), update: vi.fn(async (cfg) => cfg) },
   comfyuiApi: { status: vi.fn(async () => ({ running: false, enabled: true, url: 'http://127.0.0.1:8188' })) },
   imagesApi: { list: vi.fn(async () => ({ items: [], total: 0 })) },
   foldersApi: { tree: vi.fn(async () => []), archived: vi.fn(async () => []), restore: vi.fn(async () => ({ ok: true })) },
@@ -44,16 +44,20 @@ it('目录跳转保留监听路径和快捷键草稿，且八个分组同时存�
   await fireEvent.click(screen.getByRole('button', { name: '保存通用设置' }));
   expect(settingsApi.update).toHaveBeenCalledWith({ watch_dirs: ['C:/素材', 'D:/未保存素材'], live_enabled: true });
 });
-it('滚动同步目录位置；外部指定模型页后仍可回到顶部', async () => {
+it('滚动同步目录位置，点目录项仍能跳回通用；目录底部不再挂提示与回到顶部', async () => {
   const screen = render(SettingsModal, { open: true, tab: '模型与反推' });
   const scroller = screen.container.querySelector('.settings-content')!;
   await waitFor(() => expect(scroller.scrollTop).toBe(top('settings-models')));
   scroller.scrollTop = 620;
   await fireEvent.scroll(scroller);
   expect(screen.getByRole('button', { name: '已归档目录' }).getAttribute('aria-current')).toBe('location');
-  await fireEvent.click(screen.getByRole('button', { name: '返回设置顶部' }));
+  await fireEvent.click(screen.getByRole('button', { name: '通用' }));
   expect(scroller.scrollTop).toBe(top('settings-general'));
   expect(screen.getByRole('button', { name: '通用' }).getAttribute('aria-current')).toBe('location');
+  // 用户要求删掉目录底部那块：保存提示、版本号、回到顶部都不该再出现。
+  expect(screen.container.querySelector('.settings-rail-foot')).toBeNull();
+  expect(screen.queryByRole('button', { name: '返回设置顶部' })).toBeNull();
+  expect(screen.container.textContent).not.toContain('改完在每组右下角保存');
 });
 it('目录搜索只留下命中的分组，正文跟着收窄，清空后恢复完整目录', async () => {
   const screen = render(SettingsModal, { open: true, tab: '通用' });

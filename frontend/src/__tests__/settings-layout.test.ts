@@ -61,4 +61,26 @@ describe("设置页版式：左目录 + 卡片行", () => {
     await waitFor(() => expect(ui.container.querySelectorAll(".settings-subpath")).toHaveLength(1));
     expect(ui.getByText("1 个目录")).toBeTruthy();
   });
-});
+
+  it("目录底部不再挂保存提示、版本号与回到顶部", () => {
+    const modal = read("components/SettingsModal.svelte");
+    expect(modal).not.toContain("settings-rail-foot");
+    expect(modal).not.toContain("改完在每组右下角保存");
+    expect(modal).not.toContain("返回设置顶部");
+    expect(modal).not.toContain(".settings-top ");
+  });
+
+  it("模型与反推拆成模块，保存动作统一在卡片右下角高亮", () => {
+    const model = read("components/ModelSettings.svelte");
+    // 和通用的「导入 / 监听」一样：一个模块一个小标题 + 一张卡片。
+    expect(model.match(/settings-group-label/g)).toHaveLength(2);
+    expect(model.match(/class="settings-card"/g)).toHaveLength(2);
+    const footers = model.split('class="settings-card-footer"').slice(1);
+    expect(footers).toHaveLength(2);
+    // 主按钮用全局高亮样式并排在右下角，和保存通用设置 / 保存快捷键一致。
+    expect(footers[0]).toContain("class=\"setting-button bg-accent text-bg\" onclick={saveModel}");
+    expect(footers[1]).toContain("保存反推偏好");
+    expect(footers[1]).toContain("保存视频反推偏好");
+    // 卡片由组件自己出，外层不再包一层，避免双层圆角与双层内边距。
+    expect(read("components/SettingsModal.svelte")).not.toContain("settings-card-pad");
+  });});

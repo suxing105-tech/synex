@@ -30,7 +30,7 @@
       { id: "shortcuts", label: "快捷键", keywords: "按键 键盘 组合键 沉浸 全屏 搜索 侧栏 灯箱 对比 所有素材" },
     ] },
     { label: "AI 与集成", items: [
-      { id: "models", label: "模型与反推", keywords: "api key 服务商 视觉模型 反推 指令 seedance h3 视频提示词 超时 密钥" },
+      { id: "models", label: "模型与反推", keywords: "api key 服务商 视觉模型 反推 指令 seedance h3 视频提示词 超时 密钥 默认模型" },
       { id: "comfyui", label: "ComfyUI", keywords: "工作流 服务地址 端口 连接 探测 节点" },
     ] },
     { label: "应用", items: [
@@ -269,11 +269,6 @@
             {/each}
           {/each}
         </nav>
-        <div class="settings-rail-foot">
-          <span class="settings-hint">改完在每组右下角保存</span>
-          <span class="settings-hint">闪寻空间 · {$updateStatus ? `v{$updateStatus.current_version}` : "网页版"}</span>
-          <button class="settings-top" onclick={() => goToSection(navItems[0].label)} aria-label="返回设置顶部"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 14 6-6 6 6" /></svg>回到顶部</button>
-        </div>
       </aside>
       <div class="settings-content min-w-0 overflow-y-auto" bind:this={scroller} onscroll={syncSection}>
         <div class="settings-page fill-interactions">
@@ -368,10 +363,8 @@
           {#if shown("models")}
             <section id="settings-models" class="settings-section" aria-labelledby="settings-models-title">
               <h3 id="settings-models-title">模型与反推</h3>
-              <p class="section-description">配置图片识别模型与反推指令。</p>
-              <div class="settings-card settings-card-pad">
-                <ModelSettings />
-              </div>
+              <p class="section-description">配置图片与视频反推用的模型、指令与偏好。</p>
+              <ModelSettings />
             </section>
           {/if}
 
@@ -486,10 +479,7 @@
   .settings-nav-item[aria-current="location"] { color: #fafafa; background: #27272a; }
   .settings-nav-item[aria-current="location"] svg { color: #f24e4e; opacity: 1; }
   .settings-nav-empty { padding: 10px; font-size: 12.5px; color: #71717a; }
-  .settings-rail-foot { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; margin-top: 16px; padding: 14px 10px 2px; border-top: 1px solid #232327; }
-  .settings-top { display: flex; align-items: center; gap: 6px; padding: 4px 0; color: #93939e; font-size: 12px; }
-  .settings-top:hover { color: #e4e4e7; }
-  .settings-nav-item:focus-visible, .settings-top:focus-visible { outline: none; background: #323237; text-decoration: underline; text-underline-offset: 4px; }
+  .settings-nav-item:focus-visible { outline: none; background: #323237; text-decoration: underline; text-underline-offset: 4px; }
   .settings-content { min-height: 0; background: #0e0e10; overscroll-behavior: contain; scrollbar-gutter: stable; }
   .settings-page { max-width: 820px; padding: 40px 56px 120px; margin: 0 auto; }
   .settings-section { padding-bottom: 34px; margin-bottom: 30px; border-bottom: 1px solid #232327; scroll-margin-top: 28px; }
@@ -510,6 +500,6 @@
     .settings-rail { padding: 12px 12px 8px; border-right: 0; border-bottom: 1px solid #232327; }
     .settings-nav { flex-direction: row; overflow-x: auto; }
     .settings-nav-item { flex-shrink: 0; }
-    .settings-nav-group, .settings-rail-foot { display: none; }
+    .settings-nav-group { display: none; }
   }
 </style>

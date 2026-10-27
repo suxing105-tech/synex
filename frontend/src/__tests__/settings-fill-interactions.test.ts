@@ -7,12 +7,21 @@ const read = (path: string) => readFileSync(resolve(process.cwd(), "src", path),
 const css = postcss.parse(read("app.css"));
 
 describe("设置与反推使用底色交互", () => {
-  it("设置占满窗口，正文限宽并独立滚动", () => {
+  it("设置占满窗口，正文按窗口加宽、文字限行长并独立滚动", () => {
     const source = read("components/SettingsModal.svelte");
     expect(source).toContain('fixed inset-0 z-[60] bg-bg');
     expect(source).toContain('settings-shell w-full h-full');
     expect(source).toContain('settings-content min-w-0 overflow-y-auto');
-    expect(source).toContain('max-width: 820px');
+    // 正文宽度跟着窗口加宽：最大化时不再是一条 820px 的窄柱（0.2.23 后用户反馈「太空」）。
+    expect(source).toMatch(/\.settings-page \{ width: min\(100%, 1440px\); padding: 40px clamp\(/);
+    expect(source).toContain('.settings-page { width: min(100%, 1440px);');
+    expect(source).not.toContain('max-width: 820px');
+    expect(source).not.toMatch(/\.settings-page \{ max-width: \d+px/);
+    // 加宽的是卡片与行，文字仍限行长，避免说明拉成一条横线。
+    expect(source).toMatch(/\.section-description \{[^}]*max-width: 88ch/);
+    expect(read('app.css')).toMatch(/\.setting-row-desc \{[^}]*max-width: 88ch/);
+    expect(read('app.css')).toMatch(/\.settings-hint \{[^}]*max-width: 88ch/);
+    expect(read('components/ModelSettings.svelte')).toMatch(/fieldset \{ max-width: min\(100%, 1160px\)/);
     expect(source).not.toMatch(/max-w-\[94vw\]|88vh|bg-black\/75/);
   });
   it("底部保留设置入口，导入目录进入通用设置", () => {

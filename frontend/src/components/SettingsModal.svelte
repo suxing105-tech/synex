@@ -434,7 +434,7 @@
               <div class="settings-card">
                 <SettingsRow title="闪寻空间" description="本地素材图库：图片、视频、音频、文本在同一套目录与标签里翻看、搜索、对比。">
                   {#snippet control()}
-                    <span class="setting-row-mono">{$updateStatus ? `v{$updateStatus.current_version}` : "网页版"}</span>
+                    <span class="setting-row-mono">{$updateStatus ? `v${$updateStatus.current_version}` : "网页版"}</span>
                   {/snippet}
                 </SettingsRow>
                 {#if onOpenOnboarding}
@@ -481,19 +481,19 @@
   .settings-nav-empty { padding: 10px; font-size: 12.5px; color: #71717a; }
   .settings-nav-item:focus-visible { outline: none; background: #323237; text-decoration: underline; text-underline-offset: 4px; }
   .settings-content { min-height: 0; background: #0e0e10; overscroll-behavior: contain; scrollbar-gutter: stable; }
-  .settings-page { max-width: 820px; padding: 40px 56px 120px; margin: 0 auto; }
+  /* 内容宽度跟着窗口长：窄时贴满，宽时最多加到 1440px 再居中留白，左右内边距按视口同步缩放。
+     以前固定 820px，窗口最大化后两侧各空 700px 以上，看起来像页面坏了一半。 */
+  .settings-page { width: min(100%, 1440px); padding: 40px clamp(22px, 4.4vw, 84px) 120px; margin: 0 auto; }
   .settings-section { padding-bottom: 34px; margin-bottom: 30px; border-bottom: 1px solid #232327; scroll-margin-top: 28px; }
   .settings-section:last-child { padding-bottom: 0; margin-bottom: 0; border-bottom: 0; }
   .settings-section h3 { margin-bottom: 6px; font-size: 21px; font-weight: 600; letter-spacing: -.02em; }
-  .section-description { margin-bottom: 22px; font-size: 13px; line-height: 1.7; color: #85858f; }
+  .section-description { margin-bottom: 22px; max-width: 88ch; font-size: 13px; line-height: 1.7; color: #85858f; }
   .settings-load-state { display: flex; align-items: center; gap: 12px; padding: 18px 20px; font-size: 13px; color: #a1a1aa; flex-wrap: wrap; }
   @media (max-width: 1180px) {
     .settings-shell { grid-template-columns: 228px minmax(0, 1fr); }
-    .settings-page { padding: 34px 34px 108px; }
   }
   @media (max-width: 860px) {
     .settings-shell { grid-template-columns: 196px minmax(0, 1fr); }
-    .settings-page { padding: 26px 22px 90px; }
   }
   @media (max-width: 640px) {
     .settings-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }

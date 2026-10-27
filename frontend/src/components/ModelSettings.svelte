@@ -251,8 +251,9 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
   .model-settings { width: 100%; }
   /* 卡片内表单自己的内边距：保存条挂在卡片底部时要通到边，所以不能给整张卡片加 padding。 */
   .settings-model-body { padding: 20px; }
-  /* 卡片变宽了，表单本身仍按可读宽度收着，别拉成一整条。 */
-  .model-settings fieldset { max-width: 620px; }
+  /* 竖排表单跟着卡片加宽（原来固定 620px，卡片一变宽右边就空一块），
+     但封顶在卡片内宽附近，别把输入框拉成一整条横线。 */
+  .model-settings fieldset { max-width: min(100%, 1160px); }
   .model-chips { display: flex; gap: 8px; flex-wrap: wrap; }
   fieldset { margin-top: 18px; }
   fieldset:first-child { margin-top: 0; }

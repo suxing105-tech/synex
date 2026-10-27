@@ -213,6 +213,7 @@ body,
 }
 
 .setting-row-desc {
+  max-width: 88ch; /* 说明文字不跟着卡片无限加宽，宽窗口下仍保持可读行长 */
   font-size: 12.5px;
   line-height: 1.7;
   color: #8a8a8e;
@@ -314,6 +315,7 @@ body,
 }
 
 .settings-hint {
+  max-width: 88ch;
   font-size: 12px;
   line-height: 1.7;
   color: #71717a;

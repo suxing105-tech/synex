@@ -4,7 +4,7 @@ import VideoPromptPanel from "../components/VideoPromptPanel.svelte";
 import ModelSettings from "../components/ModelSettings.svelte";
 import { modelConfigs, reverseApi, reverseSettings } from "../lib/reverse-prompts";
 import { segmentQueue, translationJobs, videoPromptApi, videoPromptJobs, videoPromptSettings } from "../lib/video-prompts";
-import type { H3Mode, PromptReference, PromptRun, SegmentRecord, VideoPromptHistory, VideoPromptSettings } from "../lib/video-prompts";
+import type { PromptMode, PromptReference, PromptRun, SegmentRecord, VideoPromptHistory, VideoPromptSettings } from "../lib/video-prompts";
 import { copyText } from "../lib/ws";
 
 vi.mock("../lib/ws", () => ({ copyText: vi.fn().mockResolvedValue(true) }));
@@ -22,15 +22,16 @@ const model = {
 };
 const prefs: VideoPromptSettings = {
   id: 1, default_model_id: 1, instruction_plan: "拆分镜", instruction_seedance: "写 Seedance",
-  instruction_h3: "write H3", default_h3_mode: "t2va", frame_limit: 12, max_unit_seconds: 15, max_units: 12,
+  instruction_h3: "write H3", default_mode_h3: "t2va", default_mode_seedance: "t2v",
+  frame_limit: 12, max_unit_seconds: 15, max_units: 12,
   defaults: { instruction_plan: "默认拆分镜", instruction_seedance: "默认 Seedance", instruction_h3: "default H3",
-    default_h3_mode: "t2va", frame_limit: 12, max_unit_seconds: 15, max_units: 12 },
+    default_mode_h3: "t2va", default_mode_seedance: "t2v", frame_limit: 12, max_unit_seconds: 15, max_units: 12 },
 };
 
 function seg(id: number, index: number, target: "seedance2" | "h3", prompt: string,
-             references: PromptReference[] = [], mode: H3Mode = "t2va"): SegmentRecord {
+             references: PromptReference[] = [], mode: PromptMode | null = null): SegmentRecord {
   return {
-    id, segment_index: index, target, h3_mode: target === "h3" ? mode : null, prompt,
+    id, segment_index: index, target, mode: target === "h3" ? (mode ?? "t2va") : mode, prompt,
     risk_terms: ["真人 → 写实风格"], raw_text: "", status: "complete", source: "generated", parent_id: null,
     model_name: "视觉模型", model: "vision", created_at: "2026-10-19T01:00:00Z", video_changed: false,
     translation: null, references,
@@ -163,7 +164,7 @@ describe("视频反推面板", () => {
     const panel = render(VideoPromptPanel, { videoId: 5, filename: "clip.mp4", durationSeconds: 30 });
     await waitFor(() => expect(panel.getByText("MiniMax H3")).toBeTruthy());
     await fireEvent.click(panel.getByText("MiniMax H3"));
-    const card = panel.getByTestId("h3-mode-hints");
+    const card = panel.getByTestId("mode-hints");
     expect(card.textContent).toContain("纯文本：正文不引用图片或视频");
     expect(card.textContent).toContain("首帧图：每段首行写");
     expect(card.textContent).toContain("首尾帧：每段首行列出首帧与末帧");
@@ -227,6 +228,50 @@ describe("视频反推面板", () => {
     await fireEvent.change(mode, { target: { value: "ref2va" } });
     await waitFor(() => expect(panel.getByRole("alert").textContent.replace(/\s+/g, ""))
       .toBe("图7个超过MiniMax上限（图6/视频3/音频3），请合并素材后编辑正文。"));
+  });
+
+  it("Seedance 页也有模式选择，换模式后按新模式告诉你要备哪些帧", async () => {
+    // 正文是「全能参考」写的：当前选 t2v 时模式不匹配，参考清单按新模式给计划
+    const run = makeRun();
+    run.units[0].current.seedance2 = seg(51, 1, "seedance2", "【风格】A", [], "ref");
+    run.units[1].current.seedance2 = seg(52, 2, "seedance2", "【风格】B", [], "ref");
+    vi.mocked(videoPromptApi.history).mockResolvedValue(history([run]));
+    const panel = render(VideoPromptPanel, { videoId: 5, filename: "clip.mp4", durationSeconds: 30 });
+    await waitFor(() => expect(panel.getByText("时长 30 秒")).toBeTruthy());
+    const select = panel.getByLabelText("Seedance 模式") as HTMLSelectElement;
+    expect(select.value).toBe("t2v");                       // 偏好里的默认模式
+    expect([...select.options].map(o => o.value)).toEqual(["t2v", "i2v", "flv", "ref"]);
+    // 文生视频不列参考：列出来只会误导用户去找文件
+    expect(panel.queryByText(/本段需要的参考/)).toBeNull();
+    const card = panel.getByTestId("mode-hints");
+    expect(card.textContent).toContain("合计 ≤12");
+    expect(card.textContent).toContain("首帧图不能和参考图混在同一个请求里");
+    expect(card.textContent).toContain("只认镜头序号");
+    expect(card.textContent).not.toContain("subject_definitions");        // H3 的说明不串台
+    select.value = "flv";
+    await fireEvent.change(select, { target: { value: "flv" } });
+    await waitFor(() => expect(panel.getAllByTestId(/ref-\d+-@图片2/)).toHaveLength(2));
+    expect(panel.getAllByText("本段末帧：把下面这张图存盘后作为尾帧上传")).toHaveLength(2);
+  });
+
+  it("版本卡片标出它是哪种模式生成的，老记录没有模式就不标", async () => {
+    const run = makeRun();
+    run.units[0].current.seedance2 = seg(51, 1, "seedance2", "【风格】首帧版", [], "i2v");
+    vi.mocked(videoPromptApi.history).mockResolvedValue(history([run]));
+    const panel = render(VideoPromptPanel, { videoId: 5, filename: "clip.mp4", durationSeconds: 30 });
+    await waitFor(() => expect(panel.getByText("【风格】首帧版")).toBeTruthy());
+    expect(panel.getByText("首帧")).toBeTruthy();            // 新模式 → 短徽标
+    // 第 2 段是老记录（没有模式），不该凭空标出一个模式来
+    expect(panel.getAllByText("首帧")).toHaveLength(1);
+    expect(panel.queryByText("T2V")).toBeNull();
+  });
+
+  it("正文超过官方建议字数时提示，不拦复制", async () => {
+    const run = makeRun();
+    run.units[0].current.seedance2 = seg(52, 1, "seedance2", "字".repeat(520), [], "t2v");
+    vi.mocked(videoPromptApi.history).mockResolvedValue(history([run]));
+    const panel = render(VideoPromptPanel, { videoId: 5, filename: "clip.mp4", durationSeconds: 30 });
+    await waitFor(() => expect(panel.getByText(/520 字 · 超建议 500 字/)).toBeTruthy());
   });
 
   it("历史版本可点选查看，正文与提示跟着那一版走", async () => {
@@ -312,7 +357,7 @@ describe("视频反推面板", () => {
     expect(panel.getByText("该段还没有 Seedance 2.0 正文。")).toBeTruthy();
     await fireEvent.click(panel.getAllByText("Seedance")[1]);
     await waitFor(() => expect(segment).toHaveBeenCalledTimes(1));
-    expect(segment.mock.calls[0][3]).toMatchObject({ target: "seedance2", h3_mode: null, model_config_id: 1 });
+    expect(segment.mock.calls[0][3]).toMatchObject({ target: "seedance2", mode: "t2v", model_config_id: 1 });
     await waitFor(() => expect(panel.getByText("模型请求超时")).toBeTruthy());
     const retry = panel.getAllByText("重试本段");
     expect(retry).toHaveLength(1);
@@ -413,7 +458,7 @@ describe("视频反推面板", () => {
     await fireEvent.click(panel.getByText("保存视频反推偏好"));
     await waitFor(() => expect(save).toHaveBeenCalled());
     expect(save.mock.calls[0][0]).toMatchObject({
-      default_model_id: 1, default_h3_mode: "t2va", frame_limit: 8,
+      default_model_id: 1, default_mode_h3: "t2va", default_mode_seedance: "t2v", frame_limit: 8,
       max_unit_seconds: 15, max_units: 12, instruction_plan: "默认拆分镜",
     });
   });

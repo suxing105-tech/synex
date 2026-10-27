@@ -2,25 +2,27 @@
   import { onMount } from "svelte";
   import { modelConfigs, refreshReverseConfig } from "../lib/reverse-prompts";
   import {
-    H3_MODES, H3_MODE_LABELS, H3_MODE_HINTS, TARGETS, TARGET_LABELS, TRANSLATION_LABELS, elapsedText,
+    MODES_BY_TARGET, MODE_LABELS, MODE_HINTS, MODE_BADGES, TARGETS, TARGET_LABELS, TRANSLATION_LABELS,
+    cjkCount, elapsedText, SEEDANCE_CHAR_GUIDE, slotLimitText,
     errorMessage, generatePlan,
     generateSegments, planKey,
     refreshVideoPromptSettings, secondText, secondsInputToMs, secondsRangeText, segmentKey, segmentQueue,
     translatePrompt, translationJobs, translationKey, translationOf, videoPromptApi, videoPromptJobs,
     videoPromptSettings, wholeSecond,
   } from "../lib/video-prompts";
-  import type { H3Mode, PromptRun, PromptTarget, PromptUnit, SegmentRecord } from "../lib/video-prompts";
+  import type { PromptMode, PromptRun, PromptTarget, PromptUnit, SegmentRecord } from "../lib/video-prompts";
   import type { PromptReference } from "../lib/video-prompts";
   import { copyText } from "../lib/ws";
   import VideoFrameThumb from "./VideoFrameThumb.svelte";
-  import { countSlots, overSlots, plannedReferences, refFileTag, SLOT_LABELS, SLOT_LIMITS, unitFrameAt } from "../lib/video-prompts";
+  import { countSlots, overSlots, plannedReferences, refFileTag, SLOT_LABELS, unitFrameAt } from "../lib/video-prompts";
   import { pushToast } from "../lib/toast";
 
   let { videoId, filename = "", durationSeconds = null }:
     { videoId: number; filename?: string; durationSeconds?: number | null } = $props();
 
   let modelId = $state<number | null>(null);
-  let h3Mode = $state<H3Mode>("t2va");
+  /** 每种格式各记各的模式：Seedance 换模式不该把 H3 的选择改掉。 */
+  let mode = $state<Record<PromptTarget, PromptMode>>({ seedance2: "t2v", h3: "t2va" });
   /** number 输入框绑出来可能是 number，交给 secondsInputToMs 统一处理。 */
   let startText = $state<string | number>("");
   let endText = $state<string | number>("");
@@ -44,7 +46,7 @@
   let confirmKey = $state<string | null>(null);
   let deletingId = $state<number | null>(null);
   let openFrames = $state<Record<string, boolean>>({});
-  /** H3 模式说明收在问号里：悬停/聚焦自动展开，点一下也能打开（触屏没有 hover）。 */
+  /** 模式说明收在问号里：悬停/聚焦自动展开，点一下也能打开（触屏没有 hover）。 */
   let modeHelpOpen = $state(false);
   /** 队列在跑时被点的是哪个"全部生成"，让那个按钮自己亮起来转圈。 */
   let allScope = $state<"tab" | "both" | null>(null);
@@ -70,7 +72,9 @@
       modelId = prefs?.default_model_id ?? $modelConfigs[0]?.id ?? null;
     }
   });
-  $effect(() => { if (prefs) h3Mode = prefs.default_h3_mode; });
+  $effect(() => {
+    if (prefs) mode = { seedance2: prefs.default_mode_seedance, h3: prefs.default_mode_h3 };
+  });
   $effect(() => {
     const id = videoId;
     runs = []; total = 0; activeRunId = null; error = ""; runsOpen = false; openFrames = {};
@@ -201,7 +205,7 @@
     if (!run || !modelId) return;
     error = ""; allScope = scope;
     const failures = await generateSegments(videoId, run.id, indexes, targets, {
-      h3_mode: h3Mode, model_config_id: modelId,
+      modes: mode, model_config_id: modelId,
     });
     await loadHistory(videoId);
     if (failures.length) error = `${failures.length} 段生成失败，可单独重试该段。`;
@@ -262,8 +266,8 @@
    * 换了模式（或还没正文）就按当前模式给计划——用户切模式时想知道"这样生成要备什么"。
    */
   function referencesOf(record: SegmentRecord | undefined, unit: PromptUnit): PromptReference[] {
-    const matches = !record || record.target !== "h3" || record.h3_mode === h3Mode;
-    return matches && record ? record.references : plannedReferences(tab, h3Mode, unit);
+    const matches = !record || record.mode == null || record.mode === mode[tab];
+    return matches && record ? record.references : plannedReferences(tab, mode[tab], unit);
   }
 
   const slotCounts = countSlots;
@@ -384,32 +388,34 @@
         {/if}
       </div>
 
-      {#if tab === "h3"}
-        <div class="flex items-center gap-2">
-          <span class="vp-label">H3 模式</span>
-          <select class="vp-field vp-field-inline min-w-0 flex-1" aria-label="H3 模式" value={h3Mode} disabled={running}
-            onchange={(e) => h3Mode = (e.currentTarget as HTMLSelectElement).value as H3Mode}>
-            {#each H3_MODES as mode}
-              <option value={mode}>{H3_MODE_LABELS[mode]}</option>
+      <div class="flex items-center gap-2">
+        <span class="vp-label">{tab === "h3" ? "H3 模式" : "Seedance 模式"}</span>
+        <select class="vp-field vp-field-inline min-w-0 flex-1"
+          aria-label={tab === "h3" ? "H3 模式" : "Seedance 模式"} value={mode[tab]} disabled={running}
+          onchange={(e) => mode = { ...mode, [tab]: (e.currentTarget as HTMLSelectElement).value as PromptMode }}>
+          {#each MODES_BY_TARGET[tab] as option}
+            <option value={option}>{MODE_LABELS[option]}</option>
+          {/each}
+        </select>
+        <span class="vp-help" class:open={modeHelpOpen}>
+          <button class="vp-help-button" type="button" aria-label={tab === "h3" ? "H3 模式说明" : "Seedance 模式说明"}
+            onclick={() => modeHelpOpen = !modeHelpOpen} onpointerleave={() => modeHelpOpen = false}>?</button>
+          <span class="vp-help-card" role="tooltip" data-testid="mode-hints">
+            {#each MODES_BY_TARGET[tab] as option}
+              <span class="vp-help-row" data-testid={`mode-hint-${option}`}>
+                <b>{MODE_LABELS[option]}</b>
+                <span>{MODE_HINTS[option]}</span>
+              </span>
             {/each}
-          </select>
-          <span class="vp-help" class:open={modeHelpOpen}>
-            <button class="vp-help-button" type="button" aria-label="H3 模式说明"
-              onclick={() => modeHelpOpen = !modeHelpOpen} onpointerleave={() => modeHelpOpen = false}>?</button>
-            <span class="vp-help-card" role="tooltip" data-testid="h3-mode-hints">
-              {#each H3_MODES as mode}
-                <span class="vp-help-row" data-testid={`mode-hint-${mode}`}>
-                  <b>{H3_MODE_LABELS[mode]}</b>
-                  <span>{H3_MODE_HINTS[mode]}</span>
-                </span>
-              {/each}
-              {#if h3Mode !== "t2va"}
-                <span class="vp-help-note">每段下方「本段需要的参考」按编号列出要上传的素材；带缩略图的帧本工具能直接给，复制或存成 <code>{baseName}-Picture1-P02-first.jpg</code> 这类文件名再上传。</span>
-              {/if}
-            </span>
+            {#if mode[tab] !== "t2v" && mode[tab] !== "t2va"}
+              <span class="vp-help-note">每段下方「本段需要的参考」按编号列出要上传的素材；带缩略图的帧本工具能直接给，复制或存成 <code>{baseName}-图片1-P02-first.jpg</code> 这类文件名再上传。</span>
+            {/if}
+            {#if tab === "seedance2"}
+              <span class="vp-help-note">官方口径：2.0 不认秒级时间轴，只认镜头序号，所以【分镜】写「镜头1：」不写「0-3 秒：」；一个镜头只用一种运镜；正文建议 {SEEDANCE_CHAR_GUIDE} 字以内。</span>
+            {/if}
           </span>
-        </div>
-      {/if}
+        </span>
+      </div>
 
       <div class="space-y-2">
         {#each units as unit}
@@ -485,9 +491,8 @@
                   </ul>
                   {#if tooMany(refs).length}
                     <p class="mt-1 text-[10px] text-danger" role="alert">
-                      {tooMany(refs).map((slot) => `${SLOT_LABELS[slot]} ${slotCounts(refs)[slot]} 个`).join("、")}
-                      超过 MiniMax 上限（图 {SLOT_LIMITS.picture} / 视频 {SLOT_LIMITS.video} / 音频 {SLOT_LIMITS.audio}），
-                      请合并素材后编辑正文。
+                      {tooMany(refs, tab).map((slot) => `${SLOT_LABELS[slot]} ${slotCounts(refs)[slot]} 个`).join("、")}
+                      超过{slotLimitText(tab)}，请合并素材后编辑正文。
                     </p>
                   {/if}
                 {/if}
@@ -530,7 +535,12 @@
                 <div class="flex items-center gap-2 flex-wrap text-[10px] text-muted">
                   <span>{record.model_name} · {record.model}</span>
                   <span>{record.source === "edited" ? "手动编辑" : "模型生成"}</span>
-                  {#if record.target === "h3" && record.h3_mode}<span class="vp-badge">{record.h3_mode.toUpperCase()}</span>{/if}
+                  {#if record.mode}<span class="vp-badge">{MODE_BADGES[record.mode]}</span>{/if}
+                  {#if record.target === "seedance2" && cjkCount(originalOf(record)) > SEEDANCE_CHAR_GUIDE}
+                    <span class="vp-badge vp-warn" title="Seedance 官方建议单条正文不超过 500 字，太长模型会丢细节">
+                      {cjkCount(originalOf(record))} 字 · 超建议 {SEEDANCE_CHAR_GUIDE} 字
+                    </span>
+                  {/if}
                   {#if record.video_changed}<span class="vp-badge vp-warn">对应此前视频文件</span>{/if}
                   {#if record.status !== "complete"}<span class="vp-badge vp-warn">
                     {record.status === "format_warning" ? "格式不完整" : "未结构化"}</span>{/if}

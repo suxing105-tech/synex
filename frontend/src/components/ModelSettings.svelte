@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { modelConfigs, reverseSettings, refreshReverseConfig, refreshProviderPresets, providerPresets, reverseApi, errorMessage } from "../lib/reverse-prompts";
   import type { ModelConfig, ModelDraft, ReverseSettings } from "../lib/reverse-prompts";
-import { H3_MODES, H3_MODE_LABELS, videoPromptApi, videoPromptSettings, refreshVideoPromptSettings } from "../lib/video-prompts";
+import { H3_MODES, SEEDANCE_MODES, MODE_LABELS, videoPromptApi, videoPromptSettings, refreshVideoPromptSettings } from "../lib/video-prompts";
 import type { VideoPromptSettings } from "../lib/video-prompts";
   const CUSTOM = "custom";
   const blank = (): ModelDraft => ({ name: "", base_url: "", model: "", timeout: 120, provider: CUSTOM });
@@ -165,9 +165,14 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
         <option value={null}>跟随图片反推默认模型</option>
         {#each $modelConfigs as model}<option value={model.id}>{model.name} · {model.model}</option>{/each}
       </select></label>
-      <label>默认 H3 模式<select aria-label="默认 H3 模式" bind:value={videoPrefs.default_h3_mode}>
-        {#each H3_MODES as mode}<option value={mode}>{H3_MODE_LABELS[mode]}</option>{/each}
-      </select></label>
+      <div class="grid grid-cols-2 gap-2">
+        <label>默认 Seedance 模式<select aria-label="默认 Seedance 模式" bind:value={videoPrefs.default_mode_seedance}>
+          {#each SEEDANCE_MODES as option}<option value={option}>{MODE_LABELS[option]}</option>{/each}
+        </select></label>
+        <label>默认 H3 模式<select aria-label="默认 H3 模式" bind:value={videoPrefs.default_mode_h3}>
+          {#each H3_MODES as option}<option value={option}>{MODE_LABELS[option]}</option>{/each}
+        </select></label>
+      </div>
       <div class="grid grid-cols-3 gap-2">
         <label>帧数上限<input aria-label="视频帧数上限" type="number" min="4" max="16" bind:value={videoPrefs.frame_limit} /></label>
         <label>单元时长上限（秒）<input aria-label="单元时长上限" type="number" min="5" max="15" bind:value={videoPrefs.max_unit_seconds} /></label>

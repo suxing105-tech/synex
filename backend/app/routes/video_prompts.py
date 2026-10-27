@@ -21,7 +21,8 @@ class SettingsInput(BaseModel):
     instruction_plan: str = Field(min_length=1, max_length=12000)
     instruction_seedance: str = Field(min_length=1, max_length=12000)
     instruction_h3: str = Field(min_length=1, max_length=12000)
-    default_h3_mode: str = "t2va"
+    default_mode_h3: str = "t2va"
+    default_mode_seedance: str = "t2v"
     frame_limit: int = Field(default=12, ge=4, le=16)
     max_unit_seconds: int = Field(default=15, ge=5, le=15)
     max_units: int = Field(default=12, ge=1, le=24)
@@ -39,7 +40,8 @@ class PlanInput(BaseModel):
 class SegmentInput(BaseModel):
     model_config_id: int | None = None
     target: str
-    h3_mode: str | None = None
+    # 两种目标格式都有模式，只是取值不同；不传就用设置里该格式的默认模式。
+    mode: str | None = None
 
 
 class EditInput(BaseModel):
@@ -58,13 +60,13 @@ def _resolve_target(target: str) -> str:
     return target
 
 
-def _resolve_h3_mode(target: str, h3_mode: str | None) -> str | None:
-    if target != "h3":
-        return None
-    mode = h3_mode or service.settings()["default_h3_mode"]
-    if mode not in service.H3_MODES:
-        raise HTTPException(422, "未知的 MiniMax H3 模式")
-    return mode
+def _resolve_mode(target: str, mode: str | None) -> str:
+    """模式按目标格式各自的清单校验；没传就用设置里那一格的默认值。"""
+    resolved = mode or service.settings()["default_mode_" + ("h3" if target == "h3" else "seedance")]
+    if resolved not in service.MODES_BY_TARGET[target]:
+        label = "MiniMax H3" if target == "h3" else "Seedance 2.0"
+        raise HTTPException(422, f"未知的 {label} 模式")
+    return resolved
 
 
 def _clamp_range(payload: PlanInput, duration_ms: int) -> tuple[int, int]:
@@ -92,7 +94,8 @@ def update_settings(payload: SettingsInput):
         instruction_plan=payload.instruction_plan,
         instruction_seedance=payload.instruction_seedance,
         instruction_h3=payload.instruction_h3,
-        default_h3_mode=payload.default_h3_mode,
+        default_mode_h3=payload.default_mode_h3,
+        default_mode_seedance=payload.default_mode_seedance,
         frame_limit=payload.frame_limit,
         max_unit_seconds=payload.max_unit_seconds,
         max_units=payload.max_units,
@@ -113,7 +116,7 @@ async def create_plan(video_id: int, payload: PlanInput):
     sound_note = (payload.sound_note or "").strip()
     if key:
         sound_note = sound_note.replace(key, "[已隐藏密钥]")
-    instruction = settings["instruction_plan"] + service.TIME_RULE
+    instruction = settings["instruction_plan"] + service.PLAN_TIME_RULE
     if key:
         instruction = instruction.replace(key, "[已隐藏密钥]")
     service.acquire_plan(video_id)
@@ -155,7 +158,7 @@ async def create_plan(video_id: int, payload: PlanInput):
 @router.post("/videos/{video_id}/video-prompts/runs/{run_id}/segments/{index}")
 async def generate_segment(video_id: int, run_id: int, index: int, payload: SegmentInput):
     target = _resolve_target(payload.target)
-    h3_mode = _resolve_h3_mode(target, payload.h3_mode)
+    mode = _resolve_mode(target, payload.mode)
     run = service.get_run(run_id, video_id)
     if run["status"] != "planned":
         raise HTTPException(409, "分镜方案未完成，无法生成段正文")
@@ -165,9 +168,7 @@ async def generate_segment(video_id: int, run_id: int, index: int, payload: Segm
     config = service.resolve_model_config(payload.model_config_id)
     key = reverse_prompts.key_for(config)
     instruction = (settings["instruction_seedance"] if target == "seedance2" else settings["instruction_h3"])
-    instruction += service.TIME_RULE
-    if target == "h3" and h3_mode == "ref2va":
-        instruction += service.REF2VA_RULE
+    instruction += service.time_rule(target) + service.mode_rule(target, mode)
     if key:
         instruction = instruction.replace(key, "[已隐藏密钥]")
     units = service.run_units(run)
@@ -179,16 +180,16 @@ async def generate_segment(video_id: int, run_id: int, index: int, payload: Segm
         frames = await run_in_threadpool(_collect_frames, meta["path"], seconds)
         base = unit["start_ms"] / 1000
         relative = [(round(moment - base, 3), url) for moment, url in frames]
-        content = service.segment_request(target, h3_mode or "t2va", unit, meta=meta,
+        content = service.segment_request(target, mode, unit, meta=meta,
                                          anchors=run["anchors_text"], role=unit.get("role", ""),
                                          frames=relative, sound_note=run["sound_note"],
                                          total_units=len(units))
-        output_rule = service.segment_output_rule(target, h3_mode)
+        output_rule = service.segment_output_rule(target, mode)
         text = await reverse_prompts.request_model(config, key, content, instruction,
                                          output_rule=output_rule)
         prompt, terms, raw, status, notes = service.parse_segment(
-            text, target=target, h3_mode=h3_mode or "t2va", unit=unit)
-        record = service.create_record(run, segment_index=index, target=target, h3_mode=h3_mode, prompt=prompt,
+            text, target=target, mode=mode, unit=unit)
+        record = service.create_record(run, segment_index=index, target=target, mode=mode, prompt=prompt,
                                        risk_terms=terms, raw_text=raw, status=status, source="generated",
                                        parent_id=None, instruction=instruction + output_rule,
                                        config=config, frames=relative, notes=notes)

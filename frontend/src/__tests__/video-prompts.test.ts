@@ -11,7 +11,8 @@ import { dismissToast, pushToast, updateToast } from "../lib/toast";
 import {
   countSlots, elapsedText, expandSegments, generatePlan, generateSegments, overSlots, plannedReferences,
   planKey,
-  refFileTag, secondText, secondsInputToMs, secondsRangeText, segmentKey, segmentQueue, SLOT_LIMITS,
+  refFileTag, secondText, secondsInputToMs, secondsRangeText, SEEDANCE_SLOT_LIMITS, segmentKey, segmentQueue,
+  SLOT_LIMITS, slotLimitText,
   translatePrompt, translationJobs, translationKey, translationOf, unitFrameAt, videoPromptApi,
   videoPromptJobs, wholeSecond,
 } from "../lib/video-prompts";
@@ -21,7 +22,7 @@ const call = vi.mocked(http);
 
 function record(id: number, index: number, target: "seedance2" | "h3"): SegmentRecord {
   return {
-    id, segment_index: index, target, h3_mode: target === "h3" ? "t2va" : null, prompt: `正文 ${id}`,
+    id, segment_index: index, target, mode: target === "h3" ? "t2va" : null, prompt: `正文 ${id}`,
     risk_terms: [], raw_text: "", status: "complete", source: "generated", parent_id: null,
     model_name: "视觉", model: "vision", created_at: "2026-10-19T01:00:00Z", video_changed: false,
     translation: null, references: [],
@@ -68,17 +69,26 @@ describe("参考帧", () => {
     expect(unitFrameAt(run.units[1], "last")).toBeCloseTo(29.75, 2);
   });
 
+  it("Seedance 按模式给参考：文生视频不列、首帧一张、首尾帧两张", () => {
+    expect(plannedReferences("seedance2", "t2v", run.units[0])).toEqual([]);
+    expect(plannedReferences("seedance2", "ref", run.units[0])).toEqual([]);
+    const i2v = plannedReferences("seedance2", "i2v", run.units[0]);
+    expect(i2v.map(item => item.label)).toEqual(["@图片1"]);
+    expect(i2v[0].frame).toEqual({ index: 1, edge: "first" });
+    expect(i2v[0].slot).toBe("picture");
+    expect(i2v[0].warn).toBeNull();
+    // 第 2 段的首帧其实是上一段生成结果的末帧，这里只能给原片对照帧，必须写明
+    const chain = plannedReferences("seedance2", "i2v", run.units[1]);
+    expect(chain[0].warn).toContain("上一段");
+    const flv = plannedReferences("seedance2", "flv", run.units[0]);
+    expect(flv.map(item => item.label)).toEqual(["@图片1", "@图片2"]);
+    expect(flv[1].frame).toEqual({ index: 1, edge: "last" });
+    expect(flv[1].warn).toContain("同一画幅");
+  });
+
   it("未生成正文时按计划列出这段要备哪些参考", () => {
     expect(plannedReferences("h3", "t2va", run.units[0])).toEqual([]);
     expect(plannedReferences("h3", "ref2va", run.units[0])).toEqual([]);
-    const seed = plannedReferences("seedance2", "t2va", run.units[0]);
-    expect(seed.map(item => item.label)).toEqual(["@图片 1"]);
-    expect(seed[0].frame).toEqual({ index: 1, edge: "first" });
-    expect(seed[0].slot).toBe("picture");
-    const chain = plannedReferences("seedance2", "t2va", run.units[1]);
-    expect(chain.map(item => item.label)).toEqual(["@视频 1"]);
-    expect(chain[0].frame).toBeNull();
-    expect(chain[0].slot).toBe("video");
     const first = plannedReferences("h3", "i2va", run.units[0]);
     expect(first.map(item => item.label)).toEqual(["<Picture 1>"]);
     expect(first[0].warn).toBeNull();
@@ -89,7 +99,7 @@ describe("参考帧", () => {
     expect(fl[1].frame).toEqual({ index: 2, edge: "last" });
   });
 
-  it("清单按图/视频/音频计数，超过 MiniMax 上限才报警", () => {
+  it("清单按图/视频/音频计数，超过各自格式的上限才报警", () => {
     const refs: PromptReference[] = [
       { label: "<Picture 1>", what: "first frame", frame: null, warn: null, slot: "picture" },
       { label: "<Picture 2>", what: "the host", frame: null, warn: null, slot: "picture" },
@@ -101,7 +111,16 @@ describe("参考帧", () => {
       label: `<Picture ${i + 1}>`, what: "", frame: null, warn: null, slot: "picture" as const,
     }));
     expect(overSlots(many)).toEqual(["picture"]);
+    // 同一批 7 张图在 Seedance 的 9 张上限内，不该报警
+    expect(overSlots(many, "seedance2")).toEqual([]);
+    const twelve = Array.from({ length: 10 }, (_, i) => ({
+      label: `@图片${i + 1}`, what: "", frame: null, warn: null, slot: "picture" as const,
+    }));
+    expect(overSlots(twelve, "seedance2")).toEqual(["picture"]);
     expect(SLOT_LIMITS).toEqual({ picture: 6, video: 3, audio: 3 });
+    expect(SEEDANCE_SLOT_LIMITS).toEqual({ picture: 9, video: 3, audio: 3 });
+    expect(slotLimitText("seedance2")).toContain("合计 12");
+    expect(slotLimitText("h3")).toContain("MiniMax 上限");
   });
 
   it("参考标签能当文件名用", () => {
@@ -117,7 +136,7 @@ describe("视频反推接口", () => {
     expect(call.mock.calls[0][0]).toBe("/api/videos/5/video-prompts/plans");
     expect(JSON.parse(call.mock.calls[0][1]!.body as string))
       .toEqual({ model_config_id: 3, sound_note: "女声", start_ms: 1000, end_ms: 2000 });
-    await videoPromptApi.segment(5, 7, 2, { target: "h3", h3_mode: "fl2va", model_config_id: 3 });
+    await videoPromptApi.segment(5, 7, 2, { target: "h3", mode: "fl2va", model_config_id: 3 });
     expect(call.mock.calls[1][0]).toBe("/api/videos/5/video-prompts/runs/7/segments/2");
     await videoPromptApi.edit(5, 7, 2, { target: "seedance2", prompt: "正文" });
     expect(call.mock.calls[2][0]).toBe("/api/videos/5/video-prompts/runs/7/segments/2/edits");
@@ -147,13 +166,14 @@ describe("分段生成队列", () => {
       progress.push(String(get(segmentQueue)?.done));
       return record(order.length, 1, body.target);
     });
-    const failures = await generateSegments(5, 7, [1, 2], ["seedance2", "h3"], { h3_mode: "i2va" });
+    const failures = await generateSegments(5, 7, [1, 2], ["seedance2", "h3"], { modes: { h3: "i2va" } });
     expect(order).toEqual(["seedance2", "h3", "seedance2", "h3"]);
     expect(progress).toEqual(["0", "1", "2", "3"]);
     expect(failures).toEqual([]);
     expect(get(segmentQueue)).toBeNull();
     const bodies = call.mock.calls.map(c => JSON.parse(String(c[1]?.body)));
-    expect(bodies.map(b => b.h3_mode)).toEqual([null, "i2va", null, "i2va"]);
+    // 没显式给的格式回落到该格式的默认模式，不再出现 null
+    expect(bodies.map(b => b.mode)).toEqual(["t2v", "i2va", "t2v", "i2va"]);
     expect(get(videoPromptJobs)[segmentKey(7, 1, "h3")].result?.target).toBe("h3");
   });
 

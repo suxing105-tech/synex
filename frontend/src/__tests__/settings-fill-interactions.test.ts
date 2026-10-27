@@ -9,10 +9,10 @@ const css = postcss.parse(read("app.css"));
 describe("设置与反推使用底色交互", () => {
   it("设置占满窗口，正文限宽并独立滚动", () => {
     const source = read("components/SettingsModal.svelte");
-    expect(source).toContain('fixed inset-0 z-[60] bg-surface-2');
+    expect(source).toContain('fixed inset-0 z-[60] bg-bg');
     expect(source).toContain('settings-shell w-full h-full');
     expect(source).toContain('settings-content min-w-0 overflow-y-auto');
-    expect(source).toContain('max-width: 1080px');
+    expect(source).toContain('max-width: 820px');
     expect(source).not.toMatch(/max-w-\[94vw\]|88vh|bg-black\/75/);
   });
   it("底部保留设置入口，导入目录进入通用设置", () => {
@@ -23,9 +23,13 @@ describe("设置与反推使用底色交互", () => {
     expect(read("components/SettingsModal.svelte")).toContain('onclick={onOpenOnboarding}>导入目录</button>');
     expect(read("components/Feed.svelte")).toContain('<GallerySearch label=');
     const source = read("components/SettingsModal.svelte");
-    expect(source).toContain('settings-index');
+    expect(source).toContain('settings-rail');
     expect(source).toContain('aria-controls={`settings-${section.id}`}');
-    expect(source).toContain('grid-template-columns: minmax(0, 1fr) 224px');
+    expect(source).toContain('grid-template-columns: 264px minmax(0, 1fr)');
+    expect(source).toContain('aria-label="搜索设置"');
+    // 目录挪到正文左边：源码里 settings-rail 必须出现在 settings-content 之前（旧版是正文 + 右侧索引）。
+    expect(source.indexOf('settings-rail')).toBeLessThan(source.indexOf('settings-content'));
+    expect(source).not.toContain('settings-index');
     expect(source).toContain('aria-label="返回图库"');
     expect(source).not.toContain('>×</button>');
     expect(read('components/FolderTree.svelte')).not.toContain('本地缓存');

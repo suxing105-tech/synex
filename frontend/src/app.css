@@ -157,3 +157,315 @@ body,
   background-color: #f24e4e;
   color: #0e0e10;
 }
+
+/* ── 设置页版式：卡片 + 行 ──────────────────────────────────────────────
+   一张卡片＝一类决定，卡片里每一行＝左边标题与说明、右边控件（开关 / 按钮 / 下拉）。
+   这些样式放在全局，因为 SettingsModal、ShortcutSettings、UpdatePanel 都要共用同一套行。 */
+.settings-card {
+  overflow: hidden;
+  border: 1px solid #26262b;
+  border-radius: 12px;
+  background: #16161a;
+}
+
+.settings-card + .settings-card {
+  margin-top: 14px;
+}
+
+.settings-card .setting-row + .setting-row {
+  border-top: 1px solid #26262b;
+}
+
+.settings-card-body {
+  /* 卡片内容统一包一层，Svelte 5 的分支只需要一个根节点；这层不参与排版。 */
+  display: contents;
+}
+
+.settings-card-pad {
+  padding: 20px;
+}
+
+.setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 24px;
+  row-gap: 12px;
+  align-items: center;
+  min-height: 62px;
+  padding: 15px 20px;
+}
+
+.setting-row-top {
+  align-items: start;
+}
+
+.setting-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.setting-row-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #e6e6ea;
+}
+
+.setting-row-desc {
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: #8a8a8e;
+}
+
+.setting-row-side {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  /* 绝对宽度上限：grid 里给 auto 列写百分比 max-width 会变成循环约束，
+     长状态文字会把左边的标题列挤成一个字宽（0.2.23 之后的版式踩过）。 */
+  max-width: 320px;
+  font-size: 12px;
+  color: #a1a1aa;
+}
+
+.setting-row-side input,
+.setting-row-side select {
+  min-width: 170px;
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  color: #e4e4e7;
+  background: #101013;
+  border: 1px solid #3f3f46;
+  border-radius: 7px;
+}
+/* 地址、路径这类输入框要有可读宽度，否则值会被截成一个词。 */
+.setting-row-side input {
+  min-width: 230px;
+}
+
+.setting-row-extra {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.setting-row-mono {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: #a1a1aa;
+}
+
+.settings-subrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 6px 0 6px 12px;
+  border-left: 2px solid #2e2e33;
+}
+
+.settings-subpath {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: #b8b8c3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-subempty {
+  font-size: 12.5px;
+  color: #71717a;
+}
+
+.settings-addrow {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.settings-addrow input {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  color: #e4e4e7;
+  background: #101013;
+  border: 1px solid #3f3f46;
+  border-radius: 7px;
+}
+
+.settings-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 12px 20px;
+  border-top: 1px solid #26262b;
+  background: #131317;
+}
+
+.settings-hint {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #71717a;
+}
+
+.settings-group-label {
+  margin: 26px 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #7d7d85;
+}
+
+.settings-group-label:first-of-type {
+  margin-top: 0;
+}
+
+.settings-empty {
+  padding: 40px 0;
+  font-size: 13px;
+  color: #8a8a8e;
+}
+
+/* 开关：语义还是 checkbox，只是换成胶囊外观，键盘焦点仍然看得见。 */
+.settings-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.settings-switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.settings-switch .switch-track {
+  position: relative;
+  width: 40px;
+  height: 23px;
+  border-radius: 999px;
+  background: #3f3f46;
+  transition: background-color 140ms ease;
+}
+
+.settings-switch .switch-track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: #fafafa;
+  transition: transform 140ms ease;
+}
+
+.settings-switch input:checked + .switch-track {
+  background: #f24e4e;
+}
+
+.settings-switch input:enabled:hover + .switch-track {
+  background: #4b4b54;
+}
+
+.settings-switch input:checked:enabled:hover + .switch-track {
+  background: #ff7070;
+}
+
+.settings-switch input:checked + .switch-track::after {
+  transform: translateX(17px);
+}
+
+.settings-switch input:focus-visible + .switch-track {
+  outline: 2px solid #f24e4e;
+  outline-offset: 3px;
+}
+
+.settings-switch input:disabled + .switch-track {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 复选框在 .fill-interactions 下有整块悬停底色，胶囊开关不需要那层底。 */
+.fill-interactions label.settings-switch:has(input[type="checkbox"]) {
+  padding: 0;
+  border-radius: 0;
+}
+
+.fill-interactions label.settings-switch:has(input[type="checkbox"]:enabled):hover,
+.fill-interactions label.settings-switch:has(input[type="checkbox"]:focus-visible) {
+  background-color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-switch :is(.switch-track, .switch-track::after) {
+    transition: none;
+  }
+}
+
+/* 设置页右侧控件的通用尺寸：按钮、状态点。子组件（快捷键、软件更新）与设置正文共用。 */
+.setting-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 7px 13px;
+  border: 1px solid #3f3f46;
+  border-radius: 7px;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.setting-button:disabled {
+  opacity: 0.45;
+}
+
+.setting-button-ghost {
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #a1a1aa;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+@media (max-width: 860px) {
+  .setting-row {
+    column-gap: 14px;
+    padding: 14px 16px;
+  }
+
+  .setting-row-side {
+    max-width: 220px;
+  }
+
+  .setting-row-side input,
+  .setting-row-side select {
+    min-width: 120px;
+  }
+
+  .settings-card-footer,
+  .settings-card-pad {
+    padding: 14px 16px;
+  }
+}

@@ -209,7 +209,9 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
 </section>
 
 <style>
-  .model-settings { max-width: 640px; }
+  .model-settings { width: 100%; }
+  /* 卡片变宽了，表单本身仍按可读宽度收着，别拉成一整条。 */
+  .model-settings fieldset { max-width: 620px; }
   fieldset { margin-top: 24px; }
   legend { font-size: 14px; font-weight: 500; }
   label { display: block; font-size: 13px; color: #b8b8c3; }

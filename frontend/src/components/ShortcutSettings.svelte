@@ -1,6 +1,7 @@
 <script lang="ts">
   import { get } from "svelte/store";
   import { shortcutActions, shortcutSettings, defaultShortcuts, eventShortcut, shortcutLabel, validateShortcuts, saveShortcuts, type ShortcutId } from "../lib/shortcut-settings";
+  import SettingsRow from "./SettingsRow.svelte";
   let draft = $state({ ...get(shortcutSettings) });
   let recording = $state<ShortcutId | null>(null);
   let message = $state("");
@@ -25,32 +26,36 @@
   }
 </script>
 
-<section class="shortcut-settings space-y-4">
-  <p class="text-xs text-muted">点击按键后按下新组合，支持 Ctrl、Alt、Shift、Win / Cmd。Esc 取消录制，Shift + Tab 移动焦点；录制时可直接按 Tab 进行绑定。</p>
-  <p class="text-xs text-muted">图片操作需选中图片；预览需鼠标停在图片上。输入文字和打开设置时不触发。Esc 保留用于关闭或取消。系统占用的组合可能无法使用。</p>
-  <p class="text-xs text-muted">侧栏默认：Tab 切换右侧栏，~ / ` 键切换左侧栏。仅在主界面且未输入文字时生效。</p>
-  <div class="space-y-2">
-    {#each shortcutActions as action}
-      <div class="shortcut-row">
-        <span class="flex-1 text-sm">{action.label}</span>
-        <button class="rounded px-3 py-2 text-xs bg-surface-3 min-w-[110px]" aria-label={`设置${action.label}快捷键`} aria-pressed={recording === action.id}
-          onclick={() => { recording = action.id; message = "请按下新快捷键"; }}
-          onblur={() => recording = null} onkeydown={(e) => capture(e, action.id)}>{recording === action.id ? "请按键…" : shortcutLabel(draft[action.id])}</button>
-        <button class="rounded px-2 py-2 text-xs text-muted" onclick={() => { draft[action.id] = ""; message = "尚未保存"; }}>清除</button>
+<section class="shortcut-settings">
+  <div class="settings-card">
+    <div class="settings-card-body">
+      {#each shortcutActions as action}
+        <SettingsRow title={action.label}>
+          {#snippet control()}
+            <button class="shortcut-key" aria-label={`设置${action.label}快捷键`} aria-pressed={recording === action.id}
+              onclick={() => { recording = action.id; message = "请按下新快捷键"; }}
+              onblur={() => recording = null} onkeydown={(e) => capture(e, action.id)}>{recording === action.id ? "请按键…" : shortcutLabel(draft[action.id])}</button>
+            <button class="shortcut-clear" onclick={() => { draft[action.id] = ""; message = "尚未保存"; }}>清除</button>
+          {/snippet}
+        </SettingsRow>
+      {/each}
+      <div class="settings-card-footer">
+        <span class="settings-hint" role="status">{message || "保存在当前设备，重启后保留。"}</span>
+        <button class="setting-button" onclick={() => { draft = { ...defaultShortcuts }; recording = null; message = "已恢复默认，点击保存生效"; }}>恢复默认</button>
+        <button class="setting-button bg-accent text-bg" onclick={save}>保存快捷键</button>
       </div>
-    {/each}
+    </div>
   </div>
-  <p class="text-xs text-muted" role="status">{message || "保存在当前设备，重启后保留。修改后点击保存。"}</p>
-  <div class="flex gap-2 pt-3">
-    <button class="rounded px-3 py-2 text-xs" onclick={() => { draft = { ...defaultShortcuts }; recording = null; message = "已恢复默认，点击保存生效"; }}>恢复默认</button>
-    <button class="rounded px-3 py-2 text-xs bg-accent text-bg" onclick={save}>保存快捷键</button>
-  </div>
+  <p class="settings-hint">
+    点击按键后按下新组合，支持 Ctrl、Alt、Shift、Win / Cmd。Esc 取消录制，Shift + Tab 移动焦点；录制时可直接按 Tab 进行绑定。
+    输入文字、输入法和打开设置时不触发；图片操作需选中图片，预览需鼠标停在图片上。系统占用的组合可能无法使用。
+  </p>
 </section>
 
 <style>
-  .shortcut-settings { max-width: 640px; }
-  .shortcut-settings > p { line-height: 1.8; font-size: 13px; }
-  .shortcut-row { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 0; border-bottom: 1px solid #2e2e33; }
-  .shortcut-row button { background: transparent; border: 1px solid #3f3f46; font-size: 12px; }
-  .shortcut-row button:last-child { border: 0; }
+  .shortcut-settings { display: flex; flex-direction: column; gap: 12px; }
+  .shortcut-settings > .settings-hint { padding: 0 2px; }
+  .shortcut-key { min-width: 118px; padding: 7px 12px; font-size: 12px; background: #101013; border: 1px solid #3f3f46; border-radius: 7px; color: #e4e4e7; }
+  .shortcut-clear { font-size: 12px; color: #8a8a8e; }
+  .shortcut-clear:hover { color: #e4e4e7; }
 </style>

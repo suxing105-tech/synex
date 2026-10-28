@@ -471,3 +471,51 @@ body,
     padding: 14px 16px;
   }
 }
+
+/* 预览层顶栏的图标按钮：图片与视频共用一套尺寸、状态和读数。
+   需要字面的动作（← 返回、对比）保持文字按钮，缩放三件套用图标更干净。 */
+.viewer-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: #c9c9cf;
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.viewer-icon-btn:enabled:hover,
+.viewer-icon-btn:enabled:focus-visible {
+  background-color: #323237;
+  color: #fafafa;
+}
+
+.viewer-icon-btn[aria-pressed="true"] {
+  background-color: #f24e4e;
+  color: #0e0e10;
+}
+
+.viewer-icon-btn[aria-pressed="true"]:enabled:hover,
+.viewer-icon-btn[aria-pressed="true"]:enabled:focus-visible {
+  background-color: #ff7070;
+  color: #0e0e10;
+}
+
+/* 图标按钮没有字可以划线：共享交互的焦点口径是「底色 + 下划线」，
+   下划线落在图标下面只会多一条杂线。焦点已经由上面的 :enabled:focus-visible
+   换底色表达，这里只撤掉下划线，不引入描边（共享交互只许改底色和文字色）。 */
+.fill-interactions button.viewer-icon-btn:focus-visible {
+  text-decoration: none;
+}
+
+/* 倍率读数：等宽数字 + 固定宽度，滚轮连滚时按钮不会左右跳 */
+.viewer-zoom-readout {
+  min-width: 3.1em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: #8a8a92;
+}
+

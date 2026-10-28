@@ -40,7 +40,7 @@ describe("视频放大查看：与图片同一组开关", () => {
     expect(ui.getByRole("button", { name: "适应窗口" }).getAttribute("aria-pressed")).toBe("true");
     expect(ui.getByRole("button", { name: "100%" }).getAttribute("aria-pressed")).toBe("false");
     // 顶栏最后一个读数就是当前倍率（fit 态画布量不到，按比例 = 100%）
-    const readouts = ui.container.querySelectorAll("header span.text-muted");
+    const readouts = ui.container.querySelectorAll("header .viewer-zoom-readout");
     expect(readouts[readouts.length - 1].textContent).toBe("100%");
   });
 
@@ -146,11 +146,15 @@ describe("视频放大的结构口径", () => {
       expect(src).toContain("<ViewerZoomControls {zoom} />");
     }
     const controls = readFileSync("src/components/ViewerZoomControls.svelte", "utf8");
-    expect(controls).toContain("适应窗口");
-    expect(controls).toContain(">100%<");
+    // 图标化之后，字面只剩 aria-label 与 title：它们才是可访问名和测试锚点
+    expect(controls).toContain('aria-label="适应窗口"');
+    expect(controls).toContain('aria-label="100%"');
+    expect(controls).toContain('<Icon name="fit-screen"');
+    expect(controls).toContain('<Icon name="actual-size"');
     // 文案只许长在共享组件里，两边各自硬编码迟早漂移
     expect(raw).not.toContain(">适应窗口<");
     expect(lightboxRaw).not.toContain(">适应窗口<");
+    expect(lightboxRaw).not.toContain(">100%<");
   });
 
   it("缩放开关排在顶栏所有按钮之后（Svelte 5 事件委托）", () => {

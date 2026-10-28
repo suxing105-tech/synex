@@ -20,6 +20,10 @@ describe("lib/icons 数据契约", () => {
       "plus",
       "more-vertical",
       "arrow-left",
+      // 预览层顶栏：适应窗口 / 原始像素 / 用系统播放器打开（图片与视频同一组图标）
+      "fit-screen",
+      "actual-size",
+      "external-link",
       // comfyui 不在这里：它走 Icon.svelte 的 PNG 真 logo 通道（见 "comfyui 走 PNG" 测试）
     ];
     for (const n of required) {

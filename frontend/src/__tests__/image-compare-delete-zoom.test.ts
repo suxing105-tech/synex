@@ -105,7 +105,7 @@ it('单图滚轮向前放大、向后缩小，适应窗口可复位', async () =
   expect(enlarged).toBeGreaterThan(before);
   await fireEvent.wheel(canvas, { deltaY: 100, clientX: 450, clientY: 300 });
   expect(parseFloat(img.style.width)).toBeLessThan(enlarged);
-  await fireEvent.click(screen.getByText('适应窗口'));
+  await fireEvent.click(screen.getByRole('button', { name: '适应窗口' }));
   expect(parseFloat(img.style.width)).toBeCloseTo(before, 0);
 });
 

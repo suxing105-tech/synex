@@ -156,6 +156,21 @@ export const ICON_PATHS: Record<string, string> = {
     '<rect x="2" y="3" width="20" height="5" rx="1"/>' +
     '<line x1="10" y1="12" x2="14" y2="12"/>',
 
+  // 适应窗口：四角取景框 + 里面的画面（图片 / 视频预览层顶栏共用）
+  "fit-screen":
+    '<path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9"/>' +
+    '<path d="M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9"/>' +
+    '<path d="M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15"/>' +
+    '<path d="M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15"/>' +
+    '<rect x="8.5" y="8.5" width="7" height="7" rx="1"/>',
+
+  // 原始像素（100%）：放大镜 + 中间一个加号
+  "actual-size":
+    '<circle cx="11" cy="11" r="7"/>' +
+    '<line x1="20" y1="20" x2="16.2" y2="16.2"/>' +
+    '<line x1="11" y1="8.5" x2="11" y2="13.5"/>' +
+    '<line x1="8.5" y1="11" x2="13.5" y2="11"/>',
+
   // comfyui 走 PNG 真 logo（品牌识别强），见 Icon.svelte 的 special case；
   // PNG 在 frontend/public/comfyui-logo.png，由 vite 静态托管。
 };

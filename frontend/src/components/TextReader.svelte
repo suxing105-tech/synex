@@ -9,6 +9,7 @@
   import { onMount, tick } from 'svelte';
   import { get } from 'svelte/store';
   import { backendUrl } from '../lib/backend-url';
+import { basenameOnly } from '../lib/media-format';
   import { imagesApi, videosApi } from '../lib/api';
   import { isTextItem } from '../lib/items';
   import { isTypingTarget, modalFocus } from '../lib/modal-focus';
@@ -524,11 +525,13 @@
           <input placeholder="搜索图库素材" bind:value={mediaQuery} onkeydown={(e) => { if (e.key === 'Enter') void loadMedia(); }} />
           <button onclick={() => void loadMedia()}>搜索</button>
         </div>
-        <div class="media-grid">
+        <div class="media-pick-grid">
           {#each mediaItems as picked (picked.id)}
-            <button onclick={() => void insertMedia(picked)}>
-              {#if picked.thumbnail_url || picked.original_url}<img src={backendUrl(picked.thumbnail_url || picked.original_url!)} alt="" loading="lazy" />{/if}
-              <span>{picked.filename}</span>
+            <button class="media-card" title={picked.filename} onclick={() => void insertMedia(picked)}>
+              <span class="media-card-media" style="aspect-ratio: 4 / 3;">
+                {#if picked.thumbnail_url || picked.original_url}<img class="media-card-img" src={backendUrl(picked.thumbnail_url || picked.original_url!)} alt="" loading="lazy" decoding="async" onload={(e) => e.currentTarget.classList.add("is-loaded")} />{/if}
+              </span>
+              <span class="media-card-footer media-card-footer--1l"><span class="media-card-name">{basenameOnly(picked.filename)}</span></span>
             </button>
           {/each}
         </div>
@@ -596,10 +599,9 @@
   .modal-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-top: 15px; }
   .media-search { display: flex; gap: 10px; }
   .media-search input { flex: 1; }
-  .media-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; max-height: 420px; overflow: auto; margin: 16px 0; }
-  .media-grid button { overflow: hidden; white-space: normal; margin: 0; }
-  .media-grid img { width: 100%; height: 100px; object-fit: cover; }
-  .media-grid span { display: block; font-size: 11px; overflow-wrap: anywhere; margin: 6px; }
+  /* 素材卡走 app.css 的 .media-card 共用规范。本弹窗的 .text-modal button 会把
+     按钮刷成带边框的小按钮，这里必须把它复位，否则共用卡片样式全被吃掉。 */
+  .media-pick-grid { max-height: 420px; }
+  .media-pick-grid button { border: 0; border-radius: var(--thumb-radius); background: var(--thumb-bg); padding: 0; margin: 0; color: inherit; }
   .asset-large { display: block; width: 100%; max-height: 60%; object-fit: contain; }
-  @media (max-width: 900px) { .media-grid { grid-template-columns: repeat(3, 1fr); } }
 </style>

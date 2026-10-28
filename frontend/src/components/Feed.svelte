@@ -8,7 +8,8 @@
   import GallerySearch from "./GallerySearch.svelte";
   import TypeChips from "./TypeChips.svelte";
   import { copyOriginalImage } from "../lib/image-clipboard";
-  import { formatDuration, isAcceptedMediaFile, isPsdFilename, mediaKindOfFilename, thumbnailAspectRatio, thumbnailHeightToWidthRatio, thumbnailObjectFit } from "../lib/media-format";
+  import { basenameOnly, footerHeightFor, footerMetaText, footerTierFor, isAcceptedMediaFile, THUMB_GAP, isPsdFilename, mediaKindOfFilename, thumbnailAspectRatio, thumbnailHeightToWidthRatio, thumbnailObjectFit } from "../lib/media-format";
+  import { formatSize } from "../lib/ws";
   import { mediaSummary, selectionSummary } from "../lib/counts";
   import { isTextItem, itemUid, kindsIn } from "../lib/items";
   import { matchesAction, shortcutBlocked } from "../lib/shortcut-settings";
@@ -428,6 +429,8 @@
 
   function imageLoaded(item: MediaFeedItem, image: HTMLImageElement) {
     image.style.visibility = "visible";
+    if (!loadedIds.has(item.id)) loadedIds = new Set([...loadedIds, item.id]);
+    if (brokenIds.has(item.id)) brokenIds = new Set([...brokenIds].filter((id) => id !== item.id));
     if (previewFailedIds.has(item.id)) {
       previewFailedIds = new Set([...previewFailedIds].filter(id => id !== item.id));
     }
@@ -441,6 +444,53 @@
         !isTextItem(row) && row.id === item.id ? { ...row, width, height } : row,
       ));
     }
+  }
+
+/**
+   * 缩略图读图失败。三种口径不能混：
+   * 视频海报取不到 → 只留图区底色，绝不能走 checkMissing；
+   * 音频波形 404 → 只是还没生成，走 waveFailedIds 降级成音符；
+   * 图片读不出 → 标 broken（收掉扫光）并做丢失核对。
+   */
+  function onThumbError(it: MediaFeedItem, image: HTMLImageElement) {
+    if (it.kind === "video") return;
+    if (it.kind === "audio") {
+      waveFailedIds = new Set([...waveFailedIds, it.id]);
+      image.style.visibility = "hidden";
+      return;
+    }
+    brokenIds = new Set([...brokenIds, it.id]);
+    if (isPsdFilename(it.filename)) previewFailedIds = new Set([...previewFailedIds, it.id]);
+    void checkMissing(it.id, image);
+  }
+
+  /** 页脚第二行：尺寸 · 大小 · 时长。size_bytes 可能是旧数据里的 undefined，先挡掉。 */
+  function metaFor(it: MediaFeedItem): string {
+    const size = typeof it.size_bytes === "number" && Number.isFinite(it.size_bytes)
+      ? formatSize(it.size_bytes)
+      : null;
+    return footerMetaText({ width: it.width, height: it.height, sizeText: size, durationSeconds: it.duration_seconds });
+  }
+
+  /** 图区占位：图到了、或已确定出图失败，就不再铺扫光。 */
+  function showSkeleton(it: MediaFeedItem): boolean {
+    return !loadedIds.has(it.id)
+      && !brokenIds.has(it.id)
+      && !waveFailedIds.has(it.id)
+      && !previewFailedIds.has(it.id);
+  }
+
+  /**
+   * 视频卡片的 hover 播放动作。Svelte 只把 muted 写成 attribute，而 autoplay 策略读的是
+   * DOM 属性 muted，两者不同步会被 Chromium 拦掉，所以进来先显式置一次。
+   * 解不开容器就什么都不做 —— 底下的海报图本来就在，最差也只是不动。
+   */
+  function hoverPlay(node: HTMLVideoElement) {
+    node.muted = true;
+    node.volume = 0;
+    // jsdom 的 play() 返回 undefined，直接 .catch 会在测试里炸；浏览器返回 Promise。
+    const p = node.play();
+    if (p && typeof p.catch === "function") p.catch(() => {});
   }
 
   function aspectFor(it: ItemSummary): string {
@@ -461,6 +511,12 @@
   // 音频缩略图 = 懒生成的波形图。它 404 只说明「还没生成 / ffmpeg 不可用」，
   // 不能走 checkMissing —— 那会把一条正常入库的音频当成丢失文件删掉索引。
   let waveFailedIds = $state<Set<number>>(new Set());
+
+  // 淡入用：图片解码完成的 id。图片默认 opacity 0，加载完成才浮出来，
+  // 替掉以前 onload 里直接 visibility 切换造成的硬 pop-in。
+  let loadedIds = $state<Set<number>>(new Set());
+  // 出过错的卡片不再铺扫光，不然失败文案会压在一直闪的占位上。
+  let brokenIds = $state<Set<number>>(new Set());
 
   // 反向同步：applySelection 写 store.selectedId 但不会反向写到这里的 prop，
   // 导致 handleKey（空格开 Lightbox）读到旧 prop。
@@ -790,7 +846,8 @@
   // 列数 = $targetColumns（4-12），列宽 = 容器宽 / 列数 - gap；贪心按 height 投放。
   // 既保留 mtime 顺序（不 shuffle），又让每列内自然横竖混合。
   // 因为列宽是 px 固定，拖动缩放滑块时缩略图会真的变大变小。
-  const COL_GAP = 8;
+  // 卡片间距的唯一事实源在 lib/media-format.ts；app.css 的 --thumb-gap 由测试钉住同值。
+  const COL_GAP = THUMB_GAP;
   // 首帧还没量到容器宽度时用的列宽（只影响第一次排到哪一列）
   const FALLBACK_COLUMN_WIDTH = 220;
 
@@ -831,6 +888,9 @@
     return (containerWidth - (n - 1) * COL_GAP) / n;
   });
 
+  // 页脚档位只看列宽（同一列所有卡同宽），所以整网一个档位，降级时整网一起降。
+  let footerTier = $derived(footerTierFor(columnWidth));
+
   // 贪心分组
   let columns = $derived.by(() => {
     const n = columnCount;
@@ -841,7 +901,8 @@
     );
     for (const it of $feedItems) {
       const ratio = ratioFor(it);
-      const h = w * ratio + COL_GAP;
+      // 页脚是实体高度，必须算进贪心分列，否则列高系统性偏矮、卡片互相重叠
+      const h = w * ratio + COL_GAP + footerHeightFor(w);
       // 找当前最矮的列
       let target = cols[0];
       for (let i = 1; i < n; i++) if (cols[i].height < target.height) target = cols[i];
@@ -1016,103 +1077,139 @@
               {:else}
               <button
                 type="button"
-                class="thumb relative overflow-hidden rounded-md border border-border bg-surface-2 text-left {$multiSelectedIds.has(it.id) ? 'is-selected' : ''} {$newIds.has(it.id) ? 'new-badge' : ''} {$playingAudio?.id === it.id && it.kind === 'audio' ? 'is-playing' : ''}"
-                style="aspect-ratio: {aspectFor(it)}; width: 100%;"
+                class="thumb media-card {footerTier === 0 ? 'media-card--compact' : ''} {it.kind === 'audio' ? 'is-audio ' : ''}text-left {$multiSelectedIds.has(it.id) ? 'is-selected' : ''} {$playingAudio?.id === it.id && it.kind === 'audio' ? 'is-playing' : ''}"
+                style="--card-footer-h: {footerHeightFor(columnWidth)}px"
                 title={it.filename}
                 onclick={(e) => { if (draggedOriginal) { draggedOriginal = false; return; } onThumbClick(e, it); }}
                 onpointerdown={(e) => pointerOnImage(e, it)}
                 ondragstart={(e) => e.preventDefault()}
-                ondblclick={() => { if (it.kind === "audio") { playAudio(it); return; } if (it.kind === "video") return; openLightbox(it, $mediaItems.findIndex((x) => x.item_type === "media" && x.id === it.id)); }}
+                ondblclick={() => { if (it.kind === "audio") { playAudio(it); return; } if (it.kind === "video") { void openVideo(it); return; } openLightbox(it, $mediaItems.findIndex((x) => x.item_type === "media" && x.id === it.id)); }}
                 oncontextmenu={(e) => openContextMenu(e, it)}
                 onmouseenter={() => (hoveredId = it.id)}
                 onmouseleave={() => { if (hoveredId === it.id) hoveredId = null; }}
               >
-                <img
-                  src={it.thumbnail_url ? backendUrl(it.thumbnail_url) : (it.original_url ? backendUrl(it.original_url) : undefined)}
-                  alt={it.filename}
-                  draggable="false"
-                  onload={(e) => imageLoaded(it, e.currentTarget as HTMLImageElement)}
-                  loading="lazy"
-                  decoding="async"
-                  onerror={(e) => {
-                    if (it.kind === "video") return;
-                    if (it.kind === "audio") {
-                      waveFailedIds = new Set([...waveFailedIds, it.id]);
-                      if (e.currentTarget instanceof HTMLImageElement) e.currentTarget.style.visibility = "hidden";
-                      return;
-                    }
-                    if (isPsdFilename(it.filename)) previewFailedIds = new Set([...previewFailedIds, it.id]);
-                    checkMissing(it.id, e.currentTarget as HTMLImageElement);
-                  }}
-                  class="thumb-img absolute inset-0 w-full h-full"
-                  class:object-cover={thumbnailObjectFit(it.filename) === "cover"}
-                  class:object-contain={thumbnailObjectFit(it.filename) === "contain"}
-                />
-                {#if waveFailedIds.has(it.id)}
-                  <span class="absolute inset-0 flex items-center justify-center text-muted" aria-label="波形暂不可用"><Icon name="music" size={24} /></span>
-                {/if}
-                {#if previewFailedIds.has(it.id)}
-                  <span class="absolute inset-0 flex items-center justify-center px-2 text-center text-xs text-muted" aria-label="PSD 预览不可用">PSD 预览不可用</span>
-                {/if}
-                {#if it.kind === "video" || it.kind === "audio"}
-                  <div
-                    role="button"
-                    tabindex="-1"
-                    class="video-play-btn absolute inset-0 flex items-center justify-center"
-                    title={it.kind === "audio" ? ($playingAudio?.id === it.id ? "暂停音频" : "播放音频") : "播放视频"}
-                    aria-label={(it.kind === "audio" && $playingAudio?.id === it.id ? "暂停 " : "播放 ") + it.filename}
-                    onclick={(e) => { e.stopPropagation(); e.preventDefault(); if (draggedOriginal) { draggedOriginal = false; return; } if (it.kind === "audio") { toggleAudio(it); return; } openVideo(it); }}
-                    onpointerdown={(e) => { e.stopPropagation(); pointerOnImage(e, it); }}
-                    onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openVideo(it); } }}
-                  >
-                    {#if it.kind === "audio" && $playingAudio?.id === it.id}
-                      <svg viewBox="0 0 24 24" aria-hidden="true" class="video-play-icon drop-shadow-lg">
-                        <circle cx="12" cy="12" r="9.2" fill="rgba(0,0,0,0.35)" stroke="#fff" stroke-width="1.5"/>
-                        <path d="M9.9 8.4v7.2M14.1 8.4v7.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
-                      </svg>
-                    {:else}
-                      <svg viewBox="0 0 24 24" aria-hidden="true" class="video-play-icon drop-shadow-lg">
-                        <circle cx="12" cy="12" r="9.2" fill="rgba(0,0,0,0.35)" stroke="#fff" stroke-width="1.5"/>
-                        <path d="M9.7 7.9 16.4 12 9.7 16.1 Z" fill="#fff" stroke="#fff" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
-                      </svg>
+                <!-- 图区与页脚分开：aspect-ratio 只能给图区，给整张卡会把页脚高度算进画面比例。
+                     图区自己 overflow-hidden，所以 hover 放大不会溢到页脚上。 -->
+<div class="media-card-media" style="aspect-ratio: {aspectFor(it)};">
+                  <img
+                    src={it.thumbnail_url ? backendUrl(it.thumbnail_url) : (it.original_url ? backendUrl(it.original_url) : undefined)}
+                    alt={it.filename}
+                    draggable="false"
+                    onload={(e) => imageLoaded(it, e.currentTarget as HTMLImageElement)}
+                    loading="lazy"
+                    decoding="async"
+                    onerror={(e) => onThumbError(it, e.currentTarget as HTMLImageElement)}
+                    class="thumb-img media-card-img"
+                    class:is-loaded={loadedIds.has(it.id)}
+                    class:object-cover={thumbnailObjectFit(it.filename) === "cover"}
+                    class:object-contain={thumbnailObjectFit(it.filename) === "contain"}
+                  />
+                  {#if showSkeleton(it)}
+                    <span class="media-card-skeleton" aria-hidden="true"></span>
+                  {/if}
+                  {#if it.kind === "audio" && !waveFailedIds.has(it.id)}
+                    <!-- 音频卡不直接显示后端那张单色波形 PNG：拿它当蒙版，用 CSS 渐变 + 发光
+                         重画一遍。真振幅数据保留（每张形状仍然不同），观感全站统一。 -->
+                    <span
+                      class="audio-wave"
+                      class:is-live={loadedIds.has(it.id)}
+                      style="--wave: url({backendUrl(it.thumbnail_url || it.original_url || '')})"
+                      aria-hidden="true"
+                    >
+                      <span class="audio-wave-halo"><i class="audio-wave-fill"></i></span>
+                      <i class="audio-wave-fill audio-wave-core"></i>
+                      <i class="audio-wave-line"></i>
+                      <i class="audio-wave-sweep"></i>
+                    </span>
+                    <span class="audio-track" aria-hidden="true">
+                      {#if $playingAudio?.id === it.id}
+                        <span class="audio-progress" style="width: {audioPercent(it)}%;"><i class="audio-progress-knob"></i></span>
+                      {/if}
+                    </span>
+                  {/if}
+                  {#if it.kind === "video" && it.playable && hoveredId === it.id}
+                    <!-- 悬停即播：视频卡不再挂播放按钮，画面自己就是预览。
+                         只把 hovered 这一张挂进 DOM，移开就卸载，绝不让整屏同时解码。 -->
+                    <video
+                      class="media-card-video"
+                      src={it.play_url ? backendUrl(it.play_url) : undefined}
+                      muted
+                      loop
+                      autoplay
+                      playsinline
+                      tabindex="-1"
+                      aria-hidden="true"
+                      use:hoverPlay
+                    ></video>
+                  {/if}
+                  {#if waveFailedIds.has(it.id)}
+                    <span class="absolute inset-0 flex items-center justify-center text-muted" aria-label="波形暂不可用"><Icon name="music" size={24} /></span>
+                  {/if}
+                  {#if previewFailedIds.has(it.id)}
+                    <span class="absolute inset-0 flex items-center justify-center px-2 text-center text-xs text-muted" aria-label="PSD 预览不可用">PSD 预览不可用</span>
+                  {/if}
+                  {#if $comfyuiStatus.running && it.has_workflow && (hoveredId === it.id || $selectedIdStore === it.id || $multiSelectedIds.has(it.id))}
+                    <div
+                      role="button"
+                      tabindex="-1"
+                      class="comfyui-open-btn absolute top-[12px] right-[12px] w-7 h-7 rounded-[6px] flex items-center justify-center bg-black/70 hover:bg-accent text-white backdrop-blur-sm transition-colors cursor-pointer"
+                      title="在 ComfyUI 中打开工作流"
+                      aria-label="在 ComfyUI 中打开工作流"
+                      onclick={(e) => { e.stopPropagation(); e.preventDefault(); openInComfyui(it); }}
+                      onmousedown={(e) => e.stopPropagation()}
+                    >
+                      <Icon name="comfyui" size={15} />
+                    </div>
+                  {/if}
+                </div>
+                {#if footerTier > 0}
+                  <!-- 页脚不依赖图片，立即渲染，本身就是加载占位；NEW 从呼吸角标退成名字前一个红点，
+                       那个点是 .media-card-name.has-new 的 ::before。不要在这里再嵌一层 {#if}：
+                       Svelte 5 会把 {:else} 解析成空分支，整段文件名直接不渲染（踩过，别改回去）。 -->
+                  <div class="media-card-footer {footerTier === 2 ? 'media-card-footer--2l' : 'media-card-footer--1l'}">
+                    <span class="media-card-name" class:has-new={$newIds.has(it.id)}
+                      role="button" tabindex="0" aria-label="图片名称"
+                      onkeydown={(e) => { if (renamingId !== it.id && (e.key === "Enter" || e.key === "F2")) { e.stopPropagation(); e.preventDefault(); void renameImage(it); } }}
+                      onpointerdown={(e) => e.stopPropagation()}
+                      onclick={(e) => { if (renamingId === it.id) e.stopPropagation(); }}
+                      ondblclick={(e) => { e.stopPropagation(); e.preventDefault(); if (renamingId !== it.id) void renameImage(it); }}>
+                      {#if renamingId === it.id}
+                        <input bind:this={renameInput} bind:value={renameValue} aria-label="编辑图片名称" class="image-rename" style="width: 180px; max-width: 100%;"
+                          readonly={renameSaving}
+                          onkeydown={(e) => { e.stopPropagation(); if (e.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); void saveRename(it); } else if (e.key === 'Escape') { e.preventDefault(); renamingId = null; } }}
+                          onblur={() => saveRename(it)} />
+                      {:else}
+                        {basenameOnly(it.filename)}
+                      {/if}
+                    </span>
+                    {#if footerTier === 2}
+                      <span class="media-card-meta">{metaFor(it)}</span>
                     {/if}
                   </div>
                 {/if}
-                {#if it.kind === "audio" && it.duration_seconds}
-                  <span class="media-duration">{formatDuration($playingAudio?.id === it.id && $audioProgress > 0 ? $audioProgress : it.duration_seconds)}</span>
-                {/if}
-                {#if it.kind === "audio" && $playingAudio?.id === it.id}
-                  <span class="audio-progress" style="width: {audioPercent(it)}%;" aria-hidden="true"></span>
-                {/if}
-                <div class="image-name absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] truncate"
-                  role="button" tabindex="0" aria-label="图片名称"
-                  onkeydown={(e) => { if (renamingId !== it.id && (e.key === "Enter" || e.key === "F2")) { e.stopPropagation(); e.preventDefault(); void renameImage(it); } }}
-                  onpointerdown={(e) => e.stopPropagation()}
-                  onclick={(e) => { if (renamingId === it.id) e.stopPropagation(); }}
-                  ondblclick={(e) => { e.stopPropagation(); e.preventDefault(); if (renamingId !== it.id) void renameImage(it); }}>
-                  {#if renamingId === it.id}
-                    <input bind:this={renameInput} bind:value={renameValue} aria-label="编辑图片名称" class="image-rename" style="width: 180px; max-width: 100%;"
-                      readonly={renameSaving}
-                      onkeydown={(e) => { e.stopPropagation(); if (e.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); void saveRename(it); } else if (e.key === 'Escape') { e.preventDefault(); renamingId = null; } }}
-                      onblur={() => saveRename(it)} />
-                  {:else}{it.filename}{/if}
-                </div>
-
-                {#if $comfyuiStatus.running && it.has_workflow && (hoveredId === it.id || $selectedIdStore === it.id || $multiSelectedIds.has(it.id))}
+                {#if it.kind === "audio"}
                   <div
                     role="button"
                     tabindex="-1"
-                    class="comfyui-open-btn absolute top-1 right-1 w-7 h-7 rounded-[6px] flex items-center justify-center bg-black/70 hover:bg-accent text-white backdrop-blur-sm transition-colors cursor-pointer"
-                    title="在 ComfyUI 中打开工作流"
-                    aria-label="在 ComfyUI 中打开工作流"
-                    onclick={(e) => { e.stopPropagation(); e.preventDefault(); openInComfyui(it); }}
-                    onmousedown={(e) => e.stopPropagation()}
+                    class="audio-play-btn"
+                    title={$playingAudio?.id === it.id ? "暂停音频" : "播放音频"}
+                    aria-label={($playingAudio?.id === it.id ? "暂停 " : "播放 ") + it.filename}
+                    onclick={(e) => { e.stopPropagation(); e.preventDefault(); if (draggedOriginal) { draggedOriginal = false; return; } toggleAudio(it); }}
+                    onpointerdown={(e) => { e.stopPropagation(); pointerOnImage(e, it); }}
+                    onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleAudio(it); } }}
                   >
-                    <Icon name="comfyui" size={15} />
+                    {#if $playingAudio?.id === it.id}
+                      <svg viewBox="0 0 24 24" aria-hidden="true" class="audio-play-icon drop-shadow-lg">
+                        <circle cx="12" cy="12" r="9.2" fill="rgba(0,0,0,0.28)" stroke="#fff" stroke-width="1.25"/>
+                        <path d="M9.9 8.4v7.2M14.1 8.4v7.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+                      </svg>
+                    {:else}
+                      <svg viewBox="0 0 24 24" aria-hidden="true" class="audio-play-icon drop-shadow-lg">
+                        <circle cx="12" cy="12" r="9.2" fill="rgba(0,0,0,0.28)" stroke="#fff" stroke-width="1.25"/>
+                        <path d="M9.7 7.9 16.4 12 9.7 16.1 Z" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"/>
+                      </svg>
+                    {/if}
                   </div>
-                {/if}
-                {#if $newIds.has(it.id)}
-                  <div class="absolute bottom-8 left-1 bg-success text-bg text-[10px] font-bold px-1.5 rounded shadow">NEW</div>
                 {/if}
               </button>
               {/if}
@@ -1168,20 +1265,27 @@
 <FolderPickerModal open={destinationOpen} folders={$folders} title="选择保存文件夹" subtitle="原文件会保留，复制到所选文件夹。" allowNone={false} includeSystem={true} onPick={finishDestination} onClose={() => finishDestination(null)} />
 
 <style>
-  .thumb.is-selected::after { content: ""; position: absolute; inset: 0; box-sizing: border-box; border: 2px solid #d4d4d4; border-radius: inherit; pointer-events: none; z-index: 3; }
+  /* 缩略图的形状语言（圆角 / hover 描边 / 选中外圈环 / 淡入 / 页脚）统一在 app.css 的
+     .media-card* 上，Feed 与详情面板、参考帧、素材选择器共用同一套，这里不再各自定义。 */
   .image-rename { min-width: 0; border: 1px solid #888; border-radius: 3px; background: #222; color: #eee; padding: 1px 3px; outline: none; font: inherit; }
   .import-progress { position: sticky; top: 0; z-index: 25; width: fit-content; margin: 0 auto 8px; padding: 6px 12px; background: #292929; border-radius: 16px; font-size: 12px; color: #ddd; }
   /* 「所有素材」里的文本卡：21:9 横幅只读入口。徽标 + 标题一行 + 摘录两行，点开进中间栏的阅读层。
      卡片只有约 1/3 列宽那么高，装不下第四行，所以悬停提示整行删掉（标题 tooltip 够用）。 */
   .text-card {
     position: relative; display: flex; flex-direction: column; gap: 3px; flex: none; min-height: 0;
-    padding: 8px 10px; border: 1px solid rgb(50 50 55); border-radius: 6px; overflow: hidden;
+    padding: 8px 10px; border: 0; border-radius: var(--thumb-radius); overflow: hidden;
     background: linear-gradient(180deg, #232326, #1c1c1f); color: #d8d8dc;
     text-align: left; cursor: pointer; user-select: none;
+    transition: box-shadow 160ms ease;
   }
-  .text-card:hover { border-color: #6a6a70; background: linear-gradient(180deg, #27272b, #1f1f22); }
-  /* 选中的文本卡与图片卡同一套描边，右侧栏随之切换成文本详情 */
-  .text-card.is-selected { border-color: #d4d4d4; box-shadow: inset 0 0 0 1px #d4d4d4; }
+  /* hover 不描边：文本卡没有可放大的画面，只换一档底色 */
+  .text-card:hover {
+    background: linear-gradient(180deg, #27272b, #1f1f22);
+  }
+  /* 选中的文本卡与图片卡同一套 1px 描边，右侧栏随之切换成文本详情 */
+  .text-card.is-selected {
+    box-shadow: 0 0 0 1px var(--thumb-ring), 0 4px 14px rgba(0, 0, 0, 0.45);
+  }
   .text-tool { border: 1px solid rgb(58 58 65); background: #232327; color: #d9d8e0; margin-left: 6px; }
   .empty-text-actions { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 12px; color: #a9a7b3; font-size: 12.5px; }
   .empty-text-actions button { border: 1px solid rgb(58 58 65); border-radius: 6px; background: #232327; color: #dddce4; padding: 6px 12px; font-size: 12px; cursor: pointer; margin: 0 4px; }
@@ -1212,14 +1316,104 @@
     margin: 0; flex: 1; font-size: 11px; line-height: 1.4; color: #8a8a8e;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
-  /* 音频卡：时长是唯一硬信息，放在左上角避开底部文件名条 */
-  .media-duration {
-    position: absolute; top: 6px; left: 6px; z-index: 2; padding: 1px 5px; border-radius: 5px;
-    background: rgba(0, 0, 0, .62); color: #eaeaea; font-size: 10.5px;
-    font-variant-numeric: tabular-nums; pointer-events: none;
-  }
   /* 播放中的音频卡不描红边 —— 边框与图片/视频完全一致，只靠顶部进度线和暂停图标表意 */
-  .audio-progress { position: absolute; top: 0; left: 0; height: 2px; background: #f24e4e; opacity: .9; pointer-events: none; transition: width .12s linear; }
+  /* ---------- 音频缩略图：全站一套「频谱波形」 ----------
+     后端那张 PNG 是透明底的单色波形，这里只把它当蒙版，颜色与发光全由 CSS 给：
+     频谱从左到右走蓝→青→绿→白核→紫→accent 红，两端安静处自然收细（真振幅决定的）。
+     改颜色只动 --wave-hue 一个变量。 */
+  .audio-wave {
+    --wave-hue: linear-gradient(90deg, #60a5fa 0%, #2dd4bf 24%, #4ade80 42%, #ffffff 52%, #a78bfa 68%, #6366f1 84%, #f24e4e 100%);
+    /* 波形纵向放大倍数：后端那张 PNG 只在中间约 55% 高的一条里画波形，上下是透明留白，
+       蒙版铺满卡片时看着就细长。放大只走 mask-size，不写静态 transform ——
+       transform 是播放中呼吸动画 audioWaveBreath 的地盘，静态值会被动画整条覆盖。
+       嫌细就调大这个数（180% = 波形占满卡面约九成高），嫌挤就调小。 */
+    --wave-size-y: 180%;
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+    /* 播放中轻轻呼吸：只有 $playingAudio 那一张在动，不是一满屏一起抖 */
+    transform-origin: 50% 50%;
+    transition: opacity 180ms ease-out;
+  }
+  .audio-wave.is-live { opacity: 1; }
+  /* 波形 PNG 退成加载/失败探针：还要它触发 onload/onerror，但不再显示 */
+  .media-card.is-audio .media-card-img { opacity: 0; }
+  .audio-wave-fill,
+  .audio-wave-core {
+    position: absolute;
+    inset: 0;
+    background-image: var(--wave-hue);
+    -webkit-mask-image: var(--wave);
+    mask-image: var(--wave);
+    -webkit-mask-size: 100% var(--wave-size-y);
+    mask-size: 100% var(--wave-size-y);
+    -webkit-mask-position: center;
+    mask-position: center;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+  }
+  /* 外圈光晕：filter 在 mask 之后作用于子树，所以 blur 必须套在没蒙版的父层上 */
+  .audio-wave-halo { filter: blur(7px) saturate(1.4); opacity: .7; }
+  .audio-wave-core { filter: saturate(1.1); }
+  /* 贯穿整幅的那条细亮线：波形两端静默时也有它，参考图就是这个骨架 */
+  .audio-wave-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(50% - 0.5px);
+    height: 1px;
+    background: linear-gradient(90deg, transparent 0%, #cfe4ff 10%, #ffffff 50%, #cfe4ff 90%, transparent 100%);
+    opacity: .55;
+  }
+  /* hover 扫光：一次一道，同一时刻最多一张卡在扫 */
+  .audio-wave-sweep {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(100deg, transparent 40%, rgba(255, 255, 255, .9) 50%, transparent 60%);
+    -webkit-mask-image: var(--wave);
+    mask-image: var(--wave);
+    -webkit-mask-size: 100% var(--wave-size-y);
+    mask-size: 100% var(--wave-size-y);
+    -webkit-mask-position: center;
+    mask-position: center;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    opacity: 0;
+  }
+  .media-card:hover .audio-wave-sweep { animation: audioWaveSweep 900ms ease-out; }
+  .media-card.is-playing .audio-wave { animation: audioWaveBreath 2.6s ease-in-out infinite alternate; }
+  @keyframes audioWaveSweep {
+    from { transform: translateX(-55%); opacity: 0; }
+    20% { opacity: .95; }
+    to { transform: translateX(55%); opacity: 0; }
+  }
+  @keyframes audioWaveBreath {
+    from { transform: scaleY(1); }
+    to { transform: scaleY(1.14); }
+  }
+  /* 进度条挪到波形下面（参考图的位置），不再是压在图区顶上的那条红线 */
+  .audio-track {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 8px;
+    height: 2px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, .14);
+    pointer-events: none;
+  }
+  .audio-progress { position: absolute; top: 0; left: 0; height: 2px; border-radius: 2px; background: linear-gradient(90deg, #2dd4bf, #a78bfa); opacity: .95; pointer-events: none; transition: width .12s linear; }
+  .audio-progress-knob {
+    position: absolute;
+    right: -3px;
+    top: -2px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #ffe9d6;
+    box-shadow: 0 0 8px 1px rgba(255, 214, 170, .75);
+  }
   .feed-more { text-align: center; padding: 14px 0 6px; font-size: 11.5px; color: #8a8a8e; }
   .feed-more-hint { color: #5c5c62; }
   /* 工具栏两段式布局。
@@ -1252,6 +1446,8 @@
        纵向交给父级 overflow-y-auto 处理 */
     overflow-x: auto;
     overflow-y: visible;
+    /* 选中描边与投影向外扩 1px + 阴影，不给这点余量就会被左右边缘裁掉 */
+    padding: 2px;
   }
   .masonry-grid {
     display: grid;
@@ -1269,28 +1465,42 @@
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
     z-index: 2;
   }
-  .video-play-btn { cursor: pointer; z-index: 2; pointer-events: none; }
-  .video-play-icon {
-    width: 17%;
-    height: auto;
-    aspect-ratio: 1 / 1;
-    max-width: 35px;
-    min-width: 12px;
+  /* 音频播放控件在页脚右端（文件名那两行的右边），不压在波形上。
+     尺寸跟着页脚高度走：两行页脚 44px → 32px；单行 26px → 20px；
+     页脚被隐藏（卡太窄）时退到图区右下角——播放入口不能跟着页脚一起消失。 */
+  .media-card.is-audio {
+    --audio-btn: clamp(20px, calc(var(--card-footer-h, 0px) - 12px), 34px);
+  }
+  /* 文件名要让开角标，否则长名字会伸到按钮底下 */
+  .media-card.is-audio .media-card-footer {
+    padding-right: calc(8px + var(--audio-btn) + 6px);
+  }
+  .audio-play-btn {
+    position: absolute;
+    right: 8px;
+    /* 在页脚那条高度里垂直居中；没有页脚时贴卡片底 */
+    bottom: max(4px, calc((var(--card-footer-h, 0px) - var(--audio-btn)) / 2));
+    width: var(--audio-btn);
+    height: var(--audio-btn);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 2;
+  }
+  .audio-play-icon {
+    width: 100%;
+    height: 100%;
     pointer-events: auto;
-    opacity: 0.3;
+    opacity: 0.9;
     transition: transform 0.15s ease, opacity 0.15s ease;
   }
-  .video-play-btn:hover .video-play-icon {
-    opacity: 0.6;
-    transform: scale(1.08);
+  .audio-play-btn:hover .audio-play-icon {
+    opacity: 1;
+    transform: scale(1.06);
   }
-  .thumb { user-select: none; touch-action: none; flex: none; min-height: 0; padding: 0; }
-  .thumb-img {
-    transition: transform 0.35s cubic-bezier(0.2, 0.6, 0.2, 1); will-change: transform;
-  }
-  .thumb:hover .thumb-img {
-    transform: scale(1.04);
-  }
+  /* 图片的淡入与 hover 放大搬到了全局 .media-card-img；这里只留卡片自身的交互约束 */
+  .thumb { user-select: none; touch-action: none; flex: none; min-height: 0; }
   /* 列数滑块：精致风格 — 细轨 + 圆形 thumb + filled 进度 + hover 反馈 */
   .columns-slider {
     -webkit-appearance: none;

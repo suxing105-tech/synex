@@ -44,7 +44,7 @@
 
 <figure class="vt-frame" aria-label="{title} 参考帧">
   {#if phase === "ready"}
-    <button class="vt-thumb" title="点击放大" aria-label="放大 {title}" onclick={() => zoomed = !zoomed}>
+    <button class="vt-thumb media-chip" title="点击放大" aria-label="放大 {title}" onclick={() => zoomed = !zoomed}>
       <img src={frame} alt="{title} 参考帧" class:zoomed draggable="false" />
     </button>
     <figcaption class="vt-caption">
@@ -68,10 +68,8 @@
 
 <style>
   .vt-frame { margin: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  .vt-thumb {
-    padding: 0; border: 1px solid #3f3f46; border-radius: 5px; overflow: hidden;
-    background: #121215; width: 132px; height: 92px; cursor: zoom-in;
-  }
+  /* 形状与 hover 走 app.css 的 .media-chip（与主网格同规格），这里只管尺寸 */
+  .vt-thumb { width: 132px; height: 92px; cursor: zoom-in; }
   .vt-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .vt-thumb img.zoomed { object-fit: contain; background: #000; }
   .vt-empty {

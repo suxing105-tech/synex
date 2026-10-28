@@ -1,10 +1,13 @@
 import { describe, it, expect } from "vitest";
 import type { ImageSummary } from "../lib/types";
+// 列间距与页脚高度都从 lib/media-format 取，和 Feed.svelte 同一事实源。
+// 以前这里自己抄了一份 gap=8 和 h=w*ratio+gap，组件改了测试还全绿 —— 那是说谎。
+import { THUMB_GAP, footerHeightFor } from "../lib/media-format";
 
 // 与 Feed.svelte 里贪心分列同步的纯函数：按原顺序遍历图片，每张放进当前累计高度最小的那列。
 // 与 Feed.svelte 同步：根据容器宽 + targetColumns 算列宽（每列均分）
 // 与 Feed.svelte 同步：根据容器宽 + targetColumns 算列宽（每列均分）
-function calcColumnWidth(containerWidth: number, columnCount: number, gap = 8): number {
+function calcColumnWidth(containerWidth: number, columnCount: number, gap = THUMB_GAP): number {
   if (containerWidth <= 0 || columnCount <= 0) return 0;
   return (containerWidth - (columnCount - 1) * gap) / columnCount;
 }
@@ -15,11 +18,11 @@ function greedySplit(
   columnWidth: number,
 ): { items: ImageSummary[]; height: number }[] {
   const n = Math.max(1, columnCount);
-  const gap = 8;
   const cols = Array.from({ length: n }, () => ({ items: [] as ImageSummary[], height: 0 }));
   for (const it of items) {
     const ratio = it.width && it.height ? it.height / it.width : 1;
-    const h = columnWidth * ratio + gap;
+    // 页脚是实体高度，必须算进列高，否则和组件的排布口径不一致
+    const h = columnWidth * ratio + THUMB_GAP + footerHeightFor(columnWidth);
     let target = cols[0];
     for (let i = 1; i < n; i++) if (cols[i].height < target.height) target = cols[i];
     target.items.push(it);
@@ -75,7 +78,7 @@ describe("Feed masonry 贪心分列", () => {
     ];
     const cols = greedySplit(items, 3, 220);
     const heights = cols.map((c) => c.height);
-    const firstItemH = 220 * (1920 === 1920 && 1080 === 1080 ? 1080 / 1920 : 1) + 8;
+    const firstItemH = 220 * (1080 / 1920) + THUMB_GAP + footerHeightFor(220);
     // 贪心保证：最高列 - 最低列 一定小于首张图贡献的高度
     const spread = Math.max(...heights) - Math.min(...heights);
     expect(spread).toBeLessThan(firstItemH);
@@ -125,7 +128,7 @@ describe("Feed masonry 贪心分列", () => {
 });
 describe("Feed 滑块 → 列宽公式 calcColumnWidth", () => {
   it("默认 1300 容器宽 + targetColumns=7 → 列宽 ~182", () => {
-    // 1300 给 Feed，7 列：每列 (1300 - 6*8)/7 ≈ 178.86
+    // 1300 给 Feed，7 列：每列 (1300 - 6*10)/7 ≈ 177.14
     const w = calcColumnWidth(1300, 7);
     expect(w).toBeGreaterThanOrEqual(170);
     expect(w).toBeLessThanOrEqual(190);
@@ -136,15 +139,15 @@ describe("Feed 滑块 → 列宽公式 calcColumnWidth", () => {
     const fewer = calcColumnWidth(w1000, 4);  // 列少 → 列宽大
     const more  = calcColumnWidth(w1000, 10); // 列多 → 列宽小
     expect(fewer).toBeGreaterThan(more);
-    expect(fewer).toBeCloseTo((1000 - 3 * 8) / 4, 1);
-    expect(more).toBeCloseTo((1000 - 9 * 8) / 10, 1);
+    expect(fewer).toBeCloseTo((1000 - 3 * THUMB_GAP) / 4, 1);
+    expect(more).toBeCloseTo((1000 - 9 * THUMB_GAP) / 10, 1);
   });
 
   it("滑块在边界值 4 / 12 之间滑动时列宽稳定变化（不抖动）", () => {
     const w = 1000;
-    expect(calcColumnWidth(w, 4)).toBeCloseTo((1000 - 3 * 8) / 4, 1);
-    expect(calcColumnWidth(w, 7)).toBeCloseTo((1000 - 6 * 8) / 7, 1);
-    expect(calcColumnWidth(w, 12)).toBeCloseTo((1000 - 11 * 8) / 12, 1);
+    expect(calcColumnWidth(w, 4)).toBeCloseTo((1000 - 3 * THUMB_GAP) / 4, 1);
+    expect(calcColumnWidth(w, 7)).toBeCloseTo((1000 - 6 * THUMB_GAP) / 7, 1);
+    expect(calcColumnWidth(w, 12)).toBeCloseTo((1000 - 11 * THUMB_GAP) / 12, 1);
   });
 
   it("容器未测量或非法列数时退到 0，不报错", () => {

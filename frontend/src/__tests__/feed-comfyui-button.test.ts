@@ -106,8 +106,13 @@ it("ComfyUI 打开按钮：去掉外圈圆框，只保留实色背景 + 圆角�
   expect(cls).toMatch(/flex items-center justify-center/);
 });
 
-
-
-
-
-
+it("ComfyUI 打开按钮离卡片边角留出 12px", () => {
+  // 原来是 top-1 right-1（4px），贴在圆角上很挤，用户要求往里挪。
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const src = fs.readFileSync(path.resolve(__dirname, "..", "components", "Feed.svelte"), "utf8");
+  const cls = src.slice(src.indexOf('class="comfyui-open-btn'), src.indexOf('"', src.indexOf('class="comfyui-open-btn') + 7));
+  expect(cls).toMatch(/top-\[12px\]/);
+  expect(cls).toMatch(/right-\[12px\]/);
+  expect(cls).not.toMatch(/top-1\b/);
+});

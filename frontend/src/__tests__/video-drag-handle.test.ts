@@ -11,7 +11,7 @@ imagesApi: { list: vi.fn(async () => ({ items: get(feedItems), total: get(feedIt
   foldersApi: { tree: vi.fn(async () => []) }, statsApi: { get: vi.fn() }, scanApi: { progress: vi.fn() }, comfyuiApi: {}, videosApi: {},
 }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); drag.mockReset(); });
-it('dragging from the video play icon passes the original and does not start playback', async () => {
+it('从视频卡片上按下拖动会传原文件，拖完那一下 click 不会打开播放器', async () => {
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200);
   feedLoading.set(false); multiSelectedIds.set(new Set());
   feedItems.set([{ id: 1, filename: 'clip.mp4', path: 'D:/视频/clip.mp4', kind: 'video', playable: true, width: 64, height: 48 }] as any);
@@ -19,7 +19,8 @@ it('dragging from the video play icon passes the original and does not start pla
   const played = vi.fn(); window.addEventListener('open-video-player', played);
   try {
     const ui = render(Feed, { selectedId: null, lightboxOpen: false, lightboxIndex: 0 });
-    const play = ui.getByLabelText('播放 clip.mp4');
+    // 视频卡的播放按钮已删掉，拖拽起点就是卡片本身（卡片 onpointerdown -> pointerOnImage）
+    const play = ui.getByTitle('clip.mp4');
     await fireEvent.pointerDown(play, { button: 0 });
     expect(drag.mock.calls[0][1]).toEqual(['D:/视频/clip.mp4']);
     await fireEvent.click(play);

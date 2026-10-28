@@ -25,18 +25,6 @@ body,
   background: #323237;
 }
 
-@keyframes newGlow {
-  0%, 100% {
-    box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.8), 0 0 8px rgba(52, 211, 153, 0.4);
-  }
-  50% {
-    box-shadow: 0 0 0 2px rgba(52, 211, 153, 1), 0 0 16px rgba(52, 211, 153, 0.7);
-  }
-}
-
-.new-badge {
-  animation: newGlow 1.6s ease-in-out infinite;
-}
 
 @keyframes livePulse {
   0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(242, 78, 78, 0.5); }
@@ -50,6 +38,228 @@ body,
 }
 .live-dot.on {
   animation: livePulse 1.4s ease-in-out infinite;
+}
+
+/* ---------- 缩略图卡片：全站统一规范 ----------
+   一处定义，Feed 主网格、详情面板、参考帧、文本工作区素材选择器共用。
+   形状语言：常态无框无阴影；hover 不描边，只把画面放大；选中是 1px 浅灰描边 + 外阴影。
+   描边只有选中一种状态在用，所以它必须一眼看得见——hover 再画一圈等于没有重点。
+   Feed 的贪心分列按 lib/media-format.ts 的 footerHeightFor 预计算卡片高度，
+   所以下面两个页脚高度一旦改动，那边的常量必须同步改。 */
+:root {
+  --thumb-radius: 10px;
+  --thumb-gap: 10px;
+  /* 页脚（也就是卡片露出来的那一点底色）要比画面明显暗，文字才像是压在
+     图下面的信息条上，而不是画面自己的暗部。原来 #27272a 太接近卡面高亮。 */
+  --thumb-bg: #1c1c20;
+  --thumb-media-bg: #1a1a1d;
+  --thumb-ring: #d4d4d4;
+  --thumb-name: #eaeaea;
+  --thumb-meta: #8a8a8e;
+  --thumb-accent: #f24e4e;
+}
+
+.media-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  border-radius: var(--thumb-radius);
+  background: var(--thumb-bg);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow 160ms ease;
+}
+
+/* hover 刻意什么都不加：卡片不动、不描边，反馈全在画面放大上（见下面 scale）。
+   选中用 1px box-shadow 描边而不是 outline：贴边、不占布局、不显得粗。
+   0 扩散 + 1px 的写法等价于画在盒子外沿，所以 .masonry-scroller 仍留 2px 余量。 */
+.media-card.is-selected {
+  box-shadow: 0 0 0 1px var(--thumb-ring), 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+
+/* 卡片窄到放不下页脚时收一档圆角，不然 90px 的卡顶着一个 10px 圆角会很肿 */
+.media-card--compact {
+  --thumb-radius: 8px;
+}
+
+.media-card-media {
+  display: block;
+  position: relative;
+  flex: none;
+  width: 100%;
+  overflow: hidden;
+  background: var(--thumb-media-bg);
+}
+
+.media-card-img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition:
+    opacity 180ms ease-out,
+    transform 350ms cubic-bezier(0.2, 0.6, 0.2, 1);
+  will-change: transform, opacity;
+}
+
+.media-card-img.is-loaded {
+  opacity: 1;
+}
+
+/* 视频卡片的悬停播放层：叠在海报上，只有 hovered 那一张被挂进 DOM（见 Feed.svelte）。
+   淡入 180ms 是为了压掉「海报 → 首帧」那一下硬切。 */
+.media-card-video {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: transparent;
+  animation: thumbVideoFade 180ms ease-out;
+  transition: transform 350ms cubic-bezier(0.2, 0.6, 0.2, 1);
+  will-change: transform;
+}
+
+@keyframes thumbVideoFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 唯一的 hover 反馈：画面推近。1.04 太含蓄，隔着整屏几乎看不出，提到 1.09。
+   图片与 hover 播放的视频同一套，不然视频卡 hover 时什么都没有。 */
+.media-card:hover .media-card-img,
+.media-card:hover .media-card-video {
+  transform: scale(1.09);
+}
+
+/* 图还没到时的低对比扫光。页脚即时渲染，所以占位只盖图区。 */
+.media-card-skeleton {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(100deg, #1a1a1d 30%, #212125 50%, #1a1a1d 70%);
+  background-size: 220% 100%;
+  animation: thumbShimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes thumbShimmer {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -20% 0;
+  }
+}
+
+.media-card-footer {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 0 8px;
+  background: var(--thumb-bg);
+}
+
+.media-card-footer--2l {
+  height: 44px;
+}
+
+.media-card-footer--1l {
+  height: 26px;
+}
+
+.media-card-name {
+  display: block;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.25;
+  color: var(--thumb-name);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.media-card-meta {
+  display: block;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--thumb-meta);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* NEW 标记：新素材在页脚名字前点一个红点，不再用满屏呼吸动画抢注意力 */
+.media-card-name.has-new::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--thumb-accent);
+  vertical-align: 1px;
+}
+
+/* 小尺寸缩略图（详情面板 48px 头图、参考帧、素材选择器）：只借形状语言，不带页脚 */
+.media-chip {
+  position: relative;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--thumb-radius);
+  background: var(--thumb-media-bg);
+  padding: 0;
+  cursor: pointer;
+  transition: box-shadow 160ms ease;
+}
+
+.media-chip img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+/* 小图没有放大动效，hover 只留一层很轻的投影当反馈，同样不画描边 */
+.media-chip:hover {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+}
+
+.media-chip.is-selected {
+  box-shadow: 0 0 0 1px var(--thumb-ring), 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+
+/* 素材选择器（文本工作区 / 阅读器插入素材）：共用卡片，页脚固定只显示文件名一行 */
+.media-pick-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--thumb-gap);
+  max-height: 480px;
+  overflow: auto;
+  margin: 16px 0;
+  padding: 2px;
+}
+
+@media (max-width: 900px) {
+  .media-pick-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .toast {

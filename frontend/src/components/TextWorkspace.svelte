@@ -12,6 +12,7 @@
   import { imagesApi, videosApi } from '../lib/api';
   import type { ImageSummary, FolderNode } from '../lib/types';
   import { backendUrl } from '../lib/backend-url';
+import { basenameOnly } from '../lib/media-format';
   import { isTauri, selectTextPaths } from '../lib/tauri';
   import { subscribeFileDrop } from '../lib/native-drop';
   import { copyText } from '../lib/ws';
@@ -555,7 +556,7 @@
         <p>将删除磁盘原文件，并移入系统回收站：</p><pre>{current?.detail.path}</pre><p>回收站不可用时停止操作，不执行永久删除。</p><button class="danger" disabled={busy} onclick={trashDocument}>确认移入回收站</button>
       {:else if modal === 'media'}
         <div class="media-search"><select bind:value={mediaKind} onchange={() => loadMedia()}><option value="image">图片</option><option value="video">视频</option></select><input placeholder="搜索图库素材" bind:value={mediaQuery} onkeydown={(e) => { if (e.key === 'Enter') void loadMedia(); }}/><button onclick={() => loadMedia()}>搜索</button></div>
-        <div class="media-grid">{#each mediaItems as item}<button onclick={() => insertMedia(item)}>{#if item.thumbnail_url || item.original_url}<img src={backendUrl(item.thumbnail_url || item.original_url!)} alt="" loading="lazy"/>{/if}<span>{item.filename}</span></button>{/each}</div>
+        <div class="media-pick-grid">{#each mediaItems as item (item.id)}<button class="media-card" title={item.filename} onclick={() => insertMedia(item)}><span class="media-card-media" style="aspect-ratio: 4 / 3;">{#if item.thumbnail_url || item.original_url}<img class="media-card-img" src={backendUrl(item.thumbnail_url || item.original_url!)} alt="" loading="lazy" decoding="async" onload={(e) => e.currentTarget.classList.add("is-loaded")} />{/if}</span><span class="media-card-footer media-card-footer--1l"><span class="media-card-name">{basenameOnly(item.filename)}</span></span></button>{/each}</div>
         {#if mediaOffset < mediaTotal}<button onclick={() => loadMedia(true)}>加载更多素材</button>{/if}
         {#if !mediaItems.length}<p>没有找到素材，请先将图片或视频加入图库。</p>{/if}
       {/if}
@@ -610,6 +611,5 @@
   .text-modal { width:540px; max-width:96vw; max-height:90vh; overflow:auto; border:1px solid #44404a; border-radius:12px; background:#18181b; padding:22px; box-shadow:0 22px 90px #0008; font-size:13px; }
   .text-modal.wide { width:920px; }.text-modal header { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }.text-modal h2 { font-size:18px; font-weight:600; }.text-modal label { display:flex; flex-direction:column; gap:7px; margin:14px 0; }.text-modal p { line-height:1.8; margin:12px 0; }.text-modal textarea { width:100%; margin:12px 0; }.text-modal button { border-color:#49424c; margin:3px; }.text-modal pre { white-space:pre-wrap; overflow-wrap:anywhere; font:13px/1.8 Consolas,'Microsoft YaHei',monospace; background:#0e0e10; padding:14px; border-radius:6px; }
   .history-layout { display:grid; grid-template-columns:190px 1fr; height:400px; gap:16px; }.history-layout aside,.history-layout pre { overflow:auto; }.history-layout aside button { display:block; width:95%; text-align:left; }.conflict-layout { display:grid; grid-template-columns:1fr 1fr; gap:16px; }.conflict-layout pre { height:320px; overflow:auto; }.conflict-layout h3 { margin:10px 0; }.modal-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; margin-top:15px; }
-  .media-search { display:flex; gap:10px; }.media-search input { flex:1; }.media-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; max-height:480px; overflow:auto; margin:16px 0; }.media-grid button { overflow:hidden; white-space:normal; }.media-grid img { width:100%; height:100px; object-fit:cover; }.media-grid span { display:block; font-size:11px; overflow-wrap:anywhere; margin:6px; }.asset-large { display:block; width:100%; max-height:65vh; object-fit:contain; }
-  @media(max-width:900px) { .media-grid { grid-template-columns:repeat(3,1fr); } }
+  .media-search { display:flex; gap:10px; }.media-search input { flex:1; }/* 素材卡走 app.css 的 .media-card 共用规范；本组件的裸 button 规则会盖住它，先复位 */.media-pick-grid button { border:0; border-radius:var(--thumb-radius); background:var(--thumb-bg); padding:0; margin:0; color:inherit; white-space:normal; }.asset-large { display:block; width:100%; max-height:65vh; object-fit:contain; }
 </style>

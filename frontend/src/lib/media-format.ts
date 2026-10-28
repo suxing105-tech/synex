@@ -34,6 +34,68 @@ export function thumbnailHeightToWidthRatio(
   return 1;
 }
 
+// ---------- 卡片页脚（全站缩略图统一规范） ----------
+//
+// 页脚是图片下方那条实体底，宽度不够就得降级，所以「显示几行」和「占多高」
+// 必须是同一个事实源：Feed 的贪心分列按 footerHeightFor 预计算列高，
+// 渲染按 footerTierFor 决定挂哪个 class。两者一旦分叉，瀑布流就会重叠或留大缝。
+
+/** 两行页脚（文件名 + 元信息）所需的最小卡片宽 */
+export const FOOTER_TIER_TWO_LINE_MIN_WIDTH = 170;
+/** 单行页脚（只有文件名）所需的最小卡片宽 */
+export const FOOTER_TIER_ONE_LINE_MIN_WIDTH = 120;
+/** `--2l` 页脚的实测高度（px），与 app.css 的 .media-card-footer--2l 对齐 */
+export const FOOTER_HEIGHT_TWO_LINES = 44;
+/** `--1l` 页脚的实测高度（px），与 app.css 的 .media-card-footer--1l 对齐 */
+export const FOOTER_HEIGHT_ONE_LINE = 26;
+
+/** 卡片间距（px）。app.css 的 --thumb-gap 与 Feed 的贪心分列共用这一个值。 */
+export const THUMB_GAP = 10;
+
+export type FooterTier = 0 | 1 | 2;
+
+/** 卡片能放几行页脚：>=170 两行；120-169 只放文件名；<120 整条不渲染。 */
+export function footerTierFor(columnWidth: number): FooterTier {
+  if (!Number.isFinite(columnWidth) || columnWidth < FOOTER_TIER_ONE_LINE_MIN_WIDTH) return 0;
+  if (columnWidth >= FOOTER_TIER_TWO_LINE_MIN_WIDTH) return 2;
+  return 1;
+}
+
+/** 该宽度下页脚实际占的高度，供贪心分列计入卡片总高。 */
+export function footerHeightFor(columnWidth: number): number {
+  const tier = footerTierFor(columnWidth);
+  if (tier === 2) return FOOTER_HEIGHT_TWO_LINES;
+  if (tier === 1) return FOOTER_HEIGHT_ONE_LINE;
+  return 0;
+}
+
+/**
+ * 页脚第一行：只去掉目录，**保留扩展名**（用户要看得出这是 .png 还是 .psd）。
+ * 重命名输入框仍然只喂去掉扩展名的部分，改不到后缀。
+ */
+export function basenameOnly(filename: string): string {
+  return filename.split(/[\\/]/).pop() || filename;
+}
+
+/**
+ * 页脚第二行：`1920×1080 · 5.5MB · 0:12`。
+ * 尺寸分隔符用 `×`，和 Lightbox 的读数同一口径；缺哪个字段就整段省略，
+ * 不留空的分隔符。sizeText 由调用方用 ws.ts 的 formatSize 先算好。
+ */
+export function footerMetaText(parts: {
+  width: number | null;
+  height: number | null;
+  sizeText?: string | null;
+  durationSeconds?: number | null;
+}): string {
+  const bits: string[] = [];
+  if (parts.width && parts.height) bits.push(`${parts.width}×${parts.height}`);
+  if (parts.sizeText) bits.push(parts.sizeText);
+  const duration = formatDuration(parts.durationSeconds ?? null);
+  if (duration) bits.push(duration);
+  return bits.join(" · ");
+}
+
 /** 时长统一写成 `m:ss`（超过一小时也继续累加分钟，和视频页/详情面板同一口径）。 */
 export function formatDuration(seconds: number | null): string {
   if (seconds == null || !Number.isFinite(seconds)) return "";

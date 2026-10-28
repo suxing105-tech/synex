@@ -383,7 +383,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
     <header class="px-4 py-3 border-b border-border bg-surface-2 flex items-start gap-3 transition-colors">
       <button
         type="button"
-        class="shrink-0 w-12 h-12 rounded-md overflow-hidden bg-surface-3 border border-border hover:bg-bg focus:outline-none focus:border-accent transition-colors"
+        class="detail-thumb shrink-0 w-12 h-12 hover:bg-surface-3"
         title={headerThumbLabel(d.kind)}
         aria-label={headerThumbLabel(d.kind)}
         onclick={() => (d.kind === "video" ? (coverModalOpen = true) : openLightbox(d))}
@@ -573,7 +573,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
         </section>
       {:else if d.kind === "audio"}
         <!-- 音频：波形是懒生成 + 落盘缓存的预览，取不到就退回音符图形 -->
-        <section class="bg-surface-2 border border-border rounded-md overflow-hidden">
+        <section class="detail-media-card">
           <div class="relative w-full bg-black flex items-center justify-center audio-wave" style="aspect-ratio: 21 / 9;">
             {#if thumbUrl(d) && !waveFailed}
               <img
@@ -743,6 +743,31 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
 
 
 <style>
+  /* 面板里的缩略图只借共用形状（圆角、无常态描边），hover 仍旧只改底色：
+     详情面板的交互件统一「底色变化」是用户定过的规则，不吃主网格那圈描边。 */
+  .detail-thumb {
+    border: 0;
+    padding: 0;
+    overflow: hidden;
+    border-radius: var(--thumb-radius);
+    background: var(--thumb-media-bg);
+    cursor: pointer;
+  }
+
+  .detail-thumb img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* 波形块与缩略图同一套形状语言：只有圆角和底色，不带常态描边 */
+  .detail-media-card {
+    border-radius: var(--thumb-radius);
+    background: var(--thumb-bg);
+    overflow: hidden;
+  }
+
   .detail-body {
     /* 让深色模式下滚动条更柔和 */
     scrollbar-gutter: stable;

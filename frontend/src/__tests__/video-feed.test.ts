@@ -21,6 +21,8 @@ const video = (id: number, playable: boolean) => ({
 
 beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(900);
+  // jsdom 没实现 play()，不接管会往控制台倒一堆 Not implemented
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined as never);
   feedLoading.set(false); feedTotal.set(1); multiSelectedIds.set(new Set());
   scope.set('video');
   feedCounts.set({ image: 0, video: 1, audio: 0, text: 0 });
@@ -28,29 +30,46 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); scope.set('all'); feedItems.set([]); feedTotal.set(0); feedCounts.set({ image: 0, video: 0, audio: 0, text: 0 }); });
 
-it('视频卡片渲染居中播放按钮，点击可弹层 open-video-player 事件', async () => {
-  const dispatch = vi.spyOn(window, 'dispatchEvent');
+it('视频卡片不再有播放按钮，画面自己就是预览入口', async () => {
   const screen = render(Feed, { selectedId: null, lightboxOpen: false, lightboxIndex: 0 });
-  expect(screen.getByLabelText('播放 1.mp4')).toBeTruthy();
-  expect(screen.getByLabelText('播放 1.mp4').querySelector('svg.video-play-icon')).toBeTruthy();
-  await fireEvent.click(screen.getByLabelText('播放 1.mp4'));
-  expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'open-video-player' }));
-  expect(get(feedItems)[0].id).toBe(1);
+  const card = screen.getByTitle('1.mp4');
+  expect(screen.queryByLabelText('播放 1.mp4')).toBeNull();
+  expect(card.querySelector('.video-play-icon')).toBeNull();
 });
 
-it('不可播放的视频点击播放按钮调用系统播放器 open', async () => {
+it('鼠标滑过挂上静音循环预览视频，移开立刻卸载（同一时刻只解码一条）', async () => {
+  const screen = render(Feed, { selectedId: null, lightboxOpen: false, lightboxIndex: 0 });
+  const card = screen.getByTitle('1.mp4');
+  expect(card.querySelector('video.media-card-video')).toBeNull();
+  await fireEvent.mouseEnter(card);
+  const v = card.querySelector('video.media-card-video') as HTMLVideoElement;
+  expect(v).toBeTruthy();
+  expect(v.muted).toBe(true);
+  expect(v.loop).toBe(true);
+  expect(v.hasAttribute('autoplay')).toBe(true);
+  expect(v.getAttribute('src')).toContain('/api/videos/1/file');
+  expect(HTMLMediaElement.prototype.play).toHaveBeenCalled();
+  await fireEvent.mouseLeave(card);
+  expect(card.querySelector('video.media-card-video')).toBeNull();
+});
+
+it('内核解不了的容器不挂预览视频，双击走系统播放器 open', async () => {
   feedTotal.set(1);
   feedItems.set([video(2, false)] as any);
   const screen = render(Feed, { selectedId: null, lightboxOpen: false, lightboxIndex: 0 });
-  await fireEvent.click(screen.getByLabelText('播放 2.mp4'));
+  const card = screen.getByTitle('2.mp4');
+  await fireEvent.mouseEnter(card);
+  expect(card.querySelector('video.media-card-video')).toBeNull();
+  await fireEvent.doubleClick(card);
   expect(videosApi.open).toHaveBeenCalledWith(2);
 });
 
-it('视频视图双击卡片不再直接播放（仅播放按钮播放）', async () => {
+it('视频视图双击卡片打开内置播放器（删掉播放按钮后双击就是入口）', async () => {
   const dispatch = vi.spyOn(window, 'dispatchEvent');
   const screen = render(Feed, { selectedId: null, lightboxOpen: false, lightboxIndex: 0 });
   await fireEvent.doubleClick(screen.getByTitle('1.mp4'));
-  expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'open-video-player' }));
+  expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'open-video-player' }));
+  expect(get(feedItems)[0].id).toBe(1);
 });
 
 it('视频口径的工具栏计数用「个视频」而不是「张图片」', async () => {

@@ -29,8 +29,9 @@ it('横竖图片使用各自比例，缺失尺寸在图片加载后校正，禁�
   const portrait = screen.getByAltText('portrait.png') as HTMLImageElement;
   expect(landscape.parentElement?.getAttribute('style')).toContain('1600 / 900');
   expect(portrait.parentElement?.getAttribute('style')).toContain('600 / 1200');
-  expect(landscape.parentElement?.classList.contains('is-selected')).toBe(true);
-  expect(landscape.parentElement?.className).not.toContain('outline-[6px]');
+  // 图区的直接父级现在是 .media-card-media，选中态在卡片根 .thumb 上
+  expect(landscape.closest('.thumb')?.classList.contains('is-selected')).toBe(true);
+  expect(landscape.closest('.thumb')?.className).not.toContain('outline-[6px]');
   expect(landscape.getAttribute('draggable')).toBe('false');
   expect(landscape.classList.contains('object-contain')).toBe(true);
   const missing = screen.getByAltText('missing.jpg') as HTMLImageElement;

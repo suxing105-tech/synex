@@ -36,6 +36,7 @@ it('菜单改名关闭菜单并聚焦名称输入，Enter 保存而不打开预�
 });
 it('双击名称进入编辑，Esc 取消不提交', async () => {
   const screen = feed();
+  // 页脚只显示去掉扩展名的名字，完整文件名在卡片 title 和改名框里
   await fireEvent.doubleClick(screen.getByText('original.jpg'));
   const input = await screen.findByLabelText('编辑图片名称');
   await fireEvent.input(input, { target: { value: 'discard' } });

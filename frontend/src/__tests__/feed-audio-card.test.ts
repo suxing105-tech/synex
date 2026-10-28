@@ -84,7 +84,8 @@ describe("音频卡", () => {
     expect(img.getAttribute("src")).toBe("/api/audio/7/waveform");
     expect(img.getAttribute("loading")).toBe("lazy");
     // 21:9 与后端波形默认出图（840x360）同比例，object-fit 不会裁也不会留黑边
-    expect(img.closest("button")?.getAttribute("style")).toContain("21 / 9");
+    // 比例挂在图区上；给整张卡会把页脚高度算进画面比例
+    expect(img.closest(".media-card-media")?.getAttribute("style")).toContain("21 / 9");
   });
 
   it("播放中的音频卡不描红边，与图片/视频共用同一套边框", () => {
@@ -93,10 +94,11 @@ describe("音频卡", () => {
     expect(FEED_SOURCE).toContain("$playingAudio?.id === it.id && it.kind === 'audio' ? 'is-playing' : ''");
   });
 
-  it("右上角显示时长徽标", async () => {
+  it("片长落在页脚元信息行，画面左上角不再有徽标", async () => {
     const { container } = renderFeed();
     await tick();
-    expect(container.querySelector(".media-duration")?.textContent).toBe("0:42");
+    expect(container.querySelector(".media-duration")).toBeNull();
+    expect(container.querySelector(".media-card-meta")?.textContent).toBe("0:42");
   });
 
   it("hover 层有播放入口", async () => {
@@ -161,14 +163,17 @@ describe("音频卡", () => {
     expect(get(playingAudio)).toBeNull();
   });
 
-  it("播放中卡片顶部出现进度线，时长徽标跟着走表", async () => {
+  it("播放中波形下面出现进度线与光点，页脚仍是片长不是当前进度", async () => {
     const { container } = renderFeed();
     await tick();
     await fireEvent.click(thumbOf(container, "氛围底噪.mp3").closest("button") as Element);
     audioProgress.set(21); // 42 秒的一半点
     await tick();
     expect(container.querySelector<HTMLElement>(".audio-progress")?.getAttribute("style")).toContain("width: 50%");
-    expect(container.querySelector(".media-duration")?.textContent).toBe("0:21");
+    // 参考图那个走带光点：挂在填充条右端，跟着 width 一起走
+    expect(container.querySelector(".audio-progress .audio-progress-knob")).toBeTruthy();
+    // 进度只由波形下面的 .audio-progress 表达；页脚是「这是什么文件」，不跟着走表
+    expect(container.querySelector(".media-card-meta")?.textContent).toBe("0:42");
   });
 
   it("进度超过已知时长也不会溢出卡片", async () => {
@@ -180,6 +185,39 @@ describe("音频卡", () => {
     expect(container.querySelector<HTMLElement>(".audio-progress")?.getAttribute("style")).toContain("width: 100%");
   });
 
+  it("音频卡用波形当蒙版画频谱，不直接显示后端那张单色 PNG", async () => {
+    const { container } = renderFeed();
+    await tick();
+    const card = thumbOf(container, "氛围底噪.mp3").closest("button") as HTMLElement;
+    // 卡片标记 is-audio：.media-card.is-audio .media-card-img 会把 PNG 藏成纯加载探针
+    expect(card.classList.contains("is-audio")).toBe(true);
+    const wave = container.querySelector<HTMLElement>(".audio-wave");
+    expect(wave).toBeTruthy();
+    expect(wave?.getAttribute("style")).toContain("--wave: url(");
+    // 三层：光晕 + 清晰主体 + 贯穿亮线，外加 hover 扫光
+    expect(container.querySelectorAll(".audio-wave-fill")).toHaveLength(2);
+    expect(container.querySelector(".audio-wave-line")).toBeTruthy();
+    expect(container.querySelector(".audio-wave-sweep")).toBeTruthy();
+    // 底部进度轨常驻，播放前只是空的暗轨
+    expect(container.querySelector(".audio-track")).toBeTruthy();
+    expect(container.querySelector(".audio-progress")).toBeNull();
+    // 角标属于卡片、不属于图区：它坐在页脚右端，跟文件名那两行并排
+    const playBtn = container.querySelector<HTMLElement>(".audio-play-btn");
+    expect(playBtn).toBeTruthy();
+    expect(playBtn?.parentElement?.classList.contains("media-card")).toBe(true);
+    expect(playBtn?.closest(".media-card-media")).toBeNull();
+    expect(container.querySelector(".audio-play-icon")).toBeTruthy();
+  });
+
+  it("波形 404：频谱层与进度轨一起撤掉，退回音符图形", async () => {
+    const { container } = renderFeed();
+    await tick();
+    await fireEvent.error(thumbOf(container, "氛围底噪.mp3"));
+    await tick();
+    expect(container.querySelector(".audio-wave")).toBeNull();
+    expect(container.querySelector(".audio-track")).toBeNull();
+    expect(container.querySelector('[aria-label="波形暂不可用"]')).toBeTruthy();
+  });
   it("播放三角在播放时换成暂停图标并改文案", async () => {
     const { container } = renderFeed();
     await tick();
@@ -198,11 +236,12 @@ describe("音频卡", () => {
     expect(get(playingAudio)).toBeNull();
   });
 
-  it("时长未知的音频不显示空的时长徽标", async () => {
+  it("时长未知的音频不留空字段，也不留孤立分隔符", async () => {
     feedItems.set([{ ...audioItem(), duration_seconds: null } as MediaFeedItem]);
     const { container } = renderFeed();
     await tick();
     expect(container.querySelector(".media-duration")).toBeNull();
+    expect(container.querySelector(".media-card-meta")?.textContent).toBe("");
   });
 
   it("图片卡的缺失检测逻辑不受影响：图片 404 仍然会查一次存在性", async () => {

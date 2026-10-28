@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, fireEvent, cleanup } from "@testing-library/svelte";
+import { tick } from "svelte";
 import { readFileSync } from "node:fs";
-import { feedItems } from "../lib/stores";
+import { feedItems, multiSelectedIds } from "../lib/stores";
 import Lightbox from "../components/Lightbox.svelte";
 import { clampPan } from "../lib/lightbox-zoom";
 vi.mock("../lib/image-dims", async (original) => ({ ...await original<object>(), getOrientedImageSize: vi.fn().mockResolvedValue({w:1200,h:800}) }));
@@ -27,6 +28,15 @@ describe("中间区域图片预览", () => {
     await fireEvent.dblClick(ui.container.querySelector('.viewer-canvas > div')!, {button:0});
     expect(ui.queryByRole('region')).toBeNull();
   });
+  it("对比模式下滚轮不缩放图片，退出对比仍停在适应窗口", async () => {
+    multiSelectedIds.set(new Set([1, 2]));
+    const ui = render(Lightbox, {open:true,index:0,selectedId:1});
+    await fireEvent.wheel(ui.container.querySelector(".viewer-canvas")!, { deltaY: -100 });
+    multiSelectedIds.set(new Set([1]));
+    await tick();
+    expect(ui.getByRole("button", { name: "适应窗口" }).getAttribute("aria-pressed")).toBe("true");
+  });
+  afterEach(() => multiSelectedIds.set(new Set()));
   it("大图拖动可查看边缘，画布略小于图片时不产生反向偏移", () => {
     expect(clampPan({x:9999,y:-9999},{w:1200,h:800},{w:600,h:500},0)).toEqual({x:300,y:-150});
     expect(clampPan({x:0,y:0},{w:620,h:510},{w:600,h:500},0)).toEqual({x:0,y:0});

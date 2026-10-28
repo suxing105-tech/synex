@@ -12,12 +12,8 @@
   import { revealLocation as revealInShell } from "../lib/reveal";
   import { copyText, formatSize } from "../lib/ws";
   import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
-  import {
-    clampPan,
-    panFromDrag,
-    nextZoomMode,
-    type PanOffset,
-  } from "../lib/lightbox-zoom";
+  import { ViewerZoom, ZOOM_HINT, viewerZoomWheel } from "../lib/viewer-zoom.svelte";
+  import ViewerZoomControls from "./ViewerZoomControls.svelte";
   import { getOrientedImageSize, safeOrientedSize } from "../lib/image-dims";
 
   interface Props {
@@ -46,24 +42,12 @@
   let originalUrl = $state<string | null>(null);
   let fullPreviewFailed = $state(false);
 
-  // ---------- 100% 放大 + 抓手拖动 ----------
-  // 用 pointer events + setPointerCapture 是最稳的拖动模式：
-  // 即使光标移出图片元素（甚至移出视口），所有 pointermove 还是会送到同一元素，
-  // 不会因为 img 在 zoom 模式下溢出视口而丢事件。
-  let zoomMode = $state<"fit" | "zoom">("fit");
-  let zoomScale = $state(1);
-  let pan = $state<PanOffset>({ x: 0, y: 0 });
-  let isDragging = $state(false);
-  let dragStartMouseX = 0;
-  let dragStartMouseY = 0;
-  let dragStartPanX = 0;
-  let dragStartPanY = 0;
-  // 记录拖动时的 pointerId + 元素引用，便于 releasePointerCapture
-  let dragPointerId = -1;
-  let dragEl: HTMLElement | null = null;
+  // ---------- 适应窗口 ⇄ 100% ----------
+  // 缩放状态与交互（滚轮 / 抓手拖动 / 双击 / 边界 clamp）全部在 lib/viewer-zoom.svelte.ts，
+  // 与视频播放器共用同一份。这里只喂给它两样东西：图片的视觉尺寸、画布的实测尺寸。
   let imgNaturalW = $state(0);
   let imgNaturalH = $state(0);
-  // 视觉尺寸（已应用 EXIF 旋转），用于 fitSize/displayW/clampPan 等所有计算。
+  // 视觉尺寸（已应用 EXIF 旋转），用于 fitRatio / displayW / clampPan 等所有计算。
   // imgNaturalW/H 来自 bind:naturalWidth，是存储像素；visualW/H 是浏览器实际渲染的尺寸。
   // 不一致 = EXIF 旋转 = 之前大横图变形的根因。
   let visualW = $state(0);
@@ -77,137 +61,32 @@
   let safeVisualH = $derived(
     safeOrientedSize({ w: imgNaturalW, h: imgNaturalH }, { w: visualW, h: visualH }).h,
   );
+  // 以中间预览画布的实际尺寸为准，调整侧栏宽度时自动重新适配。
   let viewportW = $state(0);
   let viewportH = $state(0);
   let imgEl: HTMLImageElement | null = $state(null);
 
-  function viewportSize(): { w: number; h: number } {
-    if (viewportW > 0 && viewportH > 0) return { w: viewportW, h: viewportH };
-    return { w: 0, h: 0 };
-  }
-
-  // 以中间预览画布的实际尺寸为准，调整侧栏宽度时自动重新适配。
-  let fitRatio = $derived.by(() => {
-    if (safeVisualW <= 0 || safeVisualH <= 0 || viewportW <= 0 || viewportH <= 0) return 1;
-    return Math.min(1, Math.max(1, viewportW - 48) / safeVisualW, Math.max(1, viewportH - 48) / safeVisualH);
+  const zoom = new ViewerZoom({
+    content: () => ({ w: safeVisualW, h: safeVisualH }),
+    viewport: () => ({ w: viewportW, h: viewportH }),
+    inset: 48,
+    // 对比模式有自己的分割线手势，缩放整体让路。
+    enabled: () => !comparing,
+    // 图片永不放大超过原始分辨率：放大只会糊；百分比读数会如实停在 100%。
+    upscaleToFit: false,
   });
-
-  let displayW = $derived(
-    safeVisualW <= 0 ? 0 :
-    zoomMode === "zoom" ? safeVisualW * zoomScale :
-    Math.max(1, Math.round(safeVisualW * fitRatio))
-  );
-  let displayH = $derived(
-    safeVisualH <= 0 ? 0 :
-    zoomMode === "zoom" ? safeVisualH * zoomScale :
-    Math.max(1, Math.round(safeVisualH * fitRatio))
-  );
-
-  let imgTransition = $derived(
-    isDragging
-      ? "width 0.28s ease, height 0.28s ease"
-      : "width 0.28s ease, height 0.28s ease, transform 0.28s ease"
-  );
-
-  function resetZoom() {
-    zoomMode = "fit";
-    zoomScale = 1;
-    pan = { x: 0, y: 0 };
-    isDragging = false;
-    if (dragEl && dragPointerId >= 0) {
-      try { dragEl.releasePointerCapture(dragPointerId); } catch {}
-    }
-    dragPointerId = -1;
-    dragEl = null;
-  }
-
-  function toggleZoom() {
-    const r = nextZoomMode(zoomMode);
-    zoomScale = 1;
-    zoomMode = r.mode;
-    pan = r.pan;
-  }
-
-  function wheelZoom(node: HTMLElement) {
-    node.addEventListener("wheel", onWheel, { passive: false });
-    return { destroy: () => node.removeEventListener("wheel", onWheel) };
-  }
-
-  function onWheel(e: WheelEvent) {
-    if (comparing || !safeVisualW || !e.deltaY) return;
-    e.preventDefault();
-    const previous = zoomMode === "fit" ? fitRatio : zoomScale;
-    const next = Math.max(Math.min(0.05, fitRatio), Math.min(8, previous * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const x = Number.isFinite(e.clientX) ? e.clientX - rect.left - rect.width / 2 : 0;
-    const y = Number.isFinite(e.clientY) ? e.clientY - rect.top - rect.height / 2 : 0;
-    pan = { x: x - (x - pan.x) * next / previous, y: y - (y - pan.y) * next / previous };
-    zoomScale = next;
-    zoomMode = "zoom";
-  }
 
   function onImgDblClick(e: MouseEvent) {
     e.stopPropagation();
     e.preventDefault();
-    toggleZoom();
-  }
-
-  // ---------- Pointer events 拖动 ----------
-  //
-  // 为什么用 pointerdown 而不是 mousedown：
-  //   - pointerdown 是统一的指针事件，鼠标/触摸/笔都走同一条路；
-  //   - setPointerCapture 后，光标移出 img 也会继续送 pointermove 给同一元素，
-  //     即便 img 在 zoom 模式下溢出视口 / 元素被遮，也不会丢事件；
-  //   - pointercancel（系统级中断，如 alt-tab）也正确收尾。
-  function onImgPointerDown(e: PointerEvent) {
-    if (zoomMode !== "zoom") return;
-    // 只响应左键 / 触摸 / 笔
-    if (e.pointerType === "mouse" && e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const target = e.currentTarget as HTMLElement;
-    isDragging = true;
-    dragStartMouseX = e.clientX;
-    dragStartMouseY = e.clientY;
-    dragStartPanX = pan.x;
-    dragStartPanY = pan.y;
-    dragPointerId = e.pointerId;
-    dragEl = target;
-    try { target.setPointerCapture(e.pointerId); } catch {}
-  }
-
-  function onImgPointerMove(e: PointerEvent) {
-    if (!isDragging) return;
-    if (dragPointerId !== e.pointerId) return;
-    const next = panFromDrag(
-      e.clientX,
-      e.clientY,
-      dragStartMouseX,
-      dragStartMouseY,
-      { x: dragStartPanX, y: dragStartPanY },
-    );
-    // 内联 clampPan，并 guard 写入：避免和后续 effect 形成死循环
-    const clamped = clampPan(next, { w: displayW, h: displayH }, viewportSize(), 0);
-    if (clamped.x !== pan.x || clamped.y !== pan.y) {
-      pan = clamped;
-    }
-  }
-
-  function onImgPointerUp(e: PointerEvent) {
-    if (dragPointerId !== e.pointerId) return;
-    if (dragEl) {
-      try { dragEl.releasePointerCapture(e.pointerId); } catch {}
-    }
-    isDragging = false;
-    dragPointerId = -1;
-    dragEl = null;
+    zoom.toggle();
   }
 
   function close() {
     open = false;
     compareEnabled = true;
     originalUrl = null;
-    resetZoom();
+    zoom.reset();
   }
 
   function toggleCompare() {
@@ -218,9 +97,9 @@
   // 免得下次打开还停在上一张的 100% 缩放里。
   $effect(() => {
     if (open) return;
-    if (compareEnabled && zoomMode === "fit" && zoomScale === 1 && !isDragging && dragPointerId < 0) return;
+    if (compareEnabled && zoom.mode === "fit" && !zoom.dragging) return;
     compareEnabled = true;
-    resetZoom();
+    zoom.reset();
   });
 
   // S 键换对比方式：只在对比开着时接管，退出对比后 S 仍是详情栏的「复制 Seed」。
@@ -248,9 +127,9 @@
     }
     if (comparing && e.key !== "Escape") return;
     if (e.key === "Escape") {
-      if (zoomMode === "zoom") {
+      if (zoom.isZooming()) {
         e.preventDefault();
-        toggleZoom();
+        zoom.setFit();
         return;
       }
       e.preventDefault();
@@ -381,26 +260,18 @@
   // 切图 → 重置 zoom + 拖动状态；不重置 naturalWidth（让 img 直接换 src 复用）
   $effect(() => {
     index;
-    resetZoom();
+    zoom.reset();
     // 等新图加载完再清 natural，避免短暂 0×0 让 fitSize 计算抖动
     // 这里不清，依赖 imgNaturalW 重新绑定新图的尺寸即可
   });
 
 
 
+  // 画布尺寸变化（拖侧栏、最大化窗口）时把越界的平移拉回边界
   $effect(() => {
-    if (zoomMode !== "zoom") return;
-    const bounded = clampPan(pan, { w: displayW, h: displayH }, { w: viewportW, h: viewportH }, 0);
-    if (bounded.x !== pan.x || bounded.y !== pan.y) pan = bounded;
+    zoom.clampNow();
   });
 
-  let imgCursor = $derived(
-    zoomMode === "fit"
-      ? "default"
-      : isDragging
-      ? "grabbing"
-      : "grab",
-  );
 </script>
 
 <svelte:window onkeydown={handleKey} />
@@ -412,18 +283,17 @@
       <button class="rounded-lg px-3 py-2 text-xs" onclick={close} title="返回缩略图（Esc）">← 返回</button>
       <span class="flex-1 min-w-0 truncate text-xs text-muted" title={it.filename}>{it.filename}</span>
       {#if compareImages.length === 2}<button class="rounded-lg px-3 py-2 text-xs" aria-pressed={comparing} onclick={toggleCompare}>{comparing ? "查看单图" : "对比图片"}</button>{/if}
-      {#if !comparing}
-      <button class="rounded-lg px-3 py-2 text-xs" aria-pressed={zoomMode === "fit"} onclick={resetZoom}>适应窗口</button>
-      <button class="rounded-lg px-3 py-2 text-xs" aria-pressed={zoomMode === "zoom"} onclick={() => { zoomMode = "zoom"; zoomScale = 1; pan = { x: 0, y: 0 }; }}>100%</button>
-      <span class="text-xs text-muted">{Math.round((zoomMode === "fit" ? fitRatio : zoomScale) * 100)}%</span>
-      {/if}
       {#if comparing}
         <!-- 顶栏正中间的开关，排在本段最后：Svelte 5 的事件委托里，组件排在
              同分支兄弟元素之前会让后面的按钮点不动。 -->
         <CompareModeSwitch label="图片对比方式" />
       {/if}
+      {#if !comparing}
+        <!-- 缩放开关排在顶栏所有按钮之后：组件排在兄弟按钮前面会让后面的按钮点不动（Svelte 5 事件委托） -->
+        <ViewerZoomControls {zoom} />
+      {/if}
     </header>
-    <div class="viewer-canvas relative flex-1 min-h-0 overflow-hidden" bind:clientWidth={viewportW} bind:clientHeight={viewportH} oncontextmenu={openMenu} ondblclick={(e) => { if (!comparing && e.target === e.currentTarget) close(); }} use:wheelZoom>
+    <div class="viewer-canvas relative flex-1 min-h-0 overflow-hidden" bind:clientWidth={viewportW} bind:clientHeight={viewportH} oncontextmenu={openMenu} ondblclick={(e) => { if (!comparing && e.target === e.currentTarget) close(); }} use:viewerZoomWheel={zoom}>
       <div class="absolute inset-0 flex items-center justify-center overflow-hidden" class:hidden={comparing} ondblclick={(e) => { if (e.target === e.currentTarget) close(); }}>
     <img
       bind:this={imgEl}
@@ -432,17 +302,17 @@
       bind:naturalWidth={imgNaturalW}
       bind:naturalHeight={imgNaturalH}
       class="shrink-0 select-none lightbox-img"
-      style:width={displayW > 0 ? `${displayW}px` : null}
-      style:height={displayH > 0 ? `${displayH}px` : null}
-      style:transform={zoomMode === "zoom" ? `translate(${pan.x}px, ${pan.y}px)` : "none"}
-      style:transition={imgTransition}
-      style:cursor={imgCursor}
+      style:width={zoom.sized ? `${zoom.displayW}px` : null}
+      style:height={zoom.sized ? `${zoom.displayH}px` : null}
+      style:transform={zoom.isZooming() ? `translate(${zoom.pan.x}px, ${zoom.pan.y}px)` : "none"}
+      style:transition={zoom.transition}
+      style:cursor={zoom.cursor}
       style:touch-action="none"
       draggable="false"
-      onpointerdown={onImgPointerDown}
-      onpointermove={onImgPointerMove}
-      onpointerup={onImgPointerUp}
-      onpointercancel={onImgPointerUp}
+      onpointerdown={zoom.onPointerDown}
+      onpointermove={zoom.onPointerMove}
+      onpointerup={zoom.onPointerUp}
+      onpointercancel={zoom.onPointerUp}
       ondblclick={onImgDblClick}
       onerror={() => { fullPreviewFailed = true; }}
       onload={() => { fullPreviewFailed = false; }}
@@ -464,7 +334,7 @@
       </div>
       <span class="text-muted">{#if it.width && it.height}{it.width} × {it.height} · {/if}{formatSize(it.size_bytes)}</span>
       {/if}
-      <span class="text-muted">{comparing ? ($compareMode === "split" ? "拖动分割线对比" : "左右并排查看") + " · 按 S 切换对比方式 · Delete 删除两张图片" : zoomMode === "zoom" ? "滚轮缩放 · 拖动查看细节 · 双击适应窗口" : "滚轮缩放 · 双击图片查看 100%"}</span>
+      <span class="text-muted">{comparing ? ($compareMode === "split" ? "拖动分割线对比" : "左右并排查看") + " · 按 S 切换对比方式 · Delete 删除两张图片" : (zoom.isZooming() ? ZOOM_HINT.zoom : ZOOM_HINT.fit)}</span>
     </footer>
   </section>
 {/if}

@@ -54,7 +54,8 @@ describe("视频播放器收进中间栏：结构与尺寸口径", () => {
     const ui = render(VideoPlayer, { open: true, startId: 1 });
     expect(ui.getByRole("button", { name: "返回缩略图" }).getAttribute("title")).toBe("返回缩略图（Esc）");
     expect(ui.getByText("1 / 2")).toBeTruthy();
-    expect(ui.getByText("Esc 返回缩略图 · ← / → 切换视频")).toBeTruthy();
+    // 底栏提示带上了与图片同一句缩放口径
+    expect(ui.getByText("Esc 返回缩略图 · ← / → 切换视频 · 滚轮缩放 · 双击画面查看 100%")).toBeTruthy();
   });
 
   it("Esc 关闭；右箭头翻到下一个视频", async () => {

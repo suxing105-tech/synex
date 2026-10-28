@@ -15,6 +15,8 @@
   import Icon from "./Icon.svelte";
   import CompareModeSwitch from "./CompareModeSwitch.svelte";
   import VideoCompare from "./VideoCompare.svelte";
+  import { ViewerZoom, ZOOM_HINT, viewerZoomWheel } from "../lib/viewer-zoom.svelte";
+  import ViewerZoomControls from "./ViewerZoomControls.svelte";
 
   interface Props {
     open: boolean;
@@ -40,6 +42,9 @@
     ),
   );
   const compareReady = $derived(selectedVideos.length === 2);
+  // 真正在放对比视图的条件。只按 compareOn 判断会在「选中掉到不足两个」后
+  // 卡在一个既没在对比、又显示退出对比按钮的中间态，缩放开关会被它一起藏掉。
+  const comparing = $derived(compareOn && compareReady);
   // 自动进入对比：打开的视频正好在选中的两个里时自动开一次。
   // 必须记住「这一组已经自动开过」，否则用户点「退出对比」会被这个 effect 顶回去；
   // 换一组选中或换一支视频（key 变了）才再自动开。
@@ -70,9 +75,99 @@
     if (open && startId != null) openAt(startId);
   });
 
+  // ---------- 适应窗口 ⇄ 100%：与图片预览共用 lib/viewer-zoom.svelte.ts ----------
+  // 视频以前只有一句 object-contain 铺满，等于只有「适应窗口」没有「100%」。
+  // 现在两边读同一份缩放实现：按钮、百分比、滚轮、抓手拖动、双击、Esc 两段退出全一致。
+  let viewportW = $state(0);
+  let viewportH = $state(0);
+  // 画面原始像素：打开时先用 feed 已知的宽高（省掉首帧前的抖动），metadata 到齐后校准。
+  let videoW = $state(0);
+  let videoH = $state(0);
+  let videoEl = $state<HTMLVideoElement | null>(null);
+  let resumeOnFit = false;
+
+  const zoom = new ViewerZoom({
+    content: () => ({ w: videoW, h: videoH }),
+    viewport: () => ({ w: viewportW, h: viewportH }),
+    // 黑底画布本来就该铺满，适应窗口不留白（图片留 48 是给白底图呼吸空间）。
+    inset: 0,
+    // 视频允许上采样：480p 也要能铺满中间栏，缩在角落看不是看片。
+    upscaleToFit: true,
+    // 对比模式有自己的双路画面和分割线手势，缩放整体让路。
+    enabled: () => !comparing,
+    // 不拦拖动起手动作，放大态单击画面仍能播放/暂停；真拖过的那次单击由 onVideoClick 吞掉。
+    preventDefaultDrag: false,
+    onModeChange: (mode) => {
+      // 放大是为了停帧看细节：进缩放先暂停，回适应窗口再续播。
+      const el = videoEl;
+      if (!el) return;
+      if (mode === "zoom") {
+        resumeOnFit = !el.paused;
+        el.pause();
+      } else if (resumeOnFit) {
+        resumeOnFit = false;
+        try { void el.play()?.catch?.(() => {}); } catch { /* 自动播放被宿主拦下就算了 */ }
+      }
+    },
+  });
+
+  // 换视频 / 进出对比：缩放归零，尺寸换成新素材的已知宽高。
+  $effect(() => {
+    const it = current;
+    const inCompare = comparing;
+    resumeOnFit = false;
+    untrack(() => zoom.reset());
+    if (inCompare) return; // 对比模式用 VideoCompare 自己的两路画面，不参与缩放
+    const w = it?.width ?? 0;
+    const h = it?.height ?? 0;
+    videoW = w > 0 && h > 0 ? w : 0;
+    videoH = w > 0 && h > 0 ? h : 0;
+  });
+
+  // 画布尺寸变化（拖侧栏、F 键最大化、全屏）时把越界的平移拉回边界
+  $effect(() => {
+    zoom.clampNow();
+  });
+
+  function onLoadedMetadata(e: Event): void {
+    const el = e.currentTarget as HTMLVideoElement;
+    if (el.videoWidth > 0 && el.videoHeight > 0) {
+      videoW = el.videoWidth;
+      videoH = el.videoHeight;
+    }
+  }
+
+  function onVideoDblClick(e: MouseEvent): void {
+    // 必须挡默认动作：Chromium 对带 controls 的 video 双击默认进全屏
+    e.preventDefault();
+    e.stopPropagation();
+    zoom.toggle();
+  }
+
+  /**
+   * 双击黑边返回缩略图，与图片预览一致。
+   * 判据写的是「不是点在自己渲染的画面上」而不是「点在了画布上」：
+   * 画面居中容器会挡住画布，按 currentTarget 判等会永远不成立。
+   */
+  function onCanvasDblClick(e: MouseEvent): void {
+    if (comparing) return; // 对比模式有自己的手势，别一双击就把图层关了
+    const el = e.target instanceof HTMLElement ? e.target : null;
+    if (el && el.tagName === "VIDEO") return;
+    close();
+  }
+
+  function onVideoClick(e: MouseEvent): void {
+    // 刚拖动过画面，这次 click 是拖动的尾巴，别让它触发播放/暂停
+    if (zoom.dragMoved) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }
+
   function close(): void {
     open = false;
     startId = null;
+    untrack(() => zoom.reset());
   }
 
   function go(delta: number): void {
@@ -108,6 +203,11 @@
     if (e.key === "Escape") {
       e.preventDefault();
       e.stopImmediatePropagation();
+      // 与图片一致的两段退出：100% 态先退回适应窗口，再按一次才回缩略图
+      if (zoom.isZooming()) {
+        zoom.setFit();
+        return;
+      }
       close();
       return;
     }
@@ -136,7 +236,7 @@
         ← 返回
       </button>
       <span class="flex-1 min-w-0 truncate text-xs text-muted" title={current.filename}>{current.filename}</span>
-      {#if compareOn && compareReady}
+      {#if comparing}
         <span class="text-[11px] text-muted">对比已选中的两个视频</span>
         <button type="button" class="rounded-lg px-3 py-2 text-xs" aria-pressed="true" onclick={() => { compareOn = false; }}>退出对比</button>
         <!-- 与图片同一处、同一套按钮：顶栏正中间。必须排在本段最后：
@@ -146,26 +246,55 @@
         <button type="button" class="rounded-lg px-3 py-2 text-xs" title="对比选中的两个视频" aria-label="对比视频" onclick={() => { compareOn = true; }}>对比</button>
       {/if}
       <button type="button" class="rounded-lg px-3 py-2 text-xs" onclick={() => void openInSystem()}>用系统播放器打开</button>
+      {#if !comparing && current.playable}
+        <!-- 与图片预览同一组按钮、同一个组件；必须排在顶栏所有按钮之后（Svelte 5 事件委托） -->
+        <ViewerZoomControls {zoom} />
+      {/if}
     </header>
 
-    <div class="video-canvas relative flex-1 min-h-0 overflow-hidden bg-black" ondblclick={(e) => { if (e.target === e.currentTarget) close(); }}>
-      {#if compareOn && compareReady}
+    <div
+      class="video-canvas relative flex-1 min-h-0 overflow-hidden bg-black"
+      bind:clientWidth={viewportW}
+      bind:clientHeight={viewportH}
+      ondblclick={onCanvasDblClick}
+      use:viewerZoomWheel={zoom}
+    >
+      {#if comparing}
         <div class="absolute inset-0 p-3">
           <VideoCompare videos={selectedVideos} />
         </div>
       {:else if current.playable}
-        {#key current.id}
-          <video
-            src={backendUrl(current.play_url)}
-            controls
-            autoplay
-            playsinline
-            preload="metadata"
-            class="absolute inset-0 h-full w-full object-contain bg-black"
-          >
-            <span>你的浏览器不支持播放视频。</span>
-          </video>
-        {/key}
+        <!-- 画面按显示框定尺寸，与图片预览同构：Letterbox 黑边上的双击是「返回缩略图」，
+             抓手拖动的也只有画面本身。宽高还没测到时退回 contain 铺满兜底。 -->
+        <div class="video-stage absolute inset-0 flex items-center justify-center overflow-hidden">
+          {#key current.id}
+            <video
+              bind:this={videoEl}
+              src={backendUrl(current.play_url)}
+              controls
+              autoplay
+              playsinline
+              preload="metadata"
+              class="video-media"
+              class:video-fill={!zoom.sized}
+              style:width={zoom.sized ? `${zoom.displayW}px` : null}
+              style:height={zoom.sized ? `${zoom.displayH}px` : null}
+              style:transform={zoom.isZooming() ? `translate(${zoom.pan.x}px, ${zoom.pan.y}px)` : "none"}
+              style:transition={zoom.transition}
+              style:cursor={zoom.cursor}
+              style:touch-action={zoom.isZooming() ? "none" : null}
+              onpointerdown={zoom.onPointerDown}
+              onpointermove={zoom.onPointerMove}
+              onpointerup={zoom.onPointerUp}
+              onpointercancel={zoom.onPointerUp}
+              ondblclick={onVideoDblClick}
+              onclick={onVideoClick}
+              onloadedmetadata={onLoadedMetadata}
+            >
+              <span>你的浏览器不支持播放视频。</span>
+            </video>
+          {/key}
+        </div>
       {:else}
         <div class="absolute inset-0 flex flex-col items-center justify-center gap-4 text-white">
           <Icon name="video" size={56} />
@@ -213,7 +342,26 @@
         {#if current.duration_seconds != null}{formatDuration(current.duration_seconds)}{/if}
         {#if current.width && current.height}· {current.width}×{current.height}{/if}
       </span>
-      <span class="text-muted hidden xl:inline">Esc 返回缩略图 · ← / → 切换视频{#if compareOn && compareReady} · 按 S 切换对比方式 · 右键画面可同步播放 / 同步停止{/if}</span>
+      <span class="text-muted hidden xl:inline">{#if comparing}Esc 返回缩略图 · 按 S 切换对比方式 · 右键画面可同步播放 / 同步停止{:else}Esc 返回缩略图 · ← / → 切换视频 · {zoom.isZooming() ? ZOOM_HINT.zoom : ZOOM_HINT.fit}{/if}</span>
     </footer>
   </section>
 {/if}
+
+<style>
+  /* 按显示框定尺寸后不能再被 max-width / max-height 夹住，否则 100% 放不开。 */
+  .video-media {
+    max-width: none;
+    max-height: none;
+    object-fit: contain;
+    background: #000;
+    -webkit-user-drag: none;
+    user-select: none;
+  }
+  /* 宽高还没测到（首帧 metadata 未就绪、feed 里也没记录尺寸）时的兜底：按画布铺满。 */
+  .video-fill {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+</style>

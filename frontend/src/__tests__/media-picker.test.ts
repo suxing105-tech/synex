@@ -232,6 +232,46 @@ describe("一颗「+ 参考」管三族", () => {
     expect(screen.container.querySelectorAll(".mp-col")).toHaveLength(2);
     expect(screen.getByText("2")).toBeTruthy();
   });
+
+  /**
+   * 真机踩到的 BUG：在视频工作流里挑过音频/视频，切回图片工作流再开选择器，
+   * 标题写着「选一张参考图」，里面还是 flac / mp4 —— 组件关掉不销毁，tab 是组件内状态。
+   */
+  it("关一次再开：回到调用方那一族，上次点的 tab 不粘过来", async () => {
+    const audio = [{ id: 5, filename: "a.mp3", path: "D:/a.mp3", kind: "audio", width: null, height: null, original_url: "/api/audio/5/file", thumbnail_url: null }];
+    (imagesApi.list as ReturnType<typeof vi.fn>).mockImplementation(async (q: any) =>
+      q.kind === "audio" ? { items: audio, total: 1 } : { items: [], total: 0 });
+    const screen = render(MediaPickerModal, {
+      open: true, kind: "image", kinds: ["image", "audio", "video"], onPick: () => {}, onClose: () => {},
+    });
+    await tick();
+    await fireEvent.click(await screen.findByRole("button", { name: "音频" }));
+    await vi.waitFor(() => expect(imagesApi.list).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "audio" })));
+    // 关上（选完、Esc、点外面都算），再切回图片工作流打开：这一族只有图片
+    await screen.rerender({ open: false });
+    await tick();
+    await screen.rerender({ open: true, kind: "image", kinds: ["image"] });
+    await vi.waitFor(() => expect(imagesApi.list).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "image" })));
+    expect(screen.getByRole("dialog").getAttribute("aria-label")).toBe("从图库选一张图片");
+    expect(screen.queryByRole("group", { name: "素材类型" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "音频" })).toBeNull();
+  });
+
+  it("三族都开着再开一次，tab 也回到调用方那一族而不是上次点的", async () => {
+    (imagesApi.list as ReturnType<typeof vi.fn>).mockResolvedValue({ items: [], total: 0 });
+    const screen = render(MediaPickerModal, {
+      open: true, kind: "image", kinds: ["image", "audio", "video"], onPick: () => {}, onClose: () => {},
+    });
+    await tick();
+    await fireEvent.click(await screen.findByRole("button", { name: "视频" }));
+    await vi.waitFor(() => expect(imagesApi.list).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "video" })));
+    await screen.rerender({ open: false });
+    await tick();
+    await screen.rerender({ open: true, kind: "audio" });
+    await vi.waitFor(() => expect(imagesApi.list).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "audio" })));
+    const tabs = screen.getByRole("group", { name: "素材类型" });
+    expect([...tabs.querySelectorAll('[aria-pressed="true"]')].map((el) => el.textContent?.trim())).toEqual(["音频"]);
+  });
 });
 
 

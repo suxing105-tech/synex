@@ -39,7 +39,9 @@
   const allowed = $derived(REF_DISPLAY_ORDER.filter((one) => (kinds.length ? kinds : [kind]).includes(one)));
   /** 用户点的 tab；没点过就跟着调用方给的族走——换目标格时那个 prop 会变。 */
   let tab = $state<RefKind | null>(null);
-  const activeKind = $derived(tab ?? kind);
+  // 不在可选族里的 tab 一律不算数：工作流从三族换成只有一族时，上次点到的 tab 还留在状态里，
+  // 让它继续决定列表就会出现「标题写着选一张图、里面全是 flac」。
+  const activeKind = $derived(tab !== null && allowed.includes(tab) ? tab : kind);
   // 称呼与量词都取自 clone 里那份共用的表：参考区那一行与这里的说法必须一字不差
   const noun = $derived(REF_KIND_NAMES[activeKind]);
   const counter = $derived(REF_KIND_COUNTERS[activeKind]);
@@ -115,6 +117,21 @@
       loading = false;
     }
   }
+
+  /**
+   * 每次打开都回到调用方指定的那一族。组件关闭后不销毁，tab 是组件内状态，
+   * 所以在视频工作流里挑过音频/视频之后，切回图片工作流再开选择器会停在那一族。
+   * 声明在「读列表」那条 effect 之前，免得先按上一族白读一次。
+   */
+  $effect(() => {
+    const target = kind;
+    const list = allowed;
+    if (!open) {
+      tab = null;
+      return;
+    }
+    tab = list.includes(target) ? null : (list[0] ?? null);
+  });
 
   $effect(() => {
     if (!open) return;

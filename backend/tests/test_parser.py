@@ -430,10 +430,96 @@ def test_real_user_workflow_ksampler_advanced_zml_lora_easy_seed(tmp_path: Path)
     assert meta["steps"] == 8
     assert meta["cfg"] == 1.0
     assert meta["sampler"] == "er_sde"
-    # raw inputs preserved (latent_image / noise_seed links kept as-is, that's expected)
-    assert meta["parameters"]["noise_seed"] == ["256", 0]
+    # 连线不是参数值：以前把 ["256", 0] 原样塞进 parameters，详情面板照原样显示成天书。
+    # 种子已经顺着 noise_seed 那条连线取到真值，连线本身不该入库。
+    assert "noise_seed" not in meta["parameters"]
+    assert "latent_image" not in meta["parameters"]
     assert meta["parameters"]["sampler_name"] == "er_sde"
     assert meta["parameters"]["add_noise"] == "enable"
+
+
+# ---------- 新版采样图（Qwen / Flux 这批：SamplerCustomAdvanced + guider） ----------
+# 真机 2026-10 的 Qwen-image-2.1 工作流出图后详情面板整块空白，就是因为解析器只认
+# 「KSampler + CLIPTextEncode + CheckpointLoader」这一代节点。以下用例照着真图缩小。
+
+_QWEN_GRAPH = {
+    "13": {"class_type": "ResolutionSelector", "inputs": {"aspect_ratio": "9:16 (Portrait Widescreen)", "megapixels": 2.2}},
+    "468": {"class_type": "UNETLoader", "inputs": {"unet_name": "Qwen-image-2.1\\qwen_image_2.1_bf16.safetensors"}},
+    "472": {"class_type": "EmptyLatentImage", "inputs": {"width": ["13", 0], "height": ["13", 1], "batch_size": 1}},
+    # 提示词增强节点：正文是连线，system_prompt 是喂给模型的说明书（不能当成正向提示词）
+    "503": {
+        "class_type": "TextGenerateLTX2Prompt",
+        "inputs": {"prompt": ["540", 0], "system_prompt": ["584", 0], "max_length": 512},
+    },
+    "540": {"class_type": "CR Prompt Text", "inputs": {"prompt": "换成酒吧桌台背景"}},
+    "543": {"class_type": "LoadImage", "inputs": {"image": "seekx_ref_501_84843475.png"}},
+    "553": {"class_type": "RandomNoise", "inputs": {"noise_seed": 126684599749170}},
+    "556": {
+        "class_type": "SamplerCustomAdvanced",
+        "inputs": {"noise": ["553", 0], "guider": ["558", 0], "sampler": ["561", 0], "sigmas": ["562", 0], "latent_image": ["472", 0]},
+    },
+    "558": {"class_type": "BasicGuider", "inputs": {"model": ["583", 0], "conditioning": ["582", 0]}},
+    "561": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}},
+    "562": {"class_type": "BasicScheduler", "inputs": {"scheduler": "simple", "steps": 40, "denoise": 1.0, "model": ["583", 0]}},
+    "582": {
+        "class_type": "TextEncodeQwenImage21",
+        "inputs": {"prompt": ["503", 0], "negative_prompt": "", "clip": ["470", 0], "images.image_1": ["543", 0], "vae": ["471", 0]},
+    },
+    "584": {"class_type": "PrimitiveStringMultiline", "inputs": {"value": "# Edit Prompt Enhancer — 一整篇说明书，不该出现在提示词里"}},
+}
+
+
+def _links_only(params: dict) -> list:
+    return [k for k, v in params.items() if isinstance(v, list) and len(v) == 2 and isinstance(v[1], int) and isinstance(v[0], str)]
+
+
+def test_advanced_sampler_graph_prompt_walks_links_to_the_typed_text(tmp_path: Path):
+    from .conftest import make_png as _mk
+
+    path = _mk(tmp_path / "qwen.png", prompt=_QWEN_GRAPH)
+    meta = parse_metadata(path)
+    # 顺着 582 -> 503 -> 540 追到用户真正打字的那个节点
+    assert meta["positive_prompt"] == "换成酒吧桌台背景"
+    # system prompt 那份说明书不能漏进来
+    assert "说明书" not in meta["positive_prompt"]
+    assert meta["negative_prompt"] == ""
+
+
+def test_advanced_sampler_graph_params_live_on_the_helper_nodes(tmp_path: Path):
+    path = make_png(tmp_path / "qwen.png", prompt=_QWEN_GRAPH)
+    meta = parse_metadata(path)
+    assert meta["seed"] == 126684599749170       # 住在 RandomNoise
+    assert meta["steps"] == 40                   # 住在 BasicScheduler
+    assert meta["sampler"] == "euler"            # 住在 KSamplerSelect
+    assert meta["model"].endswith("qwen_image_2.1_bf16.safetensors")  # 住在 UNETLoader
+    assert meta["parameters"]["scheduler"] == "simple"
+    assert meta["parameters"]["denoise"] == 1.0
+    # 采样器节点自己的 inputs 全是连线，一条都不许入库
+    assert _links_only(meta["parameters"]) == []
+
+
+def test_advanced_sampler_graph_guider_without_conditioning_still_gets_params(tmp_path: Path):
+    import copy
+
+    wf = copy.deepcopy(_QWEN_GRAPH)
+    wf["558"]["inputs"]["conditioning"] = ["999", 0]  # 上游节点不在 prompt 里，文字取不到
+    meta = parse_metadata(make_png(tmp_path / "qwen2.png", prompt=wf))
+    assert meta["positive_prompt"] == ""
+    # 提示词取不到不影响参数：参数不依赖 conditioning 那条链
+    assert meta["steps"] == 40
+    assert meta["seed"] == 126684599749170
+
+
+def test_cfg_guider_positive_negative_and_cfg(tmp_path: Path):
+    import copy
+
+    wf = copy.deepcopy(_QWEN_GRAPH)
+    wf["558"] = {"class_type": "CFGGuider", "inputs": {"model": ["583", 0], "positive": ["582", 0], "negative": ["600", 0], "cfg": 3.5}}
+    wf["600"] = {"class_type": "CR Prompt Text", "inputs": {"prompt": "文字扭曲，多余手指"}}
+    meta = parse_metadata(make_png(tmp_path / "qwen3.png", prompt=wf))
+    assert meta["positive_prompt"] == "换成酒吧桌台背景"
+    assert meta["negative_prompt"] == "文字扭曲，多余手指"
+    assert meta["cfg"] == 3.5
 
 
 

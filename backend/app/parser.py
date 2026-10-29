@@ -171,12 +171,51 @@ def _resolve_seed(prompt_obj: dict[str, Any], sampler_info: dict[str, Any]) -> i
                         return val
         return None
 
-    for key in ("seed", "noise_seed"):
+    for key in ("seed", "noise_seed", "noise"):
         if key in sampler_info:
             v = _coerce(sampler_info[key])
             if v is not None:
                 return v
     return None
+
+def _is_link(value: Any) -> bool:
+    """ComfyUI 的连线值就是 ``[node_id, output_index]``，它不是参数值。"""
+    return (
+        isinstance(value, list) and len(value) == 2
+        and isinstance(value[1], int) and not isinstance(value[1], bool)
+        and isinstance(value[0], (int, float, str)) and not isinstance(value[0], bool)
+    )
+
+
+def _linked_node(prompt_obj: dict[str, Any], value: Any) -> dict[str, Any] | None:
+    """连线值 → 目标节点 dict；不是连线或目标不存在时给 None。"""
+    if not _is_link(value):
+        return None
+    try:
+        target = prompt_obj.get(str(int(float(str(value[0])))))
+    except (TypeError, ValueError):
+        target = prompt_obj.get(str(value[0]))
+    return target if isinstance(target, dict) else None
+
+
+# 新版采样图（Qwen / Flux / Wan 这批）没有一个「参数都在里面」的 KSampler 了：
+# 采样器名在 KSamplerSelect、步数与调度在 BasicScheduler、CFG 在 CFGGuider、
+# 种子在 RandomNoise。只从「class_type 带 Sampler 的节点」捞 inputs，捞回来的
+# 全是连线（sampler=["561",0]），真值一个都拿不到 → 详情面板整块空白。
+# 这里按「哪个节点管哪件事」补回来，输出的键名沿用老 KSampler 的，前端不用改。
+_GRAPH_PARAM_NODES: dict[str, dict[str, str]] = {
+    "KSamplerSelect": {"sampler_name": "sampler_name"},
+    "BasicScheduler": {"scheduler": "scheduler", "steps": "steps", "denoise": "denoise"},
+    "CFGGuider": {"cfg": "cfg"},
+    "RandomNoise": {"noise_seed": "seed"},
+}
+# 用户手写提示词的落点，按可信度排序。CR Prompt Text 用 prompt、
+# PrimitiveStringMultiline 用 value，都不是 CLIPTextEncode 的 text。
+_TEXT_KEY_PRIORITY = ("positive_prompt", "positive", "prompt", "text", "string", "value")
+# 这些键上的文字不是正文：negative 是反向提示词，system / template 那批是喂给
+# 提示词增强节点（TextGenerateLTX2Prompt）的说明书，抓出来会把正文淹掉。
+_TEXT_KEY_SKIP_HINTS = ("negative", "system", "template", "instruction", "prefix", "suffix")
+
 
 def _extract_comfyui_prompts(prompt_obj: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
     """从 ComfyUI ``prompt`` JSON 抽取正向 / 反向 prompt + 关键参数。
@@ -197,13 +236,20 @@ def _extract_comfyui_prompts(prompt_obj: dict[str, Any]) -> tuple[str, str, dict
         if isinstance(node, dict) and node.get("class_type") == "KSampler":
             ksamplers.append(node)
     if not ksamplers:
-        # 新版 ComfyUI 可能用 ``KSamplerAdvanced`` / ``SamplerCustom`` 等，做最小适配
-        for nid, node in prompt_obj.items():
-            if isinstance(node, dict) and "Sampler" in (node.get("class_type") or ""):
-                ksamplers.append(node)
+        # 新版 ComfyUI 可能用 ``KSamplerAdvanced`` / ``SamplerCustomAdvanced`` 等。
+        # 光看「名字里带 Sampler」不行：新采样图里 KSamplerSelect 也带 Sampler，
+        # 但它只是选采样器的开关，既不吃 conditioning 也不带步数。
+        # 所以优先取真正吃流程（conditioning / guider / 噪波 / sigmas）的那个节点。
+        candidates = [
+            node for node in prompt_obj.values()
+            if isinstance(node, dict) and "Sampler" in (node.get("class_type") or "")
+        ]
+        flow_keys = {"positive", "negative", "guider", "noise", "sigmas", "latent_image"}
+        ksamplers = [n for n in candidates if set((n.get("inputs") or {}).keys()) & flow_keys] or candidates
     if ksamplers:
         ks = ksamplers[0]
-        sampler_info = {k: v for k, v in (ks.get("inputs") or {}).items() if k != "model" and k != "positive" and k != "negative"}
+        # 保留连线：种子常是 noise -> RandomNoise 这种连线，_resolve_seed 要顺着走
+        sampler_info = dict(ks.get("inputs") or {})
 
         # _text_from_node: walk a node and extract its prompt text.
         # Handles:
@@ -315,6 +361,19 @@ def _extract_comfyui_prompts(prompt_obj: dict[str, Any]) -> tuple[str, str, dict
                 if parts:
                     return sep.join(parts)
 
+            # 自定义文本节点：正文住在 prompt / string / value 这类键上
+            # （CR Prompt Text.prompt、PrimitiveStringMultiline.value），
+            # 也可能是指向上一层的连线（TextEncodeQwenImage21.prompt -> PE 节点 -> CR Prompt Text），
+            # _resolve_value 会顺着连线一路追到用户真正打字的那个节点。
+            for key in _TEXT_KEY_PRIORITY:
+                if key not in inputs:
+                    continue
+                if any(hint in key.lower() for hint in _TEXT_KEY_SKIP_HINTS):
+                    continue
+                t = _resolve_value(inputs[key])
+                if t:
+                    return t
+
             # Generic fallback: scan inputs for any link and follow it
             for v in inputs.values():
                 if isinstance(v, list) and len(v) >= 1:
@@ -335,6 +394,14 @@ def _extract_comfyui_prompts(prompt_obj: dict[str, Any]) -> tuple[str, str, dict
         inputs = ks.get("inputs") or {}
         pos = resolve_text(inputs.get("positive"))
         neg = resolve_text(inputs.get("negative"))
+        if not pos and not neg:
+            # SamplerCustomAdvanced 这一代没有 positive / negative 口：
+            # 文字条件挂在 guider 上，CFGGuider 分正负，BasicGuider 只有一条 conditioning。
+            guider = _linked_node(prompt_obj, inputs.get("guider"))
+            if guider:
+                g_in = guider.get("inputs") or {}
+                pos = resolve_text(g_in.get("positive")) or resolve_text(g_in.get("conditioning"))
+                neg = resolve_text(g_in.get("negative"))
 
     # 模型：从 checkpoint loader 节点取
     model = ""
@@ -344,6 +411,14 @@ def _extract_comfyui_prompts(prompt_obj: dict[str, Any]) -> tuple[str, str, dict
             if ckpt:
                 model = str(ckpt)
                 break
+    if not model:
+        # DiT 工作流（Qwen / Flux / Wan）压根没有 CheckpointLoader，模型是「UNET加载器」
+        for node in prompt_obj.values():
+            if isinstance(node, dict) and "UNETLoader" in (node.get("class_type") or ""):
+                unet = (node.get("inputs") or {}).get("unet_name")
+                if unet and not _is_link(unet):
+                    model = str(unet)
+                    break
 
     # Extract seed. ComfyUI varies the field name and may store it as a link:
     #   - KSampler.inputs.seed            (legacy, usually int)
@@ -353,7 +428,22 @@ def _extract_comfyui_prompts(prompt_obj: dict[str, Any]) -> tuple[str, str, dict
     # `RandomNoise` whose `seed` / `noise_seed` field is a plain int.
     seed = _resolve_seed(prompt_obj, sampler_info)
 
-    merged: dict[str, Any] = dict(sampler_info)
+    # 连线不是参数值，写进库详情面板只会显示 ['561', 0] 这种垃圾
+    merged: dict[str, Any] = {
+        k: v for k, v in sampler_info.items()
+        if k not in ("model", "positive", "negative") and not _is_link(v)
+    }
+    for node in prompt_obj.values():
+        if not isinstance(node, dict):
+            continue
+        aliases = _GRAPH_PARAM_NODES.get(str(node.get("class_type") or ""))
+        if not aliases:
+            continue
+        node_inputs = node.get("inputs") or {}
+        for src, dst in aliases.items():
+            value = node_inputs.get(src)
+            if value is not None and not _is_link(value):
+                merged.setdefault(dst, value)
     if model:
         merged["model"] = model
     if seed is not None:

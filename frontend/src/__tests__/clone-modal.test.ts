@@ -66,6 +66,26 @@ afterEach(() => {
   comfyuiStatus.set({ running: true, enabled: true, url: 'http://127.0.0.1:8188', checked_at: 0 });
 });
 
+it('后端带回来的参考格清单是 snake_case：悬停标题不能是「undefined｜文件名」', async () => {
+  // 真实接口发的是 slot_label（见 GET /api/clone/templates），这份预演就照它写。
+  const wire = {
+    ...TPL,
+    media_kind: 'video',
+    soundtracks: 0,
+    reference_cells: [
+      { key: '188.image', kind: 'image', ordinal: 1, label: '图片1', name: '', slot_label: '加载图像', tag: '<Picture 1>' },
+      { key: '185.video', kind: 'video', ordinal: 1, label: '视频1', name: '', slot_label: 'Load Video (Upload)', tag: '<Video 1>' },
+    ],
+  };
+  routes({ ...baseRoutes(), '/api/clone/templates': { items: [wire] } });
+  const screen = await ready();
+  expect(screen.getByTitle(/^加载图像｜source\.png$/)).toBeTruthy();
+  // 空着的视频位不占格子（合并行只画已填的 + 末尾一颗不绑族的「+ 参考」）
+  expect(screen.queryByText('视频1')).toBeNull();
+  expect(screen.getByRole('button', { name: '添加参考素材' })).toBeTruthy();
+  expect(screen.container.querySelector('[title^="undefined"]')).toBeNull();
+});
+
 it('参考位显示成「图片N」并带节点标题，提示词先留空但一键能填回工作流内置那句', async () => {
   routes(baseRoutes());
   const screen = await ready();
@@ -257,7 +277,8 @@ it('生成完成后在弹窗里给出这次出的图，点它跳到图库里那�
   await tick();
   const chip = await screen.findByRole('button', { name: '打开生成的第 41 张' });
   await fireEvent.click(chip);
-  expect(onOpenImage).toHaveBeenCalledWith(41);
+  // 带上 kind：图片进「原图 vs 产出图」对比，视频要进播放器，父组件靠这个分派
+  expect(onOpenImage).toHaveBeenCalledWith(41, 'image');
 });
 
 it('后端那句中文错误原样显示，不糊成一句生成失败', async () => {
@@ -971,4 +992,247 @@ it('胶囊定宽时长名字会被截断，全名必须另有落点：顶部标�
   // 顶部标题（17px）报当前用的是哪一份，悬浮提示给完整名字（含「生成中」那句前缀）。
   expect(pill.getAttribute('title')).toBe('Qwen-image-2.1多图编辑');
   expect(document.querySelector('.cm-title')?.textContent).toBe('Qwen-image-2.1多图编辑');
+});
+
+/* ── 视频一键同款（H3 参考生视频）────────────────────────────────────── */
+
+/** 真机那份 H3 参考生视频的形状：三族参考位 + 比例 + 时长，产出是片子。名字末尾的空格照抄导出文件。 */
+const H3 = {
+  ...TPL, id: 9, name: 'H3参考视频 ', media_kind: 'video', soundtracks: 0,
+  modes: ['text', 'single', 'multi'], node_count: 14, control_count: 2,
+  slots: [
+    { kind: 'prompt', node: '265', input: 'value', label: '完整提示词' },
+    { kind: 'image', node: '188', input: 'image', label: '参考图片', grow: { node: '136', group: 'ref_images', names: ['ref_image_1'], type: 'IMAGE' } },
+    { kind: 'audio', node: '182', input: 'audio', label: '参考音频' },
+    { kind: 'video', node: '185', input: 'video', label: '参考视频' },
+    { kind: 'select', node: '228', input: 'aspect_ratio', label: '比例', options: ['16:9', '9:16'], value: '16:9' },
+    { kind: 'number', node: '227', input: 'value', label: '视频时长（秒）', value: 8, min: 1, max: 60, unit: '秒', presets: [5, 8, 10, 12, 15] },
+  ],
+};
+const VIDEO_CARD = {
+  id: 31, item_type: 'media', kind: 'video', filename: 'shot.mp4', path: 'D:/shot.mp4',
+  original_url: null, thumbnail_url: '/api/videos/31/thumb', play_url: '/api/videos/31/file',
+  playable: true, width: 1280, height: 720,
+} as any;
+const AUDIO = {
+  id: 22, item_type: 'media', kind: 'audio', filename: 'bgm.mp3', path: 'D:/bgm.mp3',
+  original_url: '/api/audio/22/file', thumbnail_url: '/api/audio/22/waveform', play_url: '/api/audio/22/file',
+} as any;
+
+const videoRoutes = () => ({
+  ...baseRoutes(),
+  '/api/clone/sources/31': NO_SOURCES,
+  '/api/images/31/reverse-prompts': { items: [] },
+  '/api/images/31': { id: 31, filename: 'shot.mp4', positive_prompt: '' },
+});
+
+it('视频卡点开默认吃出片那条工作流；这一族没有就退回库里现有的', async () => {
+  routes({ ...videoRoutes(), '/api/clone/templates': { items: [TPL, { ...H3, is_active: false }] } });
+  const screen = await ready({ image: VIDEO_CARD });
+  expect(screen.getByRole('heading', { name: 'H3参考视频' })).toBeTruthy();
+  cleanup();
+  // 库里只导过图片工作流：视频卡也要开得出弹窗，别给一片空白
+  routes({ ...videoRoutes(), '/api/clone/templates': { items: [TPL] } });
+  const again = await ready({ image: VIDEO_CARD });
+  expect(again.getByRole('heading', { name: 'Qwen 多图编辑' })).toBeTruthy();
+});
+
+it('三族参考合成一行：已填的按 图片→视频→音频 排，末尾只有一颗「+ 参考」', async () => {
+  routes({ ...videoRoutes(), '/api/clone/templates': { items: [H3] } });
+  const screen = await ready({ image: VIDEO_CARD });
+  // 一行，不是一族一行：参考就是一个列表，加素材不必先判断「这算哪一块」
+  expect(document.querySelectorAll('.cm-ref-row')).toHaveLength(1);
+  expect(screen.getByRole('group', { name: '参考素材（图生视频）' })).toBeTruthy();
+  expect(screen.getByTitle(/^参考视频｜shot\.mp4$/)).toBeTruthy();
+  // 空格子不再替每一族各摆一颗：整行末尾就这一颗，而且它不绑族
+  expect(document.querySelectorAll('.cm-ref-add')).toHaveLength(1);
+  expect(screen.getByRole('button', { name: '添加参考素材' }).getAttribute('title'))
+    .toContain('最多吃 2 张图片 / 1 条视频 / 1 段音频');
+  expect(screen.queryByRole('button', { name: '添加图片1参考图' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '添加音频1' })).toBeNull();
+  // 移除之后一份素材都不放——「文生视频」这个档位照样点得动
+  await fireEvent.click(screen.getByRole('button', { name: '移除视频1' }));
+  await tick();
+  expect(document.querySelector('[aria-label="参考素材（文生视频）"]')).toBeTruthy();
+});
+
+it('图片工作流仍只有一行参考位，分组名一个字没改', async () => {
+  routes(baseRoutes());
+  await ready();
+  expect(document.querySelectorAll('.cm-ref-row')).toHaveLength(1);
+  expect(modeNode('单图编辑')).toBeTruthy();
+});
+
+it('「+ 参考」不绑族：选择器出族 tab，挑到哪一族落哪一族的第一个空位', async () => {
+  (imagesApi.list as ReturnType<typeof vi.fn>).mockResolvedValue({ items: [PICKED, AUDIO], total: 2 });
+  routes({ ...videoRoutes(), '/api/clone/templates': { items: [H3] } });
+  const screen = await ready({ image: VIDEO_CARD });
+  await fireEvent.click(screen.getByRole('button', { name: '添加参考素材' }));
+  // 视频位已经被被点的片子占了，tab 只给还有空位的两族，顺序仍按展示序（图片 → 音频）
+  const dialog = await screen.findByRole('dialog', { name: '从图库选一张图片' });
+  expect([...dialog.querySelectorAll('.mp-tab')].map((el) => el.textContent?.trim())).toEqual(['图片', '音频']);
+  expect(imagesApi.list).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'image' }));
+  // 切族＝换一批素材：重新按族读一次，标题与量词跟着换
+  await fireEvent.click(screen.getByRole('button', { name: '音频' }));
+  await vi.waitFor(() => expect(imagesApi.list).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'audio' })));
+  expect(dialog.getAttribute('aria-label')).toBe('从图库选一段音频');
+  await fireEvent.click(screen.getByRole('button', { name: 'bgm.mp3' }));
+  await vi.waitFor(() => expect(screen.getByTitle(/^参考音频｜bgm\.mp3$/)).toBeTruthy());
+  const tile = screen.getByTitle(/^参考音频｜bgm\.mp3$/);
+  expect(tile.className).toContain('cm-tile-audio');
+  expect(tile.querySelector('img')?.getAttribute('src')).toContain('/api/audio/22/waveform');
+  // 合并行的编号顺序＝H3 摆参考的顺序：图片 → 视频 → 音频
+  expect([...document.querySelectorAll('.cm-ref-caption')].map((el) => el.textContent)).toEqual(['视频1', '音频1']);
+});
+
+it('时长是滑块：3–15 秒拖到几秒就是几秒，数字框与胶囊跟着同步', async () => {
+  routes({ ...videoRoutes(), '/api/clone/templates': { items: [H3] } });
+  const screen = await ready({ image: VIDEO_CARD });
+  await fireEvent.click(screen.getByRole('button', { name: '画面参数' }));
+  const pop = await screen.findByRole('dialog', { name: '画面参数' });
+  expect(pop.textContent).toContain('视频时长（秒）');
+  const slider = screen.getByLabelText('视频时长（秒）滑块') as HTMLInputElement;
+  // 区间 3–15 秒（苏醒点名）；工作流自己给的 min/max 只收紧不放宽
+  expect([slider.min, slider.max, slider.step]).toEqual(['3', '15', '1']);
+  expect(slider.value).toBe('8');
+  slider.value = '12';
+  await fireEvent.input(slider);
+  await tick();
+  expect((screen.getByLabelText('视频时长（秒）') as HTMLInputElement).value).toBe('12');
+  expect(screen.getByRole('button', { name: '画面参数' }).textContent).toContain('16:9 / 12秒');
+  // 档位按钮不再管时长：整段区间滑块都能到，摆五颗反而像只有这五档
+  expect(pop.querySelector('[aria-label="视频时长（秒）档位"]')).toBeNull();
+});
+
+it('视频工作流里 @ 出来的是 H3 原生标签 <Picture 1>，遮罩把它当引用高亮', async () => {
+  (imagesApi.list as ReturnType<typeof vi.fn>).mockResolvedValue({ items: [PICKED], total: 1 });
+  routes({ ...videoRoutes(), '/api/clone/templates': { items: [H3] } });
+  const screen = await ready({ image: VIDEO_CARD });
+  await fireEvent.click(screen.getByRole('button', { name: '添加参考素材' }));
+  await fireEvent.click(await screen.findByRole('button', { name: 'bg.png' }));
+  await tick();
+  const box = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  await fireEvent.input(box, { target: { value: '让 @' } });
+  await tick();
+  // 菜单只列挂上参考位的素材：音频位还空着，所以出现的是图片1与视频1
+  expect(document.querySelector('.cm-mention')?.textContent).toContain('视频1');
+  // 末尾那颗「再去挂一份」指向第一个空格：这儿图片位还有空，所以仍是「一张参考图」
+  expect(document.querySelector('.cm-mention-add')?.textContent).toContain('从图库再挂一张参考图');
+  await fireEvent.click(menuItems()[0]);
+  await tick();
+  expect(box.value).toBe('让 <Picture 1> ');
+  expect(document.querySelector('.cm-prompt-bg .cm-mention-hl')?.textContent).toBe('<Picture 1>');
+});
+
+it('出片之后的产出按 kind 取缩略图，点它是「第 N 条」并把 kind 交回父组件', async () => {
+  routes({ ...videoRoutes(), '/api/clone/templates': { items: [H3] }, '/api/clone/generate': { ...EMPTY_CLONE_JOB, active: true, job_id: 'j1', state: 'queued', running: true } });
+  const onOpenImage = vi.fn();
+  const screen = await ready({ image: VIDEO_CARD, onOpenImage });
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '一镜到底' } });
+  await fireEvent.click(screen.getByRole('button', { name: '生成' }));
+  applyCloneProgress({
+    active: true, job_id: 'j1', state: 'done', running: false, template_id: 9, media_kind: 'video',
+    outputs: [{ id: 41, kind: 'video', filename: 'out.mp4', thumbnail_url: '/api/videos/41/thumb' }],
+  });
+  await tick();
+  expect(screen.getByText('已生成 1 条')).toBeTruthy();
+  const chip = await screen.findByRole('button', { name: '打开生成的第 41 条' });
+  // 视频的海报帧不是 /api/images/{id}/file，前端硬拼必然拼错
+  expect(chip.querySelector('img')?.getAttribute('src')).toContain('/api/videos/41/thumb');
+  expect(chip.className).toContain('cm-chip-video');
+  await fireEvent.click(chip);
+  expect(onOpenImage).toHaveBeenCalledWith(41, 'video');
+});
+
+it('工作流清单不分家：图片与视频的工作流一起列，各带一个标识', async () => {
+  routes({ ...baseRoutes(), '/api/clone/templates': { items: [TPL, H3] } });
+  const screen = await ready();
+  await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
+  await screen.findByRole('menu', { name: '同款工作流' });
+  expect([...document.querySelectorAll('.cm-wf-kind')].map((el) => el.textContent)).toEqual(['图片', '视频']);
+  // 徽标钉在名字前面：挂在名字后面时它会随名字长短左右漂移，两行的名字对不齐
+  const rows = [...document.querySelectorAll('.cm-wf-row > .cm-wf')];
+  expect(rows).toHaveLength(2);
+  for (const row of rows) {
+    const kids = [...row.children];
+    expect(kids[0]?.className).toContain('cm-wf-kind');
+    expect(kids[1]?.className).toContain('cm-wf-name');
+  }
+});
+
+it('往已经填好的音频位拖一张图片：说清是哪一格要音频，不默默吞掉', async () => {
+  routes({
+    ...videoRoutes(),
+    '/api/clone/templates': { items: [H3] },
+    '/api/clone/sources/31': {
+      references: [{ ...AUDIO, slot: '182.audio' }],
+      template_id: 9, source_image_id: null, dropped: 0, origin: 'db',
+    },
+  });
+  const screen = await ready({ image: VIDEO_CARD });
+  const cell = screen.getByRole('group', { name: '音频1' });
+  const file = new File(['x'], 'picture.png', { type: 'image/png' });
+  await fireEvent.drop(cell, { dataTransfer: { files: [file] } });
+  await tick();
+  expect(await screen.findByRole('status')).toBeTruthy();
+  expect(screen.getByRole('status').textContent).toContain('音频1要的是音频');
+  expect(imagesApi.import).not.toHaveBeenCalled();
+});
+
+
+/* ── 参考区合并成一行 + 视频可播（苏醒 2026-10-29 三条要求）────────────── */
+
+it('视频卡左侧是能播的播放器：一键同款要抄的是片子里的节奏，不是一张首帧', async () => {
+  routes({ ...videoRoutes(), '/api/clone/templates': { items: [H3] } });
+  await ready({ image: VIDEO_CARD });
+  const player = document.querySelector('video.cm-hero') as HTMLVideoElement;
+  expect(player.getAttribute('src')).toContain('/api/videos/31/file');
+  expect(player.getAttribute('poster')).toContain('/api/videos/31/thumb');
+  expect(player.hasAttribute('controls')).toBe(true);
+  cleanup();
+  // 图片卡仍是 <img>：给视频准备的播放器不该冒出来
+  routes(baseRoutes());
+  await ready();
+  expect(document.querySelector('video.cm-hero')).toBeNull();
+  expect(document.querySelector('img.cm-hero')).toBeTruthy();
+});
+
+it('放不出来的容器（playable=false）退回海报帧，不给一个点了没反应的播放器', async () => {
+  routes({ ...videoRoutes(), '/api/clone/templates': { items: [H3] } });
+  await ready({ image: { ...VIDEO_CARD, playable: false } });
+  expect(document.querySelector('video.cm-hero')).toBeNull();
+  expect(document.querySelector('img.cm-hero')).toBeTruthy();
+});
+
+it('拖文件到「+ 参考」上：不指定格子也按文件自己的族落位', async () => {
+  (imagesApi.import as ReturnType<typeof vi.fn>).mockResolvedValue({
+    saved: [{ id: 22, filename: 'bgm.mp3', path: 'D:/bgm.mp3' }], skipped: [],
+  });
+  routes({ ...videoRoutes(), '/api/clone/templates': { items: [H3] } });
+  const screen = await ready({ image: VIDEO_CARD });
+  await fireEvent.drop(screen.getByRole('button', { name: '添加参考素材' }), {
+    dataTransfer: { files: [new File(['x'], 'bgm.mp3', { type: 'audio/mpeg' })] },
+  });
+  await vi.waitFor(() => expect(screen.getByTitle(/^参考音频｜bgm\.mp3$/)).toBeTruthy());
+});
+
+it('往已经放满的那一族再拖一份：说清是哪一族满了，不默默吞掉', async () => {
+  // afterEach 不清 imagesApi 的调用记录，不清零就会拿到上一条用例留下那次调用
+  (imagesApi.import as ReturnType<typeof vi.fn>).mockClear().mockResolvedValue({ saved: [], skipped: [] });
+  routes({
+    ...videoRoutes(),
+    '/api/clone/templates': { items: [H3] },
+    '/api/clone/sources/31': {
+      references: [{ ...AUDIO, slot: '182.audio' }],
+      template_id: 9, source_image_id: null, dropped: 0, origin: 'db',
+    },
+  });
+  const screen = await ready({ image: VIDEO_CARD });
+  const add = screen.getByRole('button', { name: '添加参考素材' });
+  // tab 只剩还有空位的那一族：音频唯一一格已经满了，图片族还有空
+  await fireEvent.drop(add, { dataTransfer: { files: [new File(['x'], 'song.mp3', { type: 'audio/mpeg' })] } });
+  await tick();
+  expect(await screen.findByRole('status')).toBeTruthy();
+  expect(screen.getByRole('status').textContent).toContain('音频参考位已经放满了');
+  expect(imagesApi.import).not.toHaveBeenCalled();
 });

@@ -110,12 +110,20 @@ it('角标不加边框也不加底色，悬停只是图标变品牌色，焦点�
   expect(/\.media-clone-btn:focus,\s*\.media-clone-btn:focus-visible \{\s*outline: none;/.test(block)).toBe(true);
 });
 
-it('视频与音频卡不给一键同款入口：它们没有可用的提示词与工作流', async () => {
+it('视频卡挂同一颗一键同款角标，音频卡不挂：音频没有能喂给工作流的加载器', async () => {
   const screen = await openFeed([
-    card({ id: 2, kind: 'video', filename: 'v.mp4', original_url: '/api/images/2/file', playable: false }),
+    card({ id: 2, kind: 'video', filename: 'v.mp4', original_url: null, thumbnail_url: '/api/videos/2/thumb', playable: false }),
     card({ id: 3, kind: 'audio', filename: 'a.mp3', original_url: '/api/images/3/file' }),
   ]);
-  expect(screen.queryByRole('button', { name: '用同款工作流再生成一张' })).toBeNull();
+  const btn = screen.getByRole('button', { name: '用同款工作流再生成一条' });
+  // 入口的几何、常驻规则、is-cloneable 让位规则全部照图片卡，不另立一套
+  expect(btn.closest('.media-card')?.classList.contains('is-cloneable')).toBe(true);
+  expect(btn.closest('.media-card-footer')).toBeNull();
+  await fireEvent.click(btn);
+  await tick();
+  expect(screen.getByRole('dialog', { name: '一键同款' })).toBeTruthy();
+  // 一整屏只有视频卡这一颗：音频卡没有入口，也不会冒出「再生成一段」这种第三种量词
+  expect(screen.getAllByRole('button', { name: /用同款工作流再生成/ })).toHaveLength(1);
 });
 
 /** Feed 渲染结果的具体类型：写成 ReturnType<typeof render> 会退化成通用查询签名，取不到元素类型。 */
@@ -189,9 +197,12 @@ it('窄列下右键菜单仍然能进一键同款', async () => {
   expect(screen.getByRole('dialog', { name: '一键同款' })).toBeTruthy();
 });
 
-it('视频卡的右键菜单里没有一键同款', async () => {
-  const screen = await openFeed([card({ id: 4, kind: 'video', filename: 'v.mp4', original_url: '/api/images/4/file', playable: false })]);
+it('视频卡的右键菜单里也有一键同款（窄列页脚不渲染时它是唯一的入口）', async () => {
+  const screen = await openFeed([card({ id: 4, kind: 'video', filename: 'v.mp4', original_url: null, thumbnail_url: '/api/videos/4/thumb', playable: false })], 300);
   await fireEvent.contextMenu(screen.container.querySelector('.thumb')!, { clientX: 10, clientY: 10 });
   await tick();
-  expect(screen.queryByRole('menuitem', { name: '一键同款' })).toBeNull();
+  const item = screen.getByRole('menuitem', { name: '一键同款' });
+  await fireEvent.click(item);
+  await tick();
+  expect(screen.getByRole('dialog', { name: '一键同款' })).toBeTruthy();
 });

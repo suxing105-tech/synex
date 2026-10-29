@@ -398,12 +398,15 @@ def nodes_multi() -> dict:
 
 def info_autogrow() -> dict:
     info = info_new()
+    # 与 ComfyUI 0.43 真机回包同构：格名在 names 里，每格的类型在 template.input.required
     info["TextEncodeQwenImage21"] = {"input": {"required": {
         "prompt": ["STRING", {"multiline": True}],
+        "negative_prompt": ["STRING", {"multiline": True}],
         "clip": ["CLIP", {}],
         "images": ["COMFY_AUTOGROW_V3", {"template": {
-            "type": "IMAGE", "default": 1, "min": 1, "max": 16,
+            "input": {"required": {"image": ["IMAGE", {}]}},
             "names": [f"image_{i}" for i in range(1, 17)],
+            "min": 0,
         }}],
     }}}
     return info
@@ -413,7 +416,7 @@ def test_autogrow_group_gives_free_reference_cells():
     nodes = nodes_multi()
     detected = ct.detect_slots(nodes, info_autogrow())
     slot = next(s for s in detected["slots"] if s["kind"] == "image")
-    assert slot["grow"] == {"node": "582", "group": "images",
+    assert slot["grow"] == {"node": "582", "group": "images", "type": "IMAGE",
                             "names": [f"image_{i}" for i in range(2, 17)]}
     # 生成方式 = 参考图数量，所以没有「必填参考位」这回事了；扩位和真槽位一样可提交
     required, allowed = ct.reference_slot_keys(detected["slots"])

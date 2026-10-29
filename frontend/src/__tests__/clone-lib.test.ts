@@ -5,7 +5,10 @@ import {
   imageSlots, jobForTemplate, latestReversePrompt, modeFromRefCount, numberPresets, numberUnit,
   modeLabel, optionLabel, promptSourceLabel, promptSlots, ratioShape, referenceCells, referenceIssues, visibleRefCells,
   resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, templateDisplayName,
-  applyMention, comparePair, matchMention, mentionChunks, mentionItems, mentionToken,
+  applyMention, comparePair, matchMention, mentionAddLabel, mentionChunks, mentionItems, mentionToken,
+  familyCells, formatElapsed, inspectAsTemplate, isImageOnlyRefs, isVideoTemplate, mentionInsertText, refTag,
+  referenceCounter, referenceFamilies, referenceNoun,
+  firstFreeRefKey, mergedRefCells, openRefKinds, REF_DISPLAY_ORDER, sortByDisplayFamily,
   type CloneMode, type CloneSlot, type CloneTemplate,
 } from "../lib/clone";
 
@@ -464,5 +467,307 @@ describe("templateDisplayName", () => {
     expect(templateDisplayName(".json")).toBe(".json");
     expect(templateDisplayName(null)).toBe("");
     expect(templateDisplayName(undefined)).toBe("");
+  });
+});
+
+/* ── 视频一键同款（H3 参考生视频）──────────────────────────────────────── */
+
+/** 后端从 H3 参考生视频工作流里检测出来的那份槽位表：三族参考位 + 时长控件。 */
+function h3Slots(soundtracks = 0): CloneTemplate {
+  return tpl([
+    promptSlot,
+    { kind: "image", node: "188", input: "image", label: "参考图片",
+      grow: { node: "136", group: "ref_images", names: ["ref_image_1", "ref_image_2"], type: "IMAGE" } },
+    { kind: "image", node: "199", input: "image", label: "参考图片 2" },
+    { kind: "audio", node: "182", input: "audio", label: "参考音频",
+      grow: { node: "136", group: "ref_audios", names: ["ref_audio_1", "ref_audio_2"], type: "AUDIO" } },
+    { kind: "video", node: "185", input: "video", label: "参考视频",
+      grow: { node: "136", group: "ref_videos", names: ["ref_video_1", "ref_video_2"], type: "IMAGE" } },
+    { kind: "number", node: "227", input: "value", label: "视频时长（秒）", value: 8, min: 1, max: 60, unit: "秒", presets: [5, 8, 10, 12, 15] },
+  ], { name: "H3参考视频", media_kind: "video", soundtracks, modes: ["text", "single", "multi"] });
+}
+
+describe("三族参考位：图片 → 音频 → 视频，每族先真槽位再扩位", () => {
+  const cells = referenceCells(h3Slots());
+
+  it("编号一族一族连着排，扩位排在真槽位之后", () => {
+    expect(cells.map((c) => c.label)).toEqual([
+      "图片1", "图片2", "图片3", "图片4",
+      "音频1", "音频2", "音频3",
+      "视频1", "视频2", "视频3",
+    ]);
+    expect(cells.map((c) => c.key)).toEqual([
+      "188.image", "199.image", "188.image::ref_image_1", "188.image::ref_image_2",
+      "182.audio", "182.audio::ref_audio_1", "182.audio::ref_audio_2",
+      "185.video", "185.video::ref_video_1", "185.video::ref_video_2",
+    ]);
+  });
+
+  it("H3 原生标签按族编号", () => {
+    const t = referenceCells(h3Slots());
+    expect(familyCells(t, "image").map((c) => c.tag)).toEqual(["<Picture 1>", "<Picture 2>", "<Picture 3>", "<Picture 4>"]);
+    expect(familyCells(t, "audio").map((c) => c.tag)).toEqual(["<Audio 1>", "<Audio 2>", "<Audio 3>"]);
+    expect(familyCells(t, "video").map((c) => c.tag)).toEqual(["<Video 1>", "<Video 2>", "<Video 3>"]);
+    expect(referenceFamilies(h3Slots())).toEqual(["image", "audio", "video"]);
+  });
+
+  it("一族一行，各自只有一颗 +：图片排满了也不影响继续加音频", () => {
+    const refs = { "188.image": image(1), "199.image": image(2) };
+    expect(visibleRefCells(familyCells(cells, "image"), refs).map((c) => c.key))
+      .toEqual(["188.image", "199.image", "188.image::ref_image_1"]);
+    expect(visibleRefCells(familyCells(cells, "audio"), refs).map((c) => c.key)).toEqual(["182.audio"]);
+    expect(visibleRefCells(familyCells(cells, "video"), refs).map((c) => c.key)).toEqual(["185.video"]);
+  });
+
+  it("跳格报错按族分开说：「音频1 还空着」不会被读成图片空着", () => {
+    const refs = { "188.image": image(1), "182.audio::ref_audio_1": image(2) };
+    expect(referenceIssues(h3Slots(), refs)).toEqual(["音频1 还空着"]);
+  });
+
+  it("三族都空着＝文生视频；工作流支持 text 就不报，不支持就说至少放一份", () => {
+    expect(referenceIssues(h3Slots(), {}, true)).toEqual([]);
+    expect(referenceIssues({ ...h3Slots(), modes: ["single", "multi"] }, {}, false)).toEqual(["至少放一份参考素材"]);
+  });
+});
+
+describe("<Audio j> 的序号要先让位给参考视频自带的音轨", () => {
+  it("工作流里连了几条音轨，独立音频就从几后面接着数", () => {
+    expect(refTag("audio", 1)).toBe("<Audio 1>");
+    expect(refTag("audio", 1, 2)).toBe("<Audio 3>");
+    // 只有音频一族受影响，图片和视频按自己族内编号
+    expect(refTag("image", 3, 2)).toBe("<Picture 3>");
+    expect(refTag("video", 1, 2)).toBe("<Video 1>");
+  });
+
+  it("这份工作流已连一条 ref_video_audios 时，音频标签整体后移一号", () => {
+    expect(familyCells(referenceCells(h3Slots(1)), "audio").map((c) => c.tag))
+      .toEqual(["<Audio 2>", "<Audio 3>", "<Audio 4>"]);
+  });
+
+  it("后端算好的格子清单优先，前端不重算一遍", () => {
+    const t = tpl([promptSlot, imageSlot], {
+      media_kind: "video",
+      soundtracks: 1,
+      reference_cells: [{ key: "182.audio", label: "音频1", slot_label: "参考音频", kind: "audio", ordinal: 1, tag: "<Audio 9>" }],
+    });
+    expect(referenceCells(t).map((c) => [c.key, c.tag])).toEqual([["182.audio", "<Audio 9>"]]);
+  });
+
+  it("接口给的是 snake_case：slot_label 要落成 slotLabel，不然格子悬停只剩「undefined｜文件名」", () => {
+    // 这条是补现场的债：后端一直发 slot_label，前端类型当年写成 slotLabel，
+    // 展开后取不到值。假数据跟着类型写，谁都没红过——所以假数据必须照接口真实返回写。
+    const t = tpl([promptSlot, imageSlot], {
+      reference_cells: [
+        { key: "185.video", kind: "video", ordinal: 1, label: "视频1", name: "", slot_label: "Load Video (Upload)", tag: "<Video 1>" },
+      ],
+    });
+    expect(referenceCells(t)[0]).toMatchObject({
+      key: "185.video", label: "视频1", kind: "video", slotLabel: "Load Video (Upload)",
+    });
+  });
+});
+
+describe("@ 引用写进提示词的文本：图片插 @图片N，视频工作流插 H3 原生标签", () => {
+  const refs = { "188.image": image(11, "首帧.png"), "182.audio": image(12, "配乐.mp3") };
+
+  it("图片那条链路一个字不改", () => {
+    const items = mentionItems(referenceCells(tpl([promptSlot, imageSlot])), { "543.image": image(1) }, "", "image");
+    expect(items[0]).toMatchObject({ label: "图片1", insert: "@图片1", kind: "image" });
+  });
+
+  it("视频工作流菜单上显示中文编号，插进去的是 <Picture 1> 与 <Audio 2>", () => {
+    const items = mentionItems(referenceCells(h3Slots(1)), refs, "", "video");
+    expect(items.filter((i) => !i.add).map((i) => [i.label, i.insert, i.kind])).toEqual([
+      ["图片1", "<Picture 1>", "image"],
+      ["音频1", "<Audio 2>", "audio"],
+    ]);
+    // 末尾那条「再从图库挂一份」挂到第一个空位，也就是图片2
+    expect(items.at(-1)).toMatchObject({ add: true, key: "199.image", kind: "image" });
+  });
+
+  it("mentionInsertText：mediaKind 决定形状，缺省＝图片工作流", () => {
+    const cell = referenceCells(h3Slots())[0];
+    expect(mentionInsertText(cell, "video")).toBe("<Picture 1>");
+    expect(mentionInsertText(cell, "image")).toBe("@图片1");
+    expect(mentionInsertText(cell, undefined)).toBe("@图片1");
+  });
+
+  it("插入时换掉刚打的 @xxx 并补一个空格，光标停在后面接着打字", () => {
+    const token = mentionToken("让 @", 3)!;
+    expect(token).toEqual({ start: 2, end: 3, query: "" });
+    expect(applyMention("让 @", token, "<Picture 1>")).toEqual({ text: "让 <Picture 1> ", caret: 14 });
+    expect(applyMention("让 @", token, "图片1")).toEqual({ text: "让 @图片1 ", caret: 7 });
+  });
+
+  it("高亮遮罩既认 @图片N，也认 <Picture 1> / <Audio 2> / <Video 1>", () => {
+    const text = "参考 <Picture 1> 与 <Audio 2>、<Video 1> 和 @图片3 各";
+    expect(mentionChunks(text).filter((c) => c.mention).map((c) => c.text))
+      .toEqual(["<Picture 1>", "<Audio 2>", "<Video 1>", "@图片3"]);
+  });
+});
+
+describe("时长档位：视频工作流多出来的那颗控件", () => {
+  it("单位与预设都听后端的：5/8/10/12/15 秒，不套分辨率那张 MP 表", () => {
+    const duration = controlSlots(h3Slots()).find((s) => s.node === "227")!;
+    expect(numberPresets(duration)).toEqual([5, 8, 10, 12, 15]);
+    expect(numberUnit(duration)).toBe("秒");
+    expect(formatControlValue(duration, 8)).toBe("8秒");
+  });
+
+  it("老模板没带 presets 时，标题里有「时长」也退回秒那一套档位；认不出单位就不写单位", () => {
+    const legacy: CloneSlot = { kind: "number", node: "227", input: "value", label: "视频时长", value: 3, min: 1, max: 20 };
+    expect(numberPresets(legacy)).toEqual([3, 5, 8, 10, 12, 15]);
+    expect(numberUnit(legacy)).toBe("");
+  });
+});
+
+describe("生成中那一行说人话", () => {
+  it("跑动中带上已经跑了多久：一条片子是十分钟级的，不报秒数像卡死了", () => {
+    const job = applyCloneProgress({ active: true, job_id: "j", state: "running", running: true, media_kind: "video", message: "生成中…", elapsed: 192 });
+    expect(cloneStatusLabel(job)).toBe("生成中… · 3分12秒");
+  });
+
+  it("出片论条、出图论张；老后端只回 image_ids 也照样报", () => {
+    const video = applyCloneProgress({ state: "done", running: false, media_kind: "video", outputs: [{ id: 3, kind: "video", filename: "a.mp4", thumbnail_url: "/api/videos/3/thumb" }] });
+    expect(cloneStatusLabel(video)).toBe("已生成 1 条");
+    expect(video.outputs.map((o) => [o.id, o.kind, o.thumbnail_url])).toEqual([[3, "video", "/api/videos/3/thumb"]]);
+    expect(cloneStatusLabel(applyCloneProgress({ state: "done", running: false, image_ids: [3] }))).toBe("已生成 1 张");
+  });
+
+  it("formatElapsed：不到一分钟说秒，整分钟不说余秒", () => {
+    expect(formatElapsed(0)).toBe("0秒");
+    expect(formatElapsed(59)).toBe("59秒");
+    expect(formatElapsed(192)).toBe("3分12秒");
+    expect(formatElapsed(120)).toBe("2分钟");
+  });
+});
+
+describe("从哪一类卡片点开，素材就落进哪一族", () => {
+  const videoCard = { id: 21, filename: "shot.mp4", kind: "video" } as any;
+
+  it("视频卡默认站「视频1」，图片卡默认站「图片1」", () => {
+    expect(Object.keys(defaultReferences(h3Slots(), videoCard, [], { kind: "video" }))).toEqual(["185.video"]);
+    expect(Object.keys(defaultReferences(h3Slots(), image(22, "a.png")))).toEqual(["188.image"]);
+  });
+
+  it("这份工作流没接视频加载器时退回第一格，素材不许凭空消失", () => {
+    const onlyImage = tpl([promptSlot, imageSlot], { media_kind: "video" });
+    expect(Object.keys(defaultReferences(onlyImage, videoCard, [], { kind: "video" }))).toEqual(["543.image"]);
+  });
+
+  it("有来源记录时按 slot 各回各位；没带 slot 的按族补位，绝不跨族", () => {
+    const prior = [
+      { id: 5, filename: "b.png", kind: "image", slot: "199.image" },
+      { id: 6, filename: "m.mp3", kind: "audio" },
+      { id: 7, filename: "v.mp4", kind: "video" },
+    ] as any[];
+    const refs = defaultReferences(h3Slots(), videoCard, prior);
+    expect(refs["199.image"]?.id).toBe(5);
+    expect(refs["182.audio"]?.id).toBe(6);
+    expect(refs["185.video"]?.id).toBe(7);
+    // 带着 slot 的那张不会因为「图片1 空着」就被顶到图片1——编号是接线顺序，不能是假的
+    expect(refs["188.image"]).toBeUndefined();
+  });
+});
+
+describe("称呼与档位名跟着族走，但图片那一套一个字不改", () => {
+  it("只有图片一族：参考图 / 张 / 单图编辑", () => {
+    const t = tpl([promptSlot, imageSlot]);
+    expect(referenceNoun(t)).toBe("参考图");
+    expect(referenceCounter(t)).toBe("张");
+    expect(isImageOnlyRefs(t)).toBe(true);
+    expect(isVideoTemplate(t)).toBe(false);
+    expect(modeLabel("single", t.media_kind)).toBe("单图编辑");
+  });
+
+  it("三族混在一起：参考素材 / 份，档位叫文生视频 / 图生视频 / 多参考视频", () => {
+    const t = h3Slots();
+    expect(referenceNoun(t)).toBe("参考素材");
+    expect(referenceCounter(t)).toBe("份");
+    expect(isImageOnlyRefs(t)).toBe(false);
+    expect(isVideoTemplate(t)).toBe(true);
+    expect(modeLabel("text", "video")).toBe("文生视频");
+    expect(modeLabel("single", "video")).toBe("图生视频");
+    expect(modeLabel("multi", "video")).toBe("多参考视频");
+  });
+});
+
+describe("inspectAsTemplate：还没落库的检测结果也能按族画格子", () => {
+  it("设置页的导入预览靠它，media_kind / soundtracks 都要带过来", () => {
+    const t = inspectAsTemplate({
+      slots: h3Slots().slots, candidates: [], nodes: [], default_prompt: "", warnings: [],
+      suggested_name: "H3参考视频", media_kind: "video", soundtracks: 1, modes: ["text"],
+    });
+    expect(isVideoTemplate(t)).toBe(true);
+    expect(referenceFamilies(t)).toEqual(["image", "audio", "video"]);
+    expect(familyCells(referenceCells(t), "video")).toHaveLength(3);
+    expect(numberUnit(controlSlots(t).find((s) => s.node === "227")!)).toBe("秒");
+  });
+});
+
+
+describe("「@」菜单末尾那颗「再去挂一份」", () => {
+  const cells = referenceCells(h3Slots());
+
+  it("称呼跟着要填的那一格走：图片位说「一张参考图」，音频位说「一段参考音频」", () => {
+    expect(mentionAddLabel("image")).toBe("从图库再挂一张参考图");
+    expect(mentionAddLabel("audio")).toBe("从图库再挂一段参考音频");
+    expect(mentionAddLabel("video")).toBe("从图库再挂一条参考视频");
+  });
+
+  it("图片排满之后，那颗按钮指向的是第一个空着的音频位，不是凭空多出来的图片位", () => {
+    const refs: Record<string, any> = {};
+    for (const cell of familyCells(cells, "image")) refs[cell.key] = image(1);
+    const items = mentionItems(cells, refs, "", "video");
+    expect(items.at(-1)).toMatchObject({ add: true, kind: "audio", key: "182.audio" });
+  });
+});
+
+
+/* ── 参考区合成一行：展示序与「+ 参考」的落位 ───────────────────────────── */
+
+describe("参考区合成一行", () => {
+  const cells = referenceCells(h3Slots());
+  const ref = (id: number, kind: string, name: string) => ({ id, filename: name, kind } as any);
+
+  it("展示序是图片 → 视频 → 音频，族内接线序不动", () => {
+    expect(REF_DISPLAY_ORDER).toEqual(["image", "video", "audio"]);
+    expect(sortByDisplayFamily(cells).map((c) => c.label)).toEqual([
+      "图片1", "图片2", "图片3", "图片4",
+      "视频1", "视频2", "视频3",
+      "音频1", "音频2", "音频3",
+    ]);
+  });
+
+  it("只画填上的格子，按展示序混排：三族各放一份就是 图片1 视频1 音频1", () => {
+    const refs: Record<string, any> = {
+      "188.image": ref(1, "image", "a.png"),
+      "185.video": ref(2, "video", "b.mp4"),
+      "182.audio": ref(3, "audio", "c.mp3"),
+    };
+    expect(mergedRefCells(cells, refs).map((c) => c.label)).toEqual(["图片1", "视频1", "音频1"]);
+    // 扩位（图片3）空着不算「跳格」：合并行只画已经填的
+    const skip: Record<string, any> = { "199.image": ref(4, "image", "d.png") };
+    expect(mergedRefCells(cells, skip).map((c) => c.label)).toEqual(["图片2"]);
+  });
+
+  it("还有空位的族才给 tab：某一族放满它就从 tab 上消失", () => {
+    expect(openRefKinds(cells, {})).toEqual(["image", "video", "audio"]);
+    const full: Record<string, any> = {};
+    for (const cell of familyCells(cells, "video")) full[cell.key] = ref(9, "video", "v.mp4");
+    expect(openRefKinds(cells, full)).toEqual(["image", "audio"]);
+    for (const kind of ["image", "audio", "video"] as const) {
+      for (const cell of familyCells(cells, kind)) full[cell.key] = ref(10, kind, "x");
+    }
+    expect(openRefKinds(cells, full)).toEqual([]);
+  });
+
+  it("「+ 参考」的落位：那一族的第一个空位，从第 1 格连着填", () => {
+    expect(firstFreeRefKey(cells, {}, "audio")).toBe("182.audio");
+    expect(firstFreeRefKey(cells, { "182.audio": ref(3, "audio", "c.mp3") }, "audio")).toBe("182.audio::ref_audio_1");
+    // 那一族满了就不硬塞
+    const full: Record<string, any> = {};
+    for (const cell of familyCells(cells, "audio")) full[cell.key] = ref(4, "audio", "c.mp3");
+    expect(firstFreeRefKey(cells, full, "audio")).toBe("");
   });
 });

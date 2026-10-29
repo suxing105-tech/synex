@@ -32,6 +32,8 @@ class TemplateInput(BaseModel):
     workflow: Any | None = None
     path: str | None = None
     slots: list[dict] | None = None
+    # 出片还是出图：导入时自动判，判错了设置页能改。它决定「当前工作流」给哪一类卡片当默认。
+    media_kind: str | None = None
 
 
 class TemplatePatch(BaseModel):
@@ -39,6 +41,7 @@ class TemplatePatch(BaseModel):
     workflow: Any | None = None
     slots: list[dict] | None = None
     is_active: bool | None = None
+    media_kind: str | None = None
 
 
 class ReferenceInput(BaseModel):
@@ -122,7 +125,9 @@ async def _object_info(nodes: dict) -> tuple[dict, str]:
 def _suggested_name(path: str | None) -> str:
     if not path:
         return ""
-    return Path(path).stem[:40]
+    # 去首尾空格：ComfyUI 导出过「H3参考视频 .json」这种带空格的文件名，
+    # 直接拿 stem 会建议一个尾巴上挂着空格的模板名，看着像没输完。
+    return Path(path).stem.strip()[:40]
 
 
 # ---------- 模板 ----------
@@ -146,6 +151,7 @@ async def inspect_template(payload: InspectInput) -> dict:
     has_controls = _has_controls(detected.get("slots"))
     if reason and not has_controls:
         warnings.append(NO_OBJECT_INFO_HINT.format(reason=reason))
+    warnings += clone_templates.family_warnings(detected)
     return {**detected, "warnings": warnings, "suggested_name": _suggested_name(payload.path)}
 
 
@@ -168,7 +174,7 @@ async def create_template(payload: TemplateInput) -> dict:
         if reason and not _has_controls(slots):
             warning = NO_OBJECT_INFO_HINT.format(reason=reason)
     try:
-        row = clone_templates.create_template(payload.name, nodes, slots)
+        row = clone_templates.create_template(payload.name, nodes, slots, payload.media_kind)
     except clone_templates.DuplicateNameError as exc:
         raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
@@ -186,19 +192,31 @@ def download_workflow(template_id: int) -> Response:
 
 
 @router.patch("/templates/{template_id}")
-def patch_template(template_id: int, payload: TemplatePatch) -> dict:
+async def patch_template(template_id: int, payload: TemplatePatch) -> dict:
     patch = payload.model_dump(exclude_none=True)
+    warning = ""
     if payload.workflow is not None:
         # 就地替换工作流：先按 API 格式校验，错误信息比"槽位找不到"好懂得多。
-        patch["workflow"] = _nodes_from_payload(payload.workflow, None)
+        nodes = _nodes_from_payload(payload.workflow, None)
+        patch["workflow"] = nodes
+        if payload.slots is None:
+            # 换 JSON 会连带重算槽位，而控件的选项上下限、素材组的格数上限只存在于 object_info 里。
+            # 不取就会静默退化成「只认这份 JSON 里已经连好的那几格」：比例、分辨率整族消失，
+            # 9 格图片缩回 2 格，用户只会以为这份工作流变笨了。和建模板同一套处理。
+            info, reason = await _object_info(nodes)
+            slots = clone_templates.detect_slots(nodes, info or None)["slots"] or []
+            patch["slots"] = slots
+            if reason and not _has_controls(slots):
+                warning = NO_OBJECT_INFO_HINT.format(reason=reason)
     try:
-        return clone_templates.update_template(template_id, patch)
+        row = clone_templates.update_template(template_id, patch)
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc
     except clone_templates.DuplicateNameError as exc:
         raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    return {**row, "warning": warning} if warning else row
 
 
 @router.delete("/templates/{template_id}")

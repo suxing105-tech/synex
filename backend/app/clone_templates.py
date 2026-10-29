@@ -3,19 +3,29 @@
 一条模板 = 一份 ComfyUI API 格式工作流 + 一组槽位绑定。用户随时会换一份 JSON 进来，
 所以这里的重点不是"存了什么"，而是"怎么从任意工作流里认出可注入的位置"：
 
-  prompt       —— inputs 下 key 是 prompt / text / positive_prompt 的字符串字面量。
+  prompt       —— inputs 下 key 是 prompt / text / positive_prompt 的字符串字面量，
+                  外加 PrimitiveString(Multiline) 这种键叫 value 的字符串原语节点
+                  （H3 视频工作流就是这么放提示词的）。PrimitiveFloat/PrimitiveInt
+                  的 value 是数值控件，绝不认成提示词。
                   孤立节点也算：仓库样例里 540 是孤立的 CR Prompt Text、582 才真正
                   生效，只写 582 会让用户在 ComfyUI 里看到两处不一致的文本。
                   key 里带 negative 的一律不认，避免把正向提示词灌进负向。
-  image        —— class_type 以 LoadImage 开头的节点，一个节点一个参考位。要更多
-                  参考位就去 ComfyUI 里多接一个 LoadImage，app 不自动改图结构。
+  image/audio/video —— 三类参考位，一台加载器一个格子：LoadImage* 收图片、
+                  LoadAudio* 收音频、VHS_LoadVideo* 收视频。同一组里空着的格子
+                  由 autogrow 自动续出来（Qwen 那种显式 names、H3 这种 prefix+max
+                  都要认），用户不必回 ComfyUI 手摆节点就能多喂参考素材。
   select/number —— 从 object_info 里挑 aspect_ratio、megapixels 这类字面量控件，
-                  最多两个进弹窗；其余作为候选，由设置页决定要不要绑。
+                  最多两个进弹窗；时长（PrimitiveFloat 且标题带「时长/duration」）
+                  单独再多给一颗；其余作为候选，由设置页决定要不要绑。
+
+模板还带 media_kind（image/video），按输出节点判定：出片的是 VHS_VideoCombine /
+SaveVideo 这类节点就是视频工作流。「当前」按族各算各的，图片卡和视频卡各有各的默认。
 """
 from __future__ import annotations
 
 import copy
 import json
+import re
 from typing import Any
 
 from . import workflow_edit
@@ -30,6 +40,7 @@ CREATE TABLE IF NOT EXISTS clone_templates (
     slots TEXT NOT NULL DEFAULT '[]',
     default_prompt TEXT NOT NULL DEFAULT '',
     is_active INTEGER NOT NULL DEFAULT 0,
+    media_kind TEXT NOT NULL DEFAULT 'image',
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
@@ -39,6 +50,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_clone_template_name ON clone_templates(nam
 
 def initialize(conn) -> None:
     conn.executescript(SCHEMA)
+    # 旧库补列：CREATE TABLE IF NOT EXISTS 不会给已经存在的表加列，加不带默认值的列
+    # 又会让老库直接打不开，所以补一个 'image' 默认——旧库里躺着的本来就全是图片工作流。
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(clone_templates)").fetchall()}
+    if "media_kind" not in cols:
+        conn.execute(
+            "ALTER TABLE clone_templates ADD COLUMN media_kind TEXT NOT NULL DEFAULT 'image'"
+        )
 
 
 class DuplicateNameError(ValueError):
@@ -46,13 +64,40 @@ class DuplicateNameError(ValueError):
 
 
 PROMPT_INPUT_KEYS = {"prompt", "text", "positive_prompt"}
+# 有些工作流把提示词塞在字符串原语节点里，键叫 value。只能按类名认：
+# PrimitiveFloat / PrimitiveInt 的键也叫 value，那是数值控件，认成提示词就把时长冲掉了。
+STRING_PRIMITIVE_CLASSES = {"primitivestringmultiline", "primitivestring"}
+STRING_PRIMITIVE_KEY = "value"
 SEED_INPUT_KEYS = {"seed", "noise_seed"}
 AUTO_CONTROL_KEYS = ("aspect_ratio", "megapixels")
 MAX_AUTO_CONTROLS = 2
-KINDS = {"prompt", "image", "select", "number"}
+DURATION_CLASSES = {"primitivefloat", "primitiveint"}
+DURATION_KEY = "value"
+DURATION_TITLE_HINTS = ("时长", "duration")
+DURATION_PRESETS = [5, 8, 10, 12, 15]
+# H3 训练区间约 124–362 帧 @24fps，也就是 5–15 秒；给五个档，允许手动填别的。
+KINDS = {"prompt", "image", "audio", "video", "select", "number"}
+REFERENCE_KINDS = ("image", "audio", "video")
+REFERENCE_INPUT_KEYS = {"image": "image", "audio": "audio", "video": "video"}
+REFERENCE_LABEL_STEMS = {"image": "图片", "audio": "音频", "video": "视频"}
+REFERENCE_TYPE_FOR_KIND = {"image": "IMAGE", "audio": "AUDIO", "video": "IMAGE"}
+# H3 在上下文里给参考拼的标签，带空格（comfy/text_encoders/minimax.py:175 是 "<Picture %d>: "）。
+# 提示词里回指参考就写这个，弹窗 @ 引用要插入的也是它。
+TAG_TEMPLATES = {"image": "<Picture {n}>", "audio": "<Audio {n}>", "video": "<Video {n}>"}
+MODE_LABELS = workflow_edit.MODE_LABELS
+VIDEO_MODE_LABELS = {"text": "文生视频", "single": "图生视频", "multi": "多参考视频"}
+MEDIA_KINDS = ("image", "video")
+# 出片节点决定这份工作流是图片还是视频：认产出端比认模型端准
+# （H3 之外的视频工作流也一样是「最后有个出视频的节点」）。
+VIDEO_OUTPUT_HINTS = (
+    "videocombine", "savevideo", "decodeandsavevideo", "createvideo",
+    "combinevideo", "videowriter", "savegif", "write to video",
+)
+VIDEO_MODEL_HINTS = ("referencetovideo", "imagetovideo", "texttovideo", "frametovideo")
 CONTROL_LABELS = {
     "aspect_ratio": "比例",
     "megapixels": "分辨率",
+    "value": "数值",
     "width": "宽度",
     "height": "高度",
     "steps": "步数",
@@ -69,7 +114,8 @@ def slot_key(slot: dict) -> str:
 # ---------- 多图参考（ComfyUI 的 autogrow 输入组） ----------
 
 GROW_SEP = "::"
-GROW_MAX = 15
+GROW_MAX = 15          # 一次最多扩几格（真正生效的限制）
+TEMPLATE_NAMES_CAP = 64  # 工作流自报的格名上限，只是防疯值
 GROW_TYPE_PREFIX = "COMFY_AUTOGROW"
 _GROUPS: dict[str, list[dict]] = {}  # detect_slots 期间的临时表，避免每个节点重解析一次 object_info
 
@@ -84,26 +130,104 @@ def split_reference_key(key: str) -> tuple[str, str | None]:
     return base, (name if sep else None)
 
 
-def reference_cell_keys(slots: list[dict]) -> list[str]:
-    """参考格子的画面顺序：先是工作流自带的 LoadImage，再是 autogrow 续出来的空格。
+def _cell(slot: dict, kind: str, ordinal: int, key: str, name: str) -> dict:
+    stem = REFERENCE_LABEL_STEMS.get(kind, kind)
+    return {
+        "key": key,
+        "kind": kind,
+        "ordinal": ordinal,
+        "label": f"{stem}{ordinal}",
+        "name": name,
+        "slot_label": str(slot.get("label") or slot_key(slot)),
+    }
 
-    弹窗按这个顺序编号「图片1…N」，后端按同一个顺序校验「不能空一格跳着填」，
-    两边必须一模一样，否则用户看到的图片3 和实际接到 node 上的输入对不上。
+
+def reference_cells(slots: list[dict], soundtracks: int = 0) -> list[dict]:
+    """参考格子的画面顺序与编号：图片 → 音频 → 视频，每族先排真槽位，再排 autogrow 扩位。
+
+    弹窗按这里的顺序编号「图片1…N」，后端按同一个顺序校验「同一族要连着填」，
+    两边必须一模一样，否则用户看到的音频3 和实际接到节点上的输入对不上。
+    扩位按「目标节点+图组+格名」去重：两台加载器往往长进同一个组，不去重就会数出
+    双倍格子，还会在同一格里互相覆盖。
+    每格带上 H3 原生标签（tag），弹窗里 @ 引用要插的就是它。
     """
-    out: list[str] = []
-    image_slots = [s for s in slots if s.get("kind") == "image"]
-    for slot in image_slots:
-        out.append(slot_key(slot))
-    claimed: set[str] = set()
-    for slot in image_slots:
-        grow = slot.get("grow") or {}
-        for name in grow_names(slot):
-            target = f"{grow.get('node')}.{grow.get('group')}::{name}"
-            if target in claimed:
+    cells: list[dict] = []
+    for kind in REFERENCE_KINDS:
+        family = [s for s in slots if s.get("kind") == kind]
+        ordinal = 0
+        for slot in family:
+            ordinal += 1
+            cells.append(_cell(slot, kind, ordinal, slot_key(slot), ""))
+        claimed: set[str] = set()
+        for slot in family:
+            grow = slot.get("grow") or {}
+            for name in grow_names(slot):
+                target = f"{grow.get('node')}.{grow.get('group')}::{name}"
+                if target in claimed:
+                    continue
+                claimed.add(target)
+                ordinal += 1
+                cells.append(_cell(slot, kind, ordinal, grow_key(slot, name), name))
+    return attach_tags(cells, soundtracks)
+
+
+def attach_tags(cells: list[dict], soundtracks: int = 0) -> list[dict]:
+    """给每一格补上它在 H3 上下文里的标签：<Picture i> / <Video k> / <Audio j>。
+
+    序号是「每类各自 1 起」，但 H3 把参考摆进上下文时按 图片 → 视频 → 独立音频 排，
+    而参考视频自带的音轨会在这个视频之前先占一个 <Audio j> 号
+    （comfy_extras/nodes_minimax_h3.py 里音轨先 append({"type": "audio"})
+    再 append({"type": "video"})）。所以独立音频要从「已连线音轨数」之后接着数，
+    否则用户插进来的 <Audio 1> 指的是参考视频的音轨，指错人。
+    """
+    offset = max(0, int(soundtracks or 0))
+    for cell in cells:
+        ordinal = int(cell.get("ordinal") or 1)
+        kind = cell.get("kind")
+        if kind == "audio":
+            ordinal += offset
+        cell["tag"] = TAG_TEMPLATES.get(str(kind), "").format(n=ordinal)
+    return cells
+
+
+SOUNDTRACK_INPUT = re.compile(r"^ref_video_audio(?:_\d+)?$")
+
+
+def wired_reference_soundtracks(nodes: dict, slots: list[dict]) -> int:
+    """工作流里已经连好的「参考视频音轨」有几路。
+
+    这些音轨是用户自己在 ComfyUI 里接的（app 不碰 ref_video_audios），它们不占参考格，
+    但在 H3 的呈现顺序里各占一个 <Audio j> 号，所以算标签序号时必须把它们先扣掉。
+    从音频加载器连过去的那些已经算成参考格了，不能重复计数。
+    """
+    audio_nodes = {str(s.get("node")) for s in slots if s.get("kind") == "audio"}
+    count = 0
+    for node in (nodes or {}).values():
+        for key, value in node_inputs(node).items():
+            stem = str(key).rpartition(".")[2] or str(key)
+            if not SOUNDTRACK_INPUT.match(stem) or not workflow_edit._is_link(value):
                 continue
-            claimed.add(target)
-            out.append(grow_key(slot, name))
-    return out
+            if str(value[0]) in audio_nodes:
+                continue
+            count += 1
+    return count
+
+
+def reference_cell_keys(slots: list[dict]) -> list[str]:
+    return [cell["key"] for cell in reference_cells(slots)]
+
+
+def reference_cell_labels(slots: list[dict]) -> dict[str, str]:
+    """{参考位键: 「图片2」} —— 报错文案要说人话，不能把 188.image 甩给用户。"""
+    return {cell["key"]: str(cell["label"]) for cell in reference_cells(slots)}
+
+
+def reference_cells_with_tags(template: dict) -> list[dict]:
+    """给前端用的参考格清单：带 kind / label / tag，顺序与后端校验一致。"""
+    return reference_cells(
+        template.get("slots") or [],
+        wired_reference_soundtracks(template.get("nodes") or {}, template.get("slots") or []),
+    )
 
 
 def reference_slot_keys(slots: list[dict]) -> tuple[list[str], set[str]]:
@@ -117,18 +241,26 @@ def reference_slot_keys(slots: list[dict]) -> tuple[list[str], set[str]]:
     return [], set(keys)
 
 
+def reference_slots(slots: list[dict]) -> list[dict]:
+    return [s for s in slots if s.get("kind") in REFERENCE_KINDS]
+
+
 def unused_reference_nodes(slots: list[dict], references: dict | None) -> list[str]:
-    """没拿到参考图的 LoadImage 节点。留着它们等于偷偷用工作流里那张旧图。"""
+    """没拿到参考素材的加载器节点。留着它们等于偷偷用工作流里那份旧素材。
+
+    三类加载器一视同仁：没喂图的 LoadImage 会偷偷用旧图，没喂音频的 LoadAudio
+    会偷偷用工作流里那段旧声音，没喂视频的 VHS_LoadVideo 也一样。
+    """
     used = {str((s or {}).get("node")) for s in
             (slot_for_reference_key(slots, key) for key in (references or {})) if s}
-    return [str(s.get("node")) for s in slots
-            if s.get("kind") == "image" and str(s.get("node")) not in used]
+    return [str(s.get("node")) for s in reference_slots(slots)
+            if str(s.get("node")) not in used]
 
 
 def slot_for_reference_key(slots: list[dict], key: str) -> dict | None:
     base, _grow = split_reference_key(str(key))
     for slot in slots:
-        if slot.get("kind") == "image" and slot_key(slot) == base:
+        if slot.get("kind") in REFERENCE_KINDS and slot_key(slot) == base:
             return slot
     return None
 
@@ -148,8 +280,58 @@ def grow_names(slot: dict) -> list[str]:
     return [n for n in names if isinstance(n, str)] if isinstance(names, list) else []
 
 
+def _template_names(template: dict) -> list[str]:
+    """图组有哪些格子名。ComfyUI 两代写法都要认：
+
+      显式表    —— {"names": ["image_1", ...]}（Qwen Image 2.1 的 images）
+      prefix 式 —— {"prefix": "ref_image_", "min": 0, "max": 9}（H3 的 ref_images）
+                   格子名是 prefix + 下标，下标从 min 起，所以是 ref_image_0..8。
+
+    prefix 式不给上限的话就无从知道能长几格，这种组直接不认——宁可少给参考位，
+    也不要凭空造一个 ComfyUI 不认的输入名，那会被 /prompt 整条打回。
+    """
+    if not isinstance(template, dict):
+        return []
+    listed = template.get("names")
+    if isinstance(listed, list):
+        names = [n for n in listed if isinstance(n, str)]
+        if names:
+            return names[:TEMPLATE_NAMES_CAP]
+    prefix = template.get("prefix")
+    high = template.get("max")
+    if not isinstance(prefix, str) or not prefix:
+        return []
+    if not isinstance(high, int) or isinstance(high, bool) or high <= 0:
+        return []
+    low = template.get("min")
+    if not isinstance(low, int) or isinstance(low, bool):
+        low = 0
+    return [f"{prefix}{i}" for i in range(low, min(high, low + TEMPLATE_NAMES_CAP))]
+
+
+def _template_item_type(template: dict) -> str:
+    """图组每一格收什么类型（IMAGE / AUDIO）。分族要靠它：视频加载器的 IMAGE 输出
+    接 ref_videos、AUDIO 输出接 ref_video_audios，不认类型就会把音轨当图片参考位。"""
+    if not isinstance(template, dict):
+        return ""
+    flat = template.get("type")
+    if isinstance(flat, str) and flat:
+        return flat.upper()
+    block = template.get("input")
+    if not isinstance(block, dict):
+        return ""
+    for part in ("required", "optional"):
+        items = block.get(part)
+        if not isinstance(items, dict) or not items:
+            continue
+        spec = next(iter(items.values()), None)
+        if isinstance(spec, list) and spec and isinstance(spec[0], str):
+            return spec[0].upper()
+    return ""
+
+
 def _autogrow_groups(info: dict) -> dict[str, list[dict]]:
-    """class_type -> [{input, names}]：哪些节点的哪个输入是会自动长格的图组。"""
+    """class_type -> [{input, names, type}]：哪些节点的哪个输入是会自动长格的素材组。"""
     groups: dict[str, list[dict]] = {}
     for class_type, schema in (info or {}).items():
         if not isinstance(schema, dict):
@@ -168,9 +350,13 @@ def _autogrow_groups(info: dict) -> dict[str, list[dict]]:
                 if not spec[0].startswith(GROW_TYPE_PREFIX):
                     continue
                 template = spec[1].get("template") if len(spec) > 1 and isinstance(spec[1], dict) else None
-                names = template.get("names") if isinstance(template, dict) else None
-                if isinstance(names, list) and names:
-                    bucket.append({"input": name, "names": [n for n in names if isinstance(n, str)]})
+                names = _template_names(template if isinstance(template, dict) else {})
+                if names:
+                    bucket.append({
+                        "input": name,
+                        "names": names,
+                        "type": _template_item_type(template if isinstance(template, dict) else {}),
+                    })
         if bucket:
             groups[str(class_type)] = bucket
     return groups
@@ -181,8 +367,13 @@ def _next_node_id(nodes: dict) -> int:
     return (max(numbers) + 1) if numbers else len(nodes) + 100
 
 
-def _grow_target(nodes: dict, source_id: str) -> dict | None:
-    """找这台 LoadImage 连进了哪个节点的哪个图组，以及图组里还空着哪些格。"""
+def _grow_target(nodes: dict, source_id: str, want_type: str = "") -> dict | None:
+    """找这台加载器连进了哪个节点的哪个素材组，以及组里还空着哪些格。
+
+    want_type 是这一族要喂的类型（图片/视频喂 IMAGE 组，音频喂 AUDIO 组）。
+    一台 VHS_LoadVideo 往往同时往 ref_videos 和 ref_video_audios 里连，
+    不卡类型就会把它的音轨当成「另一张图片参考位」，凭空多出一格。
+    """
     for nid in _ordered_ids(nodes):
         inputs = node_inputs(nodes[nid])
         class_type = str(nodes[nid].get("class_type") or "")
@@ -194,10 +385,12 @@ def _grow_target(nodes: dict, source_id: str) -> dict | None:
             bucket = next((b for b in buckets if b["input"] == group), None)
             if not bucket or not name:
                 continue
+            if want_type and bucket.get("type") and bucket["type"] != want_type:
+                continue
             used = {k.partition(".")[2] for k in inputs if k.startswith(group + ".")}
             free = [n for n in bucket["names"] if n not in used][:GROW_MAX]
             if free:
-                return {"node": nid, "group": group, "names": free}
+                return {"node": nid, "group": group, "names": free, "type": bucket.get("type") or ""}
     return None
 
 
@@ -384,15 +577,60 @@ def control_slot(node_id: str, key: str, spec: dict, current: Any = None) -> dic
     return None
 
 
+def _duration_control(nodes: dict, used: set[str]) -> dict | None:
+    """时长控件：视频工作流里「几秒」这件事必须能在弹窗里改。
+
+    认法只有一条：PrimitiveFloat / PrimitiveInt 且节点标题带「时长/duration」，
+    value 是字面量数字。不认「任何叫 value 的数字」——字符串原语也叫 value，
+    别的原语节点也叫 value，认错了弹窗里就多一颗没人认识的数字框。
+    不读 object_info：原语节点的上下限本来就是 0–很大，没意义；档位由预设给。
+    """
+    for nid in _ordered_ids(nodes):
+        node = nodes[nid]
+        if str(node.get("class_type") or "").lower() not in DURATION_CLASSES:
+            continue
+        title = node_title(node, "").lower()
+        if not any(hint in title for hint in DURATION_TITLE_HINTS):
+            continue
+        value = node_inputs(node).get(DURATION_KEY)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        key_id = f"{nid}.{DURATION_KEY}"
+        if key_id in used:
+            continue
+        return {
+            "kind": "number", "node": nid, "input": DURATION_KEY, "label": "时长",
+            "unit": "秒", "value": value, "step": 1,
+            "presets": list(DURATION_PRESETS),
+        }
+    return None
+
+
+def is_video(template: dict) -> bool:
+    return str((template or {}).get("media_kind") or "image") == "video"
+
+
+def mode_labels(template: dict | None) -> dict[str, str]:
+    """档位名要跟着工作流出的是什么说：视频工作流里冒出一句「文生图」就是骗人。"""
+    return VIDEO_MODE_LABELS if is_video(template) else MODE_LABELS
+
+
+def reference_noun(template: dict | None) -> str:
+    if is_video(template):
+        return "参考素材"
+    return "参考图"
+
+
 def check_mode(template: dict, mode: str) -> str:
-    """参考图数量决定出来的档位，这份工作流到底支持不支持；不支持就明说缺什么。"""
+    """参考素材数量决定出来的档位，这份工作流到底支持不支持；不支持就明说缺什么。"""
     if mode in modes_of(template):
         return mode
+    noun = reference_noun(template)
     if mode == "text":
-        raise ValueError("这份工作流去不掉参考图（有节点非要有输入图才跑得起来），"
-                         "所以至少放一张参考图。想文生图请换一份纯文生图的工作流。")
-    raise ValueError("这份工作流不支持「" + workflow_edit.MODE_LABELS.get(mode, mode)
-                     + "」，减少参考图再试。")
+        raise ValueError(f"这份工作流去不掉{noun}（有节点非要有输入素材才跑得起来），"
+                         f"所以至少放一个{noun}。想纯文本生成请换一份不带参考的工作流。")
+    raise ValueError("这份工作流不支持「" + mode_labels(template).get(mode, mode)
+                     + f"」，减少{noun}再试。")
 
 
 def modes_of(template: dict) -> list[str]:
@@ -403,10 +641,10 @@ def modes_of(template: dict) -> list[str]:
 def fallback_modes(nodes: dict, slots: list[dict]) -> list[str]:
     """离线估算生成档位：object_info 拿不到时用这个。
 
-    文生图这一档剪不剪得干净，没有 object_info 只能乐观判断；真到生成时后端还会带着
-    object_info 再剪一次，剪不动会明确报错，不会静默出一张带残图的片子。
+    文生这一档剪不剪得干净，没有 object_info 只能乐观判断；真到生成时后端还会带着
+    object_info 再剪一次，剪不动会明确报错，不会静默出一份带着旧素材的片子。
     """
-    refs = [s for s in slots if s.get("kind") == "image"]
+    refs = reference_slots(slots)
     if not refs:
         return ["text"]
     modes = ["single"]
@@ -442,29 +680,39 @@ def detect_slots(nodes: dict, info: dict | None = None) -> dict:
     warnings: list[str] = []
 
     for nid in _ordered_ids(nodes):
-        for key, value in node_inputs(nodes[nid]).items():
+        node = nodes[nid]
+        class_type = str(node.get("class_type") or "").lower()
+        for key, value in node_inputs(node).items():
             lowered = key.lower()
-            if lowered not in PROMPT_INPUT_KEYS or "negative" in lowered:
+            if "negative" in lowered:
+                continue
+            by_key = lowered in PROMPT_INPUT_KEYS
+            by_class = (class_type in STRING_PRIMITIVE_CLASSES
+                        and lowered == STRING_PRIMITIVE_KEY)
+            if not (by_key or by_class):
                 continue
             if not isinstance(value, str) or not value.strip():
                 continue
             slots.append({"kind": "prompt", "node": nid, "input": key, "label": "完整提示词"})
 
-    index = 0
+    counters: dict[str, int] = {kind: 0 for kind in REFERENCE_KINDS}
     for nid in _ordered_ids(nodes):
         node = nodes[nid]
-        if not str(node.get("class_type") or "").startswith("LoadImage"):
+        kind = reference_kind_for(node.get("class_type"))
+        if not kind:
             continue
-        value = node_inputs(node).get("image")
-        if not isinstance(value, str):
-            warnings.append(f"节点 {nid} 的输入图片是上游节点连过来的，不能当参考位。")
+        input_key = reference_input_key(node, kind)
+        if not input_key or not isinstance(node_inputs(node).get(input_key), str):
+            warnings.append(f"节点 {nid} 的输入素材是上游节点连过来的，不能当参考位。")
             continue
-        index += 1
-        slot: dict[str, Any] = {"kind": "image", "node": nid, "input": "image",
-                                "label": node_title(node, f"图片{index}")}
+        counters[kind] += 1
+        slot: dict[str, Any] = {
+            "kind": kind, "node": nid, "input": input_key,
+            "label": node_title(node, f"{REFERENCE_LABEL_STEMS[kind]}{counters[kind]}"),
+        }
         if info:
             _GROUPS.clear(); _GROUPS.update(_autogrow_groups(info))
-            grow = _grow_target(nodes, nid)
+            grow = _grow_target(nodes, nid, REFERENCE_TYPE_FOR_KIND.get(kind, ""))
             if grow:
                 slot["grow"] = grow
         slots.append(slot)
@@ -472,11 +720,18 @@ def detect_slots(nodes: dict, info: dict | None = None) -> dict:
     used = {slot_key(s) for s in slots}
     controls: list[dict] = []
     candidates: list[dict] = []
+    # 时长先占位：它不占 MAX_AUTO_CONTROLS 那两个名额（比例+分辨率在图片工作流里
+    # 已经用满，再挤进去视频就改不了秒数），但它是视频弹窗必须有的第三颗控件。
+    duration = _duration_control(nodes, used)
+    if duration:
+        controls.append(duration)
+        used.add(slot_key(duration))
+    auto_controls = 0
     if info:
         widgets = _widgets(nodes, info)
         for want in AUTO_CONTROL_KEYS:
             for nid, key, spec in widgets:
-                if key != want or len(controls) >= MAX_AUTO_CONTROLS:
+                if key != want or auto_controls >= MAX_AUTO_CONTROLS:
                     continue
                 if f"{nid}.{key}" in used:
                     continue
@@ -484,6 +739,7 @@ def detect_slots(nodes: dict, info: dict | None = None) -> dict:
                 if control:
                     controls.append(control)
                     used.add(slot_key(control))
+                    auto_controls += 1
         for nid, key, spec in widgets:
             if f"{nid}.{key}" in used:
                 continue
@@ -493,21 +749,84 @@ def detect_slots(nodes: dict, info: dict | None = None) -> dict:
     slots.extend(controls)
 
     default_prompt = pick_default_prompt(nodes, slots)
+    soundtracks = wired_reference_soundtracks(nodes, slots)
 
     return {
         "slots": slots,
         "candidates": candidates,
         "nodes": node_overview(nodes),
         "default_prompt": default_prompt,
+        "media_kind": detect_media_kind(nodes),
+        "reference_cells": reference_cells(slots, soundtracks),
+        "soundtracks": soundtracks,
         "modes": workflow_edit.modes_for(
             nodes,
-            [s["node"] for s in slots if s.get("kind") == "image"],
+            [s["node"] for s in reference_slots(slots)],
             info,
             {nid: node_title(node, nid) for nid, node in nodes.items()},
             {s["node"] for s in slots if s.get("kind") == "prompt"},
         ),
         "warnings": warnings,
     }
+
+
+def reference_kind_for(class_type: Any) -> str:
+    """这台节点是哪一类参考素材的加载器。认类名而不是认输入名：
+    LoadAudio 的输入叫 audio、VHS_LoadVideo 的叫 video，但第三方包装节点往往自己加前缀。"""
+    lowered = str(class_type or "").lower()
+    if lowered.startswith("loadimage"):
+        return "image"
+    if lowered.startswith("loadaudio"):
+        return "audio"
+    if lowered.startswith("vhs_loadvideo"):
+        return "video"
+    return ""
+
+
+def reference_input_key(node: Any, kind: str) -> str:
+    """这台加载器要把上传后的文件名写进哪个输入。
+
+    先按族点名（image / audio / video），点不到才退回「它唯一的字符串字面量输入」。
+    退回那一步刻意要求唯一：VHS_LoadVideo 除了 video 还有个 format 也是字符串，
+    随便挑一个就会把参考视频的文件名写进格式框里。
+    """
+    inputs = node_inputs(node)
+    preferred = REFERENCE_INPUT_KEYS.get(kind, "")
+    if isinstance(inputs.get(preferred), str):
+        return preferred
+    literals = [k for k, value in inputs.items() if isinstance(value, str)]
+    return literals[0] if len(literals) == 1 else ""
+
+
+MISSING_FAMILY_HINTS = {"audio": ("音频", "LoadAudio"), "video": ("视频", "VHS_LoadVideo")}
+
+
+def family_warnings(detected: dict) -> list[str]:
+    """视频工作流缺了哪一类参考位，导入当时就说清该怎么补。
+
+    只提醒不代劳：app 不往工作流里塞加载器节点。用户的 ref_audios 该接哪台节点、
+    要不要顺带音轨，只有在 ComfyUI 里看一眼才知道，凭空造节点只会把工作流弄脏。
+    """
+    if str(detected.get("media_kind") or "image") != "video":
+        return []
+    slots = detected.get("slots") or []
+    return [
+        f"这份工作流没接{stem}参考位：在 ComfyUI 里加一台 {class_name}，连到 "
+        f"ref_{kind}s 的输入，再重新导入一次就能在弹窗里放{stem}。"
+        for kind, (stem, class_name) in MISSING_FAMILY_HINTS.items()
+        if not any(str(s.get("kind")) == kind for s in slots)
+    ]
+
+
+def detect_media_kind(nodes: dict) -> str:
+    """这份工作流出的是图还是视频。先看产出端，再兜底看模型端。"""
+    classes = [str(node.get("class_type") or "").lower()
+               for node in (nodes or {}).values() if isinstance(node, dict)]
+    for hints in (VIDEO_OUTPUT_HINTS, VIDEO_MODEL_HINTS):
+        for hint in hints:
+            if any(hint in c for c in classes):
+                return "video"
+    return "image"
 
 
 # ---------- 槽位校验 ----------
@@ -540,7 +859,7 @@ def normalize_slots(raw: Any, nodes: dict) -> list[dict]:
         inputs = node_inputs(nodes[node])
         if key not in inputs:
             raise ValueError(f"节点 {node} 没有 {key} 这个输入，请重新导入这份工作流。")
-        if kind != "image" and not is_literal(inputs[key]):
+        if kind not in REFERENCE_KINDS and not is_literal(inputs[key]):
             raise ValueError(f"节点 {node} 的 {key} 由上游节点连过来，不能当槽位。")
         slot: dict[str, Any] = {
             "kind": kind, "node": node, "input": key,
@@ -556,16 +875,25 @@ def normalize_slots(raw: Any, nodes: dict) -> list[dict]:
             slot["options"] = options
             slot["value"] = item.get("value") if item.get("value") in options else options[0]
         elif kind == "number":
-            for extra in ("value", "min", "max", "step"):
+            for extra in ("value", "min", "max", "step", "unit"):
                 if item.get(extra) is not None:
                     slot[extra] = item[extra]
+            # 时长那种「给几个档就够了」的预设要能活着过一遍存库，不然换个工作流重开
+            # 弹窗就退成纯数字框，用户又得自己敲 8。
+            presets = [x for x in (item.get("presets") or [])
+                       if isinstance(x, (int, float)) and not isinstance(x, bool)]
+            if presets:
+                slot["presets"] = presets[:12]
         grow = item.get("grow")
         if isinstance(grow, dict):
             gnode = str(grow.get("node") or "")
             group = str(grow.get("group") or "").strip()
             names = [n for n in (grow.get("names") or []) if isinstance(n, str)][:GROW_MAX]
-            if kind == "image" and gnode in nodes and group and names:
-                slot["grow"] = {"node": gnode, "group": group, "names": names}
+            if kind in REFERENCE_KINDS and gnode in nodes and group and names:
+                slot["grow"] = {
+                    "node": gnode, "group": group, "names": names,
+                    "type": str(grow.get("type") or ""),
+                }
         key_id = slot_key(slot)
         if key_id in seen:
             continue
@@ -607,11 +935,12 @@ def randomize_seeds(nodes: dict) -> int:
     return changed
 
 
-def _attach_grown_reference(nodes: dict, slot: dict, name: str, image_name: str) -> None:
-    """多图参考：照着原来的 LoadImage 复制一台，填好图，再连进图组空着的那一格。
+def _attach_grown_reference(nodes: dict, slot: dict, name: str, file_name: str) -> None:
+    """参考位多出来的那些格：照着原来那台加载器复制一台，填好素材，连进空着的那一格。
 
-    为什么由图库来复制节点：Qwen Image 2.1 那种 images 输入会自动长格（image_1…image_16），
-    用户不必回 ComfyUI 手摆节点就能多喂参考图。
+    为什么由图库来复制节点：H3 的 ref_images 会自动长格（ref_image_0…8），
+    用户不必回 ComfyUI 手摆节点就能多喂参考素材。三族共用这套做法——
+    复制的是槽位自己那台节点，所以音频位长出来的是 LoadAudio，视频位是 VHS_LoadVideo。
     """
     grow = slot.get("grow") if isinstance(slot.get("grow"), dict) else {}
     source_id = str(slot["node"])
@@ -630,9 +959,10 @@ def _attach_grown_reference(nodes: dict, slot: dict, name: str, image_name: str)
     requested = str(name)
     name = requested if requested in free else (free[0] if free else None)
     if name is None:
-        raise ValueError("这份工作流的参考图输入位已经放满了，少加几张再试。")
+        stem = REFERENCE_LABEL_STEMS.get(str(slot.get("kind") or ""), "参考")
+        raise ValueError(f"这份工作流的{stem}参考位已经放满了，少加几份再试。")
     clone = copy.deepcopy(source)
-    node_inputs(clone).update({str(slot["input"]): image_name})
+    node_inputs(clone).update({str(slot["input"]): file_name})
     meta = clone.get("_meta") if isinstance(clone.get("_meta"), dict) else {}
     meta["title"] = (f"{node_title(source, source_id)} · {name}")[:60]
     clone["_meta"] = meta
@@ -668,7 +998,7 @@ def build_workflow(
     for key, image_name in (references or {}).items():
         base_key, grow_name = split_reference_key(key)
         slot = by_key.get(base_key)
-        if slot is None or slot.get("kind") != "image":
+        if slot is None or slot.get("kind") not in REFERENCE_KINDS:
             raise ValueError(f"这份工作流里没有叫 {key} 的参考位，请重新打开弹窗再试。")
         if grow_name is None:
             node_inputs(workflow.get(slot["node"])).update({slot["input"]: str(image_name)})
@@ -684,8 +1014,8 @@ def build_workflow(
             continue
         _validate_control(slot, value)
         node_inputs(workflow.get(slot["node"])).update({slot["input"]: value})
-    # 没喂图的 LoadImage 一律从图里摘掉：留着它，ComfyUI 会悄悄用工作流里那张旧图，
-    # 用户在弹窗里看到的参考和实际出图的参考就对不上了。一张都不喂就是文生图。
+    # 没喂素材的加载器一律摘掉：留着它，ComfyUI 会悄悄用工作流里那份旧图/旧声音/旧片子，
+    # 用户在弹窗里看到的参考和实际出片的参考就对不上了。一份都不喂就是纯文本生成。
     unused = unused_reference_nodes(slots, references)
     if unused:
         workflow = drop_reference_images(workflow, unused, info, titles, slots)
@@ -715,13 +1045,23 @@ def public(row: Any) -> dict:
         nodes = parse_workflow(workflow)
     except ValueError:
         nodes = {}
+    kind = str(data.get("media_kind") or "image")
+    if kind not in MEDIA_KINDS:
+        kind = "image"
+    data["media_kind"] = kind
     data["slots"] = slots
     data["is_active"] = bool(data.get("is_active"))
     data["node_count"] = len(nodes)
     data["prompt_count"] = sum(1 for s in slots if s.get("kind") == "prompt")
-    data["reference_count"] = sum(1 for s in slots if s.get("kind") == "image")
+    data["reference_count"] = len(reference_slots(slots))
+    for ref_kind in REFERENCE_KINDS:
+        data[f"{ref_kind}_reference_count"] = sum(1 for s in slots if s.get("kind") == ref_kind)
     data["control_count"] = sum(1 for s in slots if s.get("kind") in ("select", "number"))
     data["modes"] = fallback_modes(nodes, slots)
+    # 参考格清单由后端一处算准（顺序、编号、H3 标签），前端照着画。
+    # 两边各算一遍的话，弹窗里那个「音频2」和实际接线的 ref_audio_1 早晚会分家。
+    data["soundtracks"] = wired_reference_soundtracks(nodes, slots)
+    data["reference_cells"] = reference_cells(slots, data["soundtracks"])
     return data
 
 
@@ -753,10 +1093,20 @@ def default_prompt_for(nodes: dict, slots: list[dict]) -> str:
     return pick_default_prompt(nodes, slots)
 
 
+def _media_kind_of(row: dict) -> str:
+    kind = str((row or {}).get("media_kind") or "image")
+    return kind if kind in MEDIA_KINDS else "image"
+
+
 def set_active(template_id: int) -> dict:
-    get_row(template_id)
+    """把这份工作流设成它那一族的「当前」。
+
+    只清同族的 is_active：图片卡和视频卡各有各的默认，选了视频那份不该把图片那份顶掉
+    ——否则下次从图片卡点开弹窗，里面躺着一条视频工作流，比例下拉都不一样。
+    """
+    kind = _media_kind_of(get_row(template_id))
     conn = _conn()
-    conn.execute("UPDATE clone_templates SET is_active=0")
+    conn.execute("UPDATE clone_templates SET is_active=0 WHERE media_kind=?", (kind,))
     conn.execute("UPDATE clone_templates SET is_active=1 WHERE id=?", (template_id,))
     conn.execute(f"UPDATE clone_templates SET updated_at={NOW_SQL} WHERE id=?", (template_id,))
     return public(conn.execute("SELECT * FROM clone_templates WHERE id=?", (template_id,)).fetchone())
@@ -779,7 +1129,8 @@ def redetect_slots(template_id: int, info: dict | None = None) -> dict:
     return public(conn.execute("SELECT * FROM clone_templates WHERE id=?", (template_id,)).fetchone())
 
 
-def create_template(name: str, workflow_raw: Any, slots_raw: Any = None) -> dict:
+def create_template(name: str, workflow_raw: Any, slots_raw: Any = None,
+                    media_kind: str | None = None) -> dict:
     name = (name or "").strip()
     if not name:
         raise ValueError("给这份工作流起个名字，弹窗里要靠它认模板。")
@@ -787,14 +1138,20 @@ def create_template(name: str, workflow_raw: Any, slots_raw: Any = None) -> dict
         raise ValueError("名字最长 40 个字。")
     nodes = parse_workflow(workflow_raw)
     slots = normalize_slots(detect_slots(nodes)["slots"] if slots_raw is None else slots_raw, nodes)
+    kind = media_kind if media_kind in MEDIA_KINDS else detect_media_kind(nodes)
     conn = _conn()
     if conn.execute("SELECT 1 FROM clone_templates WHERE name=?", (name,)).fetchone():
         raise DuplicateNameError(f"已经有叫「{name}」的同款工作流，换一个名字。")
-    is_first = conn.execute("SELECT 1 FROM clone_templates LIMIT 1").fetchone() is None
+    # 这一族还没有「当前」就让新来的当默认：只导入过图片工作流的人不该在视频卡上
+    # 面对一个空弹窗；但已经有默认的族不会被一次导入悄悄换掉。
+    is_first = conn.execute(
+        "SELECT 1 FROM clone_templates WHERE media_kind=? AND is_active=1", (kind,)
+    ).fetchone() is None
     cur = conn.execute(
-        "INSERT INTO clone_templates(name, workflow, slots, default_prompt, is_active) VALUES(?,?,?,?,?)",
+        "INSERT INTO clone_templates(name, workflow, slots, default_prompt, is_active, media_kind)"
+        " VALUES(?,?,?,?,?,?)",
         (name, json.dumps(nodes, ensure_ascii=False), json.dumps(slots, ensure_ascii=False),
-         default_prompt_for(nodes, slots), 1 if is_first else 0),
+         default_prompt_for(nodes, slots), 1 if is_first else 0, kind),
     )
     return public(conn.execute("SELECT * FROM clone_templates WHERE id=?", (cur.lastrowid,)).fetchone())
 
@@ -808,6 +1165,7 @@ def update_template(template_id: int, patch: dict) -> dict:
     row = get_row(template_id)
     conn = _conn()
     name = str(row["name"])
+    old_kind = _media_kind_of(row)
     if patch.get("name") is not None:
         candidate = str(patch["name"]).strip()
         if not candidate:
@@ -826,24 +1184,48 @@ def update_template(template_id: int, patch: dict) -> dict:
     if slots_raw is None:
         slots_raw = row.get("slots")
     slots = normalize_slots(slots_raw, nodes)
+    # 手动改判优先；换了一份 JSON 就重新判一次（换完可能从出图变成出片）；都没给就沿用。
+    kind = patch.get("media_kind")
+    if kind not in MEDIA_KINDS:
+        kind = detect_media_kind(nodes) if replacing else old_kind
 
     conn.execute(
-        f"UPDATE clone_templates SET name=?, workflow=?, slots=?, default_prompt=?, updated_at={NOW_SQL} WHERE id=?",
+        f"UPDATE clone_templates SET name=?, workflow=?, slots=?, default_prompt=?, media_kind=?,"
+        f" updated_at={NOW_SQL} WHERE id=?",
         (name, json.dumps(nodes, ensure_ascii=False), json.dumps(slots, ensure_ascii=False),
-         default_prompt_for(nodes, slots), template_id),
+         default_prompt_for(nodes, slots), kind, template_id),
     )
+    if kind != old_kind:
+        # 改判族别后「当前」要重新算：新族里已经有默认的，这边就退下来，
+        # 否则同一族躺着两条 is_active=1，弹窗默认用哪条全看查询顺序。
+        if conn.execute("SELECT 1 FROM clone_templates WHERE media_kind=? AND is_active=1 AND id<>?",
+                        (kind, template_id)).fetchone():
+            conn.execute("UPDATE clone_templates SET is_active=0 WHERE id=?", (template_id,))
+        _ensure_active_kind(conn, old_kind)
     if patch.get("is_active") is True:
         return set_active(template_id)
     return public(conn.execute("SELECT * FROM clone_templates WHERE id=?", (template_id,)).fetchone())
 
 
+def _ensure_active_kind(conn, kind: str) -> None:
+    """这一族没有「当前」了就拿最早一条顶上，别让弹窗对着空默认。"""
+    if kind not in MEDIA_KINDS:
+        return
+    if conn.execute("SELECT 1 FROM clone_templates WHERE media_kind=? AND is_active=1",
+                    (kind,)).fetchone():
+        return
+    fallback = conn.execute(
+        "SELECT id FROM clone_templates WHERE media_kind=? ORDER BY id LIMIT 1", (kind,)
+    ).fetchone()
+    if fallback:
+        conn.execute("UPDATE clone_templates SET is_active=1 WHERE id=?", (int(fallback["id"]),))
+
+
 def delete_template(template_id: int) -> int:
-    get_row(template_id)
+    row = get_row(template_id)
     conn = _conn()
+    kind = _media_kind_of(row)
     conn.execute("DELETE FROM clone_templates WHERE id=?", (template_id,))
-    # 删掉的正好是当前用的 → 拿最早一条顶上，别让弹窗没有默认模板。
-    if conn.execute("SELECT 1 FROM clone_templates WHERE is_active=1").fetchone() is None:
-        fallback = conn.execute("SELECT id FROM clone_templates ORDER BY id LIMIT 1").fetchone()
-        if fallback:
-            conn.execute("UPDATE clone_templates SET is_active=1 WHERE id=?", (fallback["id"],))
+    # 删掉的正好是当前用的 → 同族里拿最早一条顶上，别让弹窗没有默认模板。
+    _ensure_active_kind(conn, kind)
     return template_id

@@ -13,6 +13,7 @@
   import SettingsRow from "./SettingsRow.svelte";
   import {
     cloneApi, cloneError, promptSlots, imageSlots, controlSlots, referenceCells, slotKey, templateDisplayName,
+    familyCells, isVideoTemplate, referenceFamilies, REF_KIND_NAMES,
     type CloneInspect, type CloneSlot, type CloneTemplate,
   } from "../lib/clone";
 
@@ -63,15 +64,31 @@
   });
   onDestroy(() => detachDrop?.());
 
+  /**
+   * 槽位确认的分组。参考位按族分开列（图片 / 音频 / 视频）：H3 那种工作流一次冒出
+   * 十几条参考槽，混在「参考图」一栏里，谁看得出哪三条其实是音频加载器。
+   */
   const groups = $derived.by(() => {
     if (!pending) return [];
     const all = [...pending.inspect.slots, ...pending.inspect.candidates];
-    const groupOf = (slot: CloneSlot) => (slot.kind === "prompt" ? "提示词" : slot.kind === "image" ? "参考图" : "弹窗控件");
-    return ["提示词", "参考图", "弹窗控件"].map((label) => ({
+    const groupOf = (slot: CloneSlot) => (slot.kind === "prompt" ? "提示词"
+      : slot.kind === "image" ? "参考图片"
+      : slot.kind === "audio" ? "参考音频"
+      : slot.kind === "video" ? "参考视频" : "弹窗控件");
+    return ["提示词", "参考图片", "参考音频", "参考视频", "弹窗控件"].map((label) => ({
       label,
       items: all.filter((slot) => groupOf(slot) === label),
     })).filter((group) => group.items.length);
   });
+
+  /** 导入完成后报的各族格数；只有图片一族时不罗嗦。 */
+  function refSummary(tpl: CloneTemplate): string {
+    const cells = referenceCells(tpl);
+    const fams = referenceFamilies(tpl);
+    if (!fams.length) return "没认出参考位";
+    if (fams.length === 1 && fams[0] === "image" && !isVideoTemplate(tpl)) return `${cells.length} 个参考位`;
+    return fams.map((kind) => `${REF_KIND_NAMES[kind]} ${familyCells(cells, kind).length} 格`).join(" / ");
+  }
 
   /** 粘贴进来的 JSON 读不了要当场说清楚，不能把 undefined 发给后端换成一句 422。 */
   function safeParse(text: string): unknown {
@@ -131,6 +148,9 @@
                         ...(slot.min !== undefined && slot.min !== null ? { min: slot.min } : {}),
                         ...(slot.max !== undefined && slot.max !== null ? { max: slot.max } : {}),
                         ...(slot.step !== undefined && slot.step !== null ? { step: slot.step } : {}),
+                        // 时长那档的单位与档位是检测出来的：丢了就退成「0.5 秒」这种没人跑得动的预设
+                        ...(slot.unit ? { unit: slot.unit } : {}),
+                        ...(slot.presets?.length ? { presets: slot.presets } : {}),
                         // 多图参考的扩位信息必须原样带回去：在这儿丢一次，弹窗就只剩一个参考位
                         ...(slot.grow ? { grow: slot.grow } : {}) }));
     if (!chosen.some((s) => s.kind === "prompt")) {
@@ -140,9 +160,16 @@
     busy = true;
     error = "";
     try {
-      await cloneApi.create({ name: pendingName.trim() || "同款工作流", workflow: pending.workflow, path: pending.path, slots: chosen });
+      const saved = await cloneApi.create({
+        name: pendingName.trim() || "同款工作流",
+        workflow: pending.workflow,
+        path: pending.path,
+        slots: chosen,
+        // 出片还是出图跟着检测结果走：判错了在这儿改判，别让用户自己猜哪条会出片子
+        media_kind: pending.inspect.media_kind ?? "image",
+      });
       pending = null;
-      notice = "已导入，图片卡右下角的图标就是它。";
+      notice = `已导入「${templateDisplayName(saved.name)}」：${refSummary(saved)}。${isVideoTemplate(saved) ? "视频" : "图片"}卡右下角的图标就是它。`;
       await reload(true);
     } catch (e) {
       error = cloneError(e);
@@ -183,10 +210,17 @@
   }
 
   function counts(tpl: CloneTemplate): string {
-    const slots = imageSlots(tpl).length || tpl.reference_count;
-    const cells = referenceCells(tpl).length;
-    // 工作流原生能吃多张就明说：不然用户只看到一个参考位，会以为这个功能不支持多图
-    const refs = cells > slots ? `${slots} 个参考位（最多吃 ${cells} 张）` : `${slots} 个参考位`;
+    const cells = referenceCells(tpl);
+    const fams = referenceFamilies(tpl);
+    // 三族参考位分开报，混成「15 个参考位」没人知道那是 9 图 + 3 音频 + 3 视频；
+    // 只有图片一族时保持原来那句，顺带说清工作流原生能吃几张。
+    let refs: string;
+    if (fams.length > 1 || isVideoTemplate(tpl)) {
+      refs = fams.map((kind) => `${REF_KIND_NAMES[kind]} ${familyCells(cells, kind).length}`).join(" / ") || "没有参考位";
+    } else {
+      const slots = imageSlots(tpl).length || tpl.reference_count || cells.length;
+      refs = cells.length > slots ? `${slots} 个参考位（最多吃 ${cells.length} 张）` : `${slots} 个参考位`;
+    }
     return [
       `${tpl.node_count} 个节点`,
       `${promptSlots(tpl).length || tpl.prompt_count} 个提示词位`,
@@ -197,7 +231,7 @@
 </script>
 
 <div class="settings-card">
-  <SettingsRow title="同款工作流" description="图片卡文件名右边的图标就是这个入口。导一次 ComfyUI 的 API 格式工作流，之后随时替换。" top>
+  <SettingsRow title="同款工作流" description="图片卡与视频卡右下角的图标都是这个入口：图片卡用出图的工作流，视频卡用出片的工作流，两族各自记住「当前」那一条。导一次 ComfyUI 的 API 格式工作流，之后随时替换。" top>
     {#snippet control()}
       <button class="setting-button" disabled={busy} onclick={() => void reload()}>重新读取</button>
     {/snippet}
@@ -218,6 +252,9 @@
                 <button class="setting-button" disabled={busy || !renameValue.trim()} onclick={() => void run(async () => { await cloneApi.update(tpl.id, { name: renameValue.trim() }); renaming = null; await reload(true); })}>存名</button>
               {:else}
                 <span class="clone-tpl-name" title={tpl.name}>{templateDisplayName(tpl.name)}</span>
+                <!-- 出片还是出图直接写在行首：它决定这条工作流给哪一类卡片当默认，
+                     混在提示词位/参考位那串数字里根本看不见。 -->
+                <span class="clone-tpl-kind" class:is-video={isVideoTemplate(tpl)}>{isVideoTemplate(tpl) ? "视频" : "图片"}</span>
                 {#if tpl.is_active}<span class="clone-tpl-tag">当前</span>{/if}
                 <span class="settings-hint">{counts(tpl)}</span>
               {/if}
@@ -233,6 +270,18 @@
                   await reload(true);
                   notice = `已重新检测「${templateDisplayName(saved.name)}」：${controlSlots(saved).length} 个弹窗控件、${referenceCells(saved).length} 个参考位。`;
                 })}>重新检测槽位</button>
+              <!-- 自动判定看的是产出节点（SaveVideo / VHS_VideoCombine 之类），绝大多数时候是对的；
+                   万一用户的工作流末端是个自定义节点，就在这儿改判，不用重导。 -->
+              <select class="setting-button clone-tpl-kind-set" aria-label={`「${templateDisplayName(tpl.name)}」的产出类型`}
+                title="出片的挂到视频卡，出图的挂到图片卡。自动判定错了就在这儿改。"
+                value={isVideoTemplate(tpl) ? "video" : "image"} disabled={busy}
+                onchange={(e) => void run(async () => {
+                  await cloneApi.update(tpl.id, { media_kind: (e.target as HTMLSelectElement).value === "video" ? "video" : "image" });
+                  await reload(true);
+                }, "已改判产出类型：图片卡与视频卡各认自己那一族的「当前」工作流。")}>
+                <option value="image">出图</option>
+                <option value="video">出片</option>
+              </select>
               <button class="setting-button" disabled={busy} onclick={() => { renaming = tpl.id; renameValue = templateDisplayName(tpl.name); }}>改名</button>
               <button class="setting-button" disabled={busy} onclick={() => void exportTemplate(tpl)}>导出 JSON</button>
               {#if confirmDelete === tpl.id}
@@ -272,7 +321,7 @@
       <div class="clone-confirm-head">
         <div>
           <span class="clone-confirm-title">确认槽位</span>
-          <span class="settings-hint">勾上的才会出现在图片卡的弹窗里。参考位数量由 LoadImage 节点决定。</span>
+          <span class="settings-hint">勾上的才会出现在弹窗里。参考位数量由加载器节点决定：LoadImage＝图片位、LoadAudio＝音频位、VHS_LoadVideo＝视频位，工作流里没接那一台就没有那一族。</span>
         </div>
         <input class="clone-name-input" type="text" aria-label="模板名称" bind:value={pendingName} />
         <button class="setting-button bg-accent text-bg" disabled={busy} onclick={() => void savePending()}>保存模板</button>
@@ -314,6 +363,9 @@
   .clone-tpl-main { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; min-width: 0; }
   .clone-tpl-name { font-weight: 600; color: #ececed; }
   .clone-tpl-tag { padding: 1px 6px; border-radius: 999px; background: rgb(242 78 78 / 18%); color: #ff8f8f; font-size: 11px; }
+  .clone-tpl-kind { padding: 1px 6px; border-radius: 999px; background: rgb(59 130 246 / 16%); color: #93c5fd; font-size: 11px; }
+  .clone-tpl-kind.is-video { background: rgb(245 158 11 / 16%); color: #fbbf24; }
+  .clone-tpl-kind-set { padding: 2px 6px; font-size: 12px; }
   .clone-tpl-actions { display: flex; flex-wrap: wrap; gap: 6px; }
   .clone-import-box { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px dashed #3a3a41; border-radius: 8px; background: #1a1a1e; }
   .clone-import-box.is-hover { border-color: #f24e4e; background: rgb(242 78 78 / 8%); }

@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import CloneTemplates from '../components/CloneTemplates.svelte';
@@ -219,4 +219,94 @@ it('工作流能吃多张图时，模板列表把「最多吃几张」说出来'
   const screen = render(CloneTemplates, {});
   await screen.findByText('旧的同款');
   expect(screen.getByText('旧的同款').closest('li')?.textContent).toContain('最多吃 3 张');
+});
+
+
+/**
+ * 视频一键同款要在设置页里看得懂：这条工作流出的是片子还是图、它能吃几族参考。
+ * 判定挂在产出节点上，判错了必须能当场改，不然用户只能删了重导。
+ */
+const H3_SLOTS = [
+  { kind: 'prompt', node: '265', input: 'value', label: '提示词' },
+  { kind: 'image', node: '188', input: 'image', label: '图片1', grow: { node: '188', group: 'images', names: ['image_2', 'image_3', 'image_4', 'image_5', 'image_6', 'image_7', 'image_8', 'image_9'] } },
+  { kind: 'audio', node: '182', input: 'ref_audio_0', label: '音频1', grow: { node: '182', group: 'ref_audios', names: ['ref_audio_1', 'ref_audio_2'] } },
+  { kind: 'video', node: '185', input: 'video', label: '视频1', grow: { node: '185', group: 'ref_videos', names: ['ref_video_1', 'ref_video_2'] } },
+  { kind: 'number', node: '227', input: 'value', label: '时长', value: 8, min: 5, max: 15, step: 1, unit: '秒', presets: [5, 8, 10, 12, 15] },
+];
+
+const VIDEO_TPL = {
+  id: 2, name: 'H3参考视频', is_active: true, default_prompt: '', created_at: '', updated_at: '',
+  node_count: 42, prompt_count: 1, reference_count: 15, control_count: 1, media_kind: 'video', slots: H3_SLOTS,
+};
+
+const h3InspectRoutes = () => ({
+  ...inspectRoutes(),
+  '/api/clone/templates/inspect': {
+    slots: H3_SLOTS, candidates: [], nodes: [], default_prompt: '写一段视频', warnings: [],
+    suggested_name: 'H3参考视频', media_kind: 'video',
+  },
+});
+
+describe('出图还是出片', () => {
+  it('模板行首挂着「图片 / 视频」徽标，各族参考位分开报数', async () => {
+    routes({ '/api/clone/templates': { items: [TPL, VIDEO_TPL] } });
+    const screen = render(CloneTemplates, {});
+    await screen.findByText('旧的同款');
+    expect([...screen.container.querySelectorAll('.clone-tpl-kind')].map((el) => el.textContent)).toEqual(['图片', '视频']);
+    const li = screen.getByText('H3参考视频').closest('li')!;
+    expect(li.querySelector('.clone-tpl-kind')!.classList.contains('is-video')).toBe(true);
+    expect(li.textContent).toContain('图片 9 / 音频 3 / 视频 3');
+  });
+
+  it('自动判定错了能当场改判：那颗下拉只 PATCH media_kind', async () => {
+    routes({
+      '/api/clone/templates': { items: [TPL] },
+      '/api/clone/templates/1': (init?: RequestInit) => ({ ...TPL, ...JSON.parse(String(init?.body)) }),
+    });
+    const screen = render(CloneTemplates, {});
+    await screen.findByText('旧的同款');
+    const select = screen.getByLabelText('「旧的同款」的产出类型') as HTMLSelectElement;
+    expect(select.value).toBe('image');
+    await fireEvent.change(select, { target: { value: 'video' } });
+    await tick();
+    await tick();
+    const patch = http.mock.calls.find(([path, init]) => path === '/api/clone/templates/1' && (init as RequestInit)?.method === 'PATCH');
+    expect(JSON.parse(String((patch?.[1] as RequestInit)?.body))).toEqual({ media_kind: 'video' });
+  });
+});
+
+describe('导入视频工作流', () => {
+  it('槽位确认分成提示词 / 参考图片 / 参考音频 / 参考视频 / 弹窗控件', async () => {
+    routes(h3InspectRoutes());
+    const screen = render(CloneTemplates, {});
+    await screen.findByText('旧的同款');
+    await importJson(screen);
+    expect([...screen.container.querySelectorAll('.clone-group-label')].map((el) => el.textContent))
+      .toEqual(['提示词', '参考图片', '参考音频', '参考视频', '弹窗控件']);
+  });
+
+  it('保存时把产出类型和时长档位一起交给后端，回执按族报格数', async () => {
+    let created: Record<string, any> | null = null;
+    http.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/api/clone/templates' && (init as RequestInit)?.method === 'POST') {
+        created = JSON.parse(String(init?.body));
+        return { ...VIDEO_TPL, id: 9, slots: created!.slots };
+      }
+      if (path === '/api/clone/templates/inspect') return h3InspectRoutes()['/api/clone/templates/inspect'];
+      if (path === '/api/clone/templates') return { items: [TPL] };
+      throw new Error(`未预演的接口：${path}`);
+    });
+    const screen = render(CloneTemplates, {});
+    await screen.findByText('旧的同款');
+    await importJson(screen);
+    await fireEvent.click(screen.getByRole('button', { name: '保存模板' }));
+    await tick();
+    await tick();
+    const body = created as unknown as Record<string, any>;
+    expect(body.media_kind).toBe('video');
+    const duration = body.slots.find((s: { kind: string }) => s.kind === 'number');
+    expect(duration).toMatchObject({ unit: '秒', presets: [5, 8, 10, 12, 15] });
+    expect((await screen.findByRole('status')).textContent)
+      .toContain('已导入「H3参考视频」：图片 9 格 / 音频 3 格 / 视频 3 格。视频卡右下角的图标就是它。');
+  });
 });

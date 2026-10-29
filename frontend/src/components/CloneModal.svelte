@@ -24,10 +24,12 @@
     allowsTextMode, controlSlots, controlSummary, defaultControlValues, defaultReferences, latestReversePrompt,
     modeFromRefCount, modeLabel, numberPresets, numberUnit, promptSlots, promptSourceLabel,
     ratioShape, referenceCells, referenceIssues, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, visibleRefCells,
+    firstFreeRefKey, mergedRefCells, openRefKinds, REF_DISPLAY_ORDER,
     CLONE_SETTINGS_TAB,
-    applyMention, caretCoordinates, mentionChunks, mentionItems as buildMentionItems, mentionToken,
+    applyMention, caretCoordinates, mentionAddLabel, mentionChunks, mentionInsertText, mentionItems as buildMentionItems, mentionToken,
+    familyCells, isVideoTemplate, referenceCounter, referenceFamilies, referenceNoun, REF_KIND_COUNTERS, REF_KIND_NAMES,
     templateDisplayName,
-    type MentionItem, type MentionToken,
+    type CloneOutput, type CloneSlot, type MediaKind, type MentionItem, type MentionToken, type RefCell, type RefKind,
     type CloneJob, type CloneSources, type CloneTemplate,
   } from "../lib/clone";
   import type { ImageSummary, MediaFeedItem } from "../lib/types";
@@ -39,8 +41,8 @@
     onClose: () => void;
     /** 打开设置页某个分区（没有同款工作流时要去导入） */
     onOpenSettings?: (tab: string) => void;
-    /** 点本次产出的缩略图 → 跳到图库里那张 */
-    onOpenImage?: (id: number) => void;
+    /** 点本次产出的缩略图 → 跳到图库里那一份（图片进对比、视频进播放器，由父组件分派） */
+    onOpenImage?: (id: number, kind?: string) => void;
   }
   let { open, image, onClose, onOpenSettings, onOpenImage }: Props = $props();
 
@@ -95,45 +97,163 @@
   const workflowPrompt = $derived(template?.default_prompt ?? "");
   const cells = $derived(referenceCells(template));
 
+  /** 点开这张卡的是图片还是视频：决定素材默认落哪一格、@ 出去插哪种标签、产出怎么称呼。 */
+  const cardKind = $derived<RefKind>(image?.kind === "video" ? "video" : "image");
+  const isVideoWf = $derived(isVideoTemplate(template));
+  const mediaKind = $derived<MediaKind>(isVideoWf ? "video" : "image");
+  /** 一族一行。只有图片一族时，参考区与图片一键同款的版面一字不差。 */
+  const imageCells = $derived(familyCells(cells, "image"));
+  const audioCells = $derived(familyCells(cells, "audio"));
+  const videoCells = $derived(familyCells(cells, "video"));
+  const families = $derived(referenceFamilies(template));
+  /** 「参考图 / 参考素材」与「张 / 份」：三族混在一起时别再一口一个「这张图」。 */
+  const refNoun = $derived(referenceNoun(template));
+  const refCounter = $derived(referenceCounter(template));
+  /** 没有来源记录时，被点的这张卡该站的那一格：图片卡＝图片1，视频卡＝视频1。 */
+  const homeKey = $derived((familyCells(cells, cardKind)[0] ?? cells[0])?.key ?? "");
+
   /**
    * 参考位上那是成图自己、不是当初的参考图——只在「这张确实是 AI 出的图、参考图却没认出来、
-   * 而第一格还没被用户动过」时说一次。用户一换图这句就该消失，否则就成了瞎报。
+   * 而它该站的那一格还没被用户动过」时说一次。用户一换素材这句就该消失，否则就成了瞎报。
    */
   const lostItsReferences = $derived(
     !!sources && !sources.references.length && sources.origin === "unrecorded"
-    && cells.length > 0 && refs[cells[0]!.key]?.id === image?.id,
+    && Boolean(homeKey) && refs[homeKey]?.id === image?.id,
   );
   const refCount = $derived(cells.filter((cell) => refs[cell.key]).length);
-  // 生成方式是参考图数量的函数，不是一个开关：0 张文生图 / 1 张单图编辑 / 2 张以上多图编辑。
+  // 生成方式是参考素材数量的函数，不是一个开关：0 份文生 / 1 份单参考 / 2 份以上多参考。
   const mode = $derived(modeFromRefCount(refCount));
   const canText = $derived(allowsTextMode(template));
   const issues = $derived(referenceIssues(template, refs, canText));
-  const visibleCells = $derived(visibleRefCells(cells, refs));
-  const mentionOptions = $derived(mentionOpen ? buildMentionItems(cells, refs, mentionQuery) : []);
+  /**
+   * 参考区是一行，不是一族一行：三族各排一行时，用户看到的是三块互不相干的东西，
+   * 加一份素材得先判断「这算哪一块」；合成一行之后它就是一个参考列表，末尾一颗「+ 参考」。
+   * 排布按 REF_DISPLAY_ORDER（图片 → 视频 → 音频），跟 H3 把参考摆进上下文的顺序一个说法。
+   *
+   * 只有一族（图片一键同款）时仍走原来的 visibleRefCells：已填的 + 一颗「+ 参考」，
+   * 版面、可访问名、悬浮说明与图片一键同款一字不差。
+   */
+  const singleFamily = $derived(families.length <= 1);
+  const onlyFamily = $derived<RefKind>(families[0] ?? "image");
+  const rowCells = $derived.by<{ kind: RefKind; cell: RefCell }[]>(() =>
+    singleFamily
+      ? visibleRefCells(familyCells(cells, onlyFamily), refs).map((cell) => ({ kind: onlyFamily, cell }))
+      : mergedRefCells(cells, refs).map((cell) => ({ kind: (cell.kind ?? "image") as RefKind, cell })),
+  );
+  /** 还有空位的族：那颗「+ 参考」点不点得动、素材选择器给哪几个族 tab，全看它。 */
+  const openKinds = $derived(openRefKinds(cells, refs));
+  /** 这一族最多吃几份：悬浮说明按族报上限，各族不互相借量词。 */
+  function familyTotal(kind: RefKind): number {
+    return kind === "audio" ? audioCells.length : kind === "video" ? videoCells.length : imageCells.length;
+  }
+  // 视频工作流插的是 H3 原生标签（<Picture 1>），图片工作流仍插 @图片1，一条老规矩都没动。
+  const mentionOptions = $derived(mentionOpen ? buildMentionItems(cells, refs, mentionQuery, mediaKind) : []);
+  /**
+   * 素材选择器：绑到某一格（替换、@ 菜单、图片一键同款那颗「+」）时只列那一族，标题写死那一族；
+   * 点合并行里那颗不绑族的「+ 参考」时几族一起列，标题跟着当前挑的族走。
+   */
+  const ADD_ANY = "*";
+  const pickerCell = $derived(cells.find((cell) => cell.key === pickerSlot) ?? null);
+  const pickerKind = $derived<RefKind>(pickerCell?.kind ?? openKinds[0] ?? "image");
+  const pickerKinds = $derived<RefKind[]>(pickerCell ? [pickerCell.kind ?? "image"] : openKinds);
+  const PICKER_TITLES: Record<RefKind, string> = {
+    image: "选一张参考图", audio: "选一段参考音频", video: "选一条参考视频",
+  };
+  /** 绑格子才有固定称呼；不绑族时留空，让选择器按当前挑的族自己拼标题。 */
+  const pickerTitle = $derived(pickerCell ? PICKER_TITLES[pickerCell.kind ?? "image"] : "");
+
+  /**
+   * 整块参考区的可访问名。合并成一行之后它管的是这一整块，不再一族一个分组：
+   * 「（单图编辑）」这半句仍挂在这儿——生成方式不是开关，是参考素材数量的函数。
+   */
+  const rowAria = $derived(`${refNoun}（${modeLabel(mode, mediaKind)}）`);
+
+  /** 「添加图片1参考图」保持图片一键同款的原话；音频/视频不硬套「参考图」这三个字。 */
+  function addLabel(kind: RefKind, label: string): string {
+    return kind === "image" ? `添加${label}参考图` : `添加${label}`;
+  }
+  /** 单族那一格的悬浮说明：说清这一族最多吃几份。 */
+  function addTitle(kind: RefKind): string {
+    const total = familyTotal(kind);
+    if (kind === "image") return `再加一张参考图（这份工作流最多吃 ${total} 张）`;
+    return `再加一份参考${REF_KIND_NAMES[kind]}（这份工作流最多吃 ${total} ${REF_KIND_COUNTERS[kind]}）`;
+  }
+  /** 那颗不绑族的「+ 参考」要一次说清各族上限，否则用户以为只能往里加图片。 */
+  const addAnyTitle = $derived(
+    `再加一份参考素材（这份工作流最多吃 ${REF_DISPLAY_ORDER
+      .filter((kind) => familyTotal(kind) > 0)
+      .map((kind) => `${familyTotal(kind)} ${REF_KIND_COUNTERS[kind]}${REF_KIND_NAMES[kind]}`)
+      .join(" / ")}）`,
+  );
   // 参数面板：combo 走带方框的比例网格，数值走档位 + 自定义输入。
   const selectSlots = $derived(controlSlots(template).filter((slot) => slot.kind === "select"));
   const numberSlots = $derived(controlSlots(template).filter((slot) => slot.kind !== "select"));
   const hasParams = $derived(selectSlots.length + numberSlots.length > 0);
+  /**
+   * 时长走滑块，不走档位按钮：「几秒」是连续量，点 5/8/10/12/15 像在猜，
+   * 拖到几秒就是几秒。区间 3–15 秒（苏醒点名），同时不越过工作流自己给的上下限。
+   */
+  const DURATION_MIN = 3;
+  const DURATION_MAX = 15;
+  function isDurationSlot(slot: CloneSlot): boolean {
+    return /时长|duration/i.test(slot.label) || numberUnit(slot) === "秒";
+  }
+  function durationRange(slot: CloneSlot): [number, number] {
+    const lo = Math.max(DURATION_MIN, Math.ceil(slot.min ?? DURATION_MIN));
+    const hi = Math.min(DURATION_MAX, Math.floor(slot.max ?? DURATION_MAX));
+    return hi > lo ? [lo, hi] : [DURATION_MIN, DURATION_MAX];
+  }
+  /** 滑块只画落在区间里的值：数字框里刚敲了个 90，滑块就该顶到最右而不是消失。 */
+  function slideValue(value: string | number | undefined, range: [number, number]): number {
+    return Math.min(range[1], Math.max(range[0], Number(value) || range[0]));
+  }
   const summary = $derived(controlSummary(template, controls));
+  /**
+   * 产出清单：后端给了 outputs 就照它画（视频的海报帧地址不是 /api/images/{id}/file，
+   * 前端硬拼必然拼错）；老后端只回 image_ids 时退回原来的拼法，图片和以前一样。
+   */
+  const outputChips = $derived.by<CloneOutput[]>(() => {
+    if (!done || !job) return [];
+    if (job.outputs.length) return job.outputs;
+    return job.image_ids.map((id) => ({
+      id, kind: "image", filename: "", thumbnail_url: `/api/images/${id}/file?max=256`,
+    }));
+  });
   /** 工作流名给用户看的那一份：本地导入的名字尾巴上的 .json 不是名字的一部分。 */
   const wfName = $derived(templateDisplayName(template?.name));
 
   const canGenerate = $derived(Boolean(template) && prompt.trim().length > 0 && issues.length === 0 && !busy && !submitting);
 
-  /** 移除一张就把后面的参考往前挪：图片序号就是接线顺序，中间不能留洞。 */
+  /**
+   * 移除一份就把同族后面的往前挪：编号就是接线顺序，中间不能留洞。
+   * 只在本族内挪——删掉「音频1」把「图片2」顶上去，画面上就成了张冠李戴。
+   */
   function removeRef(key: string) {
-    const kept = cells
+    const kind = cells.find((cell) => cell.key === key)?.kind ?? "image";
+    const family = cells.filter((cell) => (cell.kind ?? "image") === kind);
+    const kept = family
       .filter((cell) => cell.key !== key && refs[cell.key])
       .map((cell) => refs[cell.key]);
-    const next: Record<string, ImageSummary | null> = {};
-    cells.forEach((cell, index) => { next[cell.key] = kept[index] ?? null; });
+    const next: Record<string, ImageSummary | null> = { ...refs };
+    family.forEach((cell, index) => { next[cell.key] = kept[index] ?? null; });
     refs = next;
   }
 
-  /** 拖放/粘贴落在哪算哪：没指定就填第一个参考位。 */
-  function targetSlot(slot?: string | null): string | null {
-    if (slot) return slot;
-    return cells[0]?.key ?? null;
+  /** 按扩展名认族。入库回来的文件名可能因为重名被改过，扩展名一定还在。 */
+  function kindFromName(name: string): RefKind | "" {
+    const ext = /\.([a-z0-9]+)$/i.exec(name)?.[1]?.toLowerCase() ?? "";
+    if (["mp3", "wav", "flac", "ogg", "m4a", "aac"].includes(ext)) return "audio";
+    if (["mp4", "mov", "webm", "mkv", "avi"].includes(ext)) return "video";
+    if (["png", "jpg", "jpeg", "webp", "bmp"].includes(ext)) return "image";
+    return "";
+  }
+
+  /** 拖进来 / 粘进来的这份是哪一族：先看 MIME，浏览器没给就退回扩展名。 */
+  function fileKindOf(file: File): RefKind | "" {
+    if (file.type.startsWith("image/")) return "image";
+    if (file.type.startsWith("audio/")) return "audio";
+    if (file.type.startsWith("video/")) return "video";
+    return kindFromName(file.name);
   }
 
   /** 打 @ 就弹菜单。读 DOM 里的实时值：bind:value 比 input 慢一拍，读 prompt 会漏掉刚敲的那个字符。 */
@@ -141,7 +261,7 @@
     const el = e.currentTarget as HTMLTextAreaElement;
     const token = mentionToken(el.value, el.selectionStart ?? el.value.length);
     if (!token || !cells.length) { mentionOpen = false; return; }
-    const items = buildMentionItems(cells, refs, token.query);
+    const items = buildMentionItems(cells, refs, token.query, mediaKind);
     if (!items.length) { mentionOpen = false; return; }
     const caretBox = caretCoordinates(el, token.start);
     const menuWidth = 236;
@@ -182,14 +302,15 @@
     }
   }
 
-  /** 已经挂上的图直接插标签；还没有合适的图，就先走一遍图库选择器再插。 */
+  /** 已经挂上的素材直接插标签；还没有合适的，就先走一遍图库选择器再插。 */
   async function chooseMention(item: MentionItem) {
     if (item.add) {
       mentionPickKey = item.key;
       pickerSlot = item.key;
       return;
     }
-    await commitMention(item.label);
+    // insert 才是最终写进正文的那串：图片工作流给 @图片1，H3 给 <Picture 1>。菜单上始终显示中文编号。
+    await commitMention(item.insert || item.label);
   }
 
   /** 高亮层是 textarea 背后的镜像，滚动位置必须跟着走，否则一滚就错位。 */
@@ -203,7 +324,7 @@
     syncPromptBg();
   });
 
-  /** 换掉 caret 前那段 @xxx，再把焦点和光标放回原处，接着打下面的字。 */
+  /** 换掉 caret 前那段 @xxx，换成引用文本（@图片N 或 <Picture N>），再把焦点和光标放回原处。 */
   async function commitMention(label: string) {
     const el = promptEl;
     const token = mentionAt;
@@ -218,13 +339,24 @@
     syncPromptBg();
   }
 
+  /**
+   * 默认用哪份工作流按卡片那一族挑：视频卡默认吃出片的那条，图片卡默认吃出图的那条。
+   * 这一族一条都没有（库里只导过图片工作流）就退回库里现有的「当前」，至少弹窗不是空的——
+   * 空的会让人以为功能坏了，而挂上图片工作流至少还能看见槽位、自己换。
+   */
+  function pickDefaultTemplate(items: CloneTemplate[]): number | null {
+    const wantVideo = image?.kind === "video";
+    const mine = items.filter((item) => isVideoTemplate(item) === wantVideo);
+    return (mine.find((item) => item.is_active) ?? mine[0] ?? items.find((item) => item.is_active) ?? items[0])?.id ?? null;
+  }
+
   async function loadTemplates() {
     try {
       const res = await cloneApi.templates();
       const items = Array.isArray(res?.items) ? res.items : [];
       templates = items;
       const keep = templateId !== null && items.some((t) => t.id === templateId);
-      if (!keep) templateId = (items.find((t) => t.is_active) ?? items[0])?.id ?? null;
+      if (!keep) templateId = pickDefaultTemplate(items);
       error = "";
     } catch (e) {
       error = cloneError(e);
@@ -276,7 +408,8 @@
    * 这里读 sources 是故意的：来源通常比模板晚到一步，读过一次，它到位那次 effect 才会重摆。
    */
   function bindTemplate(next: CloneTemplate | null) {
-    refs = defaultReferences(next, image, sources?.references ?? []);
+    // 从视频卡点开的，这张视频默认站在「视频1」；从图片卡点开的仍是「图片1」。
+    refs = defaultReferences(next, image, sources?.references ?? [], { kind: cardKind });
     controls = defaultControlValues(next);
     popOpen = false;
   }
@@ -326,6 +459,19 @@
     return `${wanted} (${n})`;
   }
 
+  /**
+   * 导入完成的播报。三族参考位各报各的格数：只说「12 个参考位」的话，
+   * 用户不知道那里面是 9 张图 + 3 段音频，还是 9 张图而已。图片工作流保持原来那句。
+   */
+  function importedMessage(tpl: CloneTemplate): string {
+    const list = referenceCells(tpl);
+    const fams = referenceFamilies(tpl);
+    const refs = fams.length === 1 && fams[0] === "image" && !isVideoTemplate(tpl)
+      ? `${list.length} 个参考位`
+      : fams.map((kind) => `${REF_KIND_NAMES[kind]} ${familyCells(list, kind).length} 格`).join(" / ") || "没认出参考位";
+    return `已载入「${templateDisplayName(tpl.name)}」：${promptSlots(tpl).length} 个提示词位 / ${refs}`;
+  }
+
   /** 弹窗里直接加载本地 JSON：读文本 → 后端解析槽位 → 落库 → 立刻切到新模板。 */
   async function onWorkflowFile(e: Event) {
     const input = e.currentTarget as HTMLInputElement;
@@ -341,11 +487,16 @@
         name: uniqueName(templateDisplayName(inspect.suggested_name || basenameOnly(file.name))),
         workflow: parsed,
         slots: inspect.slots,
+        // 出片还是出图由工作流的产出节点判定，别让视频工作流当成图片模板用在图片卡上
+        media_kind: inspect.media_kind,
       });
       await loadTemplates();
       templateId = saved.id;
       error = "";
-      pushToast(`已载入「${templateDisplayName(saved.name)}」：${promptSlots(saved).length} 个提示词位 / ${referenceCells(saved).length} 个参考位`);
+      pushToast(importedMessage(saved));
+      // 检测阶段的警告（例如「这份工作流没接音频加载器」）必须跟着报出来：
+      // 不报就是让用户带着一个残缺的工作流点生成，等半小时才知道少了什么。
+      for (const warning of inspect.warnings ?? []) pushToast(warning);
     } catch (e2) {
       error = e2 instanceof SyntaxError ? "这个文件不是合法的 JSON，请从 ComfyUI 重新导出 API 格式。" : cloneError(e2);
     } finally {
@@ -416,7 +567,7 @@
   async function generate() {
     if (!template) return;
     if (issues.length) {
-      error = `参考图还没放好：${issues.join("、")}`;
+      error = `${refNoun}还没放好：${issues.join("、")}`;
       return;
     }
     submitting = true;
@@ -451,34 +602,65 @@
   }
 
   /**
-   * 本地文件 / 剪贴板图片：走现成导入接口先落收件箱再当参考位，语义和拖进图库一致。
-   * 一次拖进来几张就依次占满后面的参考位——多张图一张张拖太慢了。
-   */
+   * 本地文件 / 剪贴板素材：走现成导入接口先落收件箱再当参考位，语义和拖进图库一致。
+   * 一次拖进来几份就依次占满后面的参考位——一份一份拖太慢了。
+   *
+ * 三族各归各位：拖进「音频2」的那一份只可能填进音频位；没指定格子（拖到那颗「+ 参考」上、
+ * 或直接粘在参考区）时按文件自己的族分派，而且只认还有空位的族。往音频位塞图片、
+ * 或往已经放满的一族里塞东西，都要当场说清是哪一族不让进，不能默默吞掉。
+ */
   async function importFiles(files: File[], slot?: string | null) {
-    const images = files.filter((f) => f.type.startsWith("image/"));
-    if (!images.length) return;
-    const wanted = targetSlot(slot);
+    const target = slot ? cells.find((cell) => cell.key === slot) ?? null : null;
+    const wantKind = target?.kind ?? null;
+    const open = new Set(openRefKinds(cells, refs));
+    const usable = files.filter((file) => {
+      const kind = fileKindOf(file);
+      if (!kind) return wantKind === null;
+      return wantKind ? kind === wantKind : open.has(kind);
+    });
+    if (!usable.length) {
+      if (wantKind && files.length) error = `${target?.label ?? "这一格"}要的是${REF_KIND_NAMES[wantKind]}，你给的这份不是，换一份。`;
+      else if (files.length) {
+        const first = fileKindOf(files[0]);
+        error = first
+          ? `这份工作流的${REF_KIND_NAMES[first]}参考位已经放满了。要换就点格子上的替换，或先移掉一份。`
+          : "认不出这些素材是哪一族，先确认文件格式。";
+      }
+      return;
+    }
+    error = "";
     try {
-      const res = await imagesApi.import(images, null);
+      const res = await imagesApi.import(usable, null);
       if (!res.saved.length) {
-        pushToast(res.skipped?.[0] ? `这些图没能入库（${res.skipped[0].reason}）` : "这些图没能入库");
+        pushToast(res.skipped?.[0] ? `这些素材没能入库（${res.skipped[0].reason}）` : "这些素材没能入库");
         return;
       }
-      const free = cells.map((cell) => cell.key).filter((key) => !refs[key]);
-      const targets = wanted && free.includes(wanted) ? [wanted, ...free.filter((key) => key !== wanted)] : free;
+      // 空位按族分桶：一次拖进来一张图加一段音频时各找各的格子，不互相顶位。
+      const free: Record<RefKind, string[]> = { image: [], audio: [], video: [] };
+      for (const cell of cells) {
+        if (!refs[cell.key]) free[(cell.kind ?? "image") as RefKind].push(cell.key);
+      }
+      // 指定了格子就先占它，剩下的同族文件顺着本族的空位往后排。
+      const queue: string[] = [];
+      if (target && wantKind && free[wantKind].includes(target.key)) {
+        queue.push(target.key);
+        free[wantKind] = free[wantKind].filter((key) => key !== target.key);
+      }
       const next = { ...refs };
       let used = 0;
       for (const item of res.saved) {
-        const key = targets[used];
-        if (!key) break;
-        next[key] = { ...item, kind: "image" } as ImageSummary;
+        // 入库接口不回 kind（它只回 id / filename / path），认族只能看扩展名
+        const kind: RefKind = kindFromName(item.filename) || wantKind || "image";
+        const key = kind === wantKind && queue.length ? queue.shift() : free[kind].shift();
+        if (!key) continue;
+        next[key] = { ...item, kind } as ImageSummary;
         used += 1;
       }
       refs = next;
       pushToast(used > 1
-        ? `已把 ${used} 张图收进图库并选为参考图`
-        : `已把「${res.saved[0].filename}」收进图库并选为参考图`);
-      if (res.saved.length > used) pushToast(`参考位满了，多出的 ${res.saved.length - used} 张只收进了图库`);
+        ? `已把 ${used} ${refCounter}素材收进图库并选为${refNoun}`
+        : `已把「${res.saved[0].filename}」收进图库并选为${refNoun}`);
+      if (res.saved.length > used) pushToast(`${refNoun}位满了，多出的 ${res.saved.length - used} ${refCounter}只收进了图库`);
     } catch (e) {
       pushToast(cloneError(e));
     }
@@ -526,7 +708,22 @@
 
       <div class="cm-body">
         <div class="cm-left">
-          {#if image?.original_url || image?.thumbnail_url}
+          {#if image?.kind === "video" && image.playable !== false && image.play_url}
+            <!-- 视频卡的左边直接能播：一键同款要抄的常常是片子里的节奏、运镜和转场，
+                 只给一张首帧等于让人凭记忆写提示词。放不出来的容器（playable=false）退回海报帧。 -->
+            <!-- svelte-ignore a11y_media_has_caption -->
+            <video
+              class="cm-hero"
+              src={backendUrl(image.play_url)}
+              poster={image.thumbnail_url ? backendUrl(image.thumbnail_url) : undefined}
+              controls
+              playsinline
+              preload="metadata"
+              aria-label={`预览${image.filename}`}
+            >
+              <span>这个容器放不出来，去图库里用外部播放器看。</span>
+            </video>
+          {:else if image?.original_url || image?.thumbnail_url}
             <img class="cm-hero" src={backendUrl(image.original_url || image.thumbnail_url!)} alt={image.filename} />
           {:else}
             <div class="cm-hero cm-hero-empty">没有预览</div>
@@ -539,7 +736,7 @@
             <p class="cm-note">正在读取同款工作流…</p>
           {:else if !template}
             <div class="cm-empty">
-              <p>还没有同款工作流。导出一份 ComfyUI 的 API 格式工作流 JSON，之后每张图点一下就能出同款。</p>
+              <p>还没有同款工作流。导出一份 ComfyUI 的 API 格式工作流 JSON，{cardKind === "video" ? "之后每条片子点一下就能出同款。" : "之后每张图点一下就能出同款。"}</p>
               <button class="cm-btn cm-btn-accent" disabled={workflowLoading} onclick={() => wfInput?.click()}>
                 {workflowLoading ? "正在读取…" : "加载本地工作流 JSON"}
               </button>
@@ -555,57 +752,75 @@
             <!-- 生成方式不做成开关：放了几个参考就是哪种方式（0 文生图 / 1 单图 / 2+ 多图），
                  开关能和实际画面打架，数量不会。当前方式只在标题里报一下。 -->
             <section class="cm-block">
-              <p class="cm-block-title">{mode === "text" ? "参考图" : "替换或上传参考"}</p>
-              <!-- 生成方式不再是看得见的标签（红框小字全删），但它仍是真实状态：
-                   挂在参考图这一组的可访问名里，读屏和测试都还拿得到。 -->
+              <p class="cm-block-title">{mode === "text" ? refNoun : "替换或上传参考"}</p>
+              <!-- 参考区只有一行：几族素材混着排（图片 → 视频 → 音频），末尾一颗不绑族的「+ 参考」。
+                   可访问名管的是整块参考区，「（单图编辑）」这半句挂在那儿，读屏和测试都还拿得到。
+                   只有一族时格子来自 visibleRefCells（已填的 + 一颗空格子），版面与图片一键同款一字不差。 -->
               <div
                 class="cm-ref-row"
                 role="group"
-                aria-label={`参考图（${modeLabel(mode)}）`}
+                aria-label={rowAria}
                 onpaste={(e) => {
                   const files = Array.from(e.clipboardData?.files ?? []);
-                  if (files.length) { e.preventDefault(); void importFiles(files, pickerSlot); }
+                  if (files.length) { e.preventDefault(); void importFiles(files, null); }
                 }}
               >
-                {#each visibleCells as cell (cell.key)}
-                  {@const picked = refs[cell.key]}
+                {#each rowCells as item (item.cell.key)}
+                  {@const picked = refs[item.cell.key]}
                   <div
                     class="cm-ref-cell"
                     role="group"
-                    aria-label={cell.label}
+                    aria-label={item.cell.label}
                     ondragover={(e) => e.preventDefault()}
                     ondrop={(e) => {
                       const files = Array.from(e.dataTransfer?.files ?? []);
-                      if (files.length) { e.preventDefault(); void importFiles(files, cell.key); }
+                      if (files.length) { e.preventDefault(); void importFiles(files, item.cell.key); }
                     }}
                   >
                     {#if picked}
-                      <div class="cm-tile media-chip" title={`${cell.slotLabel}｜${picked.filename}`}>
+                      <div class="cm-tile media-chip" class:cm-tile-audio={item.kind === "audio"} title={`${item.cell.slotLabel}｜${picked.filename}`}>
                         <img class="cm-tile-img" src={backendUrl(picked.thumbnail_url || picked.original_url!)} alt={picked.filename} />
-                        <button class="cm-tile-swap" aria-label={`替换${cell.label}`} onclick={() => (pickerSlot = cell.key)}>
+                        <button class="cm-tile-swap" aria-label={`替换${item.cell.label}`} onclick={() => (pickerSlot = item.cell.key)}>
                           <Icon name="swap" size={15} />
                         </button>
-                        <button class="cm-tile-x" aria-label={`移除${cell.label}`} onclick={() => removeRef(cell.key)}>
+                        <button class="cm-tile-x" aria-label={`移除${item.cell.label}`} onclick={() => removeRef(item.cell.key)}>
                           <Icon name="x" size={12} />
                         </button>
                       </div>
                     {:else}
-                      <button class="cm-tile cm-tile-add" aria-label={`添加${cell.label}参考图`} title={`再加一张参考图（这份工作流最多吃 ${cells.length} 张）`} onclick={() => (pickerSlot = cell.key)}>
+                      <button class="cm-tile cm-tile-add" aria-label={addLabel(item.kind, item.cell.label)} title={addTitle(item.kind)} onclick={() => (pickerSlot = item.cell.key)}>
                         <Icon name="plus" size={20} />
-                        <span>参考</span>
+                        <span>{item.kind === "image" ? "参考" : REF_KIND_NAMES[item.kind]}</span>
                       </button>
                     {/if}
-                    <span class="cm-ref-caption" class:cm-ref-caption-empty={!picked}>{cell.label}</span>
+                    <span class="cm-ref-caption" class:cm-ref-caption-empty={!picked}>{item.cell.label}</span>
                   </div>
                 {/each}
+                {#if !singleFamily && openKinds.length}
+                  <!-- 这一颗不绑族：点进去几族一起挑，选到哪一族就落那一族的第一个空位。 -->
+                  <button
+                    class="cm-tile cm-tile-add cm-ref-add"
+                    aria-label="添加参考素材"
+                    title={addAnyTitle}
+                    ondragover={(e) => e.preventDefault()}
+                    ondrop={(e) => {
+                      const files = Array.from(e.dataTransfer?.files ?? []);
+                      if (files.length) { e.preventDefault(); void importFiles(files, null); }
+                    }}
+                    onclick={() => (pickerSlot = ADD_ANY)}
+                  >
+                    <Icon name="plus" size={20} />
+                    <span>参考</span>
+                  </button>
+                {/if}
               </div>
               {#if sources && sources.dropped > 0}
-                <!-- 来源里认不出来的那几张要明说：默默少摆一张，用户会以为当初就只喂了这些 -->
-                <p class="cm-note">这张图当初还用了 {sources.dropped} 张参考图，已经不在图库里了，重新生成前补一张。</p>
+                <!-- 来源里认不出来的那几份要明说：默默少摆一份，用户会以为当初就只喂了这些 -->
+                <p class="cm-note">这张{cardKind === "video" ? "视频" : "图"}当初还用了 {sources.dropped} {refCounter}{refNoun}，已经不在图库里了，重新生成前补上。</p>
               {:else if lostItsReferences}
-                <!-- 认不出参考图时，参考位里摆的是被点的这张成图自己（默认就这么填的）。
-                     不说明就是骗人：用户会以为当初只喂了这一张、就是这一张。 -->
-                <p class="cm-note">没找到这张图当初用的参考图，先放了它自己当参考。要原来那几张，手动换一下。</p>
+                <!-- 认不出参考素材时，参考位里摆的是被点的这份成图自己（默认就这么填的）。
+                     不说明就是骗人：用户会以为当初只喂了这一份、就是这一份。 -->
+                <p class="cm-note">没找到这张{cardKind === "video" ? "视频" : "图"}当初用的{refNoun}，先放了它自己当参考。要原来那几份，手动换一下。</p>
               {/if}
             </section>
 
@@ -617,7 +832,7 @@
                     <span class:cm-mention-hl={chunk.mention}>{chunk.text}</span>
                   {/each}
                 </div>
-                <textarea id="clone-prompt" class="cm-textarea" bind:this={promptEl} oninput={onPromptInput} onkeydown={onPromptKeydown} onscroll={syncPromptBg} rows="12" aria-label="提示词" placeholder="要生成什么画面，打 @ 可以引用参考图" bind:value={prompt}></textarea>
+                <textarea id="clone-prompt" class="cm-textarea" bind:this={promptEl} oninput={onPromptInput} onkeydown={onPromptKeydown} onscroll={syncPromptBg} rows="12" aria-label="提示词" placeholder={`要生成什么画面，打 @ 可以引用${refNoun}`} bind:value={prompt}></textarea>
                 {#if mentionOpen && mentionOptions.length}
                   <div class="cm-pop-scrim" role="presentation" onclick={() => (mentionOpen = false)}></div>
                   <div class="cm-mention" style="left: {mentionBox.left}px; top: {mentionBox.top}px;" role="listbox" aria-label="引用素材">
@@ -633,7 +848,7 @@
                             <Icon name={item.add ? "plus" : "image"} size={13} />
                           {/if}
                         </span>
-                        <span class="cm-mention-label">{item.add ? "从图库再挂一张参考图" : item.label}</span>
+                        <span class="cm-mention-label">{item.add ? mentionAddLabel(item.kind) : item.label}</span>
                         <span class="cm-mention-file" title={item.filename}>{item.add ? "" : basenameOnly(item.filename)}</span>
                       </button>
                     {/each}
@@ -685,30 +900,59 @@
                         {/each}
                         {#each numberSlots as slot (slotKey(slot))}
                           {@const key = slotKey(slot)}
+                          {@const range = durationRange(slot)}
                           <p class="cm-pop-title">{slot.label}</p>
-                          <div class="cm-seg" role="group" aria-label={`${slot.label}档位`}>
-                            {#each numberPresets(slot) as preset (preset)}
-                              <button
-                                class="cm-seg-item"
-                                class:is-on={Number(controls[key]) === preset}
-                                aria-label={`${preset}${numberUnit(slot)}`}
-                                aria-pressed={Number(controls[key]) === preset}
-                                onclick={() => (controls[key] = preset)}
-                              >{preset}</button>
-                            {/each}
-                          </div>
-                          <label class="cm-custom" for={`clone-${key}`}>
-                            <span>自定义{numberUnit(slot) ? `（${numberUnit(slot)}）` : ""}</span>
-                            <input
-                              id={`clone-${key}`}
-                              type="number"
-                              aria-label={slot.label}
-                              min={slot.min ?? undefined}
-                              max={slot.max ?? undefined}
-                              step={slot.step ?? undefined}
-                              bind:value={controls[key]}
-                            />
-                          </label>
+                          {#if isDurationSlot(slot)}
+                            <!-- 时长是连续量：档位按钮点起来像在猜，拖滑块到几秒就是几秒（3–15 秒，
+                                 也不越过工作流自己给的上下限）。右边留个数字框，要几秒直接敲。 -->
+                            <div class="cm-slide">
+                              <input
+                                type="range"
+                                class="cm-slider"
+                                min={range[0]}
+                                max={range[1]}
+                                step="1"
+                                value={slideValue(controls[key], range)}
+                                style="--min: {range[0]}; --span: {range[1] - range[0]}; --value: {slideValue(controls[key], range)}"
+                                aria-label={`${slot.label}滑块`}
+                                oninput={(e) => (controls[key] = Number((e.target as HTMLInputElement).value))}
+                              />
+                              <input
+                                type="number"
+                                class="cm-slide-num"
+                                aria-label={slot.label}
+                                min={range[0]}
+                                max={range[1]}
+                                step="1"
+                                bind:value={controls[key]}
+                              />
+                              <span class="cm-slide-unit">{numberUnit(slot) || "秒"}</span>
+                            </div>
+                          {:else}
+                            <div class="cm-seg" role="group" aria-label={`${slot.label}档位`}>
+                              {#each numberPresets(slot) as preset (preset)}
+                                <button
+                                  class="cm-seg-item"
+                                  class:is-on={Number(controls[key]) === preset}
+                                  aria-label={`${preset}${numberUnit(slot)}`}
+                                  aria-pressed={Number(controls[key]) === preset}
+                                  onclick={() => (controls[key] = preset)}
+                                >{preset}</button>
+                              {/each}
+                            </div>
+                            <label class="cm-custom" for={`clone-${key}`}>
+                              <span>自定义{numberUnit(slot) ? `（${numberUnit(slot)}）` : ""}</span>
+                              <input
+                                id={`clone-${key}`}
+                                type="number"
+                                aria-label={slot.label}
+                                min={slot.min ?? undefined}
+                                max={slot.max ?? undefined}
+                                step={slot.step ?? undefined}
+                                bind:value={controls[key]}
+                              />
+                            </label>
+                          {/if}
                         {/each}
                       </div>
                     {/if}
@@ -733,8 +977,12 @@
                       {#each templates as item (item.id)}
                         <div class="cm-wf-row">
                           <button class="cm-wf" role="menuitemradio" aria-checked={item.id === templateId} disabled={busy}
-                            title={`${templateDisplayName(item.name)} · ${item.node_count} 个节点 · ${item.control_count} 个参数`}
+                            title={`${templateDisplayName(item.name)} · ${isVideoTemplate(item) ? "出片" : "出图"} · ${item.node_count} 个节点 · ${item.control_count} 个参数`}
                             onclick={() => pickTemplate(item.id)}>
+                            <!-- 图片和视频的工作流同列一份清单（用户要的「不分家」），但出片还是出图必须一眼分得清，
+                                 否则图片卡挂上一条 H3 视频工作流，等十分钟出一段片子才知道选错。
+                                 徽标钉在名字前面：跟在名字后面时它会随名字长短左右漂移，两行对不齐。 -->
+                            <span class="cm-wf-kind" class:cm-wf-kind-video={isVideoTemplate(item)}>{isVideoTemplate(item) ? "视频" : "图片"}</span>
                             <span class="cm-wf-name">{templateDisplayName(item.name)}</span>
                             {#if item.id === templateId}<span class="cm-wf-tag">当前</span>{/if}
                           </button>
@@ -746,7 +994,8 @@
                       {/each}
                       <div class="cm-pop-sep"></div>
                       <button class="cm-wf cm-wf-add" role="menuitem" disabled={workflowLoading} onclick={() => wfInput?.click()}>
-                        <Icon name="plus" size={13} />
+                        <!-- 占位与上面的族徽同宽，「加载本地工作流 JSON」才跟上面的名字左对齐 -->
+                        <span class="cm-wf-lead" aria-hidden="true"><Icon name="plus" size={13} /></span>
                         <span class="cm-wf-name">{workflowLoading ? "正在读取…" : "加载本地工作流 JSON"}</span>
                       </button>
                     </div>
@@ -777,12 +1026,15 @@
               <p class="cm-foot-note cm-status" role="status">{cloneStatusLabel(job)}</p>
             {/if}
 
-            {#if done && job && job.image_ids.length}
+            {#if outputChips.length}
               <div class="cm-results">
                 <span class="cm-results-label">本次产出</span>
-                {#each job.image_ids as id (id)}
-                  <button class="cm-chip media-chip" aria-label={`打开生成的第 ${id} 张`} onclick={() => onOpenImage?.(id)}>
-                    <img src={backendUrl(`/api/images/${id}/file?max=256`)} alt="" />
+                {#each outputChips as out (out.id)}
+                  <!-- 缩略图地址由后端按那一行的 kind 给准：视频的海报帧不是 /api/images/{id}/file。 -->
+                  <button class="cm-chip media-chip" class:cm-chip-video={out.kind === "video"} title={out.filename}
+                    aria-label={`打开生成的第 ${out.id} ${out.kind === "video" ? "条" : "张"}`} onclick={() => onOpenImage?.(out.id, out.kind)}>
+                    <img src={backendUrl(out.thumbnail_url)} alt="" />
+                    {#if out.kind === "video"}<span class="cm-chip-play" aria-hidden="true"><Icon name="play" size={12} /></span>{/if}
                   </button>
                 {/each}
               </div>
@@ -807,14 +1059,19 @@
 
 <MediaPickerModal
   open={open && pickerSlot !== null}
-  title="选一张参考图"
-  onPick={(picked) => {
-    const key = pickerSlot;
+  kind={pickerKind}
+  kinds={pickerKinds}
+  title={pickerTitle}
+  onPick={(picked, chosenKind) => {
+    const kind = chosenKind ?? pickerKind;
+    // 不绑族那颗「+ 参考」：挑到哪一族就落这一族的第一个空位，从第 1 格连着填，跳不了格。
+    const key = pickerSlot === ADD_ANY ? firstFreeRefKey(cells, refs, kind) : pickerSlot;
     if (!key) return;
-    refs = { ...refs, [key]: picked };
+    refs = { ...refs, [key]: { ...picked, kind } };
     const cell = cells.find((item) => item.key === key);
-    // 从 @ 菜单里点「再挂一张」进来的：图挂上了，顺手把 @图片N 插回提示词
-    if (cell && mentionPickKey === key) void commitMention(cell.label);
+    // 从 @ 菜单里点「再挂一份」进来的：素材挂上了，顺手把引用标签插回提示词。
+    // 插的是 insert 文本而不是中文编号——H3 只认 <Picture 1>，@图片1 对它是一行普通字。
+    if (cell && mentionPickKey === key) void commitMention(mentionInsertText(cell, mediaKind));
     mentionPickKey = null;
   }}
   onClose={() => (pickerSlot = null)}
@@ -864,6 +1121,10 @@
   .cm-tile { position: relative; width: 84px; height: 84px; overflow: hidden; border-radius: 14px; background: #141417; border: 1px solid rgb(255 255 255 / 7%); }
   .cm-tile-img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; }
   .cm-tile-add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 0; font-size: 12.5px; color: #d4d4d8; background: #1a1a1e; cursor: pointer; transition: background-color 140ms ease, border-color 140ms ease; }
+  /* 音频格子里那是波形图（840×360 的透明 PNG）：cover 会把波形切成一条中线，contain 才看得出起伏。
+     背景压深一档，透明的波形才不会和卡片糊成一片。 */
+  .cm-tile-audio { background: #101013; }
+  .cm-tile-audio .cm-tile-img { object-fit: contain; padding: 12px 8px; }
   .cm-tile-add:hover { background: #232327; border-color: rgb(255 255 255 / 14%); }
   .cm-tile-swap,
   .cm-tile-x { position: absolute; display: flex; align-items: center; justify-content: center; color: #fafafa; background: rgba(18, 18, 20, 0.78); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); opacity: 0; transition: opacity 140ms ease, background-color 140ms ease; cursor: pointer; }
@@ -877,7 +1138,11 @@
   .cm-tile-x:hover { background: rgba(38, 38, 42, 0.95); }
   .cm-tile-x:hover { color: #f87171; }
   .cm-ref-caption { max-width: 84px; font-size: 11.5px; color: #a1a1aa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cm-ref-caption { max-width: 84px; font-size: 11.5px; color: #a1a1aa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cm-ref-caption-empty { color: #6b6b73; }
+  /* 合并行末尾那颗「+ 参考」不绑族、也没有编号，所以它不是「一格」：高度跟整行拉平，
+     和左边的缩略图＋编号凑成同一块，看着就是「这一排还差一份」而不是多出来的空格子。 */
+  .cm-tile.cm-ref-add { width: 96px; height: auto; min-height: 84px; align-self: stretch; }
 
   /* 标题右边那个只读标签：告诉他现在是哪种生成方式，但它不是按钮。 */
   .cm-form { display: contents; }
@@ -939,6 +1204,11 @@
   .cm-wf:disabled { opacity: .5; cursor: default; }
   .cm-wf-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cm-wf-tag { flex: none; padding: 1px 7px; font-size: 10.5px; color: #f87171; background: rgb(242 78 78 / 16%); border-radius: 999px; }
+  /* 图片和视频的工作流排在同一份清单里，出片还是出图得一眼分得开（颜色之外还有字，不靠颜色独担信息）。 */
+  /* 族徽定宽并钉在名字前面：宽度一致 + 位置固定，两行工作流的名称才在同一条竖线上。 */
+  .cm-wf-kind { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 34px; padding: 1px 0; font-size: 10.5px; color: #93c5fd; background: rgb(59 130 246 / 14%); border-radius: 999px; }
+  .cm-wf-lead { flex: none; display: flex; align-items: center; justify-content: center; width: 34px; }
+  .cm-wf-kind-video { color: #fbbf24; background: rgb(245 158 11 / 16%); }
   /* 一行一条工作流：整行就是一颗胶囊，名字和那颗 X 在同一个亮面上，不再像并排的两个控件 */
   .cm-wf-row { display: flex; align-items: center; gap: 2px; padding-right: 4px; border-radius: 10px; transition: background-color 120ms ease; }
   .cm-wf-row:hover { background: rgb(255 255 255 / 7%); }
@@ -970,6 +1240,19 @@
   .cm-seg-item.is-on { background: rgb(255 255 255 / 15%); color: #fafafa; font-weight: 600; }
   .cm-custom { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 11.5px; color: #7c7c84; }
   .cm-custom input { width: 92px; height: 28px; padding: 0 8px; font-size: 12.5px; color: #e4e4e7; background: rgba(0, 0, 0, 0.4); border: 1px solid rgb(255 255 255 / 9%); border-radius: 8px; }
+  /* 时长滑块：细轨 + 圆 thumb + 已填段，跟图库工具栏那条列数滑块一个手感。 */
+  .cm-slide { display: flex; align-items: center; gap: 10px; }
+  .cm-slider { -webkit-appearance: none; appearance: none; flex: 1; min-width: 0; height: 4px; border-radius: 2px; outline: none; cursor: pointer;
+    background: linear-gradient(to right,
+      rgb(242 78 78) 0%, rgb(242 78 78) calc((var(--value) - var(--min)) * 100% / var(--span)),
+      rgb(64 64 70) calc((var(--value) - var(--min)) * 100% / var(--span)), rgb(64 64 70) 100%); }
+  .cm-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 15px; height: 15px; border-radius: 50%; background: #f4f4f5; border: 2px solid rgb(24 24 27); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(242, 78, 78, 0.45); cursor: grab; }
+  .cm-slider:active::-webkit-slider-thumb { cursor: grabbing; }
+  .cm-slider::-moz-range-thumb { width: 15px; height: 15px; border-radius: 50%; background: #f4f4f5; border: 2px solid rgb(24 24 27); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(242, 78, 78, 0.45); cursor: grab; }
+  .cm-slider::-moz-range-track { height: 4px; border-radius: 2px; background: rgb(64 64 70); }
+  .cm-slider:focus-visible::-webkit-slider-thumb { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55), 0 0 0 4px rgba(242, 78, 78, 0.35); }
+  .cm-slide-num { flex: none; width: 62px; height: 28px; padding: 0 8px; font-size: 12.5px; color: #e4e4e7; background: rgba(0, 0, 0, 0.4); border: 1px solid rgb(255 255 255 / 9%); border-radius: 8px; }
+  .cm-slide-unit { flex: none; font-size: 12px; color: #8a8a8e; }
 
   /* 按钮组画在胶囊之上：哪天再溢出，被压住的也不许是「取消」和「生成」 */
   .cm-actions { position: relative; z-index: 6; display: flex; align-items: center; gap: 8px; margin-left: auto; flex: none; }
@@ -1017,6 +1300,9 @@
   .cm-results { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .cm-results-label { font-size: 11.5px; color: #71717a; }
   .cm-chip { width: 60px; height: 60px; }
+  /* 视频产出也得看得出是视频：右下角一枚小播放键，点下去进播放器而不是对比视图。 */
+  .cm-chip-video { position: relative; }
+  .cm-chip-play { position: absolute; right: 4px; bottom: 4px; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; color: #fafafa; background: rgb(18 18 20 / 80%); }
 
   @media (max-width: 900px) {
     .cm-body { grid-template-columns: 1fr; }

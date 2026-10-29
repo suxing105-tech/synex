@@ -279,6 +279,85 @@ def test_active_flag_stays_exclusive(client):
     assert [t for t in client.get("/api/clone/templates").json()["items"] if t["is_active"]][0]["name"] == "A"
 
 
+GROW_WORKFLOW = {
+    **API_WORKFLOW,
+    "582": {
+        "class_type": "TextEncodeQwenImage21",
+        "inputs": {"prompt": "内置提示词", "negative_prompt": "糊", "images.image_1": ["543", 0]},
+    },
+}
+
+# 素材组能长到几格只写在 object_info 的 autogrow template 里，工作流 JSON 本身看不出来。
+GROW_INFO = {
+    **OBJECT_INFO,
+    "TextEncodeQwenImage21": {"input": {"required": {
+        "images": ["COMFY_AUTOGROW_WORKFLOW_INPUT",
+                   {"template": {"prefix": "image_", "min": 1, "max": 4, "type": "IMAGE"}}],
+    }}},
+}
+
+
+@pytest.fixture
+def comfy_online_grow(monkeypatch):
+    """ComfyUI 在线，并且报得出 autogrow 上限。"""
+    def handler(request: httpx.Request) -> httpx.Response:
+        name = request.url.path.rsplit("/", 1)[-1]
+        return httpx.Response(200, json={name: GROW_INFO[name]} if name in GROW_INFO else {})
+
+    real = ComfyUIClient
+
+    def make(url, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return real(url, **kwargs)
+
+    monkeypatch.setattr("app.routes.clone.ComfyUIClient", make)
+
+
+def _grow_names(slots):
+    slot = next(s for s in slots if s["kind"] == "image")
+    return sorted((slot.get("grow") or {}).get("names") or [])
+
+
+def test_swapping_workflow_keeps_controls_and_reference_cells(client, comfy_online_grow):
+    """就地换 JSON 会重算槽位，而控件选项和素材组格数只存在于 object_info。
+
+    真机踩的是这条的漏网版：脚本换完工作流，比例/分辨率整块没了，9 格参考图缩回 2 格，
+    弹窗看着像「这份工作流变笨了」，其实是被换工作流这一步悄悄降级了。
+    """
+    row = create(client, workflow=GROW_WORKFLOW).json()
+    assert row["control_count"] == 2
+    assert _grow_names(row["slots"]) == ["image_2", "image_3"]
+
+    swapped = client.patch(f"/api/clone/templates/{row['id']}", json={"workflow": GROW_WORKFLOW}).json()
+    assert "warning" not in swapped
+    assert swapped["control_count"] == 2
+    assert _grow_names(swapped["slots"]) == ["image_2", "image_3"]
+    select = [s for s in swapped["slots"] if s["kind"] == "select"][0]
+    assert select["options"] == ["1:1 (Square)", "9:16 (Portrait Widescreen)"]
+
+
+def test_swapping_workflow_says_why_controls_are_missing(client):
+    """换 JSON 时 ComfyUI 连不上：照样换得成，但少了什么、怎么补回来必须讲明白。"""
+    row = create(client, workflow=GROW_WORKFLOW).json()
+    swapped = client.patch(f"/api/clone/templates/{row['id']}", json={"workflow": GROW_WORKFLOW}).json()
+    assert swapped["control_count"] == 0
+    assert "重新检测槽位" in swapped["warning"]
+
+
+def test_swapping_workflow_with_slots_does_not_probe_comfyui(client, comfy_online_grow, monkeypatch):
+    """带着确认过的槽位换工作流时，别多跑一次 object_info。"""
+    row = create(client, workflow=GROW_WORKFLOW).json()
+
+    def refuse():
+        raise AssertionError("带槽位换工作流不该再去连 ComfyUI")
+
+    monkeypatch.setattr("app.routes.clone._object_info", refuse)
+    kept = client.patch(f"/api/clone/templates/{row['id']}",
+                        json={"workflow": GROW_WORKFLOW, "slots": row["slots"]})
+    assert kept.status_code == 200
+    assert _grow_names(kept.json()["slots"]) == ["image_2", "image_3"]
+
+
 def test_swapping_workflow_rebinds_slots(client):
     row = create(client).json()
     nodes = {k: v for k, v in API_WORKFLOW.items() if k != "540"}

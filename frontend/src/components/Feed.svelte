@@ -38,6 +38,7 @@
   import TextAssociateModal from "./TextAssociateModal.svelte";
   import CloneModal from "./CloneModal.svelte";
 import { comparePair } from "../lib/clone";
+import { hoverPlay } from "../lib/hover-play";
   import { textsApi } from "../lib/texts";
   import { isTextFilePath, textFeedItemOf, textFormatLabel } from "../lib/text-reading";
   import { folderId } from "../lib/stores";
@@ -109,19 +110,21 @@ import { comparePair } from "../lib/clone";
   let selectedKinds = $derived(kindsIn($mediaItems.filter((it) => $multiSelectedIds.has(it.id))));
   let selectedLabel = $derived(selectionSummary(selectedCount, selectedKinds));
   // ---------- 一键同款 ----------
-  // 弹窗目标就是被点的这张图；生成在后台跑，关掉弹窗不会中断（状态在后端）。
+  // 弹窗目标就是被点的这一份素材；生成在后台跑，关掉弹窗不会中断（状态在后端）。
+  // 图片卡与视频卡共用同一个入口、同一个弹窗；音频没有能喂给工作流的加载器，不给入口。
   let cloneTarget = $state<MediaFeedItem | null>(null);
   function openClone(it: MediaFeedItem) {
-    if (it.kind !== "image") return;
+    if (it.kind !== "image" && it.kind !== "video") return;
     cloneTarget = it;
   }
   /**
-   * 点弹窗里的产出图：直接进「原图 vs 产出图」对比。
-   * 做法就是说清 Lightbox 已经认的那条规则——正好两张被选中就进对比态——
+   * 点弹窗里的产出：出的是图就进「原图 vs 产出图」对比，出的是片子就进播放器。
+   * 对比那条路说的是 Lightbox 已经认的规则——正好两张被选中就进对比态——
    * 所以先把原图单选上、再 ctrl 补上产出图，然后把 Lightbox 打开。
-   * 两张有一张不在当前列表里（筛选、翻页都可能）就别硬凑，退回只选中产出图。
+   * 两张有一张不在当前列表里（筛选、翻页都可能）就别硬凑，退回只选中产出；
+   * 视频更不硬凑：一段片子和一张原图并排不叫对比。
    */
-  async function openCloneResult(id: number) {
+  async function openCloneResult(id: number, kind = "image") {
     const source = cloneTarget;
     cloneTarget = null;
     try {
@@ -130,8 +133,17 @@ import { comparePair } from "../lib/clone";
       /* 刷新失败也要先把选区挪过去，别让点击没反应 */
     }
     const items = $mediaItems;
-    const pair = comparePair(source?.id, id, items.map((it) => it.id));
     const produced = items.find((it) => it.id === id);
+    if (kind === "video" || produced?.kind === "video") {
+      if (!produced) {
+        notify("这次出的片子还没出现在当前列表里，稍等一下或去图库里找。");
+        return;
+      }
+      applySelection(items, id, "none");
+      await openVideo(produced);
+      return;
+    }
+    const pair = comparePair(source?.id, id, items.map((it) => it.id));
     if (pair && produced) {
       applySelection(items, pair[0], "none");
       applySelection(items, pair[1], "ctrl");
@@ -519,18 +531,6 @@ import { comparePair } from "../lib/clone";
       && !previewFailedIds.has(it.id);
   }
 
-  /**
-   * 视频卡片的 hover 播放动作。Svelte 只把 muted 写成 attribute，而 autoplay 策略读的是
-   * DOM 属性 muted，两者不同步会被 Chromium 拦掉，所以进来先显式置一次。
-   * 解不开容器就什么都不做 —— 底下的海报图本来就在，最差也只是不动。
-   */
-  function hoverPlay(node: HTMLVideoElement) {
-    node.muted = true;
-    node.volume = 0;
-    // jsdom 的 play() 返回 undefined，直接 .catch 会在测试里炸；浏览器返回 Promise。
-    const p = node.play();
-    if (p && typeof p.catch === "function") p.catch(() => {});
-  }
 
   function aspectFor(it: ItemSummary): string {
     if (it.item_type === "text") return TEXT_CARD_ASPECT;
@@ -648,7 +648,8 @@ import { comparePair } from "../lib/clone";
             ]
           : [{ label: isVideo ? "复制视频" : "复制图片", onClick: () => isVideo ? copyVideoToClipboard(t) : copyImageToClipboard(t) }]),
         ...(isPsdFilename(t.filename) ? [{ label: "在 Photoshop 中打开", onClick: () => openInPhotoshop(t) }] : []),
-        ...(t.kind === "image" ? [{ label: "一键同款", onClick: () => openClone(t) }] : []),
+        // 图片与视频共用这颗菜单项：弹窗会按卡片这一族挑默认的当前工作流
+        ...(t.kind === "image" || t.kind === "video" ? [{ label: "一键同款", onClick: () => openClone(t) }] : []),
         { label: "重命名", onClick: () => renameImage(t) },
         { label: `${noun}所在位置`, onClick: () => revealImage(t) },
         { label: "移动到…", children: moveMenu(items) },
@@ -1117,7 +1118,7 @@ import { comparePair } from "../lib/clone";
               {:else}
               <button
                 type="button"
-                class="thumb media-card {footerTier === 0 ? 'media-card--compact' : ''} {it.kind === 'audio' ? 'is-audio ' : ''}{it.kind === 'image' && footerTier > 0 ? 'is-cloneable ' : ''}text-left {$multiSelectedIds.has(it.id) ? 'is-selected' : ''} {$playingAudio?.id === it.id && it.kind === 'audio' ? 'is-playing' : ''}"
+                class="thumb media-card {footerTier === 0 ? 'media-card--compact' : ''} {it.kind === 'audio' ? 'is-audio ' : ''}{(it.kind === 'image' || it.kind === 'video') && footerTier > 0 ? 'is-cloneable ' : ''}text-left {$multiSelectedIds.has(it.id) ? 'is-selected' : ''} {$playingAudio?.id === it.id && it.kind === 'audio' ? 'is-playing' : ''}"
                 style="--card-footer-h: {footerHeightFor(columnWidth)}px"
                 title={it.filename}
                 onclick={(e) => { if (draggedOriginal) { draggedOriginal = false; return; } onThumbClick(e, it); }}
@@ -1226,16 +1227,17 @@ import { comparePair } from "../lib/clone";
                       <span class="media-card-meta">{metaFor(it)}</span>
                     {/if}
                   </div>
-                  {#if it.kind === "image"}
+                  {#if it.kind === "image" || it.kind === "video"}
                     <!-- 「一键同款」角标：几何与音频播放角标完全一致（同尺寸、同右下角、在页脚高度里同垂直居中），
                          两种卡在右下角的控件位置就是同一个，不用重新学。卡片本身是 <button>，所以这里
-                         只能再用 role="button" 的 div，并且按下的事件都要拦，否则点图标会变成选中/拖动那张卡。 -->
+                         只能再用 role="button" 的 div，并且按下的事件都要拦，否则点图标会变成选中/拖动那张卡。
+                         图片卡和视频卡挂同一颗：点开的是同一个弹窗，只是默认换成另一族当前工作流。 -->
                     <div
                       role="button"
                       tabindex="-1"
                       class="media-clone-btn"
                       title="一键同款"
-                      aria-label="用同款工作流再生成一张"
+                      aria-label={`用同款工作流再生成${it.kind === "video" ? "一条" : "一张"}`}
                       onclick={(e) => { e.stopPropagation(); e.preventDefault(); openClone(it); }}
                       onpointerdown={(e) => e.stopPropagation()}
                       onmousedown={(e) => e.stopPropagation()}
@@ -1325,7 +1327,7 @@ import { comparePair } from "../lib/clone";
   image={cloneTarget}
   onClose={() => (cloneTarget = null)}
   {onOpenSettings}
-  onOpenImage={(id) => void openCloneResult(id)}
+  onOpenImage={(id, kind) => void openCloneResult(id, kind)}
 />
 
 <FolderPickerModal open={destinationOpen} folders={$folders} title="选择保存文件夹" subtitle="原文件会保留，复制到所选文件夹。" allowNone={false} includeSystem={true} onPick={finishDestination} onClose={() => finishDestination(null)} />

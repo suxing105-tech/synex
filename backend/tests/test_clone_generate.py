@@ -428,14 +428,43 @@ async def test_missing_reference_or_unknown_slot_is_rejected_before_queueing(fak
     assert fake.prompts == []
 
 
-async def test_reference_must_be_a_readable_picture(fake, source_image, init_db, tmp_path):
+async def test_reference_of_the_wrong_family_is_refused_before_upload(
+    fake, source_image, init_db, tmp_path
+):
+    """图库里的视频塞进图片参考位：提交前就说是哪一格，别先把文件推给 ComfyUI
+    再甩回一句 LoadAudio/LoadImage 读不了——那种报错用户读不出是自己拖错了格子。"""
     video = tmp_path / "片子.mp4"
     video.write_bytes(b"\x00" * 32)
     payload = Indexer()._process_path_sync(video)
     tpl = template()
-    await start(tpl["id"], int(payload["id"]))
-    state = await finish()
-    assert state["state"] == "error" and ("不是图片" in state["error"] or "读不了" in state["error"])
+    with pytest.raises(ValueError) as exc:
+        await start(tpl["id"], int(payload["id"]))
+    assert "图片1" in str(exc.value) and "视频" in str(exc.value)
+    assert fake.uploads == []          # 一个字节都没往外推
+    assert clone_jobs.public_state()["active"] is False
+
+
+async def test_upload_guard_still_checks_kind_and_container(init_db, tmp_path):
+    """上传这一步的守卫不能被上面的前置校验顶掉：直接喂错族/错容器照样得拦住。"""
+
+    def make(kind: str, name: str):
+        path = tmp_path / name
+        path.write_bytes(b"\x00" * 32)
+        return int(Indexer()._process_path_sync(path)["id"])
+
+    video_id = make("video", "片子.avi")
+    audio_id = make("audio", "声音.mp3")
+
+    class NoClient:
+        async def upload_image(self, *a, **k):  # 不该被走到
+            raise AssertionError("不该发起上传")
+
+    with pytest.raises(ValueError) as bad_kind:
+        await clone_jobs._upload_reference(NoClient(), audio_id, "image")
+    assert "音频" in str(bad_kind.value)
+    with pytest.raises(ValueError) as bad_suffix:
+        await clone_jobs._upload_reference(NoClient(), video_id, "video")
+    assert "avi" in str(bad_suffix.value) and "MP4" in str(bad_suffix.value)
 
 
 async def test_missing_template_is_refused_before_anything_runs(fake, source_image, init_db):

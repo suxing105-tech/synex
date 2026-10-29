@@ -60,11 +60,14 @@ def initialize(conn: sqlite3.Connection) -> None:
 def _ref_snapshot(image_id: int) -> dict[str, Any] | None:
     """记下参考图当时的身份：id 会重排，path 和 filename 才是能拿来对的东西。"""
     row = get_pool().main().execute(
-        "SELECT id, path, filename FROM images WHERE id=?", (image_id,)
+        "SELECT id, path, filename, kind FROM images WHERE id=?", (image_id,)
     ).fetchone()
     if row is None:
         return None
-    return {"image_id": int(row["id"]), "path": str(row["path"]), "filename": str(row["filename"])}
+    # 连 kind 一起记：参考位分图片/音频/视频三族，重开弹窗时要知道这份素材该摆回哪一行。
+    # 读的时候仍以库里当下的 kind 为准（文件可能被重新扫成别的类型），这里只是留个证据。
+    return {"image_id": int(row["id"]), "path": str(row["path"]), "filename": str(row["filename"]),
+            "kind": str(row["kind"] or "image")}
 
 
 def record(

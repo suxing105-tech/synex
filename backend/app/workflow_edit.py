@@ -20,7 +20,13 @@ MODES = ("text", "single", "multi")
 MODE_LABELS = {"text": "文生图", "single": "单图编辑", "multi": "多图编辑"}
 AUTOGROW_PREFIX = "COMFY_AUTOGROW"
 # 摘掉参考图之后仍然必须留下的节点：产出图片的那几台（删了就没有交付物）。
+# 视频/音频的产出节点单独列：VHS_VideoCombine 这类名字里既没有 save 也没有 preview，
+# 而 object_info 读不到的时候（ComfyUI 没开）只能靠类名认——认漏了，剪枝会把
+# 「出片」这一头整个当死节点删光，剩下一份只剩提示词的工作流安静地排进队列。
+# 绝不写 "video" 这种宽词：VHS_LoadVideo 是参考视频的加载器，必须能被摘掉。
 SINK_HINTS = ("save", "preview", "showanything", "showtext", "display", "record")
+MEDIA_SINK_HINTS = ("videocombine", "combinevideo", "savevideo", "createvideo", "writevideofile",
+                    "saveanimated", "savegif", "saveaudio", "audiocombine", "createaudio")
 # 认「空 Latent」这条路：出图尺寸由比例/分辨率决定，而不是由参考图尺寸决定。
 EMPTY_LATENT_HINTS = ("emptylatent", "latentfrom", "randnoise", "noise")
 
@@ -81,7 +87,7 @@ def _is_sink(node: Any, info: dict) -> bool:
     if isinstance(schema, dict) and schema.get("output_node"):
         return True
     lowered = class_type.lower()
-    return any(hint in lowered for hint in SINK_HINTS)
+    return any(hint in lowered for hint in SINK_HINTS + MEDIA_SINK_HINTS)
 
 
 def _group_floor(spec: list) -> int | None:
@@ -215,6 +221,12 @@ def drop_reference_images(nodes: dict, node_ids: list[str], info: dict | None = 
         changed = _resolve_starved(working, info, protected, titles) or changed
         if not changed:
             break
+    sinks_before = [nid for nid, node in nodes.items() if _is_sink(node, info)]
+    sinks_after = [nid for nid, node in working.items() if _is_sink(node, info)]
+    if sinks_before and not sinks_after:
+        # 剪到连交付物都没了：这比报错糟，静默排一份不会出任何东西的工作流。
+        raise TextModeUnsupported(
+            "这份工作流去掉参考素材之后连出图/出片的节点都留不住，所以只支持按参考素材生成。")
     leftovers = [nid for nid, node in working.items()
                  if _missing_required(working, nid, info) and not _is_sink(node, info) and nid not in protected]
     if leftovers:

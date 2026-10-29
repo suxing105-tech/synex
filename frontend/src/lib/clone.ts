@@ -12,7 +12,15 @@ import { writable } from "svelte/store";
 import * as api from "./api";
 import type { ImageDetail, ImageSummary } from "./types";
 
-export type CloneSlotKind = "prompt" | "image" | "select" | "number";
+export type CloneSlotKind = "prompt" | "image" | "audio" | "video" | "select" | "number";
+/** 参考素材的三族：图片和音频和视频各排各的号，弹窗一行一族。 */
+export type RefKind = "image" | "audio" | "video";
+/** 这份工作流出的是图还是片子。它决定弹窗默认给哪一类卡片、@ 引用插什么标签。 */
+export type MediaKind = "image" | "video";
+export const REF_KINDS: RefKind[] = ["image", "audio", "video"];
+export const REF_KIND_NAMES: Record<RefKind, string> = { image: "图片", audio: "音频", video: "视频" };
+/** 三族的量词：量词跟着族走，在一堆「张」里挑一段音频，读着就别扭。 */
+export const REF_KIND_COUNTERS: Record<RefKind, string> = { image: "张", audio: "段", video: "条" };
 
 export interface CloneSlot {
   kind: CloneSlotKind;
@@ -24,13 +32,17 @@ export interface CloneSlot {
    * 但下游那个节点还能继续收图（例如 TextEncodeQwenImage 的 images.image_2…image_16）。
    * names 是还能续的槽名，弹窗按它自动补出「+ 参考」格，生成时后端克隆 LoadImage 接上去。
    */
-  grow?: { node: string; group: string; names: string[] } | null;
+  grow?: { node: string; group: string; names: string[]; type?: string } | null;
   /** select 专用：导入时从 ComfyUI 缓存下来的可选项，ComfyUI 没开也能画下拉 */
   options?: string[];
   value?: string | number | null;
   min?: number | null;
   max?: number | null;
   step?: number | null;
+  /** number 专用：秒/MP 这类后缀，后端给准，前端不猜 */
+  unit?: string | null;
+  /** number 专用：后端算好的档位（时长的 5/8/10/12/15），没有就退回通用表 */
+  presets?: number[];
 }
 
 export interface CloneTemplate {
@@ -43,10 +55,23 @@ export interface CloneTemplate {
   updated_at: string;
   node_count: number;
   prompt_count: number;
-  /** 这份工作流支持的生成档位；前端只用它判断「能不能一张参考图都不放」 */
+  /** 这份工作流支持的生成档位；前端只用它判断「一张参考素材都不放」 */
   modes?: CloneMode[];
   reference_count: number;
   control_count: number;
+  /** 出片还是出图。老模板没带就当 image，行为和图片一键同款一字不差。 */
+  media_kind?: MediaKind;
+  /** 后端算好的参考格清单（族、编号、H3 标签）。有就照它画，别再在前端算一遍。 */
+  reference_cells?: RefCellWire[];
+  /** 工作流里已连线的参考视频音轨数：算 <Audio j> 序号要先扣掉它们 */
+  soundtracks?: number;
+  image_reference_count?: number;
+  audio_reference_count?: number;
+  video_reference_count?: number;
+}
+
+export function isVideoTemplate(template: CloneTemplate | null | undefined): boolean {
+  return (template?.media_kind ?? "image") === "video";
 }
 
 /**
@@ -76,6 +101,21 @@ export interface CloneInspect {
   default_prompt: string;
   warnings: string[];
   suggested_name: string;
+  media_kind?: MediaKind;
+  reference_cells?: RefCellWire[];
+  soundtracks?: number;
+}
+
+/** 把 inspect 的结果当成模板用：设置页在「还没落库」的阶段就要按族画格子。 */
+export function inspectAsTemplate(inspect: CloneInspect, id = 0): CloneTemplate {
+  return {
+    id, name: "", slots: inspect.slots ?? [], default_prompt: inspect.default_prompt ?? "",
+    is_active: false, created_at: "", updated_at: "", node_count: (inspect.nodes ?? []).length,
+    prompt_count: (inspect.slots ?? []).filter((s) => s.kind === "prompt").length,
+    modes: inspect.modes, reference_count: 0, control_count: 0,
+    media_kind: inspect.media_kind ?? "image",
+    reference_cells: inspect.reference_cells, soundtracks: inspect.soundtracks,
+  };
 }
 
 export type CloneMode = "text" | "single" | "multi";
@@ -97,14 +137,24 @@ export interface CloneJob {
   message: string;
   error: string;
   image_ids: number[];
+  /** 产出清单：图片也好视频也好，缩略图一律由后端给准地址 */
+  outputs: CloneOutput[];
+  media_kind: MediaKind | "";
   template_id: number | null;
   source_image_id: number | null;
   elapsed: number;
 }
 
+export interface CloneOutput {
+  id: number;
+  kind: MediaKind | string;
+  filename: string;
+  thumbnail_url: string;
+}
+
 export const EMPTY_CLONE_JOB: CloneJob = {
   active: false, job_id: "", state: "", running: false, message: "", error: "",
-  image_ids: [], template_id: null, source_image_id: null, elapsed: 0,
+  image_ids: [], outputs: [], media_kind: "", template_id: null, source_image_id: null, elapsed: 0,
 };
 
 const CLONE_STATES: CloneState[] = ["uploading", "queued", "running", "downloading", "done", "error", "cancelled"];
@@ -128,6 +178,17 @@ export function applyCloneProgress(payload: unknown): CloneJob {
     error: String(raw.error ?? ""),
     // Number(null) 是 0，直接放过去会在弹窗里多出一个坏掉的缩略图，所以要正整数才算。
     image_ids: Array.isArray(raw.image_ids) ? raw.image_ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0) : [],
+    outputs: Array.isArray(raw.outputs)
+      ? (raw.outputs as Record<string, unknown>[])
+        .map((item) => ({
+          id: Number(item.id ?? 0),
+          kind: String(item.kind ?? "image"),
+          filename: String(item.filename ?? ""),
+          thumbnail_url: String(item.thumbnail_url ?? ""),
+        }))
+        .filter((item) => Number.isInteger(item.id) && item.id > 0)
+      : [],
+    media_kind: raw.media_kind === "video" ? "video" : raw.media_kind === "image" ? "image" : "",
     template_id: raw.template_id === null || raw.template_id === undefined ? null : Number(raw.template_id),
     source_image_id: raw.source_image_id === null || raw.source_image_id === undefined ? null : Number(raw.source_image_id),
     elapsed: Number(raw.elapsed ?? 0) || 0,
@@ -137,7 +198,7 @@ export function applyCloneProgress(payload: unknown): CloneJob {
 }
 
 const STATE_LABELS: Record<CloneState, string> = {
-  uploading: "上传参考图…",
+  uploading: "上传参考素材…",
   queued: "提交到 ComfyUI…",
   running: "生成中…",
   downloading: "登记生成结果…",
@@ -146,10 +207,25 @@ const STATE_LABELS: Record<CloneState, string> = {
   cancelled: "已取消",
 };
 
+/** 生成时长说人话：一条片子跑了三分十二秒，只显示「3分」或「192秒」都看不出快慢。 */
+export function formatElapsed(seconds: number): string {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  if (!minutes) return `${total}秒`;
+  return rest ? `${minutes}分${rest}秒` : `${minutes}分钟`;
+}
+
 export function cloneStatusLabel(job: CloneJob): string {
   if (!job.state) return "";
   const label = STATE_LABELS[job.state];
-  if (job.state === "done" && job.image_ids.length) return `${label} ${job.image_ids.length} 张`;
+  const count = job.outputs.length || job.image_ids.length;
+  const counter = job.media_kind === "video" ? "条" : "张";
+  if (job.state === "done" && count) return `${label} ${count} ${counter}`;
+  if (job.running) {
+    // 「生成中 · 3分12秒」：视频要等十分钟级，不给个走动的秒数，用户只会以为卡死了。
+    return `${job.message || label} · ${formatElapsed(job.elapsed)}`;
+  }
   return job.message || label;
 }
 
@@ -204,45 +280,138 @@ export function allowsTextMode(template: CloneTemplate | null | undefined): bool
   return modesFor(template).includes("text");
 }
 
-export function modeLabel(mode: CloneMode): string {
-  return CLONE_MODE_LABELS[mode] ?? mode;
+const CLONE_VIDEO_MODE_LABELS: Record<CloneMode, string> = {
+  text: "文生视频",
+  single: "图生视频",
+  multi: "多参考视频",
+};
+
+export function modeLabel(mode: CloneMode, mediaKind: MediaKind | undefined = "image"): string {
+  const table = mediaKind === "video" ? CLONE_VIDEO_MODE_LABELS : CLONE_MODE_LABELS;
+  return table[mode] ?? mode;
 }
 
 export interface RefCell {
   key: string;
   label: string;
-  /** 这一格最终喂给哪个 LoadImage（节点标题），放进 title 里方便核对 */
+  /** 这一格最终喂给哪台加载器（节点标题），放进 title 里方便核对 */
   slotLabel: string;
+  /** 哪一族：图片 / 音频 / 视频 */
+  kind?: RefKind;
+  /** 族内编号（1 起），H3 标签的序号就是它，音频族另加音轨偏移 */
+  ordinal?: number;
+  /** H3 原生标签：<Picture 1> / <Audio 2> / <Video 1>。只有视频工作流会插进提示词 */
+  tag?: string;
 }
 
 /**
- * 弹窗里的参考位 = 工作流真槽位 + autogrow 续出来的格子，按画面顺序编号「图片1…N」。
- * 数量与档位无关：档位是「填了几张」的结果，不是「能摆几格」的前提。
- * 续位的 key 与后端 clone_templates.grow_key 一致（node.input::image_2），原样透传回去。
+ * 后端传来的参考格（wire 形状，snake_case，照 /api/clone/templates 的真实返回）。
  *
- * 扩位按「目标节点+图组+格名」去重：两台 LoadImage 往往长进同一个图组，
- * 不去重就会数出双倍的格子，还会在同一格里互相覆盖。
- * 顺序必须和后端 clone_templates.reference_cell_keys 一模一样，否则编号和实际接线对不上。
+ * 进渲染层之前一律过 referenceCells() 归一化成 RefCell。字段名两边各写一套是真踩过的坑：
+ * 后端发 slot_label、前端类型写 slotLabel，展开后就剩一个 undefined，格子悬停只剩
+ * 「undefined｜文件名」；当时假数据写的是 camelCase，所以测试一路绿灯。
+ */
+export interface RefCellWire {
+  key: string;
+  kind?: RefKind;
+  ordinal?: number;
+  label?: string;
+  /** 扩位用的下游槽名（ref_image_2 之类），真槽位为空串 */
+  name?: string;
+  /** 这一格最终喂给哪台加载器（节点标题） */
+  slot_label?: string;
+  tag?: string;
+}
+
+const TAG_TEMPLATES: Record<RefKind, string> = {
+  image: "<Picture {n}>",
+  audio: "<Audio {n}>",
+  video: "<Video {n}>",
+};
+
+export function refKindOf(slot: CloneSlot): RefKind | "" {
+  return slot.kind === "image" || slot.kind === "audio" || slot.kind === "video" ? slot.kind : "";
+}
+
+export function referenceSlotsOf(template: CloneTemplate | null | undefined, kind: RefKind): CloneSlot[] {
+  return (template?.slots ?? []).filter((slot) => slot.kind === kind);
+}
+
+/**
+ * 某一族的 H3 标签序号：图片/视频按族内编号，音频要从已连线的参考视频音轨之后接着数。
+ * H3 把参考摆进上下文时按 图片 → 视频（音轨在该视频之前先占一个 Audio 号）→ 独立音频 排，
+ * 所以独立音频的 <Audio j> 必须整体后移，否则插进去的 <Audio 1> 指的是视频的音轨，指错人。
+ */
+export function refTag(kind: RefKind, ordinal: number, soundtracks = 0): string {
+  const n = kind === "audio" ? ordinal + Math.max(0, soundtracks) : ordinal;
+  return (TAG_TEMPLATES[kind] ?? "").replace("{n}", String(n));
+}
+
+/**
+ * 弹窗里的参考格：一族一族排（图片 → 音频 → 视频），每族先排工作流真槽位、再排扩位。
+ *
+ * 后端把这份清单算好带回来（template.reference_cells），因为「第 3 格到底接到
+ * ref_audio_2 还是 ref_video_1」这种事两边各算一遍早晚会分家；后端没带（老模板、
+ * 老后端）时才在这里按同一套规则现算，规则与 clone_templates.reference_cells 一致。
  */
 export function referenceCells(template: CloneTemplate | null | undefined): RefCell[] {
-  const slots = imageSlots(template);
-  const label = (slot: CloneSlot) => slot.label || slotKey(slot);
-  const cells: RefCell[] = [];
-  // 先把工作流真槽位排完再排扩位：交错排的话，第二台 LoadImage 会被第一台的十几个
-  // 扩位推到最后，用户看到的就是「图片1、图片2、图片16」——编号像坏了。
-  for (const slot of slots) {
-    cells.push({ key: slotKey(slot), label: `图片${cells.length + 1}`, slotLabel: label(slot) });
+  const fromBackend = template?.reference_cells;
+  if (Array.isArray(fromBackend) && fromBackend.length) {
+    return fromBackend.map((cell) => {
+      const kind = (cell.kind ?? "image") as RefKind;
+      const ordinal = cell.ordinal ?? 0;
+      return {
+        key: cell.key,
+        label: cell.label || `${REF_KIND_NAMES[kind]}${ordinal}`,
+        slotLabel: cell.slot_label || cell.label || cell.key,
+        kind,
+        ordinal,
+        tag: cell.tag || refTag(kind, ordinal || 1, template?.soundtracks ?? 0),
+      };
+    });
   }
-  const claimed = new Set<string>();
-  for (const slot of slots) {
-    for (const name of slot.grow?.names ?? []) {
-      const target = `${slot.grow?.node}.${slot.grow?.group}::${name}`;
-      if (claimed.has(target)) continue;
-      claimed.add(target);
-      cells.push({ key: `${slotKey(slot)}::${name}`, label: `图片${cells.length + 1}`, slotLabel: label(slot) });
+  const soundtracks = template?.soundtracks ?? 0;
+  const cells: RefCell[] = [];
+  for (const kind of REF_KINDS) {
+    const slots = referenceSlotsOf(template, kind);
+    if (!slots.length) continue;
+    const label = (slot: CloneSlot) => slot.label || slotKey(slot);
+    let ordinal = 0;
+    // 先把真槽位排完再排扩位：交错排的话，第二台加载器会被第一台的十几个扩位推到最后，
+    // 用户看到的就是「图片1、图片2、图片16」——编号像坏了。
+    for (const slot of slots) {
+      ordinal += 1;
+      cells.push({
+        key: slotKey(slot), label: `${REF_KIND_NAMES[kind]}${ordinal}`, slotLabel: label(slot),
+        kind, ordinal, tag: refTag(kind, ordinal, soundtracks),
+      });
+    }
+    const claimed = new Set<string>();
+    for (const slot of slots) {
+      for (const name of slot.grow?.names ?? []) {
+        const target = `${slot.grow?.node}.${slot.grow?.group}::${name}`;
+        if (claimed.has(target)) continue;
+        claimed.add(target);
+        ordinal += 1;
+        cells.push({
+          key: `${slotKey(slot)}::${name}`, label: `${REF_KIND_NAMES[kind]}${ordinal}`,
+          slotLabel: label(slot), kind, ordinal, tag: refTag(kind, ordinal, soundtracks),
+        });
+      }
     }
   }
   return cells;
+}
+
+/** 某一族的格子。弹窗按族分三行画，跳族编号（图片9 后面接音频1）也靠它对齐。 */
+export function familyCells(cells: RefCell[], kind: RefKind): RefCell[] {
+  return cells.filter((cell) => (cell.kind ?? "image") === kind);
+}
+
+/** 这份工作流有几族参考位。只有一族（图片）时，弹窗版面和图片一键同款一字不差。 */
+export function referenceFamilies(template: CloneTemplate | null | undefined): RefKind[] {
+  const cells = referenceCells(template);
+  return REF_KINDS.filter((kind) => familyCells(cells, kind).length > 0);
 }
 
 /**
@@ -252,6 +421,43 @@ export function referenceCells(template: CloneTemplate | null | undefined): RefC
 export function visibleRefCells(cells: RefCell[], refs: Record<string, ImageSummary | null>): RefCell[] {
   const firstEmpty = cells.find((cell) => !refs[cell.key])?.key;
   return cells.filter((cell) => refs[cell.key] || cell.key === firstEmpty);
+}
+
+/**
+ * 参考区合并成一行时的展示族序：图片 → 视频 → 音频。
+ *
+ * 这不是 REF_KINDS（那一处是编号与接线口径，动了等于改接线顺序），只管「挤在同一行里谁先出现」。
+ * 取这个顺序是因为它和 H3 把参考摆进上下文的顺序一致——眼睛看到的次序与 <Audio j> 的
+ * 偏移口径同一套说法，用户照着画面写标签不会数错人。
+ */
+export const REF_DISPLAY_ORDER: RefKind[] = ["image", "video", "audio"];
+
+/** 按展示族序重排；族内原有顺序（＝接线顺序）原样保留。 */
+export function sortByDisplayFamily(cells: RefCell[]): RefCell[] {
+  return REF_DISPLAY_ORDER.flatMap((kind) => cells.filter((cell) => (cell.kind ?? "image") === kind));
+}
+
+/**
+ * 合并进同一行的格子：只画已经填上的，族与族之间按展示序排。
+ *
+ * 只有一族时调用方仍走 visibleRefCells——图片一键同款的版面一个字都不动。
+ * 「+参考」不绑族，所以合并行不再替每一族摆一颗空格子。
+ */
+export function mergedRefCells(cells: RefCell[], refs: Record<string, ImageSummary | null>): RefCell[] {
+  return sortByDisplayFamily(cells).filter((cell) => refs[cell.key]);
+}
+
+/** 还有空位的族（展示序）：决定那颗「+参考」点不点得动、素材选择器给哪几个族 tab。 */
+export function openRefKinds(cells: RefCell[], refs: Record<string, ImageSummary | null>): RefKind[] {
+  return REF_DISPLAY_ORDER.filter((kind) => cells.some((cell) => (cell.kind ?? "image") === kind && !refs[cell.key]));
+}
+
+/**
+ * 某一族第一个空位。+参考不绑族：挑到哪一族就落这一格，
+ * 天然从第 1 格连着填，跳格校验（referenceIssues）永远不会被这条路径触发。
+ */
+export function firstFreeRefKey(cells: RefCell[], refs: Record<string, ImageSummary | null>, kind: RefKind): string {
+  return familyCells(cells, kind).find((cell) => !refs[cell.key])?.key ?? "";
 }
 
 /**
@@ -269,32 +475,61 @@ export function defaultReferences(
   template: CloneTemplate | null | undefined,
   source: ImageSummary | null,
   prior: CloneSourceImage[] = [],
+  options: { kind?: RefKind } = {},
 ): Record<string, ImageSummary | null> {
   const out: Record<string, ImageSummary | null> = {};
   const cells = referenceCells(template);
   const picks = prior.filter(Boolean).slice(0, cells.length);
   if (picks.length) {
     // 记着参考位的那份先各回各位：当初站在「图片3」的那张不能因为「图片2」没了就顶上去，
-    // 那样用户看到的编号就成了假的。没带 slot 的（从成图 workflow 认回来的）按顺序补空位。
+    // 那样用户看到的编号就成了假的。没带 slot 的（从成图 workflow 认回来的）按族补空位——
+    // 补错行比空着更糟：音频会画进图片行，用户以为当初喂的是张图。
     const free = new Set(cells.map((cell) => cell.key));
     const queue = [...picks];
     for (const image of picks) {
       const key = image.slot ?? "";
-      if (!key || !free.has(key)) continue;
-      out[key] = image;
-      free.delete(key);
+      const cell = key ? cells.find((c) => c.key === key && free.has(key)) : undefined;
+      if (!cell) continue;
+      out[cell.key] = image;
+      free.delete(cell.key);
       queue.splice(queue.indexOf(image), 1);
     }
-    for (const cell of cells) {
-      if (!free.has(cell.key) || !queue.length) continue;
-      out[cell.key] = queue.shift()!;
-      free.delete(cell.key);
+    for (const kind of REF_KINDS) {
+      const mine = queue.filter((image) => (image.kind ?? "image") === kind);
+      for (const cell of familyCells(cells, kind)) {
+        if (!free.has(cell.key) || !mine.length) continue;
+        const [next, ...rest] = mine;
+        out[cell.key] = next;
+        mine.length = 0;
+        mine.push(...rest);
+        free.delete(cell.key);
+        queue.splice(queue.indexOf(next), 1);
+      }
     }
     return out;
   }
-  const [first] = cells;
+  // 没有来源记录：从图片卡点开进「图片1」，从视频卡点开进「视频1」。
+  // 这份工作流没接那一族的加载器时退回第一格，至少用户放的素材不会凭空消失。
+  const want = options.kind ?? "image";
+  const first = familyCells(cells, want)[0] ?? cells[0];
   if (first) out[first.key] = source ?? null;
   return out;
+}
+
+/** 这份工作流是不是只有图片一族（＝图片一键同款的老样子）。 */
+export function isImageOnlyRefs(template: CloneTemplate | null | undefined): boolean {
+  const families = referenceFamilies(template);
+  return !isVideoTemplate(template) && families.length <= 1;
+}
+
+/** 报错文案里怎么称呼参考素材：视频工作流里说「参考图」是骗人。 */
+export function referenceNoun(template: CloneTemplate | null | undefined): string {
+  return isImageOnlyRefs(template) ? "参考图" : "参考素材";
+}
+
+/** 量词跟着称呼走：三族素材混在一起时别硬说「一张」。 */
+export function referenceCounter(template: CloneTemplate | null | undefined): string {
+  return isImageOnlyRefs(template) ? "张" : "份";
 }
 
 /**
@@ -309,10 +544,22 @@ export function referenceIssues(
   const cells = referenceCells(template);
   if (!cells.length) return [];
   const filled = cells.filter((cell) => refs[cell.key]);
-  if (!filled.length) return canText ? [] : ["至少放一张参考图"];
-  let last = 0;
-  cells.forEach((cell, index) => { if (refs[cell.key]) last = index; });
-  return cells.slice(0, last).filter((cell) => !refs[cell.key]).map((cell) => `${cell.label} 还空着`);
+  if (!filled.length) {
+    return canText ? [] : [`至少放一${referenceCounter(template)}${referenceNoun(template)}`];
+  }
+  // 一族一族查跳格：图片填到第 6 张、音频只填第 2 段，报的是「音频1 还空着」，
+  // 不会把跨族的编号混成一句看不懂的话。
+  const issues: string[] = [];
+  for (const kind of REF_KINDS) {
+    const family = familyCells(cells, kind);
+    let last = -1;
+    family.forEach((cell, index) => { if (refs[cell.key]) last = index; });
+    // 这一族一份都没放不算「跳格」：slice(0, -1) 会把整族除了最后一格全报成空着，
+    // 于是只喂图片的用户会看到「音频1 还空着、视频1 还空着」这种莫名其妙的话。
+    if (last < 0) continue;
+    for (const cell of family.slice(0, last).filter((c) => !refs[c.key])) issues.push(`${cell.label} 还空着`);
+  }
+  return issues;
 }
 
 export function defaultControlValues(template: CloneTemplate | null | undefined): Record<string, string | number> {
@@ -432,17 +679,31 @@ export function ratioShape(option: string): RatioShape {
 
 /** 数值控件的单位后缀：只有百万像素那种带 MP，别的一律裸数字，不瞎猜单位。 */
 export function numberUnit(slot: CloneSlot): string {
+  // 后端认得出的单位才显示（时长带「秒」）；剩下仍只认百万像素那种 MP，不瞎猜。
+  if (slot.unit) return slot.unit;
   const text = `${slot.label ?? ""} ${slot.input ?? ""}`.toLowerCase();
   return /mega|百万/.test(text) ? "MP" : "";
 }
 
 const NUMBER_PRESETS = [0.5, 1, 1.5, 2, 2.5, 3, 4, 6, 8];
+const DURATION_PRESETS = [5, 8, 10, 12, 15];
 
-/** 分辨率档位：常量表按 min/max 收窄，再把工作流当前值补进去，否则默认值在面板里选不中。 */
+/**
+ * 数值档位：后端给了 presets 就照它的（时长那档是 5/8/10/12/15 秒，
+ * 用分辨率那张通用表会给出 0.5 秒这种没人能跑的片子）。没给才退回通用表 + min/max 收窄。
+ */
 export function numberPresets(slot: CloneSlot): number[] {
   const min = typeof slot.min === "number" ? slot.min : -Infinity;
   const max = typeof slot.max === "number" ? slot.max : Infinity;
-  const values = NUMBER_PRESETS.filter((v) => v >= min && v <= max);
+  const declared = (slot.presets ?? []).filter((v) => typeof v === "number" && v >= min && v <= max);
+  if (declared.length) {
+    const current = typeof slot.value === "number" ? slot.value : null;
+    if (current !== null && !declared.includes(current)) declared.push(current);
+    return declared.sort((a, b) => a - b).slice(0, 12);
+  }
+  const values = ((slot.label ?? "").includes("时长") || (slot.unit ?? "") === "秒"
+    ? DURATION_PRESETS
+    : NUMBER_PRESETS).filter((v) => v >= min && v <= max);
   const current = typeof slot.value === "number" ? slot.value : null;
   if (current !== null && current >= min && current <= max && !values.includes(current)) values.push(current);
   return values.sort((a, b) => a - b).slice(0, 10);
@@ -466,7 +727,7 @@ export function controlSummary(
 }
 
 /** 一张参考图，外加生成当时记下的参考位（只有库里记的那份才有，见 defaultReferences）。 */
-export type CloneSourceImage = ImageSummary & { slot?: string };
+export type CloneSourceImage = ImageSummary & { slot?: string; kind?: string };
 
 /**
  * 这份来源是怎么来的，弹窗据此决定要不要跟用户解释：
@@ -498,10 +759,14 @@ export const cloneApi = {
   inspect(payload: { workflow?: unknown; path?: string }): Promise<CloneInspect> {
     return api.http<CloneInspect>("/api/clone/templates/inspect", { method: "POST", body: JSON.stringify(payload) });
   },
-  create(payload: { name: string; workflow?: unknown; path?: string; slots?: CloneSlot[] }): Promise<CloneTemplate> {
+  create(payload: {
+    name: string; workflow?: unknown; path?: string; slots?: CloneSlot[]; media_kind?: MediaKind;
+  }): Promise<CloneTemplate> {
     return api.http<CloneTemplate>("/api/clone/templates", { method: "POST", body: JSON.stringify(payload) });
   },
-  update(id: number, patch: { name?: string; workflow?: unknown; slots?: CloneSlot[]; is_active?: boolean }): Promise<CloneTemplate> {
+  update(id: number, patch: {
+    name?: string; workflow?: unknown; slots?: CloneSlot[]; is_active?: boolean; media_kind?: MediaKind;
+  }): Promise<CloneTemplate> {
     return api.http<CloneTemplate>(`/api/clone/templates/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
   },
   remove(id: number): Promise<{ ok: boolean; deleted: number }> {
@@ -580,12 +845,37 @@ export function mentionToken(text: string, caret: number): MentionToken | null {
 
 export interface MentionItem {
   key: string;
-  /** 显示和插入用的是同一个「图片N」，跟参考条上的编号一字不差 */
+  /** 菜单上显示的「图片N / 音频N / 视频N」，跟参考条上的编号一字不差 */
   label: string;
+  /** 真正写进提示词的文本：图片工作流是 @图片N，H3 视频工作流是 <Picture 1> */
+  insert: string;
+  kind: RefKind;
   filename: string;
   thumb: string;
   /** true = 「再从图库挂一张」那条动作，不是一张已经存在的图 */
   add: boolean;
+}
+
+/**
+ * 写进提示词的引用文本。
+ *
+ * 图片那条链路一个字不改：Qwen 的工作流里 @图片N 是提示词自己写的记号，
+ * 模型读的就是这两个字符加编号。H3 不认这个——它在自己拼上下文时用的是
+ * "<Picture 1>: "（comfy/text_encoders/minimax.py），提示词里只有写成同样的
+ * 尖括号标签，模型才知道「Picture 1」指的是第 1 张参考图，写 @图片1 就是一行普通文字。
+ */
+export function mentionInsertText(cell: RefCell, mediaKind: MediaKind | undefined): string {
+  if (mediaKind !== "video") return `@${cell.label}`;
+  return cell.tag || refTag((cell.kind ?? "image") as RefKind, cell.ordinal ?? 1);
+}
+
+/**
+ * 「@」菜单末尾那颗「再去挂一份」的文案。它指向的是第一个空着的格子，那一格可能是音频也可能是视频，
+ * 量词与名词必须跟着那一族走——音频位空着时菜单上还写着「再挂一张参考图」，用户会以为点进去挑的是图。
+ */
+export function mentionAddLabel(kind: RefKind): string {
+  if (kind === "image") return "从图库再挂一张参考图";
+  return `从图库再挂一${REF_KIND_COUNTERS[kind]}参考${REF_KIND_NAMES[kind]}`;
 }
 
 const mentionNorm = (value: string) => value.toLowerCase().replace(/[^0-9a-z\u4e00-\u9fff]/g, "");
@@ -608,6 +898,7 @@ export function mentionItems(
   cells: RefCell[],
   refs: Record<string, ImageSummary | null>,
   query = "",
+  mediaKind: MediaKind | undefined = "image",
 ): MentionItem[] {
   if (!cells.length) return [];
   const filled: MentionItem[] = cells
@@ -617,6 +908,8 @@ export function mentionItems(
       return {
         key: cell.key,
         label: cell.label,
+        insert: mentionInsertText(cell, mediaKind),
+        kind: (cell.kind ?? "image") as RefKind,
         filename: picked?.filename ?? "",
         thumb: picked?.thumbnail_url || picked?.original_url || "",
         add: false,
@@ -624,16 +917,31 @@ export function mentionItems(
     });
   const items = query ? filled.filter((item) => matchMention(item.label, item.filename, query)) : filled;
   const room = cells.find((cell) => !refs[cell.key]);
-  if (room) items.push({ key: room.key, label: "", filename: "", thumb: "", add: true });
+  if (room) {
+    items.push({
+      key: room.key, label: "", insert: "", kind: (room.kind ?? "image") as RefKind,
+      filename: "", thumb: "", add: true,
+    });
+  }
   return items;
 }
 
-/** 把 caret 前那段 @xxx 换成 @图片N，后面补一个空格，光标停在空格后面接着打字。 */
-export function applyMention(text: string, token: MentionToken, label: string): { text: string; caret: number } {
-  const inserted = `@${label} `;
+/**
+ * 把 caret 前那段 @xxx 换成引用文本，后面补一个空格，光标停在空格后面接着打字。
+ * 传进来的已经是最终文本（@图片1 或 <Picture 1>），这里不再自己拼 @。
+ */
+export function applyMention(
+  text: string,
+  token: MentionToken,
+  labelOrInsert: string,
+): { text: string; caret: number } {
+  const inserted = labelOrInsert.startsWith("@") || labelOrInsert.startsWith("<")
+    ? labelOrInsert
+    : `@${labelOrInsert}`;
+  const withSpace = `${inserted} `;
   return {
-    text: text.slice(0, token.start) + inserted + text.slice(token.end),
-    caret: token.start + inserted.length,
+    text: text.slice(0, token.start) + withSpace + text.slice(token.end),
+    caret: token.start + withSpace.length,
   };
 }
 
@@ -693,7 +1001,9 @@ export interface PromptChunk { text: string; mention: boolean }
  */
 export function mentionChunks(text: string): PromptChunk[] {
   const chunks: PromptChunk[] = [];
-  const re = /@(?:图片|图)\d+/g;
+  // @图片N（图片工作流）与 <Picture 1> / <Audio 2> / <Video 1>（H3）都算引用，
+  // 遮罩高亮必须跟插入的文本一致，否则插进去的东西在输入框里成了普通字。
+  const re = /@(?:图片|图|音频|音|视频|片)\d+|<(?:Picture|Audio|Video)\s*\d+>/gi;
   let cursor = 0;
   let hit = re.exec(text);
   while (hit) {

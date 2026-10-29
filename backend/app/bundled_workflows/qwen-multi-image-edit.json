@@ -1,0 +1,368 @@
+{
+ "key": "qwen-multi-image-edit",
+ "label": "闪寻图片编辑",
+ "legacy_labels": [
+  "Qwen 多图编辑",
+  "Qwen_image_2.1 多图编辑"
+ ],
+ "media_kind": "image",
+ "notes": "ComfyUI 导出的 API 格式；槽位已固化，首次启动不需要 ComfyUI 在线。",
+ "slots": [
+  {
+   "input": "prompt",
+   "kind": "prompt",
+   "label": "完整提示词",
+   "node": "540"
+  },
+  {
+   "input": "prompt",
+   "kind": "prompt",
+   "label": "完整提示词",
+   "node": "582"
+  },
+  {
+   "grow": {
+    "group": "images",
+    "names": [
+     "image_2",
+     "image_3",
+     "image_4",
+     "image_5",
+     "image_6",
+     "image_7",
+     "image_8",
+     "image_9",
+     "image_10",
+     "image_11",
+     "image_12",
+     "image_13",
+     "image_14",
+     "image_15",
+     "image_16"
+    ],
+    "node": "582"
+   },
+   "input": "image",
+   "kind": "image",
+   "label": "加载图像",
+   "node": "543"
+  },
+  {
+   "input": "aspect_ratio",
+   "kind": "select",
+   "label": "比例",
+   "node": "13",
+   "options": [
+    "1:1 (Square)",
+    "2:3 (Portrait Photo)",
+    "3:2 (Photo)",
+    "3:4 (Portrait Standard)",
+    "4:3 (Standard)",
+    "9:16 (Portrait Widescreen)",
+    "16:9 (Widescreen)",
+    "21:9 (Ultrawide)"
+   ],
+   "value": "9:16 (Portrait Widescreen)"
+  },
+  {
+   "input": "megapixels",
+   "kind": "number",
+   "label": "分辨率",
+   "max": 16.0,
+   "min": 0.1,
+   "node": "13",
+   "step": 0.1,
+   "value": 2.2
+  }
+ ],
+ "source": "ComfyUI 导出的 Qwen image 2.1 多图编辑工作流",
+ "workflow": {
+  "13": {
+   "_meta": {
+    "cnr_id": "comfy-core",
+    "title": "分辨率选择器",
+    "ver": "0.36.0"
+   },
+   "class_type": "ResolutionSelector",
+   "inputs": {
+    "aspect_ratio": "9:16 (Portrait Widescreen)",
+    "megapixels": 2.2,
+    "multiple": 8
+   }
+  },
+  "461": {
+   "_meta": {
+    "cnr_id": "comfy-core",
+    "title": "保存图像（高级）",
+    "ver": "0.36.0"
+   },
+   "class_type": "SaveImageAdvanced",
+   "inputs": {
+    "filename_prefix": "Qwen_image_2.1",
+    "format": "png",
+    "format.bit_depth": "8-bit",
+    "format.input_color_space": "sRGB",
+    "images": [
+     "578",
+     0
+    ]
+   }
+  },
+  "468": {
+   "_meta": {
+    "cnr_id": "comfy-core",
+    "title": "UNet加载器",
+    "ver": "0.36.0"
+   },
+   "class_type": "UNETLoader",
+   "inputs": {
+    "unet_name": "Qwen-image-2.1\\qwen_image_2.1_bf16.safetensors",
+    "weight_dtype": "default"
+   }
+  },
+  "470": {
+   "_meta": {
+    "cnr_id": "comfy-core",
+    "title": "加载CLIP",
+    "ver": "0.36.0"
+   },
+   "class_type": "CLIPLoader",
+   "inputs": {
+    "clip_name": "Qwen-imgae-2.1\\qwen3vl_8b_bf16.safetensors",
+    "device": "default",
+    "type": "qwen_image"
+   }
+  },
+  "471": {
+   "_meta": {
+    "cnr_id": "comfy-core",
+    "title": "加载VAE",
+    "ver": "0.36.0"
+   },
+   "class_type": "VAELoader",
+   "inputs": {
+    "vae_name": "Qwen-image-2.1\\qwen_image_2.1_vae_bf16.safetensors"
+   }
+  },
+  "472": {
+   "_meta": {
+    "cnr_id": "comfy-core",
+    "title": "空Latent图像",
+    "ver": "0.36.0"
+   },
+   "class_type": "EmptyLatentImage",
+   "inputs": {
+    "batch_size": 1,
+    "height": [
+     "13",
+     1
+    ],
+    "width": [
+     "13",
+     0
+    ]
+   }
+  },
+  "473": {
+   "_meta": {
+    "cnr_id": "comfy-core",
+    "title": "VAE解码",
+    "ver": "0.36.0"
+   },
+   "class_type": "VAEDecode",
+   "inputs": {
+    "samples": [
+     "556",
+     0
+    ],
+    "vae": [
+     "471",
+     0
+    ]
+   }
+  },
+  "540": {
+   "_meta": {
+    "cnr_id": "ComfyUI_Comfyroll_CustomNodes",
+    "title": "⚙️ CR Prompt Text",
+    "ver": "d78b780ae43fcf8c6b7c6505e6ffb4584281ceca"
+   },
+   "class_type": "CR Prompt Text",
+   "inputs": {
+    "prompt": "以上传的照片中的人物为原型，以电影级双重曝光构图为骨架，AAA游戏主视觉质 感，《权力的游戏》龙妈，生成超写实同人角色海报，3:4竖版。巨大张扬的龙妈脸部轮廓主体，轮廓内自然融合，视觉冲击强。电影级双重曝光同人海报，主体轮廓清晰， 内部元素融合自然，反差与情绪张力足，色彩统一 对比鲜明，史诗级画风，与英文标题，避免拼贴杂乱与写实武器"
+   }
+  },
+  "543": {
+   "_meta": {
+    "cnr_id": "comfy-core",
+    "title": "加载图像",
+    "ver": "0.3.64"
+   },
+   "class_type": "LoadImage",
+   "inputs": {
+    "image": "高清_00036_.png"
+   }
+  },
+  "549": {
+   "_meta": {
+    "cnr_id": "comfy-core",
+    "title": "切换",
+    "ver": "0.37.0"
+   },
+   "class_type": "ComfySwitchNode",
+   "inputs": {
+    "on_false": [
+     "582",
+     2
+    ],
+    "on_true": [
+     "472",
+     0
+    ],
+    "switch": true
+   }
+  },
+  "553": {
+   "_meta": {
+    "cnr_id": "comfy-core",
+    "title": "随机噪波",
+    "ver": "0.30.0"
+   },
+   "class_type": "RandomNoise",
+   "inputs": {
+    "noise_seed": 922131566643457
+   }
+  },
+  "556": {
+   "_meta": {
+    "cnr_id": "comfy-core",
+    "title": "自定义采样器（高级）",
+    "ver": "0.37.0"
+   },
+   "class_type": "SamplerCustomAdvanced",
+   "inputs": {
+    "guider": [
+     "558",
+     0
+    ],
+    "latent_image": [
+     "549",
+     0
+    ],
+    "noise": [
+     "553",
+     0
+    ],
+    "sampler": [
+     "561",
+     0
+    ],
+    "sigmas": [
+     "562",
+     0
+    ]
+   }
+  },
+  "558": {
+   "_meta": {
+    "cnr_id": "comfy-core",
+    "title": "基本引导器",
+    "ver": "0.37.0"
+   },
+   "class_type": "BasicGuider",
+   "inputs": {
+    "conditioning": [
+     "582",
+     0
+    ],
+    "model": [
+     "583",
+     0
+    ]
+   }
+  },
+  "561": {
+   "_meta": {
+    "cnr_id": "comfy-core",
+    "title": "K采样器选择",
+    "ver": "0.37.0"
+   },
+   "class_type": "KSamplerSelect",
+   "inputs": {
+    "sampler_name": "euler"
+   }
+  },
+  "562": {
+   "_meta": {
+    "cnr_id": "comfy-core",
+    "title": "基本调度器",
+    "ver": "0.37.0"
+   },
+   "class_type": "BasicScheduler",
+   "inputs": {
+    "denoise": 1,
+    "model": [
+     "583",
+     0
+    ],
+    "scheduler": "simple",
+    "steps": 40
+   }
+  },
+  "578": {
+   "_meta": {
+    "cnr_id": "comfyui-easy-use",
+    "title": "清理显存占用",
+    "ver": "1.4.1"
+   },
+   "class_type": "easy cleanGpuUsed",
+   "inputs": {
+    "anything": [
+     "473",
+     0
+    ]
+   }
+  },
+  "582": {
+   "_meta": {
+    "cnr_id": "comfy-core",
+    "title": "文本编码 Qwen Image 2.1",
+    "ver": "0.36.0"
+   },
+   "class_type": "TextEncodeQwenImage21",
+   "inputs": {
+    "clip": [
+     "470",
+     0
+    ],
+    "images.image_1": [
+     "543",
+     0
+    ],
+    "negative_prompt": "",
+    "prompt": "以上传的照片中的人物为原型，以电影级双重曝光构图为骨架，AAA游戏主视觉质 感，《权力的游戏》龙妈，生成超写实同人角色海报，3:4竖版。巨大张扬的龙妈脸部轮廓主体，轮廓内自然融合，视觉冲击强。电影级双重曝光同人海报，主体轮廓清晰， 内部元素融合自然，反差与情绪张力足，色彩统一 对比鲜明，史诗级画风，与英文标题，避免拼贴杂乱与写实武器",
+    "resolution": 1024,
+    "vae": [
+     "471",
+     0
+    ]
+   }
+  },
+  "583": {
+   "_meta": {
+    "cnr_id": "comfy-core",
+    "title": "Qwen Image 2.1 缓存",
+    "ver": "0.36.0"
+   },
+   "class_type": "QwenImage21Cache",
+   "inputs": {
+    "device": "auto",
+    "dtype": "default",
+    "model": [
+     "468",
+     0
+    ]
+   }
+  }
+ }
+}

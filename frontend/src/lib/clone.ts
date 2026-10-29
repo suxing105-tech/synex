@@ -51,6 +51,8 @@ export interface CloneTemplate {
   slots: CloneSlot[];
   default_prompt: string;
   is_active: boolean;
+  /** 安装包自带的官方工作流：删得掉，但删了不会下次启动又长回来 */
+  is_builtin?: boolean;
   created_at: string;
   updated_at: string;
   node_count: number;

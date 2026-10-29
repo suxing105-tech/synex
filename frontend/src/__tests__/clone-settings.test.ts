@@ -258,6 +258,23 @@ describe('出图还是出片', () => {
     expect(li.textContent).toContain('图片 9 / 音频 3 / 视频 3');
   });
 
+  it('安装包自带的那两条挂着「内置」徽标，删的时候讲清楚不会再自动装回来', async () => {
+    routes({
+      '/api/clone/templates': { items: [TPL, { ...VIDEO_TPL, is_builtin: true }] },
+      '/api/clone/templates/2': () => ({ ok: true }),
+    });
+    const screen = render(CloneTemplates, {});
+    await screen.findByText('旧的同款');
+    const li = screen.getByText('H3参考视频').closest('li')!;
+    expect(li.textContent).toContain('内置');
+    // 用户自己导入的不该被标成内置
+    expect(screen.getByText('旧的同款').closest('li')?.textContent).not.toContain('内置');
+    const buttons = (root: Element) => [...root.querySelectorAll('button')];
+    await fireEvent.click(buttons(li).find((b) => b.textContent?.trim() === '删除')!);
+    await fireEvent.click(buttons(li).find((b) => b.textContent?.trim() === '确认删除')!);
+    expect(await screen.findByText(/不会再自动装回来/)).toBeTruthy();
+  });
+
   it('自动判定错了能当场改判：那颗下拉只 PATCH media_kind', async () => {
     routes({
       '/api/clone/templates': { items: [TPL] },

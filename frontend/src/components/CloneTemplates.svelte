@@ -256,6 +256,8 @@
                      混在提示词位/参考位那串数字里根本看不见。 -->
                 <span class="clone-tpl-kind" class:is-video={isVideoTemplate(tpl)}>{isVideoTemplate(tpl) ? "视频" : "图片"}</span>
                 {#if tpl.is_active}<span class="clone-tpl-tag">当前</span>{/if}
+                {#if tpl.is_builtin}<span class="clone-tpl-tag clone-tpl-tag-builtin"
+                  title="安装包自带的官方工作流。删掉就不会下次启动又装回来；自己改过之后，版本更新也不会覆盖你这份。">内置</span>{/if}
                 <span class="settings-hint">{counts(tpl)}</span>
               {/if}
             </div>
@@ -285,7 +287,7 @@
               <button class="setting-button" disabled={busy} onclick={() => { renaming = tpl.id; renameValue = templateDisplayName(tpl.name); }}>改名</button>
               <button class="setting-button" disabled={busy} onclick={() => void exportTemplate(tpl)}>导出 JSON</button>
               {#if confirmDelete === tpl.id}
-                <button class="setting-button bg-danger text-bg" disabled={busy} onclick={() => void run(async () => { await cloneApi.remove(tpl.id); confirmDelete = null; await reload(true); }, "模板已删除。已生成的图不受影响。")}>确认删除</button>
+                <button class="setting-button bg-danger text-bg" disabled={busy} onclick={() => void run(async () => { await cloneApi.remove(tpl.id); confirmDelete = null; await reload(true); }, tpl.is_builtin ? "内置模板已删除，以后启动不会再自动装回来。已生成的素材不受影响。" : "模板已删除。已生成的图不受影响。")}>确认删除</button>
                 <button class="setting-button" onclick={() => (confirmDelete = null)}>取消</button>
               {:else}
                 <button class="setting-button setting-button-ghost" disabled={busy} onclick={() => (confirmDelete = tpl.id)}>删除</button>
@@ -363,6 +365,7 @@
   .clone-tpl-main { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; min-width: 0; }
   .clone-tpl-name { font-weight: 600; color: #ececed; }
   .clone-tpl-tag { padding: 1px 6px; border-radius: 999px; background: rgb(242 78 78 / 18%); color: #ff8f8f; font-size: 11px; }
+  .clone-tpl-tag-builtin { background: rgb(59 130 246 / 16%); color: #93c5fd; }
   .clone-tpl-kind { padding: 1px 6px; border-radius: 999px; background: rgb(59 130 246 / 16%); color: #93c5fd; font-size: 11px; }
   .clone-tpl-kind.is-video { background: rgb(245 158 11 / 16%); color: #fbbf24; }
   .clone-tpl-kind-set { padding: 2px 6px; font-size: 12px; }

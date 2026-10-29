@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS clone_templates (
     default_prompt TEXT NOT NULL DEFAULT '',
     is_active INTEGER NOT NULL DEFAULT 0,
     media_kind TEXT NOT NULL DEFAULT 'image',
+    bundled_key TEXT,
+    bundled_sha TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
@@ -57,6 +59,12 @@ def initialize(conn) -> None:
         conn.execute(
             "ALTER TABLE clone_templates ADD COLUMN media_kind TEXT NOT NULL DEFAULT 'image'"
         )
+    # 内置模板的两列：bundled_key 认「这是安装包带来的哪一条」，bundled_sha 是
+    # 安装包那版工作流的指纹——只有正文还等于它，才说明用户没动过，才敢随版本刷新。
+    if "bundled_key" not in cols:
+        conn.execute("ALTER TABLE clone_templates ADD COLUMN bundled_key TEXT")
+    if "bundled_sha" not in cols:
+        conn.execute("ALTER TABLE clone_templates ADD COLUMN bundled_sha TEXT NOT NULL DEFAULT ''")
 
 
 class DuplicateNameError(ValueError):
@@ -1049,6 +1057,9 @@ def public(row: Any) -> dict:
     if kind not in MEDIA_KINDS:
         kind = "image"
     data["media_kind"] = kind
+    # 内置与否只在设置页挂个徽标：用户删得掉，删了也不会下次启动又长回来
+    data["is_builtin"] = bool(data.get("bundled_key"))
+    data["bundled_key"] = str(data.get("bundled_key") or "")
     data["slots"] = slots
     data["is_active"] = bool(data.get("is_active"))
     data["node_count"] = len(nodes)
@@ -1225,7 +1236,12 @@ def delete_template(template_id: int) -> int:
     row = get_row(template_id)
     conn = _conn()
     kind = _media_kind_of(row)
+    bundled_key = str(row.get("bundled_key") or "")
     conn.execute("DELETE FROM clone_templates WHERE id=?", (template_id,))
+    if bundled_key:
+        # 内置模板删掉就到此为止：记进 dismissed 名单，否则下次启动 seed 又塞回来
+        from .clone_bundled import note_dismissal
+        note_dismissal(conn, bundled_key)
     # 删掉的正好是当前用的 → 同族里拿最早一条顶上，别让弹窗没有默认模板。
     _ensure_active_kind(conn, kind)
     return template_id

@@ -10,6 +10,16 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _no_bundled_clone_templates(monkeypatch):
+    """新库默认不装内置的「一键同款」工作流。
+
+    生产里默认是装的（安装包开箱就该有图片与视频各一份），但绝大多数老用例的前提
+    是「模板表一开始是空的」。测内置本身的用例自己把它打开。
+    """
+    monkeypatch.setenv("SUXING_SEED_BUNDLED_TEMPLATES", "0")
+
+
 @pytest.fixture
 def tmp_data_dir(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("SUXING_GALLERY_DATA_DIR", str(tmp_path))

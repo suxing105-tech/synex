@@ -172,6 +172,14 @@ class ConnectionPool:
                 ensure_fts_triggers(self._main)
             except sqlite3.Error as exc:
                 logger.warning("搜索索引维护失败，搜索将退回模糊匹配：%s", exc)
+            # 内置的「一键同款」工作流：新库装上、老库认领同名的、用户改过的不覆盖。
+            # 放在这里而不是启动接口里，命令行工具打开同一个库也能拿到同一份结果。
+            # 建库不该被资源文件的问题拖住，所以坏了只吵日志。
+            try:
+                from .clone_bundled import seed as seed_bundled_templates
+                seed_bundled_templates(self._main)
+            except Exception as exc:  # noqa: BLE001 - 内置模板缺失不该让图库打不开
+                logger.warning("内置一键同款工作流装载失败：%s", exc)
             self._initialized = True
             self._ready_event.set()
 

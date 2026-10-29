@@ -2,7 +2,7 @@
   import { startUpdates } from "./lib/updates";
   import { onMount, onDestroy } from "svelte";
   import { connectEvents, disconnectEvents } from "./lib/ws";
-  import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, comfyuiEnabled, mediaItems, tag, folderId, query, selectedDetail } from "./lib/stores";
+  import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, comfyuiEnabled, mediaItems, tag, folderId, query, selectedDetail, overlayMuted } from "./lib/stores";
   import { createSplashGate } from "./lib/splash-gate.svelte";
   import FolderTree from "./components/FolderTree.svelte";
   import DesktopTitlebar from "./components/DesktopTitlebar.svelte";
@@ -264,7 +264,7 @@
   });
 </script>
 
-<div class="app-shell" class:desktop-shell={desktop} style:--desktop-titlebar-height={desktop && !immersive ? (desktopMaximized ? "24px" : "28px") : "0px"}>
+<div class="app-shell" class:overlay-muted={$overlayMuted} class:desktop-shell={desktop} style:--desktop-titlebar-height={desktop && !immersive ? (desktopMaximized ? "24px" : "28px") : "0px"}>
 {#if desktop && !immersive}<DesktopTitlebar bind:maximized={desktopMaximized} />{/if}
 <div class="h-full w-full flex flex-col bg-bg text-zinc-200" ondragover={swallowDrag} ondrop={swallowDrag} role="application">
   <ScanProgressBar />
@@ -300,6 +300,7 @@
         bind:lightboxIndex
         overlayOpen={lightboxOpen || videoPlayerOpen || Boolean($readerItem)}
         immersive={immersive}
+        onOpenSettings={(tab) => { settingsTab = tab; settingsOpen = true; }}
       />
       </div>
       <AudioEngine />
@@ -397,6 +398,27 @@
   }
   .app-grid.drawer-mode .splitter {
     display: none;
+  }
+  /*
+    弹窗虚化背景时让应用骨架一起退场：1px 的分割线和折叠箭头被 blur 糊开后不会消失，
+    只会变成一条灰竖杠压在虚化图上，比不糊还难看。只藏线条和箭头，栏本身留着。
+    详情栏整块内容一起藏：真机被指出来的是空态那个 36px 的 arrow-left 图标，糊开之后
+    就是一支幽灵箭头浮在虚化图上；详情有内容时更糟，一整栏糊字。栏位与底色留着，
+    虚化层背后的画面尺寸不会跳。
+  */
+  .overlay-muted .app-grid > aside {
+    border-left-color: transparent;
+    border-right-color: transparent;
+  }
+  .overlay-muted .app-grid > aside:last-child > * {
+    visibility: hidden;
+  }
+  .overlay-muted .splitter::before {
+    opacity: 0;
+  }
+  .overlay-muted .sidebar-expand,
+  .overlay-muted .collapse-sidebar {
+    visibility: hidden;
   }
   .drawer-toggle {
     position: fixed;

@@ -156,6 +156,12 @@ export const ICON_PATHS: Record<string, string> = {
     '<rect x="2" y="3" width="20" height="5" rx="1"/>' +
     '<line x1="10" y1="12" x2="14" y2="12"/>',
 
+  // 一键同款：后层画面 + 前层画面 + 前层里的一粒火花（= 用同一套配方再抽一张）
+  clone:
+    '<rect x="9" y="9" width="12" height="12" rx="2"/>' +
+    '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>' +
+    '<path d="m15 12 .8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z"/>',
+
   // 适应窗口：四角取景框 + 里面的画面（图片 / 视频预览层顶栏共用）
   "fit-screen":
     '<path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9"/>' +
@@ -170,6 +176,13 @@ export const ICON_PATHS: Record<string, string> = {
     '<line x1="20" y1="20" x2="16.2" y2="16.2"/>' +
     '<line x1="11" y1="8.5" x2="11" y2="13.5"/>' +
     '<line x1="8.5" y1="11" x2="13.5" y2="11"/>',
+
+  // 一键同款：参考图缩略图上的「换一张」圆按钮
+  swap:
+    '<path d="M21 12a9 9 0 0 0-9-9c-2.4 0-4.6 1-6.2 2.6L3 8"/>' +
+    '<path d="M3 3v5h5"/>' +
+    '<path d="M3 12a9 9 0 0 0 9 9c2.4 0 4.6-1 6.2-2.6L21 16"/>' +
+    '<path d="M21 21v-5h-5"/>',
 
   // comfyui 走 PNG 真 logo（品牌识别强），见 Icon.svelte 的 special case；
   // PNG 在 frontend/public/comfyui-logo.png，由 vite 静态托管。

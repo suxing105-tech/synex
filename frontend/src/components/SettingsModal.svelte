@@ -7,6 +7,7 @@
   import { refreshFeed, refreshFolders, refreshStats } from "../lib/stores";
   import ShortcutSettings from "./ShortcutSettings.svelte";
   import ModelSettings from "./ModelSettings.svelte";
+  import CloneTemplates from "./CloneTemplates.svelte";
   import UpdatePanel from "./UpdatePanel.svelte";
   import SettingsRow from "./SettingsRow.svelte";
   import wechatContact from "../assets/about/wechat-contact.png";
@@ -34,6 +35,7 @@
     { label: "AI 与集成", items: [
       { id: "models", label: "模型与反推", keywords: "api key 服务商 视觉模型 反推 指令 seedance h3 视频提示词 超时 密钥 默认模型" },
       { id: "comfyui", label: "ComfyUI", keywords: "工作流 服务地址 端口 连接 探测 节点" },
+      { id: "clone", label: "一键同款", keywords: "工作流 模板 提示词 参考图 生成 一键同款 同款 ComfyUI 出图" },
     ] },
     { label: "应用", items: [
       { id: "media", label: "媒体组件", keywords: "ffmpeg ffprobe 封面 波形 内置 检测 版本" },
@@ -49,6 +51,7 @@
     shortcuts: ["M3 6h18v12H3z", "M7 10h.01M11 10h.01M15 10h.01M8 14h8"],
     models: ["M12 3l1.7 4.3L18 9l-4.3 1.7L12 15l-1.7-4.3L6 9l4.3-1.7Z", "M18 15l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8Z"],
     comfyui: ["M9 2v6M15 2v6", "M6 8h12v3a6 6 0 0 1-12 0V8Z", "M12 17v5"],
+    clone: ["M8 3h9a3 3 0 0 1 3 3v9", "M6 8h9a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-7a3 3 0 0 1 3-3Z"],
     media: ["M3 5h18v14H3z", "M7 5v14M17 5v14M3 12h18"],
     update: ["M12 3v11", "m8 10 4 4 4-4", "M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"],
     about: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z", "M12 11v5M12 8h.01"],
@@ -413,6 +416,14 @@
                   <button class="setting-button bg-accent text-bg" onclick={saveComfyui}>保存 ComfyUI 设置</button>
                 </div>
               </div>
+            </section>
+          {/if}
+
+          {#if shown("clone")}
+            <section id="settings-clone" class="settings-section" aria-labelledby="settings-clone-title">
+              <h3 id="settings-clone-title">一键同款</h3>
+              <p class="section-description">换一份工作流，图片卡上的「一键同款」立刻跟着换；出图统一存进图库的「一键同款」文件夹。</p>
+              <CloneTemplates />
             </section>
           {/if}
 

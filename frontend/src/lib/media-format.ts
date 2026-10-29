@@ -40,6 +40,33 @@ export function thumbnailHeightToWidthRatio(
 // 必须是同一个事实源：Feed 的贪心分列按 footerHeightFor 预计算列高，
 // 渲染按 footerTierFor 决定挂哪个 class。两者一旦分叉，瀑布流就会重叠或留大缝。
 
+/**
+ * 把卡片按「当前最矮的一列」依次投放，得到等宽多列（masonry）。
+ *
+ * 为什么要自己分列：CSS grid 的行高由这一行里最高的卡决定，等比例缩略图竖横混排时，
+ * 同行那张矮卡下面会空出一大块（图库素材选择器里被圈出来的就是它）。分列之后每列
+ * 自己往下堆，不再有行对齐这回事。投放顺序按 items 原顺序，同一批输入的结果稳定。
+ */
+export function splitIntoColumns<T>(
+  items: T[],
+  columns: number,
+  heightWeight: (item: T) => number,
+): T[][] {
+  const count = Math.max(1, Math.floor(columns) || 1);
+  const buckets: T[][] = Array.from({ length: count }, () => [] as T[]);
+  const heights = new Array<number>(count).fill(0);
+  for (const item of items) {
+    let target = 0;
+    for (let i = 1; i < count; i += 1) {
+      if (heights[i] < heights[target]) target = i;
+    }
+    buckets[target].push(item);
+    const weight = heightWeight(item);
+    heights[target] += Number.isFinite(weight) ? weight : 1;
+  }
+  return buckets;
+}
+
 /** 两行页脚（文件名 + 元信息）所需的最小卡片宽 */
 export const FOOTER_TIER_TWO_LINE_MIN_WIDTH = 170;
 /** 单行页脚（只有文件名）所需的最小卡片宽 */

@@ -158,6 +158,10 @@ class ConnectionPool:
             initialize_reverse_prompts(self._main)
             from .video_prompts import initialize as initialize_video_prompts
             initialize_video_prompts(self._main)
+            from .clone_templates import initialize as initialize_clone_templates
+            initialize_clone_templates(self._main)
+            from .clone_sources import initialize as initialize_clone_sources
+            initialize_clone_sources(self._main)
             migrate_system_folders(self._main)
             migrate_media_kind(self._main)
             migrate_drop_favorite(self._main, self.path)

@@ -673,6 +673,25 @@ def _row_to_summary(row: sqlite3.Row) -> dict:
     }
 
 
+def image_summary(image_id: int | None = None, *, path: str | None = None) -> dict | None:
+    """按 id 或磁盘路径取一条「列表口径」的图片信息。
+
+    存在的理由是一键同款的来源记录：那里手上的线索可能是 id，也可能只是当初记下的
+    路径（见 clone_sources）。口径和 feed 完全一致，前端拿到就能直接画参考位。
+    """
+    if image_id is None and not path:
+        return None
+    conn = get_pool().main()
+    if image_id is not None:
+        row = conn.execute(f"SELECT {_SUMMARY_SELECT} FROM images WHERE id = ?", (image_id,)).fetchone()
+    else:
+        row = conn.execute(
+            f"SELECT {_SUMMARY_SELECT} FROM images WHERE path IN (?, ?) LIMIT 1",
+            (path, _normalize_path(Path(path))),
+        ).fetchone()
+    return _row_to_summary(row) if row else None
+
+
 def _row_to_detail(row: sqlite3.Row) -> dict:
     summary = _row_to_summary(row)
     summary.update(

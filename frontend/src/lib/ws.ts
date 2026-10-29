@@ -1,6 +1,7 @@
 import { removeImageFromFeed, markNew, refreshFolders, refreshFeed, refreshScanProgress, refreshStats } from "./stores";
 
 import { eventsUrl } from "./backend-url";
+import { applyCloneProgress } from "./clone";
 
 let socket: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -28,6 +29,10 @@ export function connectEvents() {
       } else if (payload.type === "folders_changed") {
         // 来源目录镜像文件夹被清理（磁盘目录删除）→ 刷新左侧目录树
         await Promise.all([refreshFolders(), refreshStats()]);
+      } else if (payload.type === "clone_progress") {
+        // 一键同款：进度只进内存 store。产出的图片会另外发 image_indexed，
+        // 所以图库列表照常刷新，弹窗这里只负责显示状态与结果 chips。
+        applyCloneProgress(payload);
       } else if (payload.type === "scan_progress") {
         // 后端会发 scan 进度；用单独轮询补上
         await refreshScanProgress();

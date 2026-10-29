@@ -193,6 +193,57 @@ body,
   text-overflow: ellipsis;
 }
 
+/* 「一键同款」角标：几何与音频播放角标（.audio-play-btn）逐条对齐——同一个尺寸公式、
+   同一个右边距、在页脚高度里同样垂直居中。两种卡右下角那个控件是同一个位置，眼睛不用重新学。
+   尺寸跟着页脚高度走：两行页脚 44px → 32px；单行 26px → 20px。没有页脚（卡太窄）时
+   角标根本不渲染，所以不像播放键那样需要退回图区的兜底位置。 */
+.media-card.is-cloneable {
+  --clone-btn: clamp(20px, calc(var(--card-footer-h, 0px) - 12px), 34px);
+}
+
+/* 文件名要让开角标，否则长名字会伸到按钮底下 */
+.media-card.is-cloneable .media-card-footer {
+  padding-right: calc(8px + var(--clone-btn) + 6px);
+}
+
+.media-clone-btn {
+  position: absolute;
+  right: 8px;
+  bottom: max(4px, calc((var(--card-footer-h, 0px) - var(--clone-btn)) / 2));
+  width: var(--clone-btn);
+  height: var(--clone-btn);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  cursor: pointer;
+  z-index: 2;
+  /* 白字 + 投影：缩略图有亮有暗，跟着主题变色会在那张白底产品图上直接看不见 */
+  filter: drop-shadow(0 1px 3px rgb(0 0 0 / 72%));
+  opacity: 0.9;
+  transition: color 140ms ease, opacity 140ms ease;
+}
+
+/* 图标本身占角标的 62%：20px 的角标里是 12px 的字，32px 的角标里是 20px，观感一致 */
+.media-clone-btn svg {
+  width: 62%;
+  height: 62%;
+}
+
+/* 悬停只把图标染成品牌色：不加边框、不加底色、也不放大。
+   以前那套 opacity + scale(1.06) 落在白色描边图标上，看着就像凭空多了一圈高亮边框。 */
+.media-clone-btn:hover {
+  opacity: 1;
+  color: var(--thumb-accent);
+}
+
+/* 关掉弹窗后焦点会退回这个图标，浏览器给它补一圈默认焦点环，看着像图标自带的亮边框。
+   它是 tabindex="-1" 的纯鼠标控件（键盘走右键菜单那条路），这一圈环在这里只剩噪声。 */
+.media-clone-btn:focus,
+.media-clone-btn:focus-visible {
+  outline: none;
+}
+
 .media-card-meta {
   display: block;
   min-width: 0;

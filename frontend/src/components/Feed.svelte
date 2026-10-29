@@ -36,6 +36,8 @@
   import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
   import TextCreateModal from "./TextCreateModal.svelte";
   import TextAssociateModal from "./TextAssociateModal.svelte";
+  import CloneModal from "./CloneModal.svelte";
+import { comparePair } from "../lib/clone";
   import { textsApi } from "../lib/texts";
   import { isTextFilePath, textFeedItemOf, textFormatLabel } from "../lib/text-reading";
   import { folderId } from "../lib/stores";
@@ -48,8 +50,10 @@
     overlayOpen?: boolean;
     /** F 键沉浸满屏：只剩缩略图，工具栏（标题、搜索、类型 chips、列数）整条不渲染。 */
     immersive?: boolean;
+    /** 打开设置页的某个分区（一键同款弹窗里没有模板时要去导入工作流）。 */
+    onOpenSettings?: (tab: string) => void;
   }
-  let { selectedId = $bindable(), lightboxOpen = $bindable(), lightboxIndex = $bindable(), overlayOpen = false, immersive = false }: Props = $props();
+  let { selectedId = $bindable(), lightboxOpen = $bindable(), lightboxIndex = $bindable(), overlayOpen = false, immersive = false, onOpenSettings }: Props = $props();
 
   // 右键菜单状态
   let menuOpen = $state(false);
@@ -104,6 +108,41 @@
   let totalLabel = $derived(mediaSummary($feedCounts));
   let selectedKinds = $derived(kindsIn($mediaItems.filter((it) => $multiSelectedIds.has(it.id))));
   let selectedLabel = $derived(selectionSummary(selectedCount, selectedKinds));
+  // ---------- 一键同款 ----------
+  // 弹窗目标就是被点的这张图；生成在后台跑，关掉弹窗不会中断（状态在后端）。
+  let cloneTarget = $state<MediaFeedItem | null>(null);
+  function openClone(it: MediaFeedItem) {
+    if (it.kind !== "image") return;
+    cloneTarget = it;
+  }
+  /**
+   * 点弹窗里的产出图：直接进「原图 vs 产出图」对比。
+   * 做法就是说清 Lightbox 已经认的那条规则——正好两张被选中就进对比态——
+   * 所以先把原图单选上、再 ctrl 补上产出图，然后把 Lightbox 打开。
+   * 两张有一张不在当前列表里（筛选、翻页都可能）就别硬凑，退回只选中产出图。
+   */
+  async function openCloneResult(id: number) {
+    const source = cloneTarget;
+    cloneTarget = null;
+    try {
+      await refreshFeed({ keepScroll: true });
+    } catch {
+      /* 刷新失败也要先把选区挪过去，别让点击没反应 */
+    }
+    const items = $mediaItems;
+    const pair = comparePair(source?.id, id, items.map((it) => it.id));
+    const produced = items.find((it) => it.id === id);
+    if (pair && produced) {
+      applySelection(items, pair[0], "none");
+      applySelection(items, pair[1], "ctrl");
+      lightboxIndex = items.indexOf(produced);
+      lightboxOpen = true;
+      return;
+    }
+    applySelection(items, id, "none");
+    if (source && source.id !== id) notify("原图和产出图没能同时出现在当前列表里，已选中产出图");
+  }
+
   async function openInComfyui(it: MediaFeedItem) {
     try {
       notify("正在打开工作流…");
@@ -609,6 +648,7 @@
             ]
           : [{ label: isVideo ? "复制视频" : "复制图片", onClick: () => isVideo ? copyVideoToClipboard(t) : copyImageToClipboard(t) }]),
         ...(isPsdFilename(t.filename) ? [{ label: "在 Photoshop 中打开", onClick: () => openInPhotoshop(t) }] : []),
+        ...(t.kind === "image" ? [{ label: "一键同款", onClick: () => openClone(t) }] : []),
         { label: "重命名", onClick: () => renameImage(t) },
         { label: `${noun}所在位置`, onClick: () => revealImage(t) },
         { label: "移动到…", children: moveMenu(items) },
@@ -1077,7 +1117,7 @@
               {:else}
               <button
                 type="button"
-                class="thumb media-card {footerTier === 0 ? 'media-card--compact' : ''} {it.kind === 'audio' ? 'is-audio ' : ''}text-left {$multiSelectedIds.has(it.id) ? 'is-selected' : ''} {$playingAudio?.id === it.id && it.kind === 'audio' ? 'is-playing' : ''}"
+                class="thumb media-card {footerTier === 0 ? 'media-card--compact' : ''} {it.kind === 'audio' ? 'is-audio ' : ''}{it.kind === 'image' && footerTier > 0 ? 'is-cloneable ' : ''}text-left {$multiSelectedIds.has(it.id) ? 'is-selected' : ''} {$playingAudio?.id === it.id && it.kind === 'audio' ? 'is-playing' : ''}"
                 style="--card-footer-h: {footerHeightFor(columnWidth)}px"
                 title={it.filename}
                 onclick={(e) => { if (draggedOriginal) { draggedOriginal = false; return; } onThumbClick(e, it); }}
@@ -1186,6 +1226,24 @@
                       <span class="media-card-meta">{metaFor(it)}</span>
                     {/if}
                   </div>
+                  {#if it.kind === "image"}
+                    <!-- 「一键同款」角标：几何与音频播放角标完全一致（同尺寸、同右下角、在页脚高度里同垂直居中），
+                         两种卡在右下角的控件位置就是同一个，不用重新学。卡片本身是 <button>，所以这里
+                         只能再用 role="button" 的 div，并且按下的事件都要拦，否则点图标会变成选中/拖动那张卡。 -->
+                    <div
+                      role="button"
+                      tabindex="-1"
+                      class="media-clone-btn"
+                      title="一键同款"
+                      aria-label="用同款工作流再生成一张"
+                      onclick={(e) => { e.stopPropagation(); e.preventDefault(); openClone(it); }}
+                      onpointerdown={(e) => e.stopPropagation()}
+                      onmousedown={(e) => e.stopPropagation()}
+                      onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); openClone(it); } }}
+                    >
+                      <Icon name="clone" size={20} />
+                    </div>
+                  {/if}
                 {/if}
                 {#if it.kind === "audio"}
                   <div
@@ -1261,6 +1319,14 @@
 {#if toast}
   <div class="toast">{toast}</div>
 {/if}
+
+<CloneModal
+  open={cloneTarget !== null}
+  image={cloneTarget}
+  onClose={() => (cloneTarget = null)}
+  {onOpenSettings}
+  onOpenImage={(id) => void openCloneResult(id)}
+/>
 
 <FolderPickerModal open={destinationOpen} folders={$folders} title="选择保存文件夹" subtitle="原文件会保留，复制到所选文件夹。" allowNone={false} includeSystem={true} onPick={finishDestination} onClose={() => finishDestination(null)} />
 

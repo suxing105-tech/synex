@@ -595,5 +595,14 @@ export const comfyuiStatus = writable<ComfyuiStatus>({
   checked_at: 0,
 });
 
-
 export const comfyuiEnabled = writable<boolean>(true);
+
+
+// ---------- 弹窗虚化背景 ----------
+
+
+/**
+ * 一键同款这类「背景虚化」的弹窗开着时置真：右侧栏分割线和折叠箭头是 1px 的硬线条，
+ * 模糊之后不会消失，只会变成一条灰糊糊的竖杠，看着像渲染坏了。虚化要糊的是画面，不是 UI 骨架。
+ */
+export const overlayMuted = writable<boolean>(false);

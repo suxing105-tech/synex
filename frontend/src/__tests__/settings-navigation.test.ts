@@ -13,7 +13,7 @@ vi.mock('../lib/api', () => ({
 // 目录点击 = 把该分组的标题滚到滚动区顶部（-28 的余量），所以期望值直接由位置表算出来。
 const positions: Record<string, number> = {
   'settings-general': 36, 'settings-archived': 636, 'settings-shortcuts': 1036,
-  'settings-models': 1636, 'settings-comfyui': 2236, 'settings-media': 2836,
+  'settings-models': 1636, 'settings-comfyui': 2236, 'settings-clone': 2536, 'settings-media': 2836,
   'settings-update': 3236, 'settings-about': 3636,
 };
 const top = (id: string) => positions[id] - 28;
@@ -25,7 +25,7 @@ beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'scrollTo').mockImplementation(function(this: HTMLElement, options: any) { this.scrollTop = options.top; });
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
-it('目录跳转保留监听路径和快捷键草稿，且八个分组同时存在', async () => {
+it('目录跳转保留监听路径和快捷键草稿，且九个分组同时存在', async () => {
   const screen = render(SettingsModal, { open: true, tab: '通用' });
   const input = await screen.findByLabelText('新增监听目录');
   await fireEvent.input(input, { target: { value: 'D:/未保存素材' } });
@@ -39,7 +39,7 @@ it('目录跳转保留监听路径和快捷键草稿，且八个分组同时存�
   await fireEvent.click(screen.getByRole('button', { name: '通用' }));
   expect((input as HTMLInputElement).value).toBe('D:/未保存素材');
   expect(recording.textContent).toContain('J');
-  expect(screen.container.querySelectorAll('.settings-section')).toHaveLength(8);
+  expect(screen.container.querySelectorAll('.settings-section')).toHaveLength(9);
   await fireEvent.click(screen.getByRole('button', { name: '添加目录' }));
   await fireEvent.click(screen.getByRole('button', { name: '保存通用设置' }));
   expect(settingsApi.update).toHaveBeenCalledWith({ watch_dirs: ['C:/素材', 'D:/未保存素材'], live_enabled: true });
@@ -71,6 +71,6 @@ it('目录搜索只留下命中的分组，正文跟着收窄，清空后恢复�
   expect(await screen.findByRole('status')).toBeTruthy();
   expect(screen.container.querySelectorAll('.settings-section')).toHaveLength(0);
   await fireEvent.click(screen.getByRole('button', { name: '清除搜索' }));
-  expect(screen.container.querySelectorAll('.settings-nav-item')).toHaveLength(8);
-  expect(screen.container.querySelectorAll('.settings-section')).toHaveLength(8);
+  expect(screen.container.querySelectorAll('.settings-nav-item')).toHaveLength(9);
+  expect(screen.container.querySelectorAll('.settings-section')).toHaveLength(9);
 });

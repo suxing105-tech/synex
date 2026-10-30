@@ -1,0 +1,23 @@
+// 探针 7：悬停时圆钮出现、圆钮不吃点击、X 仍然单独生效。
+import fs from "node:fs";
+import { start } from "./cdp.mjs";
+const expr = (n) => fs.readFileSync(n, "utf8");
+const p = await start("http://127.0.0.1:5199/", Number(process.env.PORT || 9348));
+await p.sleep(4000);
+const log = (k, v) => console.log(k, JSON.stringify(v));
+log("opened", await p.ev(expr("open_image_card.js")));
+await p.sleep(2600);
+const rect = JSON.parse((await p.ev(expr("measure_tile_rect.js"))).value);
+await p.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
+await p.sleep(700);
+const clipRaw = (await p.ev(expr("measure_ref_row_clip.js"))).value;
+const clip = clipRaw === "null" ? undefined : JSON.parse(clipRaw);
+await p.shot("tile-hover.png", clip);
+log("style(opacity,swapPE,cursor,pos,size)", await p.ev(expr("measure_swap_style.js")));
+const xb = JSON.parse((await p.ev(expr("measure_tile_x.js"))).value);
+await p.click(xb.x, xb.y);
+await p.sleep(900);
+log("after X", await p.ev(expr("measure_after_x.js")));
+await p.shot("tile-after-x.png", clip);
+p.close();
+process.exit(0);

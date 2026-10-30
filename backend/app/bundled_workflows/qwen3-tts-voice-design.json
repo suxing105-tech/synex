@@ -1,0 +1,100 @@
+{
+  "key": "qwen3-tts-voice-design",
+  "label": "闪寻音色描述",
+  "legacy_labels": [
+    "闪寻音色设计",
+    "闪寻音频-音色描述"
+  ],
+  "media_kind": "audio",
+  "notes": "Qwen3-TTS 音色设计：不吃参考音频，用一句话描述想要什么样的声音（性别、年龄、气质、语气），台词单独一格。跑的是 VoiceDesign 那条分支，与「参考音色」「指定音色」是两个不同的模型，切换模式时 ComfyUI 要重载模型，第一次会慢一些。",
+  "slots": [
+    {
+      "input": "text",
+      "kind": "prompt",
+      "label": "完整提示词",
+      "node": "38",
+      "value": "你好，这是一段用文字描述出来的声音。"
+    },
+    {
+      "input": "instruct",
+      "kind": "prompt",
+      "label": "音色描述",
+      "node": "38",
+      "value": "年轻女性，声音甜美温柔，语速偏慢，带一点撒娇的语气"
+    },
+    {
+      "input": "language",
+      "kind": "select",
+      "label": "语言",
+      "node": "38",
+      "options": [
+        "Auto",
+        "Chinese",
+        "English",
+        "Japanese",
+        "Korean",
+        "German",
+        "French",
+        "Russian",
+        "Portuguese",
+        "Spanish",
+        "Italian"
+      ],
+      "value": "Auto"
+    }
+  ],
+  "source": "F:/常用/闪寻音频.json（仅保留 VoiceDesign 分支）",
+  "workflow": {
+    "38": {
+      "_meta": {
+        "title": "Qwen3-TTS 音色设计",
+        "aux_id": "DarioFT/ComfyUI-Qwen3-TTS",
+        "cnr_id": "comfyui-qwen3-tts",
+        "ver": "3751cf3eada5b17f6f1bc82b0c8c318407181c68"
+      },
+      "class_type": "Qwen3VoiceDesign",
+      "inputs": {
+        "text": "你好，这是一段用文字描述出来的声音。",
+        "instruct": "年轻女性，声音甜美温柔，语速偏慢，带一点撒娇的语气",
+        "language": "Auto",
+        "seed": 42,
+        "model": [
+          "42",
+          0
+        ]
+      }
+    },
+    "42": {
+      "_meta": {
+        "title": "Qwen3-TTS Loader",
+        "aux_id": "DarioFT/ComfyUI-Qwen3-TTS",
+        "cnr_id": "comfyui-qwen3-tts",
+        "ver": "3751cf3eada5b17f6f1bc82b0c8c318407181c68"
+      },
+      "class_type": "Qwen3Loader",
+      "inputs": {
+        "attention": "auto",
+        "local_model_path": "D:\\AI\\ComfyUI_windows_313_v0.16.4\\ComfyUI\\models\\Qwen3\\Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+        "precision": "bf16",
+        "repo_id": "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+        "source": "ModelScope"
+      }
+    },
+    "47": {
+      "_meta": {
+        "title": "保存音频（高级）",
+        "cnr_id": "comfy-core",
+        "ver": "0.32.0"
+      },
+      "class_type": "SaveAudioAdvanced",
+      "inputs": {
+        "audio": [
+          "38",
+          0
+        ],
+        "filename_prefix": "audio/闪寻音色描述",
+        "format": "flac"
+      }
+    }
+  }
+}

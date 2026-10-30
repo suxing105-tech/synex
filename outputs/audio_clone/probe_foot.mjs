@@ -1,0 +1,20 @@
+// 探针 3：底部操作行的宽度分配——工作流胶囊比自身文字宽多少。
+import fs from "node:fs";
+import { start } from "./cdp.mjs";
+const expr = (n) => fs.readFileSync(n, "utf8");
+const p = await start("http://127.0.0.1:5199/", Number(process.env.PORT || 9343));
+await p.sleep(3500);
+const log = (k, v) => console.log(k, JSON.stringify(v));
+const open = (sel) => p.ev(['const c = document.querySelector("' + sel + '");', 'c.scrollIntoView({ block: "center" });', 'c.querySelector(".media-clone-btn").click();'].join(" "));
+await open(".media-card.is-audio");
+await p.sleep(2200);
+log("audio", await p.ev(expr("measure_foot.js")));
+await p.shot("probe-foot-audio.png");
+await p.ev('document.querySelector(".cm-close").click()');
+await p.sleep(800);
+await open(".media-card.is-image");
+await p.sleep(2200);
+log("image", await p.ev(expr("measure_foot.js")));
+await p.shot("probe-foot-image.png");
+p.close();
+process.exit(0);

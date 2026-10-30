@@ -101,3 +101,10 @@ detail.json
 # Generated verification and public-verification output
 outputs/verify-latest/
 outputs/**/download-verification/
+# Regenerable AI avatar candidates: 104 MB of 1448px PNGs, reproducible with
+# outputs/avatar-voices-v1/gen_avatars.py (seeded per speaker). The shipped
+# 256px WebP avatars in frontend/public/voices/ stay tracked on purpose.
+outputs/avatar-voices-v1/candidates/
+outputs/avatar-voices-v1/contact_sheet.png
+outputs/avatar-voices-v1/new_set_roll1.png
+outputs/avatar-voices-v1/compare_roll12.png

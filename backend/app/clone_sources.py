@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS clone_sources (
     template_id INTEGER,
     source_image_id INTEGER,
     refs TEXT NOT NULL DEFAULT '[]',
+    prompt TEXT NOT NULL DEFAULT '',
+    slot_prompts TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 """
@@ -53,8 +55,19 @@ _MAX_HASH_BYTES = 128 * 1024 * 1024
 _GROW_NAME = re.compile(r"^(?P<stem>.+)_(?P<index>\d+)$")
 
 
+# 老库补列：和 db.py 一个套路——PRAGMA 看一眼，缺哪列补哪列。
+_ADDED_COLUMNS = (
+    ("prompt", "TEXT NOT NULL DEFAULT ''"),
+    ("slot_prompts", "TEXT NOT NULL DEFAULT '{}'"),
+)
+
+
 def initialize(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    have = {str(r[1]) for r in conn.execute("PRAGMA table_info(clone_sources)")}
+    for column, ddl in _ADDED_COLUMNS:
+        if column not in have:
+            conn.execute(f"ALTER TABLE clone_sources ADD COLUMN {column} {ddl}")
 
 
 def _ref_snapshot(image_id: int) -> dict[str, Any] | None:
@@ -76,11 +89,17 @@ def record(
     template_id: int | None,
     source_image_id: int | None,
     references: list[dict],
+    prompt: str = "",
+    slot_prompts: dict | None = None,
 ) -> int:
     """把这一批成图的来源写进库，返回写了几条。
 
     一次产出多张时它们共用同一套参考图，所以每条成图各存一份，读的时候不必再回溯
     「是哪次任务」。同一张成图重复登记（被重新认领）按覆盖处理。
+
+    提示词也一起记：成图带不带走提示词取决于文件类型（PNG 有 tEXt、VHS 出的片子有元数据、
+    音频什么都没有），把当初喂进去的那句原样存下来，「同款」才不用用户重新打一遍——
+    尤其是音色克隆，台词本身就是这条声音的一半。
     """
     snapshot: list[dict[str, Any]] = []
     for ref in references:
@@ -97,7 +116,14 @@ def record(
         if slot:
             got["slot"] = slot
         snapshot.append(got)
-    if not image_ids or not snapshot:
+    prompt_text = str(prompt or "")
+    slots: dict[str, str] = {}
+    for key, value in (slot_prompts or {}).items():
+        text = str(value or "")
+        if str(key) and text.strip():
+            slots[str(key)] = text
+    # 没参考也没提示词就没必要占一行：弹窗退回老行为，读文件那条路照样能认参考图。
+    if not image_ids or (not snapshot and not prompt_text.strip() and not slots):
         return 0
     conn = get_pool().main()
     payload = json.dumps(snapshot, ensure_ascii=False)
@@ -110,13 +136,17 @@ def record(
         if out_id <= 0:
             continue
         conn.execute(
-            "INSERT INTO clone_sources(image_id, template_id, source_image_id, refs)"
-            " VALUES(?,?,?,?)"
+            "INSERT INTO clone_sources(image_id, template_id, source_image_id, refs,"
+            " prompt, slot_prompts)"
+            " VALUES(?,?,?,?,?,?)"
             " ON CONFLICT(image_id) DO UPDATE SET"
             " template_id=excluded.template_id,"
             " source_image_id=excluded.source_image_id,"
-            " refs=excluded.refs",
-            (out_id, template_id, source_image_id, payload),
+            " refs=excluded.refs,"
+            " prompt=excluded.prompt,"
+            " slot_prompts=excluded.slot_prompts",
+            (out_id, template_id, source_image_id, payload, prompt_text,
+             json.dumps(slots, ensure_ascii=False)),
         )
         written += 1
     conn.commit()
@@ -135,7 +165,8 @@ def lookup(image_id: int) -> dict[str, Any]:
     这样换数据目录重扫把 path 全弄断的库也有第二次机会。
     """
     row = get_pool().main().execute(
-        "SELECT template_id, source_image_id, refs FROM clone_sources WHERE image_id=?",
+        "SELECT template_id, source_image_id, refs, prompt, slot_prompts"
+        " FROM clone_sources WHERE image_id=?",
         (image_id,),
     ).fetchone()
     origin = ""
@@ -143,6 +174,9 @@ def lookup(image_id: int) -> dict[str, Any]:
     dropped = 0
     template_id = row["template_id"] if row else None
     source_image_id = row["source_image_id"] if row else None
+    # 提示词只有库里这一份来源：文件带不带走看运气，记下来的那次一定说得准。
+    prompt_text = str(row["prompt"] or "") if row is not None else ""
+    slot_prompts = _json_dict(row["slot_prompts"]) if row is not None else {}
     if row is not None:
         refs, dropped = _from_row(row["refs"])
         if refs:
@@ -161,7 +195,20 @@ def lookup(image_id: int) -> dict[str, Any]:
         "references": refs,
         "dropped": dropped,
         "origin": origin,
+        "prompt": prompt_text,
+        "slot_prompts": slot_prompts,
     }
+
+
+def _json_dict(raw: Any) -> dict[str, str]:
+    """库里存的那份 JSON 对象，读坏了就当空。"""
+    try:
+        data = json.loads(raw or "{}")
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(k): str(v) for k, v in data.items() if isinstance(v, (str, int, float))}
 
 
 def _from_row(raw: Any) -> tuple[list[dict[str, Any]], int]:

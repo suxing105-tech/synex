@@ -41,7 +41,9 @@ UPLOADABLE_SUFFIXES: dict[str, set[str]] = {
 }
 UPLOAD_KIND_NAMES = {"image": "图片", "audio": "音频", "video": "视频"}
 # VHS_VideoCombine 回的是 gifs，SaveImage 回的是 images，三类都读一遍再按文件去重。
-OUTPUT_HISTORY_KEYS = ("images", "gifs", "videos", "audios")
+# 单数 audio 也得读：SaveAudioAdvanced / SaveAudio / PreviewAudio 的历史里用的是
+# {"audio": [...]}（真机实测），只找 audios 的话音频跑完只会得到一句「没交回产物」。
+OUTPUT_HISTORY_KEYS = ("images", "gifs", "videos", "audios", "audio")
 
 _job: dict[str, Any] | None = None
 _task: asyncio.Task | None = None
@@ -120,8 +122,8 @@ def media_kind_of(media_id: int) -> str:
     return str(row["kind"] or "") if row else ""
 
 
-def plan_request(*, template_id: int, references: list[dict],
-                 controls: dict | None) -> tuple[dict, str]:
+def plan_request(*, template_id: int, references: list[dict], controls: dict | None,
+                 slot_prompts: dict | None = None) -> tuple[dict, str]:
     """先按模板槽位把请求校验一遍，避免把注定失败的请求丢给 ComfyUI。
 
     生成方式不是请求里的一个选项，是参考图数量的函数：0 张文生图、1 张单图编辑、
@@ -165,6 +167,13 @@ def plan_request(*, template_id: int, references: list[dict],
     for key in (controls or {}):
         if key not in control_keys:
             raise ValueError(f"{key} 不是这份工作流声明的控件，关掉弹窗重开一次试试。")
+    # 文字位同理：多一个键就是有人在往工作流里没声明的地方塞话（主提示词之外的第二段文字，
+    # 比如音色克隆的原话）。让它失败，别静默丢掉用户填的那一段。
+    prompt_keys = {clone_templates.slot_key(s): str(s.get("label") or "")
+                   for s in slots if s.get("kind") == "prompt"}
+    for key in (slot_prompts or {}):
+        if key not in prompt_keys:
+            raise ValueError(f"{key} 不是这份工作流的文字位，关掉弹窗重开一次试试。")
     return template, mode
 
 
@@ -175,11 +184,13 @@ async def start(
     references: list[dict],
     controls: dict | None,
     source_image_id: int | None,
+    slot_prompts: dict | None = None,
 ) -> dict:
     global _job, _task
     # 先按槽位校验，再管忙不忙：参数写错了就该告诉用户哪儿写错，而且换个调用方也绕不过
     template, mode = plan_request(
         template_id=template_id, references=references, controls=controls,
+        slot_prompts=slot_prompts,
     )
     async with _lock:
         if _job and _job.get("state") in RUNNING_STATES:
@@ -207,6 +218,9 @@ async def start(
             "template_id": template_id,
             "source_image_id": source_image_id,
             "prompt": prompt,
+            # 主框之外那些单独命名的文字位（音色克隆的参考原话）各填各的，
+            # 没填的才跟着主提示词走——工作流里的原话不能被台词冲掉。
+            "slot_prompts": {str(k): str(v) for k, v in (slot_prompts or {}).items()},
             "references": [dict(ref) for ref in references],
             "controls": dict(controls or {}),
             "mode": mode,
@@ -270,6 +284,7 @@ async def _run(job: dict, url: str) -> None:
             template["nodes"],
             slots,
             prompt=job["prompt"],
+            slot_prompts=job.get("slot_prompts") or None,
             references=references,
             controls=job["controls"] or None,
             info=info,
@@ -294,9 +309,10 @@ async def _run(job: dict, url: str) -> None:
         await _set(job, state="downloading", message="登记生成结果…")
         ids, missing, produced = await _collect_outputs(outputs)
         if not ids and not missing:
-            raise ValueError("ComfyUI 跑完了但没交回产物，检查这份工作流里有没有保存图像/视频的节点。")
-        counter = "条" if job.get("media_kind") == "video" else "张"
-        noun = "产物" if job.get("media_kind") == "video" else "图"
+            raise ValueError("ComfyUI 跑完了但没交回产物，检查这份工作流里有没有保存图像/视频/音频的节点。")
+        kind = str(job.get("media_kind") or "")
+        counter = "条" if kind in ("video", "audio") else "张"
+        noun = "产物" if kind in ("video", "audio") else "图"
         message = f"已生成 {len(ids)} {counter}" if ids else f"{noun}已经在 ComfyUI 输出目录，没在图库监听目录里"
         if missing:
             message += "；没收进图库：" + "、".join(missing[:2])
@@ -479,14 +495,16 @@ def _register_output(path: Path) -> int | None:
 
 
 def _record_sources(job: dict, image_ids: list[int]) -> None:
-    """登记「这批成图当初喂了哪几张参考图」。失败只写日志：来源只是替用户省一次重新选图，
-    不能因为它把已经出好的图说成生成失败。"""
+    """登记「这批产出当初喂了哪几张参考、说了哪几句话」。失败只写日志：来源只是替用户省一次
+    重新选图和重新打字，不能因为它把已经出好的东西说成生成失败。"""
     try:
         clone_sources.record(
             image_ids=image_ids,
             template_id=job.get("template_id"),
             source_image_id=job.get("source_image_id"),
             references=job.get("references") or [],
+            prompt=str(job.get("prompt") or ""),
+            slot_prompts=job.get("slot_prompts") or {},
         )
     except Exception as exc:  # noqa: BLE001 - 图已经出来了，记不上来源不值得惊动用户
         log.warning("clone sources record failed: %s", exc)

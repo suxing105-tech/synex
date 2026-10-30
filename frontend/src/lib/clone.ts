@@ -15,8 +15,11 @@ import type { ImageDetail, ImageSummary } from "./types";
 export type CloneSlotKind = "prompt" | "image" | "audio" | "video" | "select" | "number";
 /** 参考素材的三族：图片和音频和视频各排各的号，弹窗一行一族。 */
 export type RefKind = "image" | "audio" | "video";
-/** 这份工作流出的是图还是片子。它决定弹窗默认给哪一类卡片、@ 引用插什么标签。 */
-export type MediaKind = "image" | "video";
+/**
+ * 这份工作流出的是图、片子还是一段声音。它决定弹窗默认给哪一族卡片、
+ * 工作流菜单里的徒标，以及 @ 引用插什么标签（只有 H3 那类视频工作流认尖括号）。
+ */
+export type MediaKind = "image" | "video" | "audio";
 export const REF_KINDS: RefKind[] = ["image", "audio", "video"];
 export const REF_KIND_NAMES: Record<RefKind, string> = { image: "图片", audio: "音频", video: "视频" };
 /** 三族的量词：量词跟着族走，在一堆「张」里挑一段音频，读着就别扭。 */
@@ -76,6 +79,125 @@ export function isVideoTemplate(template: CloneTemplate | null | undefined): boo
   return (template?.media_kind ?? "image") === "video";
 }
 
+export function isAudioTemplate(template: CloneTemplate | null | undefined): boolean {
+  return (template?.media_kind ?? "image") === "audio";
+}
+
+/** 工作流属哪一族；库里没带 media_kind 的老模板一律当图片（行为与历史一致）。 */
+export function templateMediaKind(template: CloneTemplate | null | undefined): MediaKind {
+  const kind = template?.media_kind ?? "image";
+  return kind === "video" || kind === "audio" ? kind : "image";
+}
+
+/**
+ * 音频弹窗顶上那排「模式」按钮吃的是哪几条工作流：出声音的那一族全列出来。
+ * 参考音色 / 音色描述 / 指定音色是三份不同模型的工作流，不是一个能中途改的开关
+ * （中途换要重载模型），所以按钮换的就是模板本身，不假装成一个参数。
+ */
+export function audioModeTemplates(
+  templates: readonly CloneTemplate[] | null | undefined,
+): CloneTemplate[] {
+  return (templates ?? []).filter((item) => templateMediaKind(item) === "audio");
+}
+
+/** 音频族在「切换工作流」清单里折叠成一条时用的族名——三种出声方式共用一个入口。 */
+export const AUDIO_MODE_GROUP_LABEL = "\u95ea\u5bfb\u97f3\u9891";
+
+/**
+ * 「切换工作流」那一列的行。图片、视频各列各的；音频族超过一条时**收成一条**（闪寻音频）。
+ *
+ * 出声音的那几条不是几份可换的配方，是同一件事的三种模式，而模式已经有弹窗顶上那排按钮了——
+ * 清单里再列三条，用户就要在两个地方选同一件事，还得先想明白「音色描述」和「指定音色」谁在工作流列表里。
+ * 只有一条音频工作流时照旧按名字列（那时候顶上根本没有模式按钮，藏名字就等于让人认错工作流）。
+ *
+ * targetId = 点这一条要落到的那条工作流：先看这条族里库里标的「当前」，其次现在弹窗正在用的，最后第一条。
+ */
+export interface WorkflowMenuRow {
+  /** 渲染用的稳定 key */
+  key: string;
+  kind: MediaKind;
+  label: string;
+  /** 族内所有工作流的 id；当前弹窗用的那条落在里面时这一条要标「当前」 */
+  memberIds: number[];
+  targetId: number;
+  collapsed: boolean;
+}
+
+export function workflowMenuRows(
+  templates: readonly CloneTemplate[] | null | undefined,
+  currentId?: number | null,
+): WorkflowMenuRow[] {
+  const list = (templates ?? []).filter((item) => item.id != null);
+  const audio = list.filter((item) => templateMediaKind(item) === "audio");
+  const collapse = audio.length > 1;
+  const target =
+    audio.find((item) => item.is_active) ??
+    audio.find((item) => item.id === currentId) ??
+    audio[0];
+  const rows: WorkflowMenuRow[] = [];
+  let emittedAudio = false;
+  for (const item of list) {
+    const kind = templateMediaKind(item);
+    if (kind !== "audio") {
+      rows.push({
+        key: String(item.id),
+        kind,
+        label: templateDisplayName(item.name),
+        memberIds: [item.id as number],
+        targetId: item.id as number,
+        collapsed: false,
+      });
+      continue;
+    }
+    if (!collapse) {
+      rows.push({
+        key: String(item.id),
+        kind,
+        label: templateDisplayName(item.name),
+        memberIds: [item.id as number],
+        targetId: item.id as number,
+        collapsed: false,
+      });
+      continue;
+    }
+    if (emittedAudio) continue;
+    emittedAudio = true;
+    rows.push({
+      key: "audio-group",
+      kind: "audio",
+      label: AUDIO_MODE_GROUP_LABEL,
+      memberIds: audio.map((item) => item.id as number),
+      targetId: (target?.id ?? audio[0]?.id) as number,
+      collapsed: true,
+    });
+  }
+  return rows;
+}
+
+/**
+ * 弹窗标题与底部那颗胶囊上的名字：当前工作流在「切换工作流」清单里叫什么，这两处就叫什么。
+ *
+ * 清单里三条音频折成一条「闪寻音频」，底下那颗也必须叫「闪寻音频」——同一个弹窗里两种叫法，
+ * 用户会以为清单那一行和底部这颗管的是两件事（2026-10-30 苏醒点名：三种模式底下都要同步）。
+ * 具体是哪一种出声方式由弹窗顶上那排按钮的高亮说，全名留在悬浮提示与设置页。
+ */
+export function workflowDisplayName(
+  templates: readonly CloneTemplate[] | null | undefined,
+  current: CloneTemplate | null | undefined,
+): string {
+  const id = current?.id ?? null;
+  const row = id == null
+    ? undefined
+    : workflowMenuRows(templates, id).find((item) => item.memberIds.includes(id));
+  return row?.label ?? templateDisplayName(current?.name);
+}
+
+/** 按钮上的字：品牌前缀在这排按钮里是三份重复信息，去掉；去掉就空了则用全名。 */
+export function audioModeLabel(name: string): string {
+  const full = templateDisplayName(name);
+  return full.replace(/^闪寻/, "").trim() || full;
+}
+
 /**
  * 给用户看的工作流名字。
  *
@@ -83,6 +205,15 @@ export function isVideoTemplate(template: CloneTemplate | null | undefined): boo
  * 显示出来只会让底部那颗 pill 白白变长、切换列表里两条看着一模一样。库里已有的名字
  * 也走这里，用户不必为了去掉后缀重导一遍。
  */
+/** 工作流徒标与弹窗菜单里称呼一族；三族并列时不能只有「图片/视频」两个词。 */
+export const WF_KIND_WORDS: Record<MediaKind, string> = { image: "图片", video: "视频", audio: "音频" };
+export const WF_OUTPUT_WORDS: Record<MediaKind, string> = { image: "出图", video: "出片", audio: "出声音" };
+
+/** 后端回的产出族别只认这三个值，其实不是就当未知（空串）。 */
+function asOutputKind(value: unknown): MediaKind | "" {
+  return value === "image" || value === "video" || value === "audio" ? value : "";
+}
+
 export function templateDisplayName(name: string | null | undefined): string {
   const base = (name ?? "").trim();
   return base.replace(/\.json$/i, "").trim() || base;
@@ -190,7 +321,7 @@ export function applyCloneProgress(payload: unknown): CloneJob {
         }))
         .filter((item) => Number.isInteger(item.id) && item.id > 0)
       : [],
-    media_kind: raw.media_kind === "video" ? "video" : raw.media_kind === "image" ? "image" : "",
+    media_kind: asOutputKind(raw.media_kind),
     template_id: raw.template_id === null || raw.template_id === undefined ? null : Number(raw.template_id),
     source_image_id: raw.source_image_id === null || raw.source_image_id === undefined ? null : Number(raw.source_image_id),
     elapsed: Number(raw.elapsed ?? 0) || 0,
@@ -222,7 +353,8 @@ export function cloneStatusLabel(job: CloneJob): string {
   if (!job.state) return "";
   const label = STATE_LABELS[job.state];
   const count = job.outputs.length || job.image_ids.length;
-  const counter = job.media_kind === "video" ? "条" : "张";
+  // 声音也说「条」：一段配音说「一张」比说「一条」更别扭。
+  const counter = job.media_kind === "video" || job.media_kind === "audio" ? "条" : "张";
   if (job.state === "done" && count) return `${label} ${count} ${counter}`;
   if (job.running) {
     // 「生成中 · 3分12秒」：视频要等十分钟级，不给个走动的秒数，用户只会以为卡死了。
@@ -246,6 +378,141 @@ export function slotKey(slot: Pick<CloneSlot, "node" | "input">): string {
 
 export function promptSlots(template: CloneTemplate | null | undefined): CloneSlot[] {
   return (template?.slots ?? []).filter((s) => s.kind === "prompt");
+}
+
+/** 弹窗顶上那个大框的槽位标签，与后端 clone_templates.PRIMARY_PROMPT_LABEL 同一个词。 */
+export const PRIMARY_PROMPT_LABEL = "完整提示词";
+
+export interface PromptGroup {
+  label: string;
+  /** 这一框的话要写进哪些文字位（「节点.输入」）；同名的文字位共用一框。 */
+  keys: string[];
+  /** 工作流里此刻写着的那段字：弹窗拿它预填，用户不碰就原样交回去。 */
+  value: string;
+  /** true = 顶上那个大框（要生成什么）；其余是附框，例如音色克隆的「参考音频的文本」。 */
+  primary: boolean;
+}
+
+/**
+ * 按标签把工作流的文字位分成几个框。
+ *
+ * 为什么不能只有一个框：音色克隆那类节点要两段文字——要说的话 + 参考音频里的原话。
+ * 合成一框就等于用户改台词的同时把原话冲掉，克隆出来的音色立刻不像了。
+ * 主框认标签（后端保证一台节点只有一个主框），万一整条工作流没有主框标签就退回第一组，
+ * 免得那条工作流在弹窗里填不进字。
+ */
+export function promptGroups(template: CloneTemplate | null | undefined): PromptGroup[] {
+  const groups: PromptGroup[] = [];
+  const byLabel = new Map<string, PromptGroup>();
+  for (const slot of promptSlots(template)) {
+    const label = (slot.label ?? "").trim() || PRIMARY_PROMPT_LABEL;
+    let group = byLabel.get(label);
+    if (!group) {
+      group = {
+        label,
+        keys: [],
+        value: typeof slot.value === "string" ? slot.value : "",
+        primary: false,
+      };
+      byLabel.set(label, group);
+      groups.push(group);
+    }
+    group.keys.push(slotKey(slot));
+  }
+  const primary = groups.find((g) => g.label === PRIMARY_PROMPT_LABEL) ?? groups[0];
+  if (primary) primary.primary = true;
+  return groups;
+}
+
+/** 主框对应的那组文字位；这条工作流没有文字位时 null。 */
+export function primaryPromptGroup(template: CloneTemplate | null | undefined): PromptGroup | null {
+  return promptGroups(template).find((g) => g.primary) ?? null;
+}
+
+/** 主框之外的附框（音色克隆的参考原话就在这儿）。 */
+export function secondaryPromptGroups(template: CloneTemplate | null | undefined): PromptGroup[] {
+  return promptGroups(template).filter((g) => !g.primary);
+}
+
+/**
+ * 附框的初始值。预填的是工作流里那段原文本身，不是空框：空框等于让后端把原话
+ * 回落成台词，用户没动那个框，音色却变了。
+ */
+export function defaultPromptGroupValues(template: CloneTemplate | null | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const group of secondaryPromptGroups(template)) {
+    if (!group.value) continue;
+    for (const key of group.keys) out[key] = group.value;
+  }
+  return out;
+}
+
+/**
+ * 附框该摆哪句：工作流里此刻写着的那段打底，生成当时记下的那句盖在上面——
+ * 重开「同款」要看到的是当初那句原话，不是别人后来改过的工作流默认值。
+ * 只认这条工作流真有的附框键：换到别的工作流时不能把上一家的键带过去，
+ * 后端认那些键不存在的请求会直接 400。
+ */
+export function promptGroupValues(
+  template: CloneTemplate | null | undefined,
+  recorded?: Record<string, string> | null,
+): Record<string, string> {
+  const out = defaultPromptGroupValues(template);
+  if (!recorded) return out;
+  for (const group of secondaryPromptGroups(template)) {
+    for (const key of group.keys) {
+      const value = recorded[key];
+      if (typeof value === "string" && value.trim()) out[key] = value;
+    }
+  }
+  return out;
+}
+
+/** 参考音频原话那一格的标签，与后端 clone_templates.SECONDARY_PROMPT_KEYS 的取值一致。 */
+export const REFERENCE_TRANSCRIPT_LABEL = "\u53c2\u8003\u97f3\u9891\u7684\u6587\u672c";
+/** 用文字描述音色那一格（VoiceDesign 的 instruct），同样与后端那张键名表同词。 */
+export const VOICE_DESIGN_LABEL = "\u97f3\u8272\u63cf\u8ff0";
+/** 「指定音色」那条工作流里可选的语气/风格那一格。 */
+export const VOICE_STYLE_LABEL = "\u8bed\u6c14\u4e0e\u98ce\u683c";
+
+/**
+ * 附框下面那句解释。只认得出用途的那种才说得出人话——别的附框（工作流自己多出来的
+ * 第二段文字）用途不明，硬编一句「照原话填」就是瞎指挥。
+ */
+export function promptGroupHint(label: string): string {
+  if (label === REFERENCE_TRANSCRIPT_LABEL)
+    return "\u8fd9\u4e00\u683c\u586b\u7684\u662f\u53c2\u8003\u97f3\u9891\u91cc\u8bf4\u7684\u90a3\u53e5\u539f\u8bdd\uff0c\u4e0d\u662f\u53f0\u8bcd\uff1b\u586b\u9519\u4e86\u97f3\u8272\u4f1a\u660e\u663e\u8dd1\u504f\u3002";
+  if (label === VOICE_DESIGN_LABEL)
+    return "\u8fd9\u4e00\u683c\u51b3\u5b9a\u58f0\u97f3\u957f\u4ec0\u4e48\u6837\uff08\u6027\u522b\u3001\u5e74\u9f84\u3001\u6c14\u8d28\u3001\u8bed\u6c14\uff09\uff0c\u4e0a\u9762\u90a3\u683c\u51b3\u5b9a\u5ff5\u4ec0\u4e48\uff1b\u522b\u628a\u53f0\u8bcd\u5199\u8fdb\u6765\u3002";
+  if (label === VOICE_STYLE_LABEL)
+    return "\u53ef\u4ee5\u7559\u7a7a\u3002\u60f3\u8c03\u8bed\u6c14\u3001\u60c5\u7eea\u6216\u8bed\u901f\u5c31\u5728\u8fd9\u91cc\u8bf4\u4e00\u53e5\uff0c\u4e0d\u5199\u5c31\u6309\u9ed8\u8ba4\u8bf4\u8bdd\u65b9\u5f0f\u3002";
+  return "";
+}
+
+/**
+ * 附框的占位语。「留空则跟随上面那段提示词」只对参考原话成立：
+ * 音色描述留空＝没告诉模型想要什么声音，语气留空＝按默认说话方式，
+ * 三种附框共用一句就是骗人。
+ */
+export function promptGroupPlaceholder(label: string): string {
+  if (label === VOICE_DESIGN_LABEL)
+    return "\u5fc5\u586b\uff1a\u60f3\u8981\u4ec0\u4e48\u6837\u7684\u58f0\u97f3\uff0c\u4f8b\u5982\u300c\u5e74\u8f7b\u5973\u6027\uff0c\u6e29\u67d4\uff0c\u8bed\u901f\u504f\u6162\u300d";
+  if (label === VOICE_STYLE_LABEL)
+    return "\u53ef\u7559\u7a7a\uff1a\u60f3\u8c03\u8bed\u6c14\u3001\u60c5\u7eea\u6216\u8bed\u901f\u5c31\u8bf4\u4e00\u53e5";
+  return "\u7559\u7a7a\u5219\u8ddf\u968f\u4e0a\u9762\u90a3\u6bb5\u63d0\u793a\u8bcd";
+}
+
+/** 提示词框的提示语：出声音的工作流别问「要生成什么画面」。 */
+export function promptPlaceholder(
+  mediaKind: MediaKind | undefined = "image",
+  refNoun = "参考图片",
+  hasRefs = true,
+): string {
+  const ask = mediaKind === "audio" ? "要念什么" : "要生成什么画面";
+  // 一个参考位都没有的工作流（音色描述、指定音色）里 @ 点了不会出东西，
+  // 提示语就不许再写「打 @ 可以引用」。
+  if (!hasRefs) return ask;
+  return ask + "，打 @ 可以引用" + refNoun;
 }
 
 export function imageSlots(template: CloneTemplate | null | undefined): CloneSlot[] {
@@ -287,9 +554,18 @@ const CLONE_VIDEO_MODE_LABELS: Record<CloneMode, string> = {
   single: "图生视频",
   multi: "多参考视频",
 };
+const CLONE_AUDIO_MODE_LABELS: Record<CloneMode, string> = {
+  text: "文本配音",
+  single: "参考音色克隆",
+  multi: "多参考音频",
+};
 
 export function modeLabel(mode: CloneMode, mediaKind: MediaKind | undefined = "image"): string {
-  const table = mediaKind === "video" ? CLONE_VIDEO_MODE_LABELS : CLONE_MODE_LABELS;
+  const table = mediaKind === "video"
+    ? CLONE_VIDEO_MODE_LABELS
+    : mediaKind === "audio"
+      ? CLONE_AUDIO_MODE_LABELS
+      : CLONE_MODE_LABELS;
   return table[mode] ?? mode;
 }
 
@@ -521,17 +797,29 @@ export function defaultReferences(
 /** 这份工作流是不是只有图片一族（＝图片一键同款的老样子）。 */
 export function isImageOnlyRefs(template: CloneTemplate | null | undefined): boolean {
   const families = referenceFamilies(template);
-  return !isVideoTemplate(template) && families.length <= 1;
+  if (families.some((family) => family !== "image")) return false;
+  return !isVideoTemplate(template) && !isAudioTemplate(template);
+}
+
+/** 音频工作流且只有音频一族：叙述里直接说「参考音频/一段」，别泛称「参考素材」。 */
+export function isAudioOnlyRefs(template: CloneTemplate | null | undefined): boolean {
+  const families = referenceFamilies(template);
+  if (families.some((family) => family !== "audio")) return false;
+  return isAudioTemplate(template);
 }
 
 /** 报错文案里怎么称呼参考素材：视频工作流里说「参考图」是骗人。 */
 export function referenceNoun(template: CloneTemplate | null | undefined): string {
-  return isImageOnlyRefs(template) ? "参考图" : "参考素材";
+  if (isImageOnlyRefs(template)) return "参考图";
+  if (isAudioOnlyRefs(template)) return "参考音频";
+  return "参考素材";
 }
 
 /** 量词跟着称呼走：三族素材混在一起时别硬说「一张」。 */
 export function referenceCounter(template: CloneTemplate | null | undefined): string {
-  return isImageOnlyRefs(template) ? "张" : "份";
+  if (isImageOnlyRefs(template)) return "张";
+  if (isAudioOnlyRefs(template)) return "段";
+  return "份";
 }
 
 /**
@@ -575,6 +863,8 @@ export function defaultControlValues(template: CloneTemplate | null | undefined)
 export interface GenerateRequest {
   template_id: number;
   prompt: string;
+  /** 主框之外的文字位（键 =「节点.输入」）；没有附框就不带这个键。 */
+  slot_prompts?: Record<string, string>;
   references: { slot: string; image_id: number }[];
   controls: Record<string, string | number>;
   source_image_id: number | null;
@@ -592,6 +882,8 @@ export function buildGenerateRequest(args: {
   sourceImageId: number | null;
   /** referenceCells 的 key 顺序；不传就按 references 里已有的键序 */
   cellOrder?: string[];
+  /** 附框（参考音频的原话等）填的内容；空的那几条不提交，让后端回落成主提示词 */
+  slotPrompts?: Record<string, string>;
 }): GenerateRequest {
   const rawReferences: { slot: string; image_id: number }[] = [];
   for (const [slot, image] of Object.entries(args.references)) {
@@ -605,31 +897,47 @@ export function buildGenerateRequest(args: {
   const order = new Map((args.cellOrder ?? Object.keys(args.references)).map((key, index) => [key, index]));
   const references = rawReferences
     .sort((a, b) => (order.get(a.slot) ?? 0) - (order.get(b.slot) ?? 0));
-  return { template_id: args.templateId, prompt: args.prompt.trim(), references, controls, source_image_id: args.sourceImageId };
+  const slotPrompts: Record<string, string> = {};
+  for (const [key, value] of Object.entries(args.slotPrompts ?? {})) {
+    if (typeof value === "string" && value.trim()) slotPrompts[key] = value;
+  }
+  const request: GenerateRequest = { template_id: args.templateId, prompt: args.prompt.trim(), references, controls, source_image_id: args.sourceImageId };
+  // 没有附框的工作流不该凭空多出一个键：老请求体一字不改，测试与后端都按原样认。
+  if (Object.keys(slotPrompts).length) request.slot_prompts = slotPrompts;
+  return request;
 }
 
 // ---------- 提示词来源 ----------
 
-export type PromptOrigin = "image" | "none";
+export type PromptOrigin = "image" | "recorded" | "none";
 
 /**
- * 预填顺序：这张图自带的 ComfyUI 提示词 → 最新一条反推提示词 → 空。
+ * 预填顺序：这张产出自带的 ComfyUI 提示词 → 当初生成时记下的那句 → 最新一条反推提示词 → 空。
+ * 中间那条为什么要有：flac 之类的产出带不走提示词（PNG 有 tEXt、片子有元数据），
+ * 不记下来，点「一键同款」就是一句空白的台词。
  * 工作流内置那条不自动填：换了参考图之后，工作流里的原文十有八九对不上内容；
  * 但给一个按钮让人一键填回来（见 shouldOfferWorkflowPrompt）。
  */
 export function resolvePromptSource(input: {
   imagePrompt?: string | null;
   reversePrompt?: string | null;
+  /** 生成当时记在来源里的那句：音频文件带不走提示词，只有这条路说得清。 */
+  recordedPrompt?: string | null;
 }): { text: string; origin: PromptOrigin } {
   const image = (input.imagePrompt ?? "").trim();
   if (image) return { text: image, origin: "image" };
+  // 记下来的那句排在反推前面：反推是看图猜的，记下来的是当初真喂进去的
+  const recorded = (input.recordedPrompt ?? "").trim();
+  if (recorded) return { text: recorded, origin: "recorded" };
   const reverse = (input.reversePrompt ?? "").trim();
   if (reverse) return { text: reverse, origin: "image" };
   return { text: "", origin: "none" };
 }
 
 export function promptSourceLabel(origin: PromptOrigin): string {
-  return origin === "image" ? "已带上这张图自己的提示词" : "提示词为空时会用工作流里内置的那条";
+  if (origin === "image") return "已带上这张图自己的提示词";
+  if (origin === "recorded") return "已带上当初生成时用的提示词";
+  return "提示词为空时会用工作流里内置的那条";
 }
 
 /** 提示词框下面的「填入工作流内置提示词」什么时候出现。 */
@@ -649,10 +957,64 @@ export function latestReversePrompt(items: { prompt_zh?: string | null }[] | und
 // ---------- 参数面板（弹窗底部那颗 pill 弹出来的菜单） ----------
 
 /** 去掉 ComfyUI 选项里括号中的说明：「9:16 (Portrait Widescreen)」→「9:16」。 */
+/**
+ * ComfyUI 的 combo 选项常常是英文原名（语种最典型：Auto / Chinese / Japanese）。
+ * 面板上按中文念，提交给 ComfyUI 的仍然是原值——翻译只发生在显示这一层。
+ * 认不出的照原样显示，绝不猜：宁可多一个英文词，也不能把某个自定义选项翻译成奇怪的东西。
+ */
+const LANGUAGE_LABELS: Record<string, string> = {
+  auto: "自动", none: "不指定", default: "默认", multilingual: "多语种",
+  chinese: "中文", zh: "中文", mandarin: "普通话", cantonese: "粤语", yue: "粤语",
+  english: "英文", en: "英文", japanese: "日文", ja: "日文", korean: "韩文", ko: "韩文",
+  german: "德文", de: "德文", french: "法文", fr: "法文", spanish: "西班牙文", es: "西班牙文",
+  italian: "意大利文", it: "意大利文", portuguese: "葡萄牙文", pt: "葡萄牙文",
+  russian: "俄文", ru: "俄文", thai: "泰文", th: "泰文", vietnamese: "越南文", vi: "越南文",
+  arabic: "阿拉伯文", ar: "阿拉伯文", hindi: "印地文", hi: "印地文",
+};
+
+export function languageLabel(option: string): string {
+  const key = String(option ?? "").trim().toLowerCase().replace(/[_\s]+/g, " ");
+  return LANGUAGE_LABELS[key] ?? "";
+}
+
 export function optionLabel(option: string): string {
   const text = String(option ?? "").trim();
   const cut = text.search(/[（(\[]/);
-  return (cut > 0 ? text.slice(0, cut).trim() : text) || text;
+  const base = (cut > 0 ? text.slice(0, cut).trim() : text) || text;
+  // 语种这类选项在这里换成中文；括号后缀（比如「Chinese（中文）」）已经先被切掉了
+  const zh = languageLabel(base);
+  if (zh) return zh;
+  // 音色那类下拉的选项是模型内部的名字（Uncle_Fu、Ono_Anna）：下划线在按钮里读着像代码，
+  // 换成空格。认不出是谁就照原样显示，绝不替模型编一个中文人名。
+  return base.replace(/_+/g, " ").trim() || base;
+}
+
+/**
+ * 九个内置音色的人脸头像（Qwen3-TTS CustomVoice 自带的那九个）。
+ *
+ * 为什么靠「选项自己认得出是谁」而不是看槽位标签：标签是用户在 ComfyUI 里随手可改的
+ * （「音色」改成「Speaker」面板就瞎了），选项值却是模型给的。认不出的一律回落到
+ * 原来那颗小圆点，绝不给陌生选项硬配一张脸。
+ *
+ * 图放在 frontend/public/voices/ 走静态托管（和 /logo.png 同一条路），路径就是文件名，
+ * 不进 import、不依赖打包哈希。键 = 显示名去掉空格下划线后的小写。
+ */
+const VOICE_AVATARS: Record<string, string> = {
+  vivian: "/voices/vivian.webp",
+  serena: "/voices/serena.webp",
+  unclefu: "/voices/uncle-fu.webp",
+  dylan: "/voices/dylan.webp",
+  eric: "/voices/eric.webp",
+  ryan: "/voices/ryan.webp",
+  aiden: "/voices/aiden.webp",
+  onoanna: "/voices/ono-anna.webp",
+  sohee: "/voices/sohee.webp",
+};
+
+/** 「Uncle_Fu」「Ono_Anna（日语）」这类选项 → 头像路径；认不出返回 null。 */
+export function voiceAvatar(option: string): string | null {
+  const key = optionLabel(option).toLowerCase().replace(/[^a-z0-9]/g, "");
+  return VOICE_AVATARS[key] ?? null;
 }
 
 const RATIO_PATTERN = /^\s*(\d+(?:\.\d+)?)\s*[:：xX×]\s*(\d+(?:\.\d+)?)\s*$/;
@@ -748,6 +1110,10 @@ export interface CloneSources {
   source_image_id: number | null;
   dropped: number;
   origin?: CloneSourceOrigin;
+  /** 当初提交的那句提示词。音频（以及任何不带元数据的产出）只能从这里拿回来。 */
+  prompt?: string;
+  /** 附框当初的值，键是「节点.输入」。只用于当初那条工作流。 */
+  slot_prompts?: Record<string, string>;
 }
 
 export const CLONE_SETTINGS_TAB = "一键同款";

@@ -394,6 +394,13 @@ def test_generate_validates_before_touching_comfyui(client):
         "references": [{"slot": "543.image", "image_id": 1}], "controls": {"582.prompt": "x"},
     })
     assert unknown_control.status_code == 400
+    # 文字位同理：工作流没声明的地方不许塞话，用户填了就得有个说法，不能静默丢
+    unknown_text = client.post("/api/clone/generate", json={
+        "template_id": row["id"], "prompt": "x",
+        "references": [{"slot": "543.image", "image_id": 1}],
+        "slot_prompts": {"999.ref_text": "参考音频里的原话"},
+    })
+    assert unknown_text.status_code == 400 and "999.ref_text" in unknown_text.json()["detail"]
 
 
 def test_generate_refuses_without_comfyui_and_reports_busy_state(client, monkeypatch, tmp_path):

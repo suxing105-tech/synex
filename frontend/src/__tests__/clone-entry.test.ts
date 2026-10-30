@@ -74,7 +74,7 @@ it('图片卡文件名右边常驻一键同款图标，点它只开弹窗、不�
   expect([...get(multiSelectedIds)]).toEqual([]);
 });
 
-it('角标的尺寸与位置照抄音频播放键：同尺寸公式、同右下角、在页脚高度里同垂直居中', () => {
+it('角标的尺寸沿用音频角标那套公式，位置是页脚右下角（播放键已挪进画面左下角）', () => {
   // 角标样式在全局 app.css，音频播放键的规范在 Feed.svelte 的 scoped style 里，两边都要读
   const appCss = readFileSync('src/app.css', 'utf8');
   const feedCss = readFileSync('src/components/Feed.svelte', 'utf8');
@@ -110,20 +110,54 @@ it('角标不加边框也不加底色，悬停只是图标变品牌色，焦点�
   expect(/\.media-clone-btn:focus,\s*\.media-clone-btn:focus-visible \{\s*outline: none;/.test(block)).toBe(true);
 });
 
-it('视频卡挂同一颗一键同款角标，音频卡不挂：音频没有能喂给工作流的加载器', async () => {
+it('三类卡挂同一颗一键同款角标，量词按族：一张 / 一条 / 一段', async () => {
   const screen = await openFeed([
     card({ id: 2, kind: 'video', filename: 'v.mp4', original_url: null, thumbnail_url: '/api/videos/2/thumb', playable: false }),
-    card({ id: 3, kind: 'audio', filename: 'a.mp3', original_url: '/api/images/3/file' }),
+    card({ id: 3, kind: 'audio', filename: 'a.mp3', original_url: '/api/audio/3/file', thumbnail_url: '/api/audio/3/waveform' }),
   ]);
-  const btn = screen.getByRole('button', { name: '用同款工作流再生成一条' });
   // 入口的几何、常驻规则、is-cloneable 让位规则全部照图片卡，不另立一套
-  expect(btn.closest('.media-card')?.classList.contains('is-cloneable')).toBe(true);
-  expect(btn.closest('.media-card-footer')).toBeNull();
-  await fireEvent.click(btn);
+  for (const name of ['用同款工作流再生成一条', '用同款工作流再生成一段']) {
+    const btn = screen.getByRole('button', { name });
+    expect(btn.closest('.media-card')?.classList.contains('is-cloneable')).toBe(true);
+    expect(btn.closest('.media-card-footer')).toBeNull();
+    await fireEvent.click(btn);
+    await tick();
+    expect(screen.getByRole('dialog', { name: '一键同款' })).toBeTruthy();
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    await tick();
+    expect(screen.queryByRole('dialog', { name: '一键同款' })).toBeNull();
+  }
+});
+
+it('音频卡的播放角标挪进画面，右下角只留一键同款那一个控件', async () => {
+  const screen = await openFeed([
+    card({ id: 3, kind: 'audio', filename: 'a.mp3', original_url: '/api/audio/3/file', thumbnail_url: '/api/audio/3/waveform' }),
+  ]);
+  const cardEl = screen.getByRole('button', { name: '用同款工作流再生成一段' }).closest('.media-card') as HTMLElement;
+  await fireEvent.mouseEnter(cardEl);
+  await tick();
+  const play = screen.getByRole('button', { name: '播放 a.mp3' }) as HTMLElement;
+  expect(play.closest('.media-card-media')).toBeTruthy();
+  const clone = screen.getByRole('button', { name: '用同款工作流再生成一段' }) as HTMLElement;
+  expect(clone.closest('.media-card-media')).toBeNull();
+});
+
+it('窄列页脚不渲染时，音频卡也没有角标（与图片/视频同一条规则）', async () => {
+  const screen = await openFeed([
+    card({ id: 3, kind: 'audio', filename: 'a.mp3', original_url: '/api/audio/3/file', thumbnail_url: '/api/audio/3/waveform' }),
+  ], 300);
+  expect(screen.queryByRole('button', { name: /用同款工作流再生成/ })).toBeNull();
+});
+
+it('窄列下音频卡的右键菜单也能进一键同款', async () => {
+  const screen = await openFeed([
+    card({ id: 3, kind: 'audio', filename: 'a.mp3', original_url: '/api/audio/3/file', thumbnail_url: '/api/audio/3/waveform' }),
+  ], 300);
+  await fireEvent.contextMenu(screen.container.querySelector('.thumb')!, { clientX: 10, clientY: 10 });
+  await tick();
+  await fireEvent.click(screen.getByRole('menuitem', { name: '一键同款' }));
   await tick();
   expect(screen.getByRole('dialog', { name: '一键同款' })).toBeTruthy();
-  // 一整屏只有视频卡这一颗：音频卡没有入口，也不会冒出「再生成一段」这种第三种量词
-  expect(screen.getAllByRole('button', { name: /用同款工作流再生成/ })).toHaveLength(1);
 });
 
 /** Feed 渲染结果的具体类型：写成 ReturnType<typeof render> 会退化成通用查询签名，取不到元素类型。 */

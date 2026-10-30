@@ -52,6 +52,9 @@ class ReferenceInput(BaseModel):
 class GenerateInput(BaseModel):
     template_id: int
     prompt: str = Field(min_length=1, max_length=50000)
+    # 主提示词之外的文字位（键 = 「节点.输入」）。音色克隆那类工作流要两段文字：
+    # 台词进 prompt，参考音频里的原话进这里，不然原话会被台词冲掉，音色就不像了。
+    slot_prompts: dict[str, str] = Field(default_factory=dict)
     references: list[ReferenceInput] = Field(default_factory=list)
     controls: dict[str, Any] = Field(default_factory=dict)
     source_image_id: int | None = None
@@ -276,6 +279,7 @@ async def generate(payload: GenerateInput) -> dict:
         return await clone_jobs.start(
             template_id=payload.template_id,
             prompt=payload.prompt,
+            slot_prompts=payload.slot_prompts,
             references=references,
             controls=payload.controls,
             source_image_id=payload.source_image_id,

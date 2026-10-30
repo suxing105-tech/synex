@@ -13,7 +13,8 @@
   import SettingsRow from "./SettingsRow.svelte";
   import {
     cloneApi, cloneError, promptSlots, imageSlots, controlSlots, referenceCells, slotKey, templateDisplayName,
-    familyCells, isVideoTemplate, referenceFamilies, REF_KIND_NAMES,
+    familyCells, isAudioTemplate, isVideoTemplate, referenceFamilies, REF_KIND_NAMES,
+    templateMediaKind, WF_KIND_WORDS, WF_OUTPUT_WORDS,
     type CloneInspect, type CloneSlot, type CloneTemplate,
   } from "../lib/clone";
 
@@ -86,7 +87,7 @@
     const cells = referenceCells(tpl);
     const fams = referenceFamilies(tpl);
     if (!fams.length) return "没认出参考位";
-    if (fams.length === 1 && fams[0] === "image" && !isVideoTemplate(tpl)) return `${cells.length} 个参考位`;
+    if (fams.length === 1 && fams[0] === "image" && !isVideoTemplate(tpl) && !isAudioTemplate(tpl)) return `${cells.length} 个参考位`;
     return fams.map((kind) => `${REF_KIND_NAMES[kind]} ${familyCells(cells, kind).length} 格`).join(" / ");
   }
 
@@ -169,7 +170,8 @@
         media_kind: pending.inspect.media_kind ?? "image",
       });
       pending = null;
-      notice = `已导入「${templateDisplayName(saved.name)}」：${refSummary(saved)}。${isVideoTemplate(saved) ? "视频" : "图片"}卡右下角的图标就是它。`;
+      notice = `已导入「${templateDisplayName(saved.name)}」：${refSummary(saved)}。` 
+        + `${WF_KIND_WORDS[templateMediaKind(saved)]}卡右下角的图标就是它。`;
       await reload(true);
     } catch (e) {
       error = cloneError(e);
@@ -215,7 +217,7 @@
     // 三族参考位分开报，混成「15 个参考位」没人知道那是 9 图 + 3 音频 + 3 视频；
     // 只有图片一族时保持原来那句，顺带说清工作流原生能吃几张。
     let refs: string;
-    if (fams.length > 1 || isVideoTemplate(tpl)) {
+    if (fams.length > 1 || isVideoTemplate(tpl) || isAudioTemplate(tpl)) {
       refs = fams.map((kind) => `${REF_KIND_NAMES[kind]} ${familyCells(cells, kind).length}`).join(" / ") || "没有参考位";
     } else {
       const slots = imageSlots(tpl).length || tpl.reference_count || cells.length;
@@ -231,7 +233,7 @@
 </script>
 
 <div class="settings-card">
-  <SettingsRow title="同款工作流" description="图片卡与视频卡右下角的图标都是这个入口：图片卡用出图的工作流，视频卡用出片的工作流，两族各自记住「当前」那一条。导一次 ComfyUI 的 API 格式工作流，之后随时替换。" top>
+  <SettingsRow title="同款工作流" description="图片卡、视频卡与音频卡右下角的图标都是这个入口：每一族各自记住「当前」那一条——图片卡用出图的，视频卡用出片的，音频卡用出声音的。导一次 ComfyUI 的 API 格式工作流，之后随时替换。" top>
     {#snippet control()}
       <button class="setting-button" disabled={busy} onclick={() => void reload()}>重新读取</button>
     {/snippet}
@@ -254,7 +256,8 @@
                 <span class="clone-tpl-name" title={tpl.name}>{templateDisplayName(tpl.name)}</span>
                 <!-- 出片还是出图直接写在行首：它决定这条工作流给哪一类卡片当默认，
                      混在提示词位/参考位那串数字里根本看不见。 -->
-                <span class="clone-tpl-kind" class:is-video={isVideoTemplate(tpl)}>{isVideoTemplate(tpl) ? "视频" : "图片"}</span>
+                <span class="clone-tpl-kind" class:is-video={templateMediaKind(tpl) === "video"}
+                  class:is-audio={templateMediaKind(tpl) === "audio"}>{WF_KIND_WORDS[templateMediaKind(tpl)]}</span>
                 {#if tpl.is_active}<span class="clone-tpl-tag">当前</span>{/if}
                 {#if tpl.is_builtin}<span class="clone-tpl-tag clone-tpl-tag-builtin"
                   title="安装包自带的官方工作流。删掉就不会下次启动又装回来；自己改过之后，版本更新也不会覆盖你这份。">内置</span>{/if}
@@ -275,14 +278,18 @@
               <!-- 自动判定看的是产出节点（SaveVideo / VHS_VideoCombine 之类），绝大多数时候是对的；
                    万一用户的工作流末端是个自定义节点，就在这儿改判，不用重导。 -->
               <select class="setting-button clone-tpl-kind-set" aria-label={`「${templateDisplayName(tpl.name)}」的产出类型`}
-                title="出片的挂到视频卡，出图的挂到图片卡。自动判定错了就在这儿改。"
-                value={isVideoTemplate(tpl) ? "video" : "image"} disabled={busy}
+                title="出图的挂到图片卡，出片的挂到视频卡，出声音的挂到音频卡。自动判定错了就在这儿改。"
+                value={templateMediaKind(tpl)} disabled={busy}
                 onchange={(e) => void run(async () => {
-                  await cloneApi.update(tpl.id, { media_kind: (e.target as HTMLSelectElement).value === "video" ? "video" : "image" });
+                  const picked = (e.target as HTMLSelectElement).value;
+                  await cloneApi.update(tpl.id, {
+                    media_kind: picked === "video" || picked === "audio" ? picked : "image",
+                  });
                   await reload(true);
-                }, "已改判产出类型：图片卡与视频卡各认自己那一族的「当前」工作流。")}>
-                <option value="image">出图</option>
-                <option value="video">出片</option>
+                }, "已改判产出类型：三类卡片各认自己那一族的「当前」工作流。")}>
+                <option value="image">{WF_OUTPUT_WORDS.image}</option>
+                <option value="video">{WF_OUTPUT_WORDS.video}</option>
+                <option value="audio">{WF_OUTPUT_WORDS.audio}</option>
               </select>
               <button class="setting-button" disabled={busy} onclick={() => { renaming = tpl.id; renameValue = templateDisplayName(tpl.name); }}>改名</button>
               <button class="setting-button" disabled={busy} onclick={() => void exportTemplate(tpl)}>导出 JSON</button>
@@ -368,6 +375,7 @@
   .clone-tpl-tag-builtin { background: rgb(59 130 246 / 16%); color: #93c5fd; }
   .clone-tpl-kind { padding: 1px 6px; border-radius: 999px; background: rgb(59 130 246 / 16%); color: #93c5fd; font-size: 11px; }
   .clone-tpl-kind.is-video { background: rgb(245 158 11 / 16%); color: #fbbf24; }
+  .clone-tpl-kind.is-audio { background: rgb(139 92 246 / 16%); color: #c4b5fd; }
   .clone-tpl-kind-set { padding: 2px 6px; font-size: 12px; }
   .clone-tpl-actions { display: flex; flex-wrap: wrap; gap: 6px; }
   .clone-import-box { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px dashed #3a3a41; border-radius: 8px; background: #1a1a1e; }

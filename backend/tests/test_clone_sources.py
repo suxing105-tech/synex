@@ -35,7 +35,8 @@ def test_lookup_without_history_is_empty(init_db, tmp_path: Path):
     """没生成过的图：空 references，前端据此退回老行为，不能报错。"""
     image_id = index(tmp_path, "a.png")
     assert clone_sources.lookup(image_id) == {
-        "template_id": None, "source_image_id": None, "references": [], "dropped": 0, "origin": ""}
+        "template_id": None, "source_image_id": None, "references": [], "dropped": 0, "origin": "",
+        "prompt": "", "slot_prompts": {}}
 
 
 def test_record_then_lookup_keeps_order(init_db, tmp_path: Path):
@@ -250,7 +251,8 @@ def test_an_imported_photo_stays_silent(init_db, tmp_path: Path):
     photo = index(tmp_path, "导入的照片.png")
     out = clone_sources.lookup(photo)
     assert out == {"template_id": None, "source_image_id": None,
-                   "references": [], "dropped": 0, "origin": ""}
+                   "references": [], "dropped": 0, "origin": "",
+                   "prompt": "", "slot_prompts": {}}
 
 
 def test_the_recorded_row_wins_over_the_workflow(init_db, tmp_path: Path):
@@ -282,3 +284,92 @@ def test_a_row_that_resolves_to_nothing_is_not_the_end(init_db, tmp_path: Path):
     out = clone_sources.lookup(produced)
     assert [r["filename"] for r in out["references"]] == ["成图里的参考.png"]
     assert out["origin"] == "file"
+
+
+# ---------- 当初那句话：台词与原话 ----------
+# 成图带不带走提示词看文件类型：PNG 有 tEXt、VHS 出的片子带元数据、音频什么都没有。
+# 所以生成当时说过什么必须自己记一份，否则点「一键同款」要用户重新打一遍字。
+
+
+def test_record_keeps_the_prompt_and_the_transcript(init_db, tmp_path: Path):
+    """台词和附框那句原话一起进库、一起读回，顺序与来源别混。"""
+    ref = index(tmp_path, "样本.png")
+    produced = index(tmp_path, "成图.png")
+    written = clone_sources.record(
+        image_ids=[produced], template_id=11, source_image_id=ref,
+        references=[{"slot": "44.audio", "image_id": ref}],
+        prompt="念一句：早上好",
+        slot_prompts={"45.ref_text": "样本里说的原话"},
+    )
+    assert written == 1
+    out = clone_sources.lookup(produced)
+    assert out["prompt"] == "念一句：早上好"
+    assert out["slot_prompts"] == {"45.ref_text": "样本里说的原话"}
+    assert [r["slot"] for r in out["references"]] == ["44.audio"]
+
+
+def test_re_record_overwrites_the_prompt(init_db, tmp_path: Path):
+    """同一张产出重新认领：来源以最后一次为准，不能留着上一次的台词。"""
+    produced = index(tmp_path, "成图.png")
+    clone_sources.record(image_ids=[produced], template_id=11, source_image_id=None,
+                         references=[], prompt="第一次那句")
+    clone_sources.record(image_ids=[produced], template_id=11, source_image_id=None,
+                         references=[], prompt="第二次那句")
+    assert clone_sources.lookup(produced)["prompt"] == "第二次那句"
+
+
+def test_prompt_is_written_even_without_any_reference(init_db, tmp_path: Path):
+    """纯提示词的产出（文生视频、只给台词的音色克隆）没参考也要记下那句话。
+
+    origin 说的是参考图的来路，这里没参考就还是空字符串——不能让弹窗凭空说一句
+    「当初没记下参考图」。
+    """
+    assert clone_sources.record(image_ids=[901], template_id=9, source_image_id=None,
+                                references=[], prompt="  念一句：早上好  ") == 1
+    out = clone_sources.lookup(901)
+    assert out["prompt"] == "  念一句：早上好  "
+    assert out["references"] == [] and out["origin"] == ""
+
+
+def test_blank_prompt_without_references_writes_nothing(init_db):
+    """既没参考也没台词：不占库里的行，弹窗退回老行为。"""
+    assert clone_sources.record(image_ids=[902], template_id=9, source_image_id=None,
+                                references=[], prompt="   ", slot_prompts={"45.ref_text": "  "}) == 0
+    assert clone_sources.lookup(902)["prompt"] == ""
+
+
+def test_an_upgraded_database_gains_the_prompt_columns(init_db):
+    """老库升级：0.2.x 那张表没有这两列，启动补列之后要能照常记、照常读。"""
+    conn = get_pool().main()
+    conn.executescript(
+        "DROP TABLE clone_sources;"
+        " CREATE TABLE clone_sources ("
+        "   image_id INTEGER PRIMARY KEY,"
+        "   template_id INTEGER,"
+        "   source_image_id INTEGER,"
+        "   refs TEXT NOT NULL DEFAULT '[]',"
+        "   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))"
+        " );"
+    )
+    conn.commit()
+    clone_sources.initialize(conn)      # 模拟下次启动
+    clone_sources.initialize(conn)      # 补列必须能重复跑
+    conn.commit()
+    assert clone_sources.record(image_ids=[903], template_id=9, source_image_id=None,
+                                references=[], prompt="补列之后记下的那句") == 1
+    out = clone_sources.lookup(903)
+    assert out["prompt"] == "补列之后记下的那句"
+    assert out["slot_prompts"] == {}
+
+
+def test_broken_slot_prompts_json_reads_as_empty(init_db, tmp_path: Path):
+    """库里的 JSON 被外部写坏了：读回空字典，不能让开弹窗变成 500。"""
+    produced = index(tmp_path, "成图.png")
+    clone_sources.record(image_ids=[produced], template_id=11, source_image_id=None,
+                         references=[], prompt="那句")
+    get_pool().main().execute("UPDATE clone_sources SET slot_prompts='不是 JSON' WHERE image_id=?",
+                              (produced,))
+    get_pool().main().commit()
+    out = clone_sources.lookup(produced)
+    assert out["slot_prompts"] == {}
+    assert out["prompt"] == "那句"

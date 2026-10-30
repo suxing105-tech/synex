@@ -22,14 +22,18 @@
   import {
     applyCloneProgress, buildGenerateRequest, cloneApi, cloneError, cloneJob, cloneStatusLabel,
     allowsTextMode, controlSlots, controlSummary, defaultControlValues, defaultReferences, latestReversePrompt,
-    modeFromRefCount, modeLabel, numberPresets, numberUnit, promptSlots, promptSourceLabel,
-    ratioShape, referenceCells, referenceIssues, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, visibleRefCells,
+    promptGroupValues, modeFromRefCount, modeLabel, numberPresets, numberUnit,
+    primaryPromptGroup, promptGroupHint, promptPlaceholder, promptSlots, promptSourceLabel, secondaryPromptGroups,
+    ratioShape, referenceCells, referenceIssues, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, visibleRefCells, voiceAvatar,
     firstFreeRefKey, mergedRefCells, openRefKinds, REF_DISPLAY_ORDER,
     CLONE_SETTINGS_TAB,
     applyMention, caretCoordinates, mentionAddLabel, mentionChunks, mentionInsertText, mentionItems as buildMentionItems, mentionToken,
-    familyCells, isVideoTemplate, referenceCounter, referenceFamilies, referenceNoun, REF_KIND_COUNTERS, REF_KIND_NAMES,
-    templateDisplayName,
-    type CloneOutput, type CloneSlot, type MediaKind, type MentionItem, type MentionToken, type RefCell, type RefKind,
+    audioModeLabel, audioModeTemplates, familyCells, isAudioTemplate, isVideoTemplate, promptGroupPlaceholder,
+    workflowMenuRows, workflowDisplayName, AUDIO_MODE_GROUP_LABEL,
+    referenceCounter, referenceFamilies, referenceNoun,
+    REF_KIND_COUNTERS, REF_KIND_NAMES, templateDisplayName, templateMediaKind,
+    WF_KIND_WORDS, WF_OUTPUT_WORDS,
+    type CloneOutput, type CloneSlot, type MediaKind, type MentionItem, type MentionToken, type PromptGroup, type RefCell, type RefKind,
     type CloneJob, type CloneSources, type CloneTemplate,
   } from "../lib/clone";
   import type { ImageSummary, MediaFeedItem } from "../lib/types";
@@ -54,6 +58,13 @@
   let prompt = $state("");
   let promptOrigin = $state("");
   let promptLoading = $state(false);
+  /**
+   * 提示词的三个来源分开放，最后由 syncPrompt 定序：文件自带的 → 反推的 → 当初记下的。
+   * 读文件那条和读来源那条是两个请求，谁先回来都行；但迟到那份绝不许盖掉用户已经敲进去的字。
+   */
+  let filePrompt = "";
+  let reversePrompt = "";
+  let promptTouched = false;
   let refs = $state<Record<string, ImageSummary | null>>({});
   /**
    * 这张图当初喂的参考图。一键同款生成过的才有；读回来之后参考位照它重摆。
@@ -61,6 +72,12 @@
    */
   let sources = $state<CloneSources | null>(null);
   let controls = $state<Record<string, string | number>>({});
+  /**
+   * 主框之外那几个附框填了什么（键 =「节点.输入」）。
+   * 音色克隆那类节点要两段文字：要说的话进主框，参考音频里的原话进附框。合成一框就等于
+   * 用户改台词的同时把原话冲掉，克隆出来的音色立刻不像——所以各填各的，各交各的。
+   */
+  let extraPrompts = $state<Record<string, string>>({});
   let pickerSlot = $state<string | null>(null);
   let error = $state("");
   let submitting = $state(false);
@@ -97,10 +114,18 @@
   const workflowPrompt = $derived(template?.default_prompt ?? "");
   const cells = $derived(referenceCells(template));
 
-  /** 点开这张卡的是图片还是视频：决定素材默认落哪一格、@ 出去插哪种标签、产出怎么称呼。 */
-  const cardKind = $derived<RefKind>(image?.kind === "video" ? "video" : "image");
+  /** 点开这张卡的是哪一族：图片 / 视频 / 音频。决定素材默认落哪一格与产出怎么称呼。 */
+  const cardKind = $derived<RefKind>(
+    image?.kind === "video" ? "video" : image?.kind === "audio" ? "audio" : "image",
+  );
+  /** 叙述这一份素材的量词 + 名词：「这张视频」「这段音频」别统称成图。 */
+  const cardLabel = $derived(
+    cardKind === "video" ? "这条视频" : cardKind === "audio" ? "这段音频" : "这张图",
+  );
   const isVideoWf = $derived(isVideoTemplate(template));
-  const mediaKind = $derived<MediaKind>(isVideoWf ? "video" : "image");
+  // 弹窗的行为跟工作流走，不跟卡片走：在图片卡上换成音频工作流，
+  // @ 引用也不该突然开始插 H3 的尖括号标签。
+  const mediaKind = $derived<MediaKind>(templateMediaKind(template));
   /** 一族一行。只有图片一族时，参考区与图片一键同款的版面一字不差。 */
   const imageCells = $derived(familyCells(cells, "image"));
   const audioCells = $derived(familyCells(cells, "audio"));
@@ -109,6 +134,38 @@
   /** 「参考图 / 参考素材」与「张 / 份」：三族混在一起时别再一口一个「这张图」。 */
   const refNoun = $derived(referenceNoun(template));
   const refCounter = $derived(referenceCounter(template));
+  /**
+   * 音频弹窗顶上那排模式按钮：出声音的工作流有几条就有几种出声方式（参考音色 /
+   * 音色描述 / 指定音色）。它们各是不同模型的另一份工作流，所以点按钮走的是换模板
+   * 那条现成的路——参考位、参数、附框全按新那条重摆，台词留着不冲。
+   * 只有一条时不摆：一颗按钮的开关不是模式选择，是噪音。
+   */
+  const audioModes = $derived(isAudioTemplate(template) ? audioModeTemplates(templates) : []);
+  /**
+   * 「切换工作流」那一列：图片、视频各列各的，音频那几条收成一条「闪寻音频」。
+   * 三种出声方式已经有弹窗顶上那排按钮了，清单里再列三条就是让人在两个地方选同一件事。
+   */
+  const wfRows = $derived(workflowMenuRows(templates, templateId));
+  /** 折叠那行悬浮说清它管的是哪三种方式——清单里看不到名字，总得在这儿报到。 */
+  const wfGroupTitle = $derived(
+    `三种出声方式在弹窗顶上切换：${audioModeTemplates(templates).map((item) => audioModeLabel(item.name)).join(" / ")}`,
+  );
+  /** 普通一行：名字之外报出片还是出图、几个节点几个参数，跟折叠那行同一套口径。 */
+  function wfRowTitle(row: (typeof wfRows)[number]): string {
+    const item = templates.find((t) => t.id === row.targetId);
+    if (!item) return row.label;
+    return `${row.label} · ${WF_OUTPUT_WORDS[row.kind]} · ${item.node_count} 个节点 · ${item.control_count} 个参数`;
+  }
+  /** 没有参考位那条工作流该说一句什么：说清声音/画面从哪儿来，别留一块莫名其妙的空白。 */
+  const noRefNote = $derived(
+    mediaKind === "audio"
+      ? "这一种不用参考音频：想要什么样的声音写在下面的文字格与参数里。"
+      : "这份工作流不需要参考素材，写好提示词就能出。",
+  );
+  /** 主框下面还要多摆几个框（参考音频的原话那种）。没有就一个都不摆。 */
+  const secondaryGroups = $derived(secondaryPromptGroups(template));
+  /** 提示词那块的标题跟着主框的标签走：工作流自己管它叫什么就叫什么（空则用通用名字）。 */
+  const promptBlockTitle = $derived(primaryPromptGroup(template)?.label ?? "");
   /** 没有来源记录时，被点的这张卡该站的那一格：图片卡＝图片1，视频卡＝视频1。 */
   const homeKey = $derived((familyCells(cells, cardKind)[0] ?? cells[0])?.key ?? "");
 
@@ -190,6 +247,11 @@
   const numberSlots = $derived(controlSlots(template).filter((slot) => slot.kind !== "select"));
   const hasParams = $derived(selectSlots.length + numberSlots.length > 0);
   /**
+   * 底部胶囊上那颗小脸：当前参数里第一个「认得出是谁」的音色。语种、比例那类选项
+   * voiceAvatar 直接返回 null，不会被误配；换成模型自带的其它音色时这颗自然消失。
+   */
+  const pickedFace = $derived(selectSlots.map((slot) => voiceAvatar(String(controls[slotKey(slot)] ?? ""))).find(Boolean) ?? "");
+  /**
    * 时长走滑块，不走档位按钮：「几秒」是连续量，点 5/8/10/12/15 像在猜，
    * 拖到几秒就是几秒。区间 3–15 秒（苏醒点名），同时不越过工作流自己给的上下限。
    */
@@ -219,8 +281,19 @@
       id, kind: "image", filename: "", thumbnail_url: `/api/images/${id}/file?max=256`,
     }));
   });
-  /** 工作流名给用户看的那一份：本地导入的名字尾巴上的 .json 不是名字的一部分。 */
-  const wfName = $derived(templateDisplayName(template?.name));
+  /**
+   * 弹窗标题与底部那颗胶囊上的名字：跟「切换工作流」清单里那一行同一个叫法。
+   * 三条音频工作流在清单里折成一条「闪寻音频」，这两处也跟着叫「闪寻音频」——一个弹窗里两种叫法，
+   * 用户会以为清单那一行和底下这颗管的是两件事（2026-10-30 苏醒点名：三种模式底下都要同步显示）。
+   * 具体是哪一种出声方式由顶上那排按钮的高亮说，全名在下面这两处的悬浮提示与设置页里都还在。
+   */
+  const wfName = $derived(workflowDisplayName(templates, template));
+  /** 当前真正在用的那一份的全名：音频族三种模式各自是一条工作流，胶囊上收着，悬浮提示里报到。 */
+  const wfDetail = $derived(templateDisplayName(template?.name));
+  /** 折叠叫法与实际名字一致时不多余一个字（图片、视频工作流照旧只报自己的名字）。 */
+  const wfFullTitle = $derived(
+    wfDetail && wfDetail !== wfName ? wfName + `（当前：${wfDetail}）` : wfName,
+  );
 
   const canGenerate = $derived(Boolean(template) && prompt.trim().length > 0 && issues.length === 0 && !busy && !submitting);
 
@@ -258,6 +331,7 @@
 
   /** 打 @ 就弹菜单。读 DOM 里的实时值：bind:value 比 input 慢一拍，读 prompt 会漏掉刚敲的那个字符。 */
   function onPromptInput(e: Event) {
+    promptTouched = true;
     const el = e.currentTarget as HTMLTextAreaElement;
     const token = mentionToken(el.value, el.selectionStart ?? el.value.length);
     if (!token || !cells.length) { mentionOpen = false; return; }
@@ -309,6 +383,7 @@
       pickerSlot = item.key;
       return;
     }
+    promptTouched = true;
     // insert 才是最终写进正文的那串：图片工作流给 @图片1，H3 给 <Picture 1>。菜单上始终显示中文编号。
     await commitMention(item.insert || item.label);
   }
@@ -345,8 +420,9 @@
    * 空的会让人以为功能坏了，而挂上图片工作流至少还能看见槽位、自己换。
    */
   function pickDefaultTemplate(items: CloneTemplate[]): number | null {
-    const wantVideo = image?.kind === "video";
-    const mine = items.filter((item) => isVideoTemplate(item) === wantVideo);
+    // 按卡片那一族选当前工作流：音频卡默认吃出声音的那条，不是「非视频就算图片」。
+    const want: MediaKind = image?.kind === "video" ? "video" : image?.kind === "audio" ? "audio" : "image";
+    const mine = items.filter((item) => templateMediaKind(item) === want);
     return (mine.find((item) => item.is_active) ?? mine[0] ?? items.find((item) => item.is_active) ?? items[0])?.id ?? null;
   }
 
@@ -374,15 +450,29 @@
         cloneApi.detail(id).catch(() => null),
         cloneApi.reverseHistory(id).catch(() => ({ items: [] })),
       ]);
-      const resolved = resolvePromptSource({
-        imagePrompt: detail?.positive_prompt,
-        reversePrompt: latestReversePrompt(history.items),
-      });
-      prompt = resolved.text;
-      promptOrigin = resolved.origin === "image" ? promptSourceLabel("image") : "";
+      filePrompt = detail?.positive_prompt ?? "";
+      reversePrompt = latestReversePrompt(history.items);
     } finally {
       promptLoading = false;
     }
+    syncPrompt();
+  }
+
+  /**
+   * 提示词该摆哪句：这张产出自带的 → 反推出来的 → 当初生成时记下的。
+   * 音频为什么需要第三条：flac 带不走提示词（PNG 有 tEXt、片子有元数据），
+   * 不记下来的话点「一键同款」就是一句空白的台词。
+   * 用户已经在框里动过手，就一句都不再自动填。
+   */
+  function syncPrompt() {
+    if (promptTouched) return;
+    const resolved = resolvePromptSource({
+      imagePrompt: filePrompt,
+      reversePrompt,
+      recordedPrompt: sources?.prompt,
+    });
+    prompt = resolved.text;
+    promptOrigin = resolved.origin === "none" ? "" : promptSourceLabel(resolved.origin);
   }
 
   /** 读这张图的来源。没记过就是空：在 ComfyUI 里手动出的图本来就没有来源可说。 */
@@ -395,7 +485,9 @@
       next = null; // 读不到就当没有：来源只是省一次重新选图，不该拦住弹窗
     }
     // 请求在飞的这段时间里用户可能已经关弹窗或换了一张图，迟到回来的那份不能作数
-    if (open && image?.id === id) sources = next;
+    if (!open || image?.id !== id) return;
+    sources = next;
+    syncPrompt();
   }
 
   /**
@@ -411,12 +503,27 @@
     // 从视频卡点开的，这张视频默认站在「视频1」；从图片卡点开的仍是「图片1」。
     refs = defaultReferences(next, image, sources?.references ?? [], { kind: cardKind });
     controls = defaultControlValues(next);
+    // 附框预填工作流里此刻写着的那段话：空着就等于把原话交给后端回落成台词，
+    // 用户什么也没动，音色却变了。
+    extraPrompts = promptGroupValues(next, sources && sources.template_id === next?.id ? sources.slot_prompts : null);
     popOpen = false;
   }
 
   function pickTemplate(id: number) {
     templateId = id;
     closeWorkflowPop();
+  }
+
+  /**
+   * 清单里点一行。折叠那行（闪寻音频）已经在用的话就只是把弹层收起来——
+   * 三种出声方式靠顶上那排按钮换，点族名不该把用户从「音色描述」踢回默认那条。
+   */
+  function pickMenuRow(row: (typeof wfRows)[number]) {
+    if (row.collapsed && row.memberIds.includes(templateId ?? -1)) {
+      closeWorkflowPop();
+      return;
+    }
+    pickTemplate(row.targetId);
   }
 
   function closeWorkflowPop() {
@@ -466,7 +573,7 @@
   function importedMessage(tpl: CloneTemplate): string {
     const list = referenceCells(tpl);
     const fams = referenceFamilies(tpl);
-    const refs = fams.length === 1 && fams[0] === "image" && !isVideoTemplate(tpl)
+    const refs = fams.length === 1 && fams[0] === "image" && !isVideoTemplate(tpl) && !isAudioTemplate(tpl)
       ? `${list.length} 个参考位`
       : fams.map((kind) => `${REF_KIND_NAMES[kind]} ${familyCells(list, kind).length} 格`).join(" / ") || "没认出参考位";
     return `已载入「${templateDisplayName(tpl.name)}」：${promptSlots(tpl).length} 个提示词位 / ${refs}`;
@@ -510,6 +617,13 @@
    * effect 挂在状态上，之后每轮状态轮询都会重跑，把用户刚敲的提示词冲回预填值。
    */
   let probedThisOpen = false;
+  /**
+   * 上一次开弹窗时那张卡是哪一族。弹窗常驻在 Feed 里（关掉它不销毁组件），templateId 会一路带下去：
+   * 音频卡用完再点图片卡，图片卡就挂着出声音的那条工作流——参考区、参数、产物全错一族，
+   * 点下去跑了十几秒才知道不对。跨族必须重挑；同族之间照旧带着用户挑的那条
+   * （连着几张卡共用一份配方才是「一键同款」的用法，不能每次开弹窗都跳回库里标的那条）。
+   */
+  let openedCardKind: RefKind | null = null;
 
   $effect(() => {
     if (!open || !image) {
@@ -517,9 +631,18 @@
       return;
     }
     const id = image.id;
+    // 跨族换卡（音频卡 → 图片卡）时丢掉上一族挑的工作流，同族换卡不动它。
+    if (openedCardKind !== null && openedCardKind !== cardKind) templateId = null;
+    openedCardKind = cardKind;
     error = "";
     jobId = "";
     sources = null;
+    // 换了一张卡就得忘掉上一张的提示词状态，包括「用户动过框」这件事
+    prompt = "";
+    promptOrigin = "";
+    filePrompt = "";
+    reversePrompt = "";
+    promptTouched = false;
     void loadTemplates();
     void loadPrompt(id);
     void loadSources(id);
@@ -564,6 +687,11 @@
     }
   }
 
+  /** 附框改一次要落到这一组的所有文字位上：一组就是一个框，不是一个输入键。 */
+  function setPromptGroup(group: PromptGroup, value: string) {
+    for (const key of group.keys) extraPrompts[key] = value;
+  }
+
   async function generate() {
     if (!template) return;
     if (issues.length) {
@@ -583,6 +711,7 @@
         controls,
         sourceImageId: image?.id ?? null,
         cellOrder: cells.map((cell) => cell.key),
+        slotPrompts: extraPrompts,
       }));
       jobId = started.job_id;
       applyCloneProgress(started);
@@ -693,7 +822,7 @@
           <span class="cm-kicker">一键同款</span>
           {#if template}
             <!-- 切换与导入收在底部那颗「工作流」按钮里，顶栏只报当前在用哪一份。 -->
-            <h3 class="cm-title" title={`${wfName} · ${template.node_count} 个节点`}>{wfName}</h3>
+            <h3 class="cm-title" title={`${wfFullTitle} · ${template.node_count} 个节点`}>{wfName}</h3>
           {/if}
         </div>
         <button class="cm-close" aria-label="关闭一键同款" onclick={onClose}><Icon name="x" size={16} /></button>
@@ -723,6 +852,22 @@
             >
               <span>这个容器放不出来，去图库里用外部播放器看。</span>
             </video>
+          {:else if image?.kind === "audio"}
+            <!-- 音频卡的左边：波形 + 一条原生播放器。写提示词时能就地听这段参考音色，
+                 不用回图库放一遍再回来；波形是后端画好的那张（thumbnail_url）。 -->
+            {#if image.thumbnail_url}
+              <img class="cm-hero cm-hero-wave" src={backendUrl(image.thumbnail_url)} alt={image.filename} />
+            {/if}
+            {#if image.playable !== false && (image.play_url || image.original_url)}
+              <!-- svelte-ignore a11y_media_has_caption -->
+              <audio
+                class="cm-hero-audio"
+                src={backendUrl(image.play_url || image.original_url!)}
+                controls
+                preload="metadata"
+                aria-label={`预览${image.filename}`}
+              ></audio>
+            {/if}
           {:else if image?.original_url || image?.thumbnail_url}
             <img class="cm-hero" src={backendUrl(image.original_url || image.thumbnail_url!)} alt={image.filename} />
           {:else}
@@ -736,7 +881,7 @@
             <p class="cm-note">正在读取同款工作流…</p>
           {:else if !template}
             <div class="cm-empty">
-              <p>还没有同款工作流。导出一份 ComfyUI 的 API 格式工作流 JSON，{cardKind === "video" ? "之后每条片子点一下就能出同款。" : "之后每张图点一下就能出同款。"}</p>
+              <p>还没有同款工作流。导出一份 ComfyUI 的 API 格式工作流 JSON，{cardKind === "video" ? "之后每条片子点一下就能出同款。" : cardKind === "audio" ? "之后每段配音点一下就能换词重配。" : "之后每张图点一下就能出同款。"}</p>
               <button class="cm-btn cm-btn-accent" disabled={workflowLoading} onclick={() => wfInput?.click()}>
                 {workflowLoading ? "正在读取…" : "加载本地工作流 JSON"}
               </button>
@@ -751,6 +896,22 @@
             <div class="cm-form">
             <!-- 生成方式不做成开关：放了几个参考就是哪种方式（0 文生图 / 1 单图 / 2+ 多图），
                  开关能和实际画面打架，数量不会。当前方式只在标题里报一下。 -->
+            {#if audioModes.length > 1}
+              <!-- 出声方式放最上面：它决定下面到底要不要参考音频，摆在参考区下面就得先往下找一趟。 -->
+              <section class="cm-block">
+                <p class="cm-block-title">音频模式</p>
+                <div class="cm-seg" role="radiogroup" aria-label="音频模式">
+                  {#each audioModes as item (item.id)}
+                    <button class="cm-seg-item cm-seg-mode" role="radio" aria-checked={item.id === templateId}
+                      class:is-on={item.id === templateId} disabled={busy}
+                      title={busy ? `生成中不能换出声方式：${templateDisplayName(item.name)}` : `换成「${templateDisplayName(item.name)}」`}
+                      onclick={() => pickTemplate(item.id)}>{audioModeLabel(item.name)}</button>
+                  {/each}
+                </div>
+              </section>
+            {/if}
+
+            {#if cells.length}
             <section class="cm-block">
               <p class="cm-block-title">{mode === "text" ? refNoun : "替换或上传参考"}</p>
               <!-- 参考区只有一行：几族素材混着排（图片 → 视频 → 音频），末尾一颗不绑族的「+ 参考」。
@@ -779,9 +940,11 @@
                   >
                     {#if picked}
                       <div class="cm-tile media-chip" class:cm-tile-audio={item.kind === "audio"} title={`${item.cell.slotLabel}｜${picked.filename}`}>
-                        <img class="cm-tile-img" src={backendUrl(picked.thumbnail_url || picked.original_url!)} alt={picked.filename} />
-                        <button class="cm-tile-swap" aria-label={`替换${item.cell.label}`} onclick={() => (pickerSlot = item.cell.key)}>
-                          <Icon name="swap" size={15} />
+                        <!-- 整块缩略图本身就是「换一份」：那颗小圆钮只有悬停才亮，点画面别处毫无反应，
+                             用户以为参考换不了（真机实测）。圆钮降级成提示，点哪儿都开选择器。 -->
+                        <button class="cm-tile-pick" aria-label={`替换${item.cell.label}`} onclick={() => (pickerSlot = item.cell.key)}>
+                          <img class="cm-tile-img" src={backendUrl(picked.thumbnail_url || picked.original_url!)} alt={picked.filename} />
+                          <span class="cm-tile-swap" aria-hidden="true"><Icon name="swap" size={15} /></span>
                         </button>
                         <button class="cm-tile-x" aria-label={`移除${item.cell.label}`} onclick={() => removeRef(item.cell.key)}>
                           <Icon name="x" size={12} />
@@ -816,23 +979,28 @@
               </div>
               {#if sources && sources.dropped > 0}
                 <!-- 来源里认不出来的那几份要明说：默默少摆一份，用户会以为当初就只喂了这些 -->
-                <p class="cm-note">这张{cardKind === "video" ? "视频" : "图"}当初还用了 {sources.dropped} {refCounter}{refNoun}，已经不在图库里了，重新生成前补上。</p>
+                <p class="cm-note">{cardLabel}当初还用了 {sources.dropped} {refCounter}{refNoun}，已经不在图库里了，重新生成前补上。</p>
               {:else if lostItsReferences}
                 <!-- 认不出参考素材时，参考位里摆的是被点的这份成图自己（默认就这么填的）。
                      不说明就是骗人：用户会以为当初只喂了这一份、就是这一份。 -->
-                <p class="cm-note">没找到这张{cardKind === "video" ? "视频" : "图"}当初用的{refNoun}，先放了它自己当参考。要原来那几份，手动换一下。</p>
+                <p class="cm-note">没找到{cardLabel}当初用的{refNoun}，先放了它自己当参考。要原来那几份，手动换一下。</p>
               {/if}
             </section>
+            {:else}
+              <!-- 一条参考位都没有（音色描述、指定音色）：整块不摆。摆个空框、再摆一颗
+                   点了不会出东西的「+ 参考」，比不摆更糟。 -->
+              <p class="cm-note">{noRefNote}</p>
+            {/if}
 
             <section class="cm-block">
-              <p class="cm-block-title">完整提示词</p>
+              <p class="cm-block-title">{promptBlockTitle || "完整提示词"}</p>
               <div class="cm-prompt-wrap">
                 <div class="cm-prompt-bg" bind:this={promptBg} aria-hidden="true">
                   {#each mentionChunks(prompt) as chunk, i (i)}
                     <span class:cm-mention-hl={chunk.mention}>{chunk.text}</span>
                   {/each}
                 </div>
-                <textarea id="clone-prompt" class="cm-textarea" bind:this={promptEl} oninput={onPromptInput} onkeydown={onPromptKeydown} onscroll={syncPromptBg} rows="12" aria-label="提示词" placeholder={`要生成什么画面，打 @ 可以引用${refNoun}`} bind:value={prompt}></textarea>
+                <textarea id="clone-prompt" class="cm-textarea cm-textarea-mirror" bind:this={promptEl} oninput={onPromptInput} onkeydown={onPromptKeydown} onscroll={syncPromptBg} rows="12" aria-label="提示词" placeholder={promptPlaceholder(mediaKind, refNoun, cells.length > 0)} bind:value={prompt}></textarea>
                 {#if mentionOpen && mentionOptions.length}
                   <div class="cm-pop-scrim" role="presentation" onclick={() => (mentionOpen = false)}></div>
                   <div class="cm-mention" style="left: {mentionBox.left}px; top: {mentionBox.top}px;" role="listbox" aria-label="引用素材">
@@ -858,9 +1026,18 @@
               <div class="cm-field-foot">
                 <span class="cm-note">{promptLoading ? "正在读这张图的提示词…" : (promptOrigin || promptSourceLabel("none"))}</span>
                 {#if shouldOfferWorkflowPrompt(prompt, workflowPrompt)}
-                  <button class="cm-btn" onclick={() => (prompt = workflowPrompt)}>填入工作流内置提示词</button>
+                  <button class="cm-btn" onclick={() => { promptTouched = true; prompt = workflowPrompt; }}>填入工作流内置提示词</button>
                 {/if}
               </div>
+              {#each secondaryGroups as group (group.label)}
+                <p class="cm-block-title cm-sub-prompt-title">{group.label}</p>
+                <textarea class="cm-textarea cm-textarea-sub" rows="3" aria-label={group.label}
+                  placeholder={promptGroupPlaceholder(group.label)} value={extraPrompts[group.keys[0]] ?? ""}
+                  oninput={(e) => setPromptGroup(group, (e.target as HTMLTextAreaElement).value)}></textarea>
+                {#if promptGroupHint(group.label)}
+                  <p class="cm-note">{promptGroupHint(group.label)}</p>
+                {/if}
+              {/each}
             </section>
 
             <div class="cm-foot">
@@ -868,6 +1045,9 @@
                 {#if hasParams}
                   <div class="cm-pop-wrap">
                     <button class="cm-pill" aria-label="画面参数" aria-haspopup="dialog" aria-expanded={popOpen} onclick={() => { closeWorkflowPop(); popOpen = !popOpen; }}>
+                      {#if pickedFace}
+                        <img class="cm-pill-face" src={pickedFace} alt="" draggable="false" />
+                      {/if}
                       <span class="cm-pill-text">{summary || "设置画面参数"}</span>
                       <span class="cm-chevron" class:is-open={popOpen} aria-hidden="true"><Icon name="chevron-down" size={12} /></span>
                     </button>
@@ -880,6 +1060,7 @@
                           <div class="cm-ratio-grid" role="group" aria-label={`${slot.label}选项`}>
                             {#each slot.options ?? [] as option (option)}
                               {@const shape = ratioShape(option)}
+                              {@const face = voiceAvatar(option)}
                               <button
                                 class="cm-ratio"
                                 class:is-on={controls[key] === option}
@@ -888,7 +1069,11 @@
                                 aria-pressed={controls[key] === option}
                                 onclick={() => (controls[key] = option)}
                               >
-                                {#if shape.ratio}
+                                {#if face}
+                                  <!-- 内置音色：认得出是谁就摆那张脸。名字仍在下面，不看图也不影响读；
+                                       圆形遮罩由 CSS 负责，图自己按「脸居中、头顶留白」出。 -->
+                                  <img class="cm-ratio-face" src={face} alt="" draggable="false" />
+                                {:else if shape.ratio}
                                   <span class="cm-ratio-box" style="width: {shape.box.w}px; height: {shape.box.h}px;" aria-hidden="true"></span>
                                 {:else}
                                   <span class="cm-ratio-flat" aria-hidden="true">•</span>
@@ -964,7 +1149,7 @@
                        而正在跑的那张既看不见也撤不回。理由写在 title 里，别让人对着点不动的按钮猜。
                        名字长到挤不下时，让位的是这颗胶囊（名字截断 + 收箭头），不是右边的取消和生成。 -->
                   <button class="cm-pill" class:is-busy={busy} aria-label="同款工作流" aria-haspopup="menu" aria-expanded={wfOpen}
-                    disabled={busy} title={busy ? `生成中，等这张图画完再换工作流：${wfName}` : wfName}
+                    disabled={busy} title={busy ? `生成中，等这张图画完再换工作流：${wfFullTitle}` : wfFullTitle}
                     onclick={() => { popOpen = false; wfOpen = !wfOpen; }}>
                     <Icon name="layers" size={13} />
                     <span class="cm-pill-text">{wfName}</span>
@@ -974,22 +1159,27 @@
                     <div class="cm-pop-scrim" role="presentation" onclick={closeWorkflowPop}></div>
                     <div class="cm-pop cm-pop-wf" role="menu" aria-label="同款工作流">
                       <p class="cm-pop-title">切换工作流</p>
-                      {#each templates as item (item.id)}
+                      {#each wfRows as row (row.key)}
+                        {@const isOn = row.memberIds.includes(templateId ?? -1)}
                         <div class="cm-wf-row">
-                          <button class="cm-wf" role="menuitemradio" aria-checked={item.id === templateId} disabled={busy}
-                            title={`${templateDisplayName(item.name)} · ${isVideoTemplate(item) ? "出片" : "出图"} · ${item.node_count} 个节点 · ${item.control_count} 个参数`}
-                            onclick={() => pickTemplate(item.id)}>
+                          <button class="cm-wf" role="menuitemradio" aria-checked={isOn} disabled={busy}
+                            title={row.collapsed ? `${AUDIO_MODE_GROUP_LABEL} · ${wfGroupTitle}` : wfRowTitle(row)}
+                            onclick={() => pickMenuRow(row)}>
                             <!-- 图片和视频的工作流同列一份清单（用户要的「不分家」），但出片还是出图必须一眼分得清，
                                  否则图片卡挂上一条 H3 视频工作流，等十分钟出一段片子才知道选错。
                                  徽标钉在名字前面：跟在名字后面时它会随名字长短左右漂移，两行对不齐。 -->
-                            <span class="cm-wf-kind" class:cm-wf-kind-video={isVideoTemplate(item)}>{isVideoTemplate(item) ? "视频" : "图片"}</span>
-                            <span class="cm-wf-name">{templateDisplayName(item.name)}</span>
-                            {#if item.id === templateId}<span class="cm-wf-tag">当前</span>{/if}
+                            <span class="cm-wf-kind" class:cm-wf-kind-video={row.kind === "video"}
+                              class:cm-wf-kind-audio={row.kind === "audio"}>{WF_KIND_WORDS[row.kind]}</span>
+                            <span class="cm-wf-name">{row.label}</span>
+                            {#if isOn}<span class="cm-wf-tag">当前</span>{/if}
                           </button>
-                          <button class="cm-wf-del" aria-label={`删除工作流 ${templateDisplayName(item.name)}`} title="删除这个工作流"
-                            disabled={busy || wfDeleting} onclick={() => void removeTemplate(item.id)}>
-                            <Icon name="x" size={13} />
-                          </button>
+                          {#if !row.collapsed}
+                            <!-- 折叠那行不给删：一条「闪寻音频」背后是三条工作流，删哪条不该由这颗 X 临场决定。 -->
+                            <button class="cm-wf-del" aria-label={`删除工作流 ${row.label}`} title="删除这个工作流"
+                              disabled={busy || wfDeleting} onclick={() => void removeTemplate(row.targetId)}>
+                              <Icon name="x" size={13} />
+                            </button>
+                          {/if}
                         </div>
                       {/each}
                       <div class="cm-pop-sep"></div>
@@ -1031,10 +1221,10 @@
                 <span class="cm-results-label">本次产出</span>
                 {#each outputChips as out (out.id)}
                   <!-- 缩略图地址由后端按那一行的 kind 给准：视频的海报帧不是 /api/images/{id}/file。 -->
-                  <button class="cm-chip media-chip" class:cm-chip-video={out.kind === "video"} title={out.filename}
-                    aria-label={`打开生成的第 ${out.id} ${out.kind === "video" ? "条" : "张"}`} onclick={() => onOpenImage?.(out.id, out.kind)}>
+                  <button class="cm-chip media-chip" class:cm-chip-video={out.kind !== "image"} title={out.filename}
+                    aria-label={`打开生成的第 ${out.id} ${out.kind === "image" ? "张" : "条"}`} onclick={() => onOpenImage?.(out.id, out.kind)}>
                     <img src={backendUrl(out.thumbnail_url)} alt="" />
-                    {#if out.kind === "video"}<span class="cm-chip-play" aria-hidden="true"><Icon name="play" size={12} /></span>{/if}
+                    {#if out.kind !== "image"}<span class="cm-chip-play" aria-hidden="true"><Icon name="play" size={12} /></span>{/if}
                   </button>
                 {/each}
               </div>
@@ -1106,6 +1296,9 @@
   .cm-body { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(340px, 470px); gap: 22px; align-items: start; }
   .cm-left { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .cm-hero { width: 100%; max-height: 74vh; object-fit: contain; border-radius: 16px; background: #0c0c0e; }
+  /* 波形是一张扁的后端 PNG：照搬 cm-hero 的 contain 会把它拉成一大块模糊，这里锁住高度。 */
+  .cm-hero-wave { width: 100%; height: clamp(88px, 18vh, 148px); object-fit: cover; }
+  .cm-hero-audio { width: 100%; margin-top: 10px; height: 36px; }
   .cm-hero-empty { display: flex; align-items: center; justify-content: center; min-height: 220px; font-size: 12.5px; color: #71717a; }
   .cm-hero-name { margin: 0; font-size: 12px; color: #8a8a8e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -1126,15 +1319,17 @@
   .cm-tile-audio { background: #101013; }
   .cm-tile-audio .cm-tile-img { object-fit: contain; padding: 12px 8px; }
   .cm-tile-add:hover { background: #232327; border-color: rgb(255 255 255 / 14%); }
+  /* 整块缩略图都是替换的热区：这一层铺满格子，只管接点击，画面还是底下那张图。 */
+  .cm-tile-pick { position: absolute; inset: 0; display: block; padding: 0; border: 0; background: transparent; cursor: pointer; }
   .cm-tile-swap,
   .cm-tile-x { position: absolute; display: flex; align-items: center; justify-content: center; color: #fafafa; background: rgba(18, 18, 20, 0.78); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); opacity: 0; transition: opacity 140ms ease, background-color 140ms ease; cursor: pointer; }
-  .cm-tile-swap { left: 50%; top: 50%; width: 30px; height: 30px; border-radius: 50%; transform: translate(-50%, -50%); }
+  .cm-tile-swap { left: 50%; top: 50%; width: 30px; height: 30px; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
   .cm-tile-x { top: 5px; right: 5px; width: 20px; height: 20px; border-radius: 50%; }
   .cm-tile:hover .cm-tile-swap,
   .cm-tile:hover .cm-tile-x,
   .cm-tile:focus-within .cm-tile-swap,
   .cm-tile:focus-within .cm-tile-x { opacity: 1; }
-  .cm-tile-swap:hover,
+  .cm-tile-pick:hover .cm-tile-swap,
   .cm-tile-x:hover { background: rgba(38, 38, 42, 0.95); }
   .cm-tile-x:hover { color: #f87171; }
   .cm-ref-caption { max-width: 84px; font-size: 11.5px; color: #a1a1aa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1151,33 +1346,41 @@
      所以两边写进同一条规则：谁要改排版就一起改，拆开改第一次滚动就会看见高亮在飘。 */
   .cm-prompt-bg, .cm-textarea { display: block; box-sizing: border-box; width: 100%; padding: 11px 12px; border: 1px solid transparent; font-family: inherit; font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; }
   .cm-prompt-bg { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; border-radius: 12px; color: #e4e4e7; background: rgba(0, 0, 0, 0.35); }
-  .cm-textarea { position: relative; z-index: 1; color: transparent; caret-color: #f24e4e; background: transparent; border-color: rgb(255 255 255 / 8%); border-radius: 12px; resize: vertical; }
+  .cm-textarea { position: relative; z-index: 1; background: transparent; border-color: rgb(255 255 255 / 8%); border-radius: 12px; resize: vertical; }
   /* 提示词框跟着窗口高矮走：窗口矮的时候先让提示词框让出高度，而不是把下面那排按钮挤出弹窗 ——
      「生成中」和「取消」看不见、要滚动才点得到的弹窗，不算能用。 */
   .cm-textarea { height: clamp(132px, 24vh, 264px); }
+  /* 透明字只属于「背后有镜像高亮层」的主框：文字由 .cm-prompt-bg 那层显示。
+     这条要是挂回 .cm-textarea，任何复用该类的框都会变成看不见字的盲打框。 */
+  .cm-textarea-mirror { color: transparent; caret-color: #f24e4e; }
   .cm-textarea:focus { border-color: rgb(255 255 255 / 22%); outline: none; }
   .cm-textarea::placeholder { color: #62626a; opacity: 1; }
+  /* 附框（参考音频的原话那种）比主框矮：它是「别乱动」的东西，占了大半个弹窗反而没人看台词 */
+  .cm-textarea-sub { height: auto; min-height: 60px; color: #e4e4e7; background: rgba(0, 0, 0, 0.35); }
+  .cm-sub-prompt-title { margin-top: 12px; }
   /* 高亮只许动颜色和背景：padding / border / font-weight 都会推字节，一改高亮就和光标错位。 */
   .cm-mention-hl { color: #ff6a4d; }
   .cm-field-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 22px; }
   .cm-note { margin: 0; font-size: 11.5px; color: #71717a; }
   .cm-empty { display: flex; flex-direction: column; gap: 10px; padding: 16px; font-size: 12.5px; color: #a1a1aa; background: #1b1b1f; border: 1px dashed #33333a; border-radius: 12px; }
 
-  /* 让位顺序写死在这一行：右边按钮组不参与压缩（「取消」那一格连静止时都提前占好，
-     按下生成的一瞬间右边宽度不变），左边每一格 min-width:0 可以被压缩；
-     容器真装不下就整排换行，让位的永远是左边那排胶囊，不是右边的「取消」和「生成」（苏醒 Round 15 截图）。 */
+  /* 让位顺序写死在这一行：右边按钮组不参与压缩（「取消」那一格连静止时都提前占好，按下生成的一瞬间
+     右边宽度不变），左边每一格 min-width:0 可以被压缩；容器真装不下就整排换行，让位的永远是左边
+     那排胶囊，不是右边的「取消」和「生成」（苏醒 Round 15 截图）。 */
   .cm-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
-  /* flex-basis 定死 240px（不是 auto）：auto 的话这一格的基准＝内容宽度，工作流名字一长整排就换行，
-     换一份工作流按钮就跳一次位置（苏醒截图里「生成」掉到第二行就是这么来的）。定死之后，这一排
-     要不要换行只跟容器宽度有关，跟名字长短、跟是不是在生成，都无关。 */
-  .cm-foot-left { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 240px; }
+  /* flex-basis 仍旧定死 240px：这一排要不要换行只跟容器宽度有关，跟工作流名字长短无关
+     （名字一长就把「生成」顶到第二行，是苏醒 Round 15 截图里那个毛病）。
+     但多出来的宽度不再摊给胶囊——胶囊只包到名字那么宽（苏醒 Round 26：
+     「工作流按钮右边空太多」——七个字的胶囊拉到三百像素宽，右边一大片空白）。 */
+  /* 2026-10-30 用户点名：左边先跟正文那一列对齐——整排靠右时参数胶囊前面空出一截，读着像漏了一块。
+     省下的宽度落在胶囊组与「生成」之间，那是这一行本来就该有的呼吸位；右边按钮组仍不参与压缩。 */
+  .cm-foot-left { display: flex; align-items: center; justify-content: flex-start; gap: 10px; min-width: 0; flex: 1 1 240px; }
   /* min-width:0：flex 子项默认 min-width:auto，长名字会把这一格顶穿，压到右边的按钮上 */
   .cm-pop-wrap { position: relative; min-width: 0; }
-  /* 工作流那颗的宽度由这一格说了算，不由名字长短说了算：基准 132px + 吃掉剩余。
-     于是换一份工作流、或者按下「生成」把右边撑宽，这一排的几何一律不许动——名字长短决定不了布局。
-     长名字在胶囊里截断，全名在弹窗顶部标题和悬浮提示里都还在。 */
-  .cm-foot-left > .cm-fill { flex: 1 1 132px; }
-  .cm-fill .cm-pill { width: 100%; }
+  /* 工作流那一格跟着名字收缩；装不下时还是它先让（可压缩 + min-width:0，名字在胶囊里截断），
+     全名在弹窗顶部标题和悬浮提示里都还在。弹层钉的是胶囊右边缘，右边缘没动，位置也就没动。 */
+  .cm-foot-left > .cm-fill { flex: 0 1 auto; }
+  .cm-fill .cm-pill { width: auto; max-width: 100%; }
   .cm-pill:disabled { opacity: .62; cursor: default; }
   .cm-pill { position: relative; z-index: 5; flex: 0 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 13px; font-size: 12.5px; color: #e4e4e7; background: rgb(255 255 255 / 7%); border: 1px solid rgb(255 255 255 / 9%); border-radius: 999px; cursor: pointer; }
   .cm-pill:hover { background: rgb(255 255 255 / 11%); }
@@ -1209,6 +1412,7 @@
   .cm-wf-kind { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 34px; padding: 1px 0; font-size: 10.5px; color: #93c5fd; background: rgb(59 130 246 / 14%); border-radius: 999px; }
   .cm-wf-lead { flex: none; display: flex; align-items: center; justify-content: center; width: 34px; }
   .cm-wf-kind-video { color: #fbbf24; background: rgb(245 158 11 / 16%); }
+  .cm-wf-kind-audio { color: #c4b5fd; background: rgb(139 92 246 / 16%); }
   /* 一行一条工作流：整行就是一颗胶囊，名字和那颗 X 在同一个亮面上，不再像并排的两个控件 */
   .cm-wf-row { display: flex; align-items: center; gap: 2px; padding-right: 4px; border-radius: 10px; transition: background-color 120ms ease; }
   .cm-wf-row:hover { background: rgb(255 255 255 / 7%); }
@@ -1234,10 +1438,21 @@
   .cm-ratio-box { border: 1.5px solid currentColor; border-radius: 3px; opacity: .85; }
   .cm-ratio-flat { height: 26px; display: flex; align-items: center; font-size: 14px; }
   .cm-ratio-label { font-size: 11.5px; white-space: nowrap; }
+  /* 内置音色那一格：40px 圆脸。选中时用品牌色描一圈，和顶上音频模式那三颗同一个色，
+     不新造一套选中语言；未选中只留一层极淡的内描边，免得黑底头像看起来像没图。 */
+  .cm-ratio-face { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; background: #2a2a2e; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 12%); }
+  .cm-ratio.is-on .cm-ratio-face { box-shadow: inset 0 0 0 2px rgb(242 78 78 / 85%), 0 0 0 1px rgb(0 0 0 / 45%); }
+  .cm-pill-face { flex: none; width: 20px; height: 20px; border-radius: 50%; object-fit: cover; background: #2a2a2e; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 14%); }
   .cm-seg { display: flex; flex-wrap: wrap; gap: 6px; }
   .cm-seg-item { min-width: 46px; height: 30px; padding: 0 10px; font-size: 12.5px; color: #b8b8bf; background: rgb(255 255 255 / 5%); border-radius: 8px; cursor: pointer; }
   .cm-seg-item:hover { background: rgb(255 255 255 / 9%); }
   .cm-seg-item.is-on { background: rgb(255 255 255 / 15%); color: #fafafa; font-weight: 600; }
+  /* 音频模式那一排：三颗字都短，只加粗读不出选中。品牌色描一圈 + 压深底，与生成按钮同一套色。 */
+  .cm-seg-mode.is-on { background: rgb(242 78 78 / 22%); color: #fff; box-shadow: inset 0 0 0 1px rgb(242 78 78 / 75%); }
+  .cm-seg-mode.is-on:hover:not(:disabled) { background: rgb(242 78 78 / 30%); }
+  .cm-seg-item:disabled { opacity: .55; cursor: default; }
+  .cm-seg-item:hover:disabled { background: rgb(255 255 255 / 5%); }
+  .cm-seg-item.is-on:hover:disabled { background: rgb(255 255 255 / 15%); }
   .cm-custom { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 11.5px; color: #7c7c84; }
   .cm-custom input { width: 92px; height: 28px; padding: 0 8px; font-size: 12.5px; color: #e4e4e7; background: rgba(0, 0, 0, 0.4); border: 1px solid rgb(255 255 255 / 9%); border-radius: 8px; }
   /* 时长滑块：细轨 + 圆 thumb + 已填段，跟图库工具栏那条列数滑块一个手感。 */

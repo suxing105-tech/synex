@@ -1,0 +1,9 @@
+[ok] Vivian seed=20261030 24s -> Vivian_Vivian_roll1_00001_.png.png
+[ok] Serena seed=20261031 27s -> Serena_Serena_roll1_00001_.png.png
+[ok] Uncle_Fu seed=20261032 24s -> Uncle_Fu_Uncle_Fu_roll1_00001_.png.png
+[ok] Dylan seed=20261033 30s -> Dylan_Dylan_roll1_00001_.png.png
+[ok] Eric seed=20261034 27s -> Eric_Eric_roll1_00001_.png.png
+[ok] Ryan seed=20261035 24s -> Ryan_Ryan_roll1_00001_.png.png
+[ok] Aiden seed=20261036 24s -> Aiden_Aiden_roll1_00001_.png.png
+[ok] Ono_Anna seed=20261037 30s -> Ono_Anna_Ono_Anna_roll1_00001_.png.png
+[ok] Sohee seed=20261038 24s -> Sohee_Sohee_roll1_00001_.png.png

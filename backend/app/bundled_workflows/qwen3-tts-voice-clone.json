@@ -1,0 +1,124 @@
+{
+  "key": "qwen3-tts-voice-clone",
+  "label": "闪寻参考音色",
+  "legacy_labels": [
+    "闪寻音频克隆",
+    "闪寻音频",
+    "闪寻音频-一键同款"
+  ],
+  "media_kind": "audio",
+  "notes": "Qwen3-TTS 声音克隆：参考音频决定音色，提示词决定念什么。原工作流里的另两条分支（VoiceDesign / CustomVoice）已剔除——ComfyUI 会执行图里所有输出节点，留着点一次会连出三条。ref_text（参考音频里说的原话）在弹窗里单独一格：它决定克隆得像不像，和台词混用会明显跑偏。",
+  "slots": [
+    {
+      "input": "ref_text",
+      "kind": "prompt",
+      "label": "参考音频的文本",
+      "node": "45",
+      "value": "你好，我是一条声音样本。"
+    },
+    {
+      "input": "text",
+      "kind": "prompt",
+      "label": "完整提示词",
+      "node": "45",
+      "value": "你好，我是一条声音样本。"
+    },
+    {
+      "input": "audio",
+      "kind": "audio",
+      "label": "加载音频",
+      "node": "44"
+    },
+    {
+      "input": "language",
+      "kind": "select",
+      "label": "语言",
+      "node": "45",
+      "options": [
+        "Auto",
+        "Chinese",
+        "English",
+        "Japanese",
+        "Korean",
+        "German",
+        "French",
+        "Russian",
+        "Portuguese",
+        "Spanish",
+        "Italian"
+      ],
+      "value": "Auto"
+    }
+  ],
+  "source": "F:/常用/闪寻音频.json（仅保留 VoiceClone 分支）",
+  "workflow": {
+    "41": {
+      "_meta": {
+        "aux_id": "DarioFT/ComfyUI-Qwen3-TTS",
+        "cnr_id": "comfyui-qwen3-tts",
+        "title": "Qwen3-TTS Loader",
+        "ver": "3751cf3eada5b17f6f1bc82b0c8c318407181c68"
+      },
+      "class_type": "Qwen3Loader",
+      "inputs": {
+        "attention": "auto",
+        "local_model_path": "D:\\AI\\ComfyUI_windows_313_v0.16.4\\ComfyUI\\models\\Qwen3\\Qwen3-TTS-12Hz-1.7B-base",
+        "precision": "bf16",
+        "repo_id": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+        "source": "ModelScope"
+      }
+    },
+    "44": {
+      "_meta": {
+        "cnr_id": "comfy-core",
+        "title": "加载音频",
+        "ver": "0.10.0"
+      },
+      "class_type": "LoadAudio",
+      "inputs": {
+        "audio": "SOPHIE 1.flac"
+      }
+    },
+    "45": {
+      "_meta": {
+        "aux_id": "DarioFT/ComfyUI-Qwen3-TTS",
+        "cnr_id": "comfyui-qwen3-tts",
+        "title": "Qwen3-TTS 声音克隆",
+        "ver": "3751cf3eada5b17f6f1bc82b0c8c318407181c68"
+      },
+      "class_type": "Qwen3VoiceClone",
+      "inputs": {
+        "language": "Auto",
+        "max_new_tokens": 2048,
+        "model": [
+          "41",
+          0
+        ],
+        "ref_audio": [
+          "44",
+          0
+        ],
+        "ref_audio_max_seconds": 30,
+        "ref_text": "你好，我是一条声音样本。",
+        "seed": 42,
+        "text": "你好，我是一条声音样本。"
+      }
+    },
+    "46": {
+      "_meta": {
+        "cnr_id": "comfy-core",
+        "title": "保存音频（高级）",
+        "ver": "0.32.0"
+      },
+      "class_type": "SaveAudioAdvanced",
+      "inputs": {
+        "audio": [
+          "45",
+          0
+        ],
+        "filename_prefix": "audio/闪寻音频克隆",
+        "format": "flac"
+      }
+    }
+  }
+}

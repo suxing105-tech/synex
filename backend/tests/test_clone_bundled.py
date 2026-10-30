@@ -1,4 +1,4 @@
-"""内置「一键同款」工作流：随包那两条（图片 / 视频）能不能正确长进库里。
+"""内置「一键同款」工作流：随包这五条（图片一条、视频一条、声音三种出声方式）能不能正确长进库里。
 
 只碰本地 SQLite 与随包资源，绝不连真机 ComfyUI——槽位固化在 JSON 里，
 首启不需要 object_info，这条本身就是要守住的性质。
@@ -18,6 +18,11 @@ from app.main import app
 
 IMAGE_KEY = "qwen-multi-image-edit"
 VIDEO_KEY = "h3-reference-video"
+AUDIO_KEY = "qwen3-tts-voice-clone"
+DESIGN_KEY = "qwen3-tts-voice-design"
+CUSTOM_KEY = "qwen3-tts-custom-voice"
+ALL_KEYS = [IMAGE_KEY, VIDEO_KEY, AUDIO_KEY, DESIGN_KEY, CUSTOM_KEY]
+AUDIO_LABELS = {"闪寻参考音色", "闪寻音色描述", "闪寻指定音色"}
 
 
 @pytest.fixture
@@ -55,14 +60,64 @@ def _row_of_key(pool, key):
 
 # ---------- 随包资源本身 ----------
 
-def test_ships_one_image_and_one_video_workflow():
-    """包里就是两条：Qwen 多图编辑（图片）与 H3 参考视频（视频）。"""
+def test_ships_one_workflow_per_family():
+    """图片与视频各一条，声音三条——出声音有三种方式，各是一个模型，没法合成一条工作流。
+
+    ComfyUI 会执行图里所有输出节点：三条分支并排塞进一份 JSON，点一次同款就出三段音频、
+    等三倍时间。所以这里按「出声方式」拆成三条，音频族的「当前」仍然只有一条。
+    """
     by_key = {e["key"]: e for e in clone_bundled.entries()}
-    assert set(by_key) == {IMAGE_KEY, VIDEO_KEY}
+    assert set(by_key) == set(ALL_KEYS)
     assert by_key[IMAGE_KEY]["media_kind"] == "image"
     assert by_key[IMAGE_KEY]["label"] == "闪寻图片编辑"
     assert by_key[VIDEO_KEY]["media_kind"] == "video"
     assert by_key[VIDEO_KEY]["label"] == "闪寻参考生视频"
+    assert {by_key[k]["media_kind"] for k in (AUDIO_KEY, DESIGN_KEY, CUSTOM_KEY)} == {"audio"}
+    assert {by_key[k]["label"] for k in (AUDIO_KEY, DESIGN_KEY, CUSTOM_KEY)} == AUDIO_LABELS
+
+
+def test_shipped_audio_workflow_is_the_trimmed_voice_clone_branch():
+    """原文件三条输出分支并存（点一次跑三次生成），包里只能留音色克隆那一条出口。"""
+    entry = [e for e in clone_bundled.entries() if e["key"] == AUDIO_KEY][0]
+    classes = {n["class_type"] for n in entry["workflow"].values()}
+    assert "Qwen3VoiceClone" in classes and "SaveAudioAdvanced" in classes
+    assert not classes & {"Qwen3VoiceDesign", "Qwen3CustomVoice", "PreviewAudio"}, \
+        "多余的分支会让一次生成跑三遍"
+    outs = [c for c in classes if c.lower().startswith(("save", "preview"))]
+    assert outs == ["SaveAudioAdvanced"]
+    # 音色克隆必须同时有参考音频与它的文本，少一个节点会当场报错
+    slots = {(s["kind"], s["node"], s["input"]) for s in entry["slots"]}
+    assert ("audio", "44", "audio") in slots
+    assert ("prompt", "45", "ref_text") in slots and ("prompt", "45", "text") in slots
+
+
+def test_the_two_no_reference_modes_are_trimmed_branches():
+    """音色描述 / 指定音色：各自只留自己那条分支、各自存成一条音轨，且都不吃参考音频。"""
+    by_key = {e["key"]: e for e in clone_bundled.entries()}
+    for key, gen_class, loader_repo, prefix in (
+        (DESIGN_KEY, "Qwen3VoiceDesign", "VoiceDesign", "audio/闪寻音色描述"),
+        (CUSTOM_KEY, "Qwen3CustomVoice", "CustomVoice", "audio/闪寻指定音色"),
+    ):
+        entry = by_key[key]
+        classes = {n["class_type"] for n in entry["workflow"].values()}
+        assert gen_class in classes and "SaveAudioAdvanced" in classes, key
+        # 另两条分支留在图里 = 点一次出三段
+        assert not classes & {"Qwen3VoiceClone", "PreviewAudio", "LoadAudio"}, key
+        assert [c for c in entry["workflow"].values() if c["class_type"] == "SaveAudioAdvanced"][0][
+            "inputs"]["filename_prefix"] == prefix, key
+        slots = {(s["kind"], s["input"]) for s in entry["slots"]}
+        assert ("prompt", "text") in slots, key                       # 台词单独一格
+        assert not [s for s in entry["slots"]
+                    if s["kind"] in ("image", "audio", "video")], key
+        assert loader_repo in " ".join(str(n.get("inputs", {}).get("repo_id"))
+                                       for n in entry["workflow"].values()), key
+    # 描述音色那条：instruct 必填，单独一格，不与台词混写
+    design = {(s["input"], s["label"]) for s in by_key[DESIGN_KEY]["slots"]}
+    assert ("instruct", "音色描述") in design
+    # 指定音色那条：音色是一台下拉，另留一格可选语气
+    custom = {(s["input"], s["label"], s["kind"]) for s in by_key[CUSTOM_KEY]["slots"]}
+    assert ("speaker", "音色", "select") in custom
+    assert ("instruct", "语气与风格", "prompt") in custom
 
 
 def test_builtins_know_their_old_names():
@@ -70,6 +125,9 @@ def test_builtins_know_their_old_names():
     by_key = {e["key"]: e for e in clone_bundled.entries()}
     assert "Qwen 多图编辑" in by_key[IMAGE_KEY]["legacy_labels"]
     assert "H3参考视频" in by_key[VIDEO_KEY]["legacy_labels"]
+    assert "闪寻音频" in by_key[AUDIO_KEY]["legacy_labels"]
+    # 改名不改主键：老库里那条「闪寻音频克隆」下次启动顺势改成「闪寻参考音色」
+    assert "闪寻音频克隆" in by_key[AUDIO_KEY]["legacy_labels"]
 
 
 def test_shipped_workflows_carry_the_two_real_machine_fixes():
@@ -93,13 +151,29 @@ def test_shipped_slots_point_at_real_nodes():
 
 # ---------- 装进库 ----------
 
-def test_fresh_install_seeds_both_families(seeded):
+def test_fresh_install_seeds_every_family(seeded):
     rows = clone_templates.list_templates()
-    assert {r["name"] for r in rows} == {"闪寻图片编辑", "闪寻参考生视频"}
+    assert {r["name"] for r in rows} == {"闪寻图片编辑", "闪寻参考生视频"} | AUDIO_LABELS
     assert all(r["is_builtin"] for r in rows)
-    by_kind = {r["media_kind"]: r for r in rows}
-    assert set(by_kind) == {"image", "video"}
-    assert all(r["is_active"] for r in by_kind.values()), "图片卡与视频卡各有各的当前"
+    assert {r["media_kind"] for r in rows} == {"image", "video", "audio"}
+    # 每族各自一个「当前」：声音三条也只能有一条是当前，弹窗开出来才有唯一默认
+    for kind in ("image", "video", "audio"):
+        family = [r for r in rows if r["media_kind"] == kind]
+        assert sum(1 for r in family if r["is_active"]) == 1, kind
+    assert sum(1 for r in rows if r["media_kind"] == "audio") == 3
+
+
+def test_the_two_extra_audio_modes_have_no_reference_cells(seeded):
+    """弹窗按参考位摆格子：这两种模式没有参考音频位，一格都不该摆出来。"""
+    rows = {r["name"]: r for r in clone_templates.list_templates()}
+    assert [c["kind"] for c in rows["闪寻参考音色"]["reference_cells"]] == ["audio"]
+    for name in ("闪寻音色描述", "闪寻指定音色"):
+        assert rows[name]["reference_cells"] == [], name
+        assert rows[name]["modes"] == ["text"], name
+    assert {s.get("label") for s in rows["闪寻指定音色"]["slots"]
+            if s.get("kind") == "select"} == {"音色", "语言"}
+    assert [s for s in rows["闪寻音色描述"]["slots"] if s.get("kind") == "prompt"][1][
+        "label"] == "音色描述"
 
 
 def test_seeded_video_template_keeps_every_cell_and_control(seeded):
@@ -115,8 +189,8 @@ def test_seeded_video_template_keeps_every_cell_and_control(seeded):
 def test_seeding_twice_does_not_duplicate(seeded):
     again = clone_bundled.seed(seeded.main())
     assert again["inserted"] == []
-    assert sorted(again["skipped"]) == [VIDEO_KEY, IMAGE_KEY]
-    assert len(clone_templates.list_templates()) == 2
+    assert sorted(again["skipped"]) == sorted(ALL_KEYS)
+    assert len(clone_templates.list_templates()) == len(ALL_KEYS)
 
 
 def test_user_edited_builtin_is_not_overwritten(seeded, monkeypatch):
@@ -165,7 +239,7 @@ def test_a_same_named_template_is_adopted_not_duplicated(tmp_path: Path, monkeyp
     assert result["adopted"] == [VIDEO_KEY]
     assert result["renamed"] == [VIDEO_KEY], "老名字顺势改成现在这个名字"
     rows = clone_templates.list_templates()
-    assert len(rows) == 2, "认领一条 + 装上图片那条"
+    assert len(rows) == len(ALL_KEYS), "认领一条 + 装上另外四条"
     adopted = [r for r in rows if r["bundled_key"] == VIDEO_KEY][0]
     assert adopted["id"] == created["id"] and adopted["is_builtin"] is True
     assert adopted["name"] == "闪寻参考生视频"
@@ -200,19 +274,22 @@ def test_deleted_builtin_does_not_come_back(seeded):
     conn = seeded.main()
     target = [r for r in clone_templates.list_templates() if r["bundled_key"] == IMAGE_KEY][0]
     clone_templates.delete_template(target["id"])
-    assert [r["bundled_key"] for r in clone_templates.list_templates()] == [VIDEO_KEY]
+    assert {r["bundled_key"] for r in clone_templates.list_templates()} == set(ALL_KEYS) - {IMAGE_KEY}
     again = clone_bundled.seed(conn)
     assert IMAGE_KEY in again["dismissed"]
     assert IMAGE_KEY in clone_bundled.dismissed(conn)
-    assert [r["bundled_key"] for r in clone_templates.list_templates()] == [VIDEO_KEY]
+    assert {r["bundled_key"] for r in clone_templates.list_templates()} == set(ALL_KEYS) - {IMAGE_KEY}
 
 
 def test_deleting_the_active_one_promotes_a_sibling(seeded):
     target = [r for r in clone_templates.list_templates() if r["bundled_key"] == VIDEO_KEY][0]
     clone_templates.delete_template(target["id"])
     rows = clone_templates.list_templates()
-    assert [r["media_kind"] for r in rows] == ["image"]
-    assert rows[0]["is_active"] is True
+    assert {r["media_kind"] for r in rows} == {"image", "audio"}
+    assert all(r["is_active"] for r in rows if r["media_kind"] == "image"), "图片族的当前不受影响"
+    audio = [r for r in rows if r["media_kind"] == "audio"]
+    assert sum(1 for r in audio if r["is_active"]) == 1, "声音三条里仍只有一条是当前"
+    assert len(audio) == 3, "删掉视频不会牵连声音那三条"
 
 
 # ---------- 开关 ----------
@@ -240,9 +317,9 @@ def test_switch_off_keeps_a_fresh_db_empty(tmp_path: Path, monkeypatch):
 def test_api_reports_builtin_templates(seeded):
     with TestClient(app) as client:
         items = client.get("/api/clone/templates").json()["items"]
-    assert {i["name"] for i in items} == {"闪寻图片编辑", "闪寻参考生视频"}
+    assert {i["name"] for i in items} == {"闪寻图片编辑", "闪寻参考生视频"} | AUDIO_LABELS
     assert all(i["is_builtin"] for i in items)
-    assert {i["media_kind"] for i in items} == {"image", "video"}
+    assert {i["media_kind"] for i in items} == {"image", "video", "audio"}
 
 
 def test_templates_imported_by_the_user_are_not_builtin(seeded):

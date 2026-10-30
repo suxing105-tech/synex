@@ -111,10 +111,11 @@ import { hoverPlay } from "../lib/hover-play";
   let selectedLabel = $derived(selectionSummary(selectedCount, selectedKinds));
   // ---------- 一键同款 ----------
   // 弹窗目标就是被点的这一份素材；生成在后台跑，关掉弹窗不会中断（状态在后端）。
-  // 图片卡与视频卡共用同一个入口、同一个弹窗；音频没有能喂给工作流的加载器，不给入口。
+  // 图片卡、视频卡与音频卡共用同一个入口、同一个弹窗：右下角那颗不管哪一族都是「一键同款」。
+  // 从音频卡打开时，这段声音先站进「音频 1」当参考音色——与视频卡把自己放进「视频 1」同一套逻辑。
   let cloneTarget = $state<MediaFeedItem | null>(null);
   function openClone(it: MediaFeedItem) {
-    if (it.kind !== "image" && it.kind !== "video") return;
+    if (it.kind !== "image" && it.kind !== "video" && it.kind !== "audio") return;
     cloneTarget = it;
   }
   /**
@@ -134,6 +135,15 @@ import { hoverPlay } from "../lib/hover-play";
     }
     const items = $mediaItems;
     const produced = items.find((it) => it.id === id);
+    if (kind === "audio" || produced?.kind === "audio") {
+      if (!produced) {
+        notify("这段配音还没出现在当前列表里，稍等一下或去图库里找。");
+        return;
+      }
+      applySelection(items, id, "none");
+      playAudio(produced);
+      return;
+    }
     if (kind === "video" || produced?.kind === "video") {
       if (!produced) {
         notify("这次出的片子还没出现在当前列表里，稍等一下或去图库里找。");
@@ -649,7 +659,9 @@ import { hoverPlay } from "../lib/hover-play";
           : [{ label: isVideo ? "复制视频" : "复制图片", onClick: () => isVideo ? copyVideoToClipboard(t) : copyImageToClipboard(t) }]),
         ...(isPsdFilename(t.filename) ? [{ label: "在 Photoshop 中打开", onClick: () => openInPhotoshop(t) }] : []),
         // 图片与视频共用这颗菜单项：弹窗会按卡片这一族挑默认的当前工作流
-        ...(t.kind === "image" || t.kind === "video" ? [{ label: "一键同款", onClick: () => openClone(t) }] : []),
+        ...(t.kind === "image" || t.kind === "video" || t.kind === "audio"
+          ? [{ label: "一键同款", onClick: () => openClone(t) }]
+          : []),
         { label: "重命名", onClick: () => renameImage(t) },
         { label: `${noun}所在位置`, onClick: () => revealImage(t) },
         { label: "移动到…", children: moveMenu(items) },
@@ -1118,7 +1130,7 @@ import { hoverPlay } from "../lib/hover-play";
               {:else}
               <button
                 type="button"
-                class="thumb media-card {footerTier === 0 ? 'media-card--compact' : ''} {it.kind === 'audio' ? 'is-audio ' : ''}{(it.kind === 'image' || it.kind === 'video') && footerTier > 0 ? 'is-cloneable ' : ''}text-left {$multiSelectedIds.has(it.id) ? 'is-selected' : ''} {$playingAudio?.id === it.id && it.kind === 'audio' ? 'is-playing' : ''}"
+                class="thumb media-card {footerTier === 0 ? 'media-card--compact' : ''} {it.kind === 'audio' ? 'is-audio ' : ''}{(it.kind === 'image' || it.kind === 'video' || it.kind === 'audio') && footerTier > 0 ? 'is-cloneable ' : ''}text-left {$multiSelectedIds.has(it.id) ? 'is-selected' : ''} {$playingAudio?.id === it.id && it.kind === 'audio' ? 'is-playing' : ''}"
                 style="--card-footer-h: {footerHeightFor(columnWidth)}px"
                 title={it.filename}
                 onclick={(e) => { if (draggedOriginal) { draggedOriginal = false; return; } onThumbClick(e, it); }}
@@ -1202,6 +1214,32 @@ import { hoverPlay } from "../lib/hover-play";
                       <Icon name="comfyui" size={15} />
                     </div>
                   {/if}
+                  {#if it.kind === "audio" && (hoveredId === it.id || $playingAudio?.id === it.id)}
+                    <!-- 播放从右下角退到画面左下角：那个角落现在跟图片卡、视频卡一样，是「一键同款」的。
+                         悬停或正在播放时才出现，与视频卡悬停即播同一套习惯；双击卡片仍然直接播。 -->
+                    <div
+                      role="button"
+                      tabindex="-1"
+                      class="audio-play-btn audio-play-btn--media"
+                      title={$playingAudio?.id === it.id ? "暂停音频" : "播放音频"}
+                      aria-label={($playingAudio?.id === it.id ? "暂停 " : "播放 ") + it.filename}
+                      onclick={(e) => { e.stopPropagation(); e.preventDefault(); if (draggedOriginal) { draggedOriginal = false; return; } toggleAudio(it); }}
+                      onpointerdown={(e) => { e.stopPropagation(); pointerOnImage(e, it); }}
+                      onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleAudio(it); } }}
+                    >
+                      {#if $playingAudio?.id === it.id}
+                        <svg viewBox="0 0 24 24" aria-hidden="true" class="audio-play-icon drop-shadow-lg">
+                          <circle cx="12" cy="12" r="9.2" fill="rgba(0,0,0,0.28)" stroke="#fff" stroke-width="1.25"/>
+                          <path d="M9.9 8.4v7.2M14.1 8.4v7.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                      {:else}
+                        <svg viewBox="0 0 24 24" aria-hidden="true" class="audio-play-icon drop-shadow-lg">
+                          <circle cx="12" cy="12" r="9.2" fill="rgba(0,0,0,0.28)" stroke="#fff" stroke-width="1.25"/>
+                          <path d="M9.7 7.9 16.4 12 9.7 16.1 Z" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"/>
+                        </svg>
+                      {/if}
+                    </div>
+                  {/if}
                 </div>
                 {#if footerTier > 0}
                   <!-- 页脚不依赖图片，立即渲染，本身就是加载占位；NEW 从呼吸角标退成名字前一个红点，
@@ -1227,17 +1265,17 @@ import { hoverPlay } from "../lib/hover-play";
                       <span class="media-card-meta">{metaFor(it)}</span>
                     {/if}
                   </div>
-                  {#if it.kind === "image" || it.kind === "video"}
-                    <!-- 「一键同款」角标：几何与音频播放角标完全一致（同尺寸、同右下角、在页脚高度里同垂直居中），
-                         两种卡在右下角的控件位置就是同一个，不用重新学。卡片本身是 <button>，所以这里
-                         只能再用 role="button" 的 div，并且按下的事件都要拦，否则点图标会变成选中/拖动那张卡。
-                         图片卡和视频卡挂同一颗：点开的是同一个弹窗，只是默认换成另一族当前工作流。 -->
+                  {#if it.kind === "image" || it.kind === "video" || it.kind === "audio"}
+                    <!-- 「一键同款」角标：图片、视频、音频三类卡共用同一颗，右下角位置与尺寸只有一套规矩。
+                         音频卡原来右下角那颗播放键挪进了画面左下角（右下角统一给一键同款），单击/双击卡片照播。
+                         卡片本身是 <button>，所以这里只能再用 role="button" 的 div，并且按下的事件都要拦，
+                         否则点图标会变成选中/拖动那张卡。点开的是同一个弹窗，只是默认换成那一族的当前工作流。 -->
                     <div
                       role="button"
                       tabindex="-1"
                       class="media-clone-btn"
                       title="一键同款"
-                      aria-label={`用同款工作流再生成${it.kind === "video" ? "一条" : "一张"}`}
+                      aria-label={`用同款工作流再生成${it.kind === "image" ? "一张" : it.kind === "audio" ? "一段" : "一条"}`}
                       onclick={(e) => { e.stopPropagation(); e.preventDefault(); openClone(it); }}
                       onpointerdown={(e) => e.stopPropagation()}
                       onmousedown={(e) => e.stopPropagation()}
@@ -1246,30 +1284,6 @@ import { hoverPlay } from "../lib/hover-play";
                       <Icon name="clone" size={20} />
                     </div>
                   {/if}
-                {/if}
-                {#if it.kind === "audio"}
-                  <div
-                    role="button"
-                    tabindex="-1"
-                    class="audio-play-btn"
-                    title={$playingAudio?.id === it.id ? "暂停音频" : "播放音频"}
-                    aria-label={($playingAudio?.id === it.id ? "暂停 " : "播放 ") + it.filename}
-                    onclick={(e) => { e.stopPropagation(); e.preventDefault(); if (draggedOriginal) { draggedOriginal = false; return; } toggleAudio(it); }}
-                    onpointerdown={(e) => { e.stopPropagation(); pointerOnImage(e, it); }}
-                    onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleAudio(it); } }}
-                  >
-                    {#if $playingAudio?.id === it.id}
-                      <svg viewBox="0 0 24 24" aria-hidden="true" class="audio-play-icon drop-shadow-lg">
-                        <circle cx="12" cy="12" r="9.2" fill="rgba(0,0,0,0.28)" stroke="#fff" stroke-width="1.25"/>
-                        <path d="M9.9 8.4v7.2M14.1 8.4v7.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
-                      </svg>
-                    {:else}
-                      <svg viewBox="0 0 24 24" aria-hidden="true" class="audio-play-icon drop-shadow-lg">
-                        <circle cx="12" cy="12" r="9.2" fill="rgba(0,0,0,0.28)" stroke="#fff" stroke-width="1.25"/>
-                        <path d="M9.7 7.9 16.4 12 9.7 16.1 Z" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"/>
-                      </svg>
-                    {/if}
-                  </div>
                 {/if}
               </button>
               {/if}
@@ -1555,6 +1569,13 @@ import { hoverPlay } from "../lib/hover-play";
     justify-content: center;
     cursor: pointer;
     z-index: 2;
+  }
+  /* 播放挪进画面左下角：右下角交给了与图片/视频同一颗「一键同款」。
+     尺寸沿用 --audio-btn，位置改成贴画面左下角，不再参与页脚高度的垂直居中。 */
+  .audio-play-btn--media {
+    left: 8px;
+    right: auto;
+    bottom: 8px;
   }
   .audio-play-icon {
     width: 100%;

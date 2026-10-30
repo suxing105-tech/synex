@@ -72,12 +72,24 @@ class DuplicateNameError(ValueError):
 
 
 PROMPT_INPUT_KEYS = {"prompt", "text", "positive_prompt"}
+# 弹窗里那个主文本框的槽位标签，前后端共用这一个词（前端 lib/clone.ts 同名常量）。
+PRIMARY_PROMPT_LABEL = "完整提示词"
+# 认得出用途的第二段文字：键名 → 中文名。音色克隆必须同时有「要说的话」与「参考音频里
+# 说的原话」，原话既不叫 prompt 也不叫 text，光靠 PROMPT_INPUT_KEYS 认不出来；就算认出来，
+# 塞进同一个输入框更糟——用户一改台词就把原话冲掉，克隆出来的音色就不像了。
+SECONDARY_PROMPT_KEYS = {"ref_text": "参考音频的文本", "instruct": "音色描述"}
+# 留空时要拿台词去顶的那类文字位：只有「参考音频里的原话」是这个语义。
+# 音色描述与语气留空＝不写指令，绝不跟着台词走（见 build_workflow）。
+MIRROR_SCRIPT_KEYS = {"ref_text"}
 # 有些工作流把提示词塞在字符串原语节点里，键叫 value。只能按类名认：
 # PrimitiveFloat / PrimitiveInt 的键也叫 value，那是数值控件，认成提示词就把时长冲掉了。
 STRING_PRIMITIVE_CLASSES = {"primitivestringmultiline", "primitivestring"}
 STRING_PRIMITIVE_KEY = "value"
 SEED_INPUT_KEYS = {"seed", "noise_seed"}
-AUTO_CONTROL_KEYS = ("aspect_ratio", "megapixels")
+# 出声音的工作流没有比例和分辨率，弹窗里要改的是「说什么语种、用哪个音色」：
+# language / speaker 一起进自动名单，否则用户自己导入 VoiceDesign 时会缺一颗语种下拉。
+# 顺序就是优先级——图片/视频工作流先占满两个名额（比例 + 分辨率），语言抢不走。
+AUTO_CONTROL_KEYS = ("aspect_ratio", "megapixels", "language", "speaker")
 MAX_AUTO_CONTROLS = 2
 DURATION_CLASSES = {"primitivefloat", "primitiveint"}
 DURATION_KEY = "value"
@@ -94,7 +106,7 @@ REFERENCE_TYPE_FOR_KIND = {"image": "IMAGE", "audio": "AUDIO", "video": "IMAGE"}
 TAG_TEMPLATES = {"image": "<Picture {n}>", "audio": "<Audio {n}>", "video": "<Video {n}>"}
 MODE_LABELS = workflow_edit.MODE_LABELS
 VIDEO_MODE_LABELS = {"text": "文生视频", "single": "图生视频", "multi": "多参考视频"}
-MEDIA_KINDS = ("image", "video")
+MEDIA_KINDS = ("image", "video", "audio")
 # 出片节点决定这份工作流是图片还是视频：认产出端比认模型端准
 # （H3 之外的视频工作流也一样是「最后有个出视频的节点」）。
 VIDEO_OUTPUT_HINTS = (
@@ -102,8 +114,14 @@ VIDEO_OUTPUT_HINTS = (
     "combinevideo", "videowriter", "savegif", "write to video",
 )
 VIDEO_MODEL_HINTS = ("referencetovideo", "imagetovideo", "texttovideo", "frametovideo")
+# 音频工作流（Qwen3-TTS 那一类）最后落在 SaveAudio*/PreviewAudio 上。
+# 判定顺序很重要：先看视频再看音频——带音轨的视频工作流里往往也有音频节点。
+AUDIO_OUTPUT_HINTS = ("saveaudio", "previewaudio", "audiocombine", "createaudio", "audiocache")
+AUDIO_MODE_LABELS = {"text": "文本配音", "single": "参考音色克隆", "multi": "多参考音频"}
 CONTROL_LABELS = {
     "aspect_ratio": "比例",
+    "language": "语言",
+    "speaker": "音色",
     "megapixels": "分辨率",
     "value": "数值",
     "width": "宽度",
@@ -526,7 +544,11 @@ def _prompt_slots(slots: list[dict]) -> list[dict]:
 def pick_default_prompt(nodes: dict, slots: list[dict]) -> str:
     """工作流内置提示词：优先取真正被下游连用的文本节点，其次取第一个非空。"""
     used = referenced_node_ids(nodes)
-    ordered = sorted(_prompt_slots(slots), key=lambda s: 0 if str(s.get("node")) in used else 1)
+    # 主框那条优先：音色克隆那类工作流一台节点上有两段文字，谁排前面看的是 JSON 里的
+    # 键序，照顺序取会把「参考音频里的原话」当成默认台词填进主框。
+    primaries = [s for s in _prompt_slots(slots) if str(s.get("label") or "") == PRIMARY_PROMPT_LABEL]
+    ordered = sorted(primaries or _prompt_slots(slots),
+                     key=lambda s: 0 if str(s.get("node")) in used else 1)
     for slot in ordered:
         value = node_inputs(nodes.get(slot.get("node"), {})).get(slot.get("input"))
         if isinstance(value, str) and value.strip():
@@ -614,18 +636,37 @@ def _duration_control(nodes: dict, used: set[str]) -> dict | None:
     return None
 
 
+def media_kind_of_template(template: dict | None) -> str:
+    """模板属哪一族；库里旧行没这个字段时一律当图片（与历史行为一致）。"""
+    kind = str((template or {}).get("media_kind") or "image")
+    return kind if kind in MEDIA_KINDS else "image"
+
+
 def is_video(template: dict) -> bool:
-    return str((template or {}).get("media_kind") or "image") == "video"
+    return media_kind_of_template(template) == "video"
+
+
+def is_audio(template: dict) -> bool:
+    return media_kind_of_template(template) == "audio"
 
 
 def mode_labels(template: dict | None) -> dict[str, str]:
     """档位名要跟着工作流出的是什么说：视频工作流里冒出一句「文生图」就是骗人。"""
-    return VIDEO_MODE_LABELS if is_video(template) else MODE_LABELS
+    kind = media_kind_of_template(template)
+    if kind == "video":
+        return VIDEO_MODE_LABELS
+    if kind == "audio":
+        return AUDIO_MODE_LABELS
+    return MODE_LABELS
 
 
 def reference_noun(template: dict | None) -> str:
-    if is_video(template):
+    """对外叙述参考素材时用哪个词：在音频工作流里说「参考图」是骗人。"""
+    kind = media_kind_of_template(template)
+    if kind == "video":
         return "参考素材"
+    if kind == "audio":
+        return "参考音频"
     return "参考图"
 
 
@@ -675,6 +716,39 @@ def drop_reference_images(nodes: dict, node_ids: list[str], info: dict | None = 
     return workflow_edit.drop_reference_images(nodes, node_ids, info, titles, protected)
 
 
+def branch_prompt_nodes(nodes: dict, slots: list[dict]) -> list[str]:
+    """各自独立出片的那几台生成节点：自己带主提示词，而且输出真被下游连走。
+
+    孤立文本节点（仓库样例里那种 CR Prompt Text）不算——它是同一段话的另一份副本，
+    不是一条分支；把它数进来会给正常图片工作流乱报。
+    """
+    used = referenced_node_ids(nodes)
+    primary = {str(s.get("node")) for s in slots
+               if s.get("kind") == "prompt" and str(s.get("label") or "") == PRIMARY_PROMPT_LABEL}
+    return [nid for nid in _ordered_ids(nodes) if nid in primary and nid in used]
+
+
+def branch_warnings(nodes: dict, slots: list[dict], media_kind: str) -> list[str]:
+    """一份 JSON 里并排好几条独立分支时，导入当时就把「点一次出几份」说清。
+
+    Qwen3-TTS 那份工作流最典型：音色克隆 / 音色描述 / 指定音色三条并排，ComfyUI
+    会执行图里所有输出节点——点一次「一键同款」出三段音频、等三倍时间，弹窗里还冒出
+    三个台词框，用户完全不知道为什么。app 不替用户删分支（删错就是毁工作流），
+    只把话说在前面。只对音频报：图片和视频工作流里多几台文本节点是常态，报它是噪音。
+    """
+    if media_kind != "audio":
+        return []
+    branches = branch_prompt_nodes(nodes, slots)
+    if len(branches) < 2:
+        return []
+    titles = "、".join(node_title(nodes.get(nid, {}), nid) for nid in branches[:3])
+    more = f"……一共 {len(branches)} 台" if len(branches) > 3 else ""
+    return [f"这份工作流里并排着 {len(branches)} 台各带台词的声音节点（{titles}{more}），"
+            f"点一次生成会把它们全跑一遍、出 {len(branches)} 段音频，弹窗里也是 {len(branches)} 个台词框。"
+            "想分开用，请在 ComfyUI 里删掉不用的那条分支再导出；"
+            "安装包已内置拆好的参考音色 / 音色描述 / 指定音色三份，不用自己拆。"]
+
+
 def detect_slots(nodes: dict, info: dict | None = None) -> dict:
     """从工作流里认槽位。
 
@@ -686,6 +760,7 @@ def detect_slots(nodes: dict, info: dict | None = None) -> dict:
     """
     slots: list[dict] = []
     warnings: list[str] = []
+    prompt_nodes: set[str] = set()
 
     for nid in _ordered_ids(nodes):
         node = nodes[nid]
@@ -697,11 +772,24 @@ def detect_slots(nodes: dict, info: dict | None = None) -> dict:
             by_key = lowered in PROMPT_INPUT_KEYS
             by_class = (class_type in STRING_PRIMITIVE_CLASSES
                         and lowered == STRING_PRIMITIVE_KEY)
-            if not (by_key or by_class):
+            secondary = SECONDARY_PROMPT_KEYS.get(lowered, "")
+            if not (by_key or by_class or secondary):
                 continue
             if not isinstance(value, str) or not value.strip():
                 continue
-            slots.append({"kind": "prompt", "node": nid, "input": key, "label": "完整提示词"})
+            if secondary:
+                # 认得出用途的第二段文字（音色克隆的原话）：键名说了算，不看谁先出现，
+                # 否则 ref_text 排在 text 前面就会把原话当成主提示词、把台词当成原话。
+                label = secondary
+            elif nid in prompt_nodes:
+                # 同一台节点上又多出一段认不出用途的文字：按输入键名标出来，
+                # 至少不谎称「完整提示词」——它跟着主框走还是自己填，用户看得见。
+                label = key[:40]
+            else:
+                label = PRIMARY_PROMPT_LABEL
+                prompt_nodes.add(nid)   # 一台节点只有一个主框
+            slots.append({"kind": "prompt", "node": nid, "input": key,
+                          "label": label, "value": value})
 
     counters: dict[str, int] = {kind: 0 for kind in REFERENCE_KINDS}
     for nid in _ordered_ids(nodes):
@@ -758,13 +846,15 @@ def detect_slots(nodes: dict, info: dict | None = None) -> dict:
 
     default_prompt = pick_default_prompt(nodes, slots)
     soundtracks = wired_reference_soundtracks(nodes, slots)
+    media_kind = detect_media_kind(nodes)
+    warnings.extend(branch_warnings(nodes, slots, media_kind))
 
     return {
         "slots": slots,
         "candidates": candidates,
         "nodes": node_overview(nodes),
         "default_prompt": default_prompt,
-        "media_kind": detect_media_kind(nodes),
+        "media_kind": media_kind,
         "reference_cells": reference_cells(slots, soundtracks),
         "soundtracks": soundtracks,
         "modes": workflow_edit.modes_for(
@@ -807,6 +897,19 @@ def reference_input_key(node: Any, kind: str) -> str:
 
 
 MISSING_FAMILY_HINTS = {"audio": ("音频", "LoadAudio"), "video": ("视频", "VHS_LoadVideo")}
+# 非要有参考音频才出声的那一类节点（Qwen3-TTS 的声音克隆就是这一类）。
+# 认类名而不是认「有没有音频槽位」：音色设计与指定音色同样是音频工作流，
+# 它们没有也不该有参考音频位，按「缺槽位」报警就是凭空指责用户的工作流坏了。
+AUDIO_REFERENCE_CLASS_HINTS = ("voiceclone", "clonevoice", "audioclone", "voicedescribe")
+
+
+def needs_reference_audio(nodes: Any) -> bool:
+    """detected["nodes"]（设置页那份节点清单）里有没有一台要吃不来的参考音频的节点。"""
+    for node in nodes or []:
+        class_type = str((node or {}).get("class_type") or "").lower()
+        if any(hint in class_type for hint in AUDIO_REFERENCE_CLASS_HINTS):
+            return True
+    return False
 
 
 def family_warnings(detected: dict) -> list[str]:
@@ -815,9 +918,21 @@ def family_warnings(detected: dict) -> list[str]:
     只提醒不代劳：app 不往工作流里塞加载器节点。用户的 ref_audios 该接哪台节点、
     要不要顺带音轨，只有在 ComfyUI 里看一眼才知道，凭空造节点只会把工作流弄脏。
     """
-    if str(detected.get("media_kind") or "image") != "video":
-        return []
+    kind = str(detected.get("media_kind") or "image")
     slots = detected.get("slots") or []
+    if kind == "audio":
+        # 音频同款靠的就是那段参考音色，没有 LoadAudio 就没有「同款」可言。
+        if any(str(s.get("kind")) == "audio" for s in slots):
+            return []
+        # 但「音色描述」「指定音色人物」这两种模式压根不吃参考音频，缺 LoadAudio 不是毛病：
+        # 只有工作流里确实躺着一台非要有参考音频才跑得动的克隆节点，这句提醒才成立。
+        if not needs_reference_audio(detected.get("nodes") or []):
+            return []
+        return ["这份工作流没接音频参考位：在 ComfyUI 里加一台 LoadAudio，"
+                "连到声音克隆节点的参考音频输入，再重新导入一次，"
+                "然后才能在弹窗里换音色。"]
+    if kind != "video":
+        return []
     return [
         f"这份工作流没接{stem}参考位：在 ComfyUI 里加一台 {class_name}，连到 "
         f"ref_{kind}s 的输入，再重新导入一次就能在弹窗里放{stem}。"
@@ -827,13 +942,20 @@ def family_warnings(detected: dict) -> list[str]:
 
 
 def detect_media_kind(nodes: dict) -> str:
-    """这份工作流出的是图还是视频。先看产出端，再兜底看模型端。"""
+    """这份工作流出的是图、视频还是音频。先看产出端，再兜底看模型端。
+
+    视频排在音频前面：H3 那样的视频工作流同时带 LoadAudio/音轨处理，
+    先判音频会把一条出片的工作流错归到音频族。
+    """
     classes = [str(node.get("class_type") or "").lower()
                for node in (nodes or {}).values() if isinstance(node, dict)]
     for hints in (VIDEO_OUTPUT_HINTS, VIDEO_MODEL_HINTS):
         for hint in hints:
             if any(hint in c for c in classes):
                 return "video"
+    for hint in AUDIO_OUTPUT_HINTS:
+        if any(hint in c for c in classes):
+            return "audio"
     return "image"
 
 
@@ -873,6 +995,10 @@ def normalize_slots(raw: Any, nodes: dict) -> list[dict]:
             "kind": kind, "node": node, "input": key,
             "label": (str(item.get("label") or "").strip() or key)[:40],
         }
+        if kind == "prompt" and isinstance(item.get("value"), str):
+            # 弹窗里那第二段文字要有初始值（工作流里现在写的是什么），否则用户面对的是
+            # 一个空框，填了反而把参考音频的原话冲成空字符串——节点会当场报错。
+            slot["value"] = item["value"][:50000]
         if kind == "select":
             options = [x for x in (item.get("options") or []) if isinstance(x, str)]
             if not options:
@@ -990,6 +1116,7 @@ def build_workflow(
     slots: list[dict],
     *,
     prompt: str | None = None,
+    slot_prompts: dict[str, str] | None = None,
     references: dict[str, str] | None = None,
     controls: dict[str, Any] | None = None,
     info: dict | None = None,
@@ -1000,9 +1127,25 @@ def build_workflow(
     titles = {nid: node_title(node, nid) for nid, node in workflow.items()}
     by_key = {slot_key(s): s for s in slots}
     if prompt is not None:
-        for slot in slots:
-            if slot.get("kind") == "prompt":
-                node_inputs(workflow.get(slot["node"])).update({slot["input"]: prompt})
+        prompts = [s for s in slots if s.get("kind") == "prompt"]
+        primaries = {slot_key(s) for s in prompts
+                     if str(s.get("label") or "") == PRIMARY_PROMPT_LABEL} or                     {slot_key(prompts[0]) if prompts else ""}
+        for slot in prompts:
+            key = slot_key(slot)
+            text = (slot_prompts or {}).get(key)
+            if text is not None:
+                value = text
+            elif key in primaries:
+                value = prompt
+            elif str(slot.get("input") or "").lower() in MIRROR_SCRIPT_KEYS:
+                # 参考原话留空＝「就说台词这句」：音色克隆那台节点要的是同一句话，
+                # 留空会让它拿不到原话，克隆出来的音色当场跑偏。
+                value = prompt
+            else:
+                # 其余单独命名的文字位（音色描述、语气风格）：留空就是没指令。
+                # 拿台词去灌等于用户什么都没写、声音却按台词的内容变了。
+                continue
+            node_inputs(workflow.get(slot["node"])).update({slot["input"]: value})
     for key, image_name in (references or {}).items():
         base_key, grow_name = split_reference_key(key)
         slot = by_key.get(base_key)

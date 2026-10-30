@@ -6,8 +6,12 @@ import {
   modeLabel, optionLabel, promptSourceLabel, promptSlots, ratioShape, referenceCells, referenceIssues, visibleRefCells,
   resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, templateDisplayName,
   applyMention, comparePair, matchMention, mentionAddLabel, mentionChunks, mentionItems, mentionToken,
-  familyCells, formatElapsed, inspectAsTemplate, isImageOnlyRefs, isVideoTemplate, mentionInsertText, refTag,
+  familyCells, formatElapsed, inspectAsTemplate, isAudioOnlyRefs, isAudioTemplate, isImageOnlyRefs, isVideoTemplate,
+  mentionInsertText, refTag, templateMediaKind, WF_KIND_WORDS, WF_OUTPUT_WORDS,
   referenceCounter, referenceFamilies, referenceNoun,
+  defaultPromptGroupValues, primaryPromptGroup, promptGroupHint, promptGroupValues, promptGroups, promptPlaceholder, secondaryPromptGroups,
+  audioModeLabel, audioModeTemplates, promptGroupPlaceholder, REFERENCE_TRANSCRIPT_LABEL, VOICE_DESIGN_LABEL, VOICE_STYLE_LABEL,
+  workflowMenuRows, workflowDisplayName, AUDIO_MODE_GROUP_LABEL, voiceAvatar,
   firstFreeRefKey, mergedRefCells, openRefKinds, REF_DISPLAY_ORDER, sortByDisplayFamily,
   type CloneMode, type CloneSlot, type CloneTemplate,
 } from "../lib/clone";
@@ -118,6 +122,13 @@ describe("提示词预填", () => {
     expect(resolvePromptSource({ imagePrompt: null, reversePrompt: null })).toEqual({ text: "", origin: "none" });
   });
 
+  it("文件没带提示词时用当初记下的那句，且它比反推那句更可信", () => {
+    expect(resolvePromptSource({ recordedPrompt: "  当初念的那句  " })).toEqual({ text: "当初念的那句", origin: "recorded" });
+    // 顺序：文件自带 > 当初记下的 > 反推的。反推是猜的，记下来的是事实。
+    expect(resolvePromptSource({ imagePrompt: "图里写的", recordedPrompt: "记下的", reversePrompt: "反推的" }).origin).toBe("image");
+    expect(resolvePromptSource({ recordedPrompt: "记下的", reversePrompt: "反推的" }).text).toBe("记下的");
+  });
+
   it("只有提示词空着且工作流有内置文案时，才给「填入工作流内置提示词」", () => {
     expect(shouldOfferWorkflowPrompt("", "工作流内置")).toBe(true);
     expect(shouldOfferWorkflowPrompt("用户已经写了", "工作流内置")).toBe(false);
@@ -132,6 +143,7 @@ describe("提示词预填", () => {
   it("空提示词要说清楚会用工作流内置的那条，而不是让人以为坏了", () => {
     expect(promptSourceLabel("none")).toContain("工作流");
     expect(promptSourceLabel("image")).toContain("这张图");
+    expect(promptSourceLabel("recorded")).toBe("已带上当初生成时用的提示词");
   });
 });
 
@@ -189,6 +201,23 @@ describe("参数面板的取数与文案", () => {
     expect(optionLabel("9:16 (Portrait Widescreen)")).toBe("9:16");
     expect(optionLabel("  high（高） ")).toBe("high");
     expect(optionLabel("normal")).toBe("normal");
+  });
+
+  it("语种那一类选项只在显示这一层翻成中文，认不出的绝不瞎翻", () => {
+    expect(optionLabel("Auto")).toBe("自动");
+    expect(optionLabel("Chinese")).toBe("中文");
+    expect(optionLabel("chinese")).toBe("中文");
+    expect(optionLabel("Portuguese")).toBe("葡萄牙文");
+    // 括号后缀先被切掉，切完剩下那点英文才是查表的键
+    expect(optionLabel("Chinese（中文）")).toBe("中文");
+    // 认不出的自定义选项照原样：宁可留一个英文词，也不能把别人的选项翻译成奇怪的东西
+    expect(optionLabel("Klingon")).toBe("Klingon");
+    expect(optionLabel("16:9")).toBe("16:9");
+    expect(optionLabel("")).toBe("");
+    // 面板格子与底部那颗胶囊汇总走同一个 ratioShape，两处一起变中文；
+    // 网格的 aria-label 与 title 仍是原值，交回后端的值也不受影响。
+    expect(ratioShape("Chinese").label).toBe("中文");
+    expect(ratioShape("Auto").ratio).toBeNull();
   });
 
   it("比例格子按真实宽高比给尺寸，认不出的选项只给文字", () => {
@@ -769,5 +798,278 @@ describe("参考区合成一行", () => {
     const full: Record<string, any> = {};
     for (const cell of familyCells(cells, "audio")) full[cell.key] = ref(4, "audio", "c.mp3");
     expect(firstFreeRefKey(cells, full, "audio")).toBe("");
+  });
+});
+
+describe("音频一族：叫法、量词与档位名", () => {
+  const refTextSlot: CloneSlot = { kind: "prompt", node: "45", input: "ref_text", label: "参考音频的文本" };
+  const speechSlot: CloneSlot = { kind: "prompt", node: "45", input: "text", label: "完整提示词" };
+  const audioSlot: CloneSlot = { kind: "audio", node: "44", input: "audio", label: "加载音频" };
+  const langSlot: CloneSlot = { kind: "select", node: "45", input: "language", label: "语言", options: ["Auto", "Chinese"], value: "Auto" };
+  const audioTpl = tpl([refTextSlot, speechSlot, audioSlot, langSlot],
+    { name: "闪寻音频克隆", media_kind: "audio" });
+
+  it("族别只看 media_kind；库里没带这个字段的老行一律当图片", () => {
+    expect(templateMediaKind(audioTpl)).toBe("audio");
+    expect(isAudioTemplate(audioTpl)).toBe(true);
+    expect(isVideoTemplate(audioTpl)).toBe(false);
+    expect(templateMediaKind(tpl([promptSlot, imageSlot]))).toBe("image");
+    expect(isAudioTemplate(tpl([promptSlot, imageSlot]))).toBe(false);
+  });
+
+  it("只有音频一族：参考音频 / 段，档位叫文本配音 / 参考音色克隆 / 多参考音频", () => {
+    expect(referenceNoun(audioTpl)).toBe("参考音频");
+    expect(referenceCounter(audioTpl)).toBe("段");
+    expect(isAudioOnlyRefs(audioTpl)).toBe(true);
+    expect(isImageOnlyRefs(audioTpl)).toBe(false);
+    expect(referenceFamilies(audioTpl)).toEqual(["audio"]);
+    expect(modeLabel("text", "audio")).toBe("文本配音");
+    expect(modeLabel("single", "audio")).toBe("参考音色克隆");
+    expect(modeLabel("multi", "audio")).toBe("多参考音频");
+  });
+
+  it("格子只有「音频1」一格，标签仍然是中文编号，不暴露 ref_text 那种节点词", () => {
+    expect(referenceCells(audioTpl).map((c) => [c.key, c.kind, c.label])).toEqual([["44.audio", "audio", "音频1"]]);
+    // 两个提示词槽都算提示词位，不会有一个被当成参考位
+    expect(promptSlots(audioTpl).map(slotKey)).toEqual(["45.ref_text", "45.text"]);
+    expect(controlSlots(audioTpl).map(slotKey)).toEqual(["45.language"]);
+  });
+
+  it("音频工作流插的还是 @音频1：只有 H3 那种视频工作流才换尖括号标签", () => {
+    const cell = referenceCells(audioTpl)[0];
+    expect(mentionInsertText(cell, "audio")).toBe("@音频1");
+    expect(mentionInsertText(cell, "image")).toBe("@音频1");
+    expect(mentionItems(referenceCells(audioTpl), { "44.audio": image(9, "音色.flac") }, "", "audio")
+      .filter((i) => !i.add).map((i) => [i.label, i.insert])).toEqual([["音频1", "@音频1"]]);
+  });
+
+  it("三族徽标与产出说法齐了：设置页与弹窗菜单共用这一张表", () => {
+    expect(WF_KIND_WORDS).toEqual({ image: "图片", video: "视频", audio: "音频" });
+    expect(WF_OUTPUT_WORDS).toEqual({ image: "出图", video: "出片", audio: "出声音" });
+  });
+});
+
+describe("文字位分框：台词与参考音频的原话不能共用一个框", () => {
+  const speech: CloneSlot = { kind: "prompt", node: "45", input: "text", label: "完整提示词", value: "工作流里的台词" };
+  const transcript: CloneSlot = { kind: "prompt", node: "45", input: "ref_text", label: "参考音频的文本", value: "参考音频里说的原话" };
+  const twoSlots = (list: CloneSlot[]) => tpl(list, { name: "闪寻音频克隆", media_kind: "audio" });
+
+  it("按标签分框：主框认标签，附框带着工作流里那句原文", () => {
+    const groups = promptGroups(twoSlots([transcript, speech]));
+    expect(groups.map((g) => [g.label, g.keys, g.primary])).toEqual([
+      ["参考音频的文本", ["45.ref_text"], false],
+      ["完整提示词", ["45.text"], true],
+    ]);
+    expect(primaryPromptGroup(twoSlots([transcript, speech]))?.label).toBe("完整提示词");
+    expect(secondaryPromptGroups(twoSlots([transcript, speech])).map((g) => g.label)).toEqual(["参考音频的文本"]);
+  });
+
+  it("附框预填取槽位里那段原文；没有原话的工作流一个都不预填", () => {
+    expect(defaultPromptGroupValues(twoSlots([transcript, speech]))).toEqual({ "45.ref_text": "参考音频里说的原话" });
+    expect(defaultPromptGroupValues(tpl([promptSlot, imageSlot]))).toEqual({});
+  });
+
+  it("认不出主框标签时退回第一组：那条工作流总得能在弹窗里填字", () => {
+    const odd = tpl([{ kind: "prompt", node: "7", input: "text", label: "megapixels" }]);
+    expect(primaryPromptGroup(odd)?.keys).toEqual(["7.text"]);
+  });
+
+  it("重开同款时那句原话盖过工作流现在的默认值，但只盖自己家的键", () => {
+    const audio = twoSlots([transcript, speech]);
+    expect(promptGroupValues(audio, { "45.ref_text": "当初样本里的原话" })).toEqual({ "45.ref_text": "当初样本里的原话" });
+    // 别的工作流记下的键不许跟过来：这条工作流没有那个输入，交上去后端直接 400
+    expect(promptGroupValues(audio, { "99.ref_text": "别家的", "45.ref_text": "   " })).toEqual({ "45.ref_text": "参考音频里说的原话" });
+    // 没有来源记录（老数据、或在 ComfyUI 里手动跑的）就用工作流那句打底
+    expect(promptGroupValues(audio, null)).toEqual({ "45.ref_text": "参考音频里说的原话" });
+    expect(promptGroupValues(tpl([promptSlot, imageSlot]), { "45.ref_text": "别家的" })).toEqual({});
+  });
+
+  it("请求体：附框有才带 slot_prompts，空的丢掉让后端回落", () => {
+    const withSub = buildGenerateRequest({
+      templateId: 12, prompt: "台词", references: {}, controls: {}, sourceImageId: null,
+      slotPrompts: { "45.ref_text": "原话", "45.nowhere": "   " },
+    });
+    expect(withSub.slot_prompts).toEqual({ "45.ref_text": "原话" });
+    const plain = buildGenerateRequest({ templateId: 1, prompt: "台词", references: {}, controls: {}, sourceImageId: null });
+    expect("slot_prompts" in plain).toBe(false);
+  });
+
+  it("附框的解释只给认得出用途的那种，别的附框不该瞎指挥", () => {
+    expect(promptGroupHint("参考音频的文本")).toContain("跑偏");
+    expect(promptGroupHint("完整提示词")).toBe("");
+  });
+
+  it("提示语跟着族走：出声音的别问「要生成什么画面」", () => {
+    expect(promptPlaceholder("audio")).toContain("念");
+    expect(promptPlaceholder("image")).toBe(promptPlaceholder());
+  });
+});
+
+
+describe("音频的三种出声方式", () => {
+  const audioTpl = (name: string, over: Partial<CloneTemplate> = {}): CloneTemplate =>
+    tpl([{ kind: "prompt", node: "38", input: "text", label: "完整提示词" }], { id: name.length, name, media_kind: "audio", ...over });
+
+  it("模式按钮只列音频族：图片、视频工作流不许混进这一排", () => {
+    const imageTpl = tpl([promptSlot, imageSlot], { name: "闪寻图片编辑", media_kind: "image" });
+    const videoTpl = tpl([promptSlot, imageSlot], { id: 9, name: "闪寻参考生视频", media_kind: "video" });
+    const noKind = tpl([promptSlot], { id: 8, name: "没标族别的老模板" });
+    const list = audioModeTemplates([imageTpl, audioTpl("闪寻参考音色"), videoTpl, noKind, audioTpl("闪寻音色描述")]);
+    expect(list.map((t) => t.name)).toEqual(["闪寻参考音色", "闪寻音色描述"]);
+    expect(audioModeTemplates(null)).toEqual([]);
+  });
+
+  it("按钮上的字去掉重复的品牌前缀，去掉就空的名字保留全名", () => {
+    expect(audioModeLabel("闪寻参考音色")).toBe("参考音色");
+    expect(audioModeLabel("闪寻参考音色.json")).toBe("参考音色");
+    expect(audioModeLabel("我的音色工作流")).toBe("我的音色工作流");
+    // 名字整条就是品牌前缀时不能显示成一颗空按钮
+    expect(audioModeLabel("闪寻")).toBe("闪寻");
+  });
+
+  it("三种附框各有各的解释与占位语，共用一句就是骗人", () => {
+    expect(promptGroupHint(REFERENCE_TRANSCRIPT_LABEL)).toContain("跑偏");
+    expect(promptGroupHint(VOICE_DESIGN_LABEL)).toContain("决定声音长什么样");
+    expect(promptGroupHint(VOICE_STYLE_LABEL)).toContain("可以留空");
+    expect(promptGroupHint("随便一段文字")).toBe("");
+    expect(promptGroupPlaceholder(REFERENCE_TRANSCRIPT_LABEL)).toContain("跟随上面");
+    expect(promptGroupPlaceholder(VOICE_DESIGN_LABEL)).toContain("必填");
+    expect(promptGroupPlaceholder(VOICE_STYLE_LABEL)).toContain("可留空");
+  });
+
+  it("没有参考位的工作流不许在提示语里教人打 @", () => {
+    expect(promptPlaceholder("audio")).toContain("@");
+    expect(promptPlaceholder("audio", "参考音频", false)).toBe("要念什么");
+    expect(promptPlaceholder("image", "参考图片", false)).toBe("要生成什么画面");
+  });
+
+  it("音色名里的下划线读着像代码，显示成空格；认不出是谁就照原样", () => {
+    expect(optionLabel("Uncle_Fu")).toBe("Uncle Fu");
+    expect(optionLabel("Ono_Anna")).toBe("Ono Anna");
+    expect(optionLabel("Vivian")).toBe("Vivian");
+    // 语种仍然优先中文，下划线规则不许抢在它前面
+    // 语种那一类仍然优先中文，下划线规则不许抢在前面（后端给的选项值永远是原值）
+    expect(optionLabel("Vivian（vivian）")).toBe("Vivian");
+    expect(optionLabel("Sohee")).toBe("Sohee");
+    expect(optionLabel("zh")).toBe("中文");
+  });
+});
+
+describe("内置音色的头像：认得出是谁才给脸", () => {
+  // 键 = 官方 speaker 选项值。图放在 public/voices/ 走静态托管，路径就是文件名。
+  const NINE: [string, string][] = [
+    ["Vivian", "/voices/vivian.webp"],
+    ["Serena", "/voices/serena.webp"],
+    ["Uncle_Fu", "/voices/uncle-fu.webp"],
+    ["Dylan", "/voices/dylan.webp"],
+    ["Eric", "/voices/eric.webp"],
+    ["Ryan", "/voices/ryan.webp"],
+    ["Aiden", "/voices/aiden.webp"],
+    ["Ono_Anna", "/voices/ono-anna.webp"],
+    ["Sohee", "/voices/sohee.webp"],
+  ];
+
+  it("Qwen3-TTS 那九个内置音色各对一张脸，下划线和括号后缀都不影响", () => {
+    for (const [option, path] of NINE) {
+      expect(voiceAvatar(option), option).toBe(path);
+    }
+    // 后端把选项写成带说明的样式时也要认得（optionLabel 先把括号切掉）
+    expect(voiceAvatar("Ono_Anna（日语）")).toBe("/voices/ono-anna.webp");
+    expect(voiceAvatar(" uncle_fu ")).toBe("/voices/uncle-fu.webp");
+  });
+
+  it("认不出的选项一律没有脸：语种、比例、用户自己练的音色都不许乱配", () => {
+    for (const option of ["Auto", "Chinese", "中文", "9:16", "my_voice", "Vivi", "", "   "]) {
+      expect(voiceAvatar(option), option).toBeNull();
+    }
+  });
+
+  it("九张头像文件真的在 public/voices/ 下，且是 WebP", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    for (const [, urlPath] of NINE) {
+      const p = path.resolve(__dirname, "..", "..", "public", urlPath.replace(/^\//, ""));
+      expect(fs.existsSync(p), `${urlPath} 应在 public/ 下`).toBe(true);
+      const buf = fs.readFileSync(p);
+      // RIFF....WEBP
+      expect(buf.subarray(0, 4).toString("latin1")).toBe("RIFF");
+      expect(buf.subarray(8, 12).toString("latin1")).toBe("WEBP");
+      expect(buf.length).toBeGreaterThan(2000);
+    }
+  });
+});
+
+
+describe("切换工作流那一列：音频族收成一条", () => {
+  const wf = (id: number, name: string, kind: string, over: Partial<CloneTemplate> = {}): CloneTemplate =>
+    tpl([promptSlot], { id, name, media_kind: kind as CloneTemplate["media_kind"], is_active: false, ...over });
+  const IMG = wf(1, "闪寻图片编辑", "image", { is_active: true });
+  const VID = wf(2, "闪寻参考生视频", "video", { is_active: true });
+  const A1 = wf(3, "闪寻参考音色", "audio", { is_active: true });
+  const A2 = wf(4, "闪寻指定音色", "audio");
+  const A3 = wf(5, "闪寻音色描述", "audio");
+
+  it("图片视频各占一行，三条音频并成一行「闪寻音频」，位置在第一条音频那儿", () => {
+    const rows = workflowMenuRows([IMG, VID, A1, A2, A3]);
+    expect(rows.map((r) => r.label)).toEqual(["闪寻图片编辑", "闪寻参考生视频", AUDIO_MODE_GROUP_LABEL]);
+    expect(rows.map((r) => r.kind)).toEqual(["image", "video", "audio"]);
+    const group = rows[2];
+    expect(group.collapsed).toBe(true);
+    expect(group.memberIds).toEqual([3, 4, 5]);
+    // 点这一条要落到库里标「当前」的那条，不是数组第一条
+    expect(group.targetId).toBe(3);
+  });
+
+  it("折叠行排在音频族原来的位置：音频在前面时不会跑到清单最下面", () => {
+    const rows = workflowMenuRows([A1, IMG, A2]);
+    expect(rows.map((r) => r.key)).toEqual(["audio-group", "1"]);
+  });
+
+  it("族里没有「当前」时退回弹窗正在用的那条，再没有就第一条", () => {
+    const none = [wf(6, "闪寻A", "audio"), wf(7, "闪寻B", "audio")];
+    expect(workflowMenuRows(none, 7)[0].targetId).toBe(7);
+    expect(workflowMenuRows(none, 99)[0].targetId).toBe(6);
+    const oneActive = [wf(6, "闪寻A", "audio"), wf(7, "闪寻B", "audio", { is_active: true })];
+    expect(workflowMenuRows(oneActive, 6)[0].targetId).toBe(7);
+  });
+
+  it("只有一条音频工作流时不折叠，照名字列出来", () => {
+    const rows = workflowMenuRows([IMG, A1]);
+    expect(rows.map((r) => [r.label, r.collapsed])).toEqual([["闪寻图片编辑", false], ["闪寻参考音色", false]]);
+    expect(workflowMenuRows(null)).toEqual([]);
+  });
+
+  it("名字尾巴上的 .json 不许带进清单（本地导入那类文件名）", () => {
+    const rows = workflowMenuRows([wf(8, "我的配音.json", "image")]);
+    expect(rows[0].label).toBe("我的配音");
+  });
+});
+
+describe("弹窗标题与底部那颗胶囊的名字跟着清单那一行", () => {
+  const w = (id: number, name: string, kind: string, over: Partial<CloneTemplate> = {}): CloneTemplate =>
+    tpl([promptSlot], { id, name, media_kind: kind as CloneTemplate["media_kind"], is_active: false, ...over });
+  const IMG = w(1, "闪寻图片编辑", "image", { is_active: true });
+  const C1 = w(3, "闪寻参考音色", "audio", { is_active: true });
+  const C2 = w(4, "闪寻指定音色", "audio");
+  const C3 = w(5, "闪寻音色描述", "audio");
+
+  it("三条音频工作流切到哪一种，标题与底部那颗都写「闪寻音频」", () => {
+    const all = [IMG, C1, C2, C3];
+    expect([C1, C2, C3].map((t) => workflowDisplayName(all, t))).toEqual([
+      AUDIO_MODE_GROUP_LABEL, AUDIO_MODE_GROUP_LABEL, AUDIO_MODE_GROUP_LABEL,
+    ]);
+  });
+
+  it("图片工作流照自己的名字，一个字都不多余", () => {
+    expect(workflowDisplayName([IMG, C1, C2, C3], IMG)).toBe("闪寻图片编辑");
+  });
+
+  it("库里只有一条音频工作流时不折叠：名字仍是那条工作流", () => {
+    expect(workflowDisplayName([IMG, C1], C1)).toBe("闪寻参考音色");
+  });
+
+  it("模板还没选：空串，标题上不许出现 undefined", () => {
+    expect(workflowDisplayName([], null)).toBe("");
+    expect(workflowDisplayName([IMG], null)).toBe("");
   });
 });

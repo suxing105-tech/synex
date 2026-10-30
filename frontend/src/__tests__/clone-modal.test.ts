@@ -535,9 +535,14 @@ it('定宽优先：名字长短不许决定这一排的几何，取消和生成�
   // 「生成」跟着掉到第二行——苏醒这轮指的错位就是这么来的。定死之后换行只跟容器宽度有关。
   expect(css).toMatch(/\.cm-foot-left\s*\{[^}]*flex:\s*1 1 240px/);
   expect(css).not.toMatch(/\.cm-foot-left\s*\{[^}]*flex:\s*1 1 auto/);
-  // 工作流那颗胶囊的宽度由它那一格说了算，不由名字长短说了算
-  expect(css).toMatch(/\.cm-foot-left > \.cm-fill\s*\{[^}]*flex:\s*1 1 132px/);
-  expect(css).toMatch(/\.cm-fill \.cm-pill\s*\{[^}]*width:\s*100%/);
+  // 工作流那一格跟着名字收缩，不再摊薄成整行宽；整排的基准宽度仍由上面那 240px 定死，
+  // 所以名字再长也只是在胶囊里截断，不会把「生成」顶到第二行。
+  expect(css).toMatch(/\.cm-foot-left > \.cm-fill\s*\{[^}]*flex:\s*0 1 auto/);
+  expect(css).toMatch(/\.cm-fill \.cm-pill\s*\{[^}]*width:\s*auto/);
+  // 胶囊只包到名字那么宽（Round 26「工作流按钮右边空太多」）；整排靠左，与上面正文同一左边线
+  // （Round 28：靠右 packing 时参数胶囊前面空出一截，读着像漏了一块）。
+  expect(css).toMatch(/\.cm-fill \.cm-pill\s*\{[^}]*max-width:\s*100%/);
+  expect(css).toMatch(/\.cm-foot-left\s*\{[^}]*justify-content:\s*flex-start/);
   // 弹层贴着胶囊右边往左长：左对齐的弹层在窄窗口会被顶出弹窗
   expect(css).toMatch(/\.cm-pop-wf\s*\{[^}]*left:\s*auto/);
   expect(css).toMatch(/\.cm-pop-wf\s*\{[^}]*right:\s*0/);
@@ -702,9 +707,12 @@ it("引用标签按品牌色高亮：textarea 涂透明，字画在背后的遮�
   expect(hl?.textContent).toBe("@图片1");
   // happy-dom 不注入 Svelte 的 scoped <style>，样式只能读源码断言
   const source = readFileSync("src/components/CloneModal.svelte", "utf8");
-  const area = [...source.matchAll(/\.cm-textarea\s*\{[^}]*\}/g)].map((m) => m[0]).join("\n");
-  expect(area).toMatch(/color: transparent/);
-  expect(area).toMatch(/caret-color: #f24e4e/);
+  const mirror = /\.cm-textarea-mirror\s*\{[^}]*\}/.exec(source)?.[0] ?? "";
+  expect(mirror).toMatch(/color: transparent/);
+  expect(mirror).toMatch(/caret-color: #f24e4e/);
+  // 透明字只许挂在带镜像层的主框上，不能挂回 .cm-textarea 本体
+  const base = [...source.matchAll(/\.cm-textarea\s*\{[^}]*\}/g)].map((m) => m[0]).join("\n");
+  expect(base).not.toMatch(/color:\s*transparent/);
   expect(/\.cm-textarea::placeholder\s*\{[^}]*color: #62626a/.test(source)).toBe(true);
 });
 
@@ -1235,4 +1243,571 @@ it('往已经放满的那一族再拖一份：说清是哪一族满了，不默�
   expect(await screen.findByRole('status')).toBeTruthy();
   expect(screen.getByRole('status').textContent).toContain('音频参考位已经放满了');
   expect(imagesApi.import).not.toHaveBeenCalled();
+});
+
+/* ── 音频一键同款（Qwen3 音色克隆）────────────────────────────────────── */
+
+/** 真机那条音色克隆的形状：两个提示词位（要说的话 + 参考音频的原话）+ 一台 LoadAudio + 语言下拉。 */
+const TTS = {
+  ...TPL, id: 12, name: '闪寻音频克隆', media_kind: 'audio', modes: ['single', 'multi'],
+  prompt_count: 2, reference_count: 1, control_count: 1,
+  slots: [
+    { kind: 'prompt', node: '45', input: 'ref_text', label: '参考音频的文本', value: '参考音频里说的原话' },
+    { kind: 'prompt', node: '45', input: 'text', label: '完整提示词', value: '你好，我是一条声音样本。' },
+    { kind: 'audio', node: '44', input: 'audio', label: '加载音频' },
+    { kind: 'select', node: '45', input: 'language', label: '语言', options: ['Auto', 'Chinese'], value: 'Auto' },
+  ],
+};
+
+const audioRoutes = () => ({
+  ...baseRoutes(),
+  '/api/clone/sources/22': NO_SOURCES,
+  '/api/images/22/reverse-prompts': { items: [] },
+  '/api/images/22': { id: 22, filename: 'bgm.mp3', positive_prompt: '' },
+});
+
+it('音频卡点开默认吃出声音那条；这一族没有就退回库里现有的', async () => {
+  routes({ ...audioRoutes(), '/api/clone/templates': { items: [TPL, { ...TTS, is_active: false }] } });
+  const screen = await ready({ image: AUDIO });
+  expect(screen.getByRole('heading', { name: '闪寻音频克隆' })).toBeTruthy();
+  cleanup();
+  routes({ ...audioRoutes(), '/api/clone/templates': { items: [TPL] } });
+  const again = await ready({ image: AUDIO });
+  expect(again.getByRole('heading', { name: 'Qwen 多图编辑' })).toBeTruthy();
+});
+
+it('音频卡的左边是波形加一条播放器：写词的时候能就地听这段音色', async () => {
+  routes({ ...audioRoutes(), '/api/clone/templates': { items: [TTS] } });
+  const screen = await ready({ image: AUDIO });
+  const wave = screen.container.querySelector('img.cm-hero-wave') as HTMLImageElement;
+  expect(wave).toBeTruthy();
+  expect(wave.getAttribute('src')).toContain('/api/audio/22/waveform');
+  const player = screen.container.querySelector('audio.cm-hero-audio') as HTMLAudioElement;
+  expect(player).toBeTruthy();
+  expect(player.getAttribute('controls')).not.toBeNull();
+  expect(player.getAttribute('src')).toContain('/api/audio/22/file');
+});
+
+it('音频工作流的参考行只有一格「音频1」，被点的那段自己站在里面', async () => {
+  routes({ ...audioRoutes(), '/api/clone/templates': { items: [TTS] } });
+  const screen = await ready({ image: AUDIO });
+  expect(document.querySelectorAll('.cm-ref-row')).toHaveLength(1);
+  expect(document.querySelector('[aria-label="参考音频（参考音色克隆）"]')).toBeTruthy();
+  expect(screen.getByTitle(/｜bgm\.mp3$/)).toBeTruthy();
+  // 量词与称呼都跟着族走，不冒出「这张图」
+  expect(screen.queryByText(/这张图/)).toBeNull();
+});
+
+it('工作流菜单三族并列：徽标是图片/视频/音频，选哪条就换哪条', async () => {
+  routes({ ...audioRoutes(), '/api/clone/templates': { items: [{ ...TPL, is_active: true }, { ...TTS, is_active: true }] } });
+  const screen = await ready({ image: AUDIO });
+  await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
+  const options = await screen.findAllByRole('menuitemradio');
+  // 一张清单不分家，但族徽必须一眼分得清：图片卡挂上出声音的那条，等半天才知道选错
+  expect(options.map((el) => el.querySelector('.cm-wf-kind')?.textContent)).toEqual(['图片', '音频']);
+  expect(options[1].querySelector('.cm-wf-kind')?.classList.contains('cm-wf-kind-audio')).toBe(true);
+});
+
+it('产出是音频时 chip 上挂播放角标，点它就地播而不是进图片对比', async () => {
+  routes({
+    ...audioRoutes(),
+    '/api/clone/templates': { items: [TTS] },
+    '/api/clone/generate': { ...EMPTY_CLONE_JOB, active: true, job_id: 'j1', state: 'queued', running: true },
+  });
+  const onOpen = vi.fn();
+  const screen = await ready({ image: AUDIO, onOpenImage: onOpen });
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '换一段台词' } });
+  const go = screen.getByRole('button', { name: '生成' }) as HTMLButtonElement;
+  await vi.waitFor(() => expect(go.disabled).toBe(false));
+  await fireEvent.click(go);
+  applyCloneProgress({
+    active: true, job_id: 'j1', state: 'done', running: false, template_id: 12, media_kind: 'audio',
+    outputs: [{ id: 88, kind: 'audio', filename: '闪寻音频克隆_00001.flac', thumbnail_url: '/api/audio/88/waveform' }],
+  });
+  await tick();
+  const chip = screen.getByRole('button', { name: '打开生成的第 88 条' });
+  expect(chip.querySelector('img')?.getAttribute('src')).toContain('/api/audio/88/waveform');
+  // 产出是音频：chip 上挂着播放角标，点下去交给父组件就地播，不是进图片对比
+  expect(chip.classList.contains('cm-chip-video')).toBe(true);
+  expect(chip.querySelector('.cm-chip-play')).toBeTruthy();
+  await fireEvent.click(chip);
+  expect(onOpen).toHaveBeenCalledWith(88, 'audio');
+});
+
+it('音色克隆的台词与原话分两格：附框预填工作流里那句原话', async () => {
+  routes({ ...audioRoutes(), '/api/clone/templates': { items: [TTS] } });
+  const screen = await ready({ image: AUDIO });
+  const sub = await screen.findByLabelText('参考音频的文本');
+  expect((sub as HTMLTextAreaElement).value).toBe('参考音频里说的原话');
+  // 主框还是台词，不能被原话顶掉；出声音的工作流也不该问「要生成什么画面」
+  expect((screen.getByLabelText('提示词') as HTMLTextAreaElement).value).toBe('');
+  expect(screen.getByLabelText('提示词').getAttribute('placeholder')).toContain('念');
+  expect(screen.getByText(/音色会明显跑偏/)).toBeTruthy();
+});
+
+it('改附框不碰台词，提交时两段各交各的', async () => {
+  let sent: any = null;
+  routes({
+    ...audioRoutes(),
+    '/api/clone/templates': { items: [TTS] },
+    '/api/clone/generate': (init?: RequestInit) => {
+      sent = JSON.parse(String(init?.body));
+      return { ...EMPTY_CLONE_JOB, active: true, job_id: 'j9', state: 'queued', running: true };
+    },
+  });
+  const screen = await ready({ image: AUDIO });
+  const sub = await screen.findByLabelText('参考音频的文本');
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '换一段台词' } });
+  await fireEvent.input(sub, { target: { value: '原话其实说的是这句' } });
+  const go = screen.getByRole('button', { name: '生成' }) as HTMLButtonElement;
+  await vi.waitFor(() => expect(go.disabled).toBe(false));
+  await fireEvent.click(go);
+  expect(sent.prompt).toBe('换一段台词');
+  expect(sent.slot_prompts).toEqual({ '45.ref_text': '原话其实说的是这句' });
+});
+
+it('只有一格文字位的工作流不摆附框，请求体也不多出 slot_prompts', async () => {
+  let sent: any = null;
+  routes({
+    ...baseRoutes(),
+    '/api/clone/generate': (init?: RequestInit) => {
+      sent = JSON.parse(String(init?.body));
+      return { ...EMPTY_CLONE_JOB, active: true, job_id: 'j8', state: 'queued', running: true };
+    },
+  });
+  const screen = await ready();
+  expect(document.querySelectorAll('textarea.cm-textarea-sub')).toHaveLength(0);
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '一句话' } });
+  const go = screen.getByRole('button', { name: '生成' }) as HTMLButtonElement;
+  await vi.waitFor(() => expect(go.disabled).toBe(false));
+  await fireEvent.click(go);
+  expect(sent.slot_prompts).toBeUndefined();
+});
+
+it('附框没有镜像层，文字色不能继承主框的 transparent', () => {
+  const source = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  const rule = /\.cm-textarea-sub\s*\{[^}]*\}/.exec(source)?.[0] ?? '';
+  expect(rule).toContain('color: #e4e4e7');
+  expect(rule).toContain('background: rgba(0, 0, 0, 0.35)');
+  expect(rule).not.toMatch(/color:\s*transparent/);
+  // 附框不带镜像类，靠自身颜色可见
+  expect(source).toContain('class="cm-textarea cm-textarea-sub"');
+  expect(source).toContain('class="cm-textarea cm-textarea-mirror"');
+});
+
+it('音频带不走提示词：台词与原话从来源记录里回到各自的框', async () => {
+  routes({
+    ...audioRoutes(),
+    '/api/clone/templates': { items: [TTS] },
+    '/api/clone/sources/22': {
+      references: [{ ...AUDIO, slot: '44.audio' }],
+      template_id: 12, source_image_id: 22, dropped: 0, origin: 'db',
+      prompt: '当初要念的那句',
+      slot_prompts: { '45.ref_text': '当初样本里的原话' },
+    },
+  });
+  const screen = await ready({ image: AUDIO });
+  await vi.waitFor(() => expect((screen.getByLabelText('提示词') as HTMLTextAreaElement).value).toBe('当初要念的那句'));
+  expect((screen.getByLabelText('参考音频的文本') as HTMLTextAreaElement).value).toBe('当初样本里的原话');
+  // 说清这句是从哪来的：不是「这张图自带的」，也不是「工作流里内置的」
+  expect(screen.getByText('已带上当初生成时用的提示词')).toBeTruthy();
+});
+
+it('来源那句还在路上，用户先打了字：迟到那句不许盖掉用户敲的', async () => {
+  let release: (value: unknown) => void = () => {};
+  const pending = new Promise((resolve) => { release = resolve; });
+  routes({
+    ...audioRoutes(),
+    '/api/clone/templates': { items: [TTS] },
+    '/api/clone/sources/22': () => pending,
+  });
+  const screen = await ready({ image: AUDIO });
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '我自己打的那句' } });
+  release({
+    references: [], template_id: 12, source_image_id: 22, dropped: 0, origin: 'db',
+    prompt: '当初要念的那句', slot_prompts: { '45.ref_text': '当初样本里的原话' },
+  });
+  await tick();
+  await vi.waitFor(() => expect((screen.getByLabelText('提示词') as HTMLTextAreaElement).value).toBe('我自己打的那句'));
+});
+
+it('换成别的工作流：当初那句原话不跟着搬过去（搬了后端要 400）', async () => {
+  let sent: any = null;
+  routes({
+    ...audioRoutes(),
+    '/api/clone/templates': { items: [TTS, { ...TPL, id: 13, name: '图片编辑', media_kind: 'image', is_active: false }] },
+    '/api/clone/sources/22': {
+      references: [], template_id: 12, source_image_id: 22, dropped: 0, origin: 'db',
+      prompt: '当初要念的那句', slot_prompts: { '45.ref_text': '当初样本里的原话' },
+    },
+    '/api/clone/generate': (init?: RequestInit) => {
+      sent = JSON.parse(String(init?.body));
+      return { ...EMPTY_CLONE_JOB, active: true, job_id: 'j7', state: 'queued', running: true };
+    },
+  });
+  const screen = await ready({ image: AUDIO });
+  await vi.waitFor(() => expect((screen.getByLabelText('参考音频的文本') as HTMLTextAreaElement).value).toBe('当初样本里的原话'));
+  await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
+  await screen.findByRole('menu', { name: '同款工作流' });
+  await fireEvent.click(screen.getByRole('menuitemradio', { name: /图片编辑/ }));
+  // 图片工作流只有一个文字位：附框整个消失，请求体里也不许留着 45.ref_text
+  expect(document.querySelectorAll('textarea.cm-textarea-sub')).toHaveLength(0);
+  const go = screen.getByRole('button', { name: '生成' }) as HTMLButtonElement;
+  await vi.waitFor(() => expect(go.disabled).toBe(false));
+  await fireEvent.click(go);
+  expect(sent.prompt).toBe('当初要念的那句');
+  expect(sent.slot_prompts).toBeUndefined();
+});
+
+it('整块缩略图就是「换一份」的入口，不再要求点中悬停才亮的那颗小圆钮', async () => {
+  // 真机反馈：整格缩略图只有一枚 30px 的圆钮接得住点击，点画面别处毫无反应，
+  // 用户读到的结论是「参考音频换不了」。热区该是整块缩略图，圆钮只留个提示作用。
+  routes(baseRoutes());
+  const screen = await ready();
+  const pick = screen.getByRole('button', { name: '替换图片1' });
+  expect(pick.querySelector('.cm-tile-img')).toBeTruthy();
+  // 圆钮降级成提示：它不再自己接点击，否则会把整块按钮的点击吃掉
+  expect(pick.querySelector('.cm-tile-swap')?.tagName).toBe('SPAN');
+  // 移除仍是单独一颗，点它不会顺手打开选择器
+  expect(screen.getByRole('button', { name: '移除图片1' })).toBeTruthy();
+  const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  expect(css).toMatch(/\.cm-tile-pick\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0[^}]*cursor:\s*pointer/);
+  expect(css).toMatch(/\.cm-tile-swap\s*\{[^}]*pointer-events:\s*none/);
+  await fireEvent.click(pick);
+  expect(await screen.findByRole('dialog', { name: '选一张参考图' })).toBeTruthy();
+});
+
+it('语种这类选项在面板上念中文，交回后端的仍是工作流里的原值', async () => {
+  const langTpl = {
+    ...TPL,
+    control_count: 1,
+    slots: [
+      { kind: 'prompt', node: '582', input: 'prompt', label: '完整提示词' },
+      { kind: 'select', node: '45', input: 'language', label: '语言', options: ['Auto', 'Chinese', 'Portuguese'], value: 'Auto' },
+    ],
+  };
+  let submitted: Record<string, unknown> | null = null;
+  routes({
+    ...baseRoutes(),
+    '/api/clone/templates': { items: [langTpl] },
+    '/api/clone/generate': (init?: RequestInit) => {
+      submitted = JSON.parse(String(init?.body));
+      return { ...EMPTY_CLONE_JOB, active: true, job_id: 'j1', state: 'queued', running: true };
+    },
+  });
+  const screen = await ready();
+  const pill = screen.getByRole('button', { name: '画面参数' });
+  expect(pill.textContent).toContain('自动');
+  await fireEvent.click(pill);
+  const pop = await screen.findByRole('dialog', { name: '画面参数' });
+  expect([...pop.querySelectorAll('.cm-ratio-label')].map((el) => el.textContent)).toEqual(['自动', '中文', '葡萄牙文']);
+  // 可访问名与 title 保留工作流原值：界面说中文，不该把选项本来的名字弄丢
+  const chinese = screen.getByRole('button', { name: 'Chinese' });
+  expect(chinese.getAttribute('title')).toBe('Chinese');
+  await fireEvent.click(chinese);
+  expect(pill.textContent).toContain('中文');
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '换一句台词' } });
+  await fireEvent.click(screen.getByRole('button', { name: '生成' }));
+  await tick();
+  expect(submitted).toMatchObject({ controls: { '45.language': 'Chinese' } });
+});
+
+
+// ---------- 音频的三种出声方式：一排模式按钮 ----------
+
+const AUDIO_CARD = {
+  id: 7, item_type: 'media', kind: 'audio', filename: '参考音色.flac', path: 'D:/a.flac',
+  original_url: '/api/images/7/file', thumbnail_url: '/api/audio/7/waveform',
+} as any;
+
+const audioTpl = (over: Record<string, unknown>) => ({
+  created_at: '', updated_at: '', node_count: 3, prompt_count: 1, reference_count: 0, control_count: 1,
+  default_prompt: '', is_active: false, media_kind: 'audio', ...over,
+});
+const A_CLONE = audioTpl({
+  id: 11, name: '闪寻参考音色', is_active: true, prompt_count: 2, reference_count: 1,
+  slots: [
+    { kind: 'prompt', node: '45', input: 'ref_text', label: '参考音频的文本' },
+    { kind: 'prompt', node: '45', input: 'text', label: '完整提示词' },
+    { kind: 'audio', node: '44', input: 'audio', label: '加载音频' },
+    { kind: 'select', node: '45', input: 'language', label: '语言', options: ['Auto', 'Chinese'], value: 'Auto' },
+  ],
+  reference_cells: [{ key: '44.audio', kind: 'audio', ordinal: 1, label: '音频1', slot_label: '加载音频', tag: '<Audio 1>' }],
+});
+const A_DESIGN = audioTpl({
+  id: 12, name: '闪寻音色描述',
+  slots: [
+    { kind: 'prompt', node: '38', input: 'text', label: '完整提示词' },
+    { kind: 'prompt', node: '38', input: 'instruct', label: '音色描述', value: '年轻女性，温柔' },
+    { kind: 'select', node: '38', input: 'language', label: '语言', options: ['Auto', 'Chinese'], value: 'Auto' },
+  ],
+  reference_cells: [],
+});
+const A_CUSTOM = audioTpl({
+  id: 13, name: '闪寻指定音色',
+  slots: [
+    { kind: 'prompt', node: '37', input: 'text', label: '完整提示词' },
+    { kind: 'prompt', node: '37', input: 'instruct', label: '语气与风格', value: '' },
+    { kind: 'select', node: '37', input: 'speaker', label: '音色', options: ['Vivian', 'Uncle_Fu'], value: 'Vivian' },
+    { kind: 'select', node: '37', input: 'language', label: '语言', options: ['Auto', 'Chinese'], value: 'Auto' },
+  ],
+  reference_cells: [],
+});
+const modeRoutes = () => ({ ...baseRoutes(), '/api/clone/templates': { items: [TPL, A_CLONE, A_DESIGN, A_CUSTOM] } });
+
+it('音频弹窗顶上那排模式按钮：三种出声方式各一颗，当前那颗亮着', async () => {
+  routes(modeRoutes());
+  const screen = await ready({ image: AUDIO_CARD });
+  const group = await screen.findByRole('radiogroup', { name: '音频模式' });
+  const buttons = [...group.querySelectorAll('button')];
+  // 按钮上的字说的是「怎么出声」，不是「哪份 JSON」：品牌前缀在三颗按钮里是重复信息
+  expect(buttons.map((b) => b.textContent)).toEqual(['参考音色', '音色描述', '指定音色']);
+  expect(buttons.map((b) => b.getAttribute('aria-checked'))).toEqual(['true', 'false', 'false']);
+  // 参考音色要吃一段参考音频，所以参考区还在
+  expect(screen.getByRole('group', { name: /^参考音频/ })).toBeTruthy();
+});
+
+it('点「音色描述」换到那条工作流：参考那一整块消失、附框换成音色描述、台词原样留着', async () => {
+  routes(modeRoutes());
+  const screen = await ready({ image: AUDIO_CARD });
+  const group = await screen.findByRole('radiogroup', { name: '音频模式' });
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '这句台词三种方式都要用' } });
+  await fireEvent.click(group.querySelectorAll('button')[1]);
+  await tick();
+  // 这份工作流一个参考位都没有：空参考区 + 一颗点了不会出东西的「+ 参考」比不摆更糟
+  expect(screen.queryByRole('group', { name: /参考/ })).toBeNull();
+  expect(screen.getByText('这一种不用参考音频：想要什么样的声音写在下面的文字格与参数里。')).toBeTruthy();
+  const box = (await screen.findByLabelText('音色描述')) as HTMLTextAreaElement;
+  expect(box.value).toBe('年轻女性，温柔');
+  expect(box.getAttribute('placeholder')).toContain('必填');
+  // 换出声方式不是重开弹窗：用户刚敲的台词不许被冲掉
+  expect((screen.getByLabelText('提示词') as HTMLTextAreaElement).value).toBe('这句台词三种方式都要用');
+  // 换过去之后当前那颗跟着挪
+  const buttons = [...(await screen.findByRole('radiogroup', { name: '音频模式' })).querySelectorAll('button')];
+  expect(buttons.map((b) => b.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false']);
+});
+
+it('指定音色那条：参数面板里挑音色，选项读着不像代码名，交回后端的仍是原值', async () => {
+  let submitted: Record<string, unknown> | null = null;
+  routes({
+    ...baseRoutes(),
+    '/api/clone/templates': { items: [A_CUSTOM] },
+    '/api/clone/generate': (init?: RequestInit) => {
+      submitted = JSON.parse(String(init?.body));
+      return { ...EMPTY_CLONE_JOB, active: true, job_id: 'j1', state: 'queued', running: true };
+    },
+  });
+  const screen = await ready({ image: AUDIO_CARD });
+  await fireEvent.click(screen.getByRole('button', { name: '画面参数' }));
+  const pop = await screen.findByRole('dialog', { name: '画面参数' });
+  expect([...pop.querySelectorAll('.cm-pop-title')].map((el) => el.textContent)).toEqual(['音色', '语言']);
+  const fu = screen.getByRole('button', { name: 'Uncle_Fu' });
+  expect(fu.textContent).toContain('Uncle Fu');
+  await fireEvent.click(fu);
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '换个音色念一句' } });
+  await fireEvent.click(screen.getByRole('button', { name: '生成' }));
+  await tick();
+  expect(submitted).toMatchObject({ controls: { '37.speaker': 'Uncle_Fu' } });
+  // 两种附框都是空的，就不该往 slot_prompts 里塞空字符串
+  expect(JSON.stringify(submitted ?? {})).not.toContain('slot_prompts');
+});
+
+it('图片工作流挂图片卡时不摆这排按钮，哪怕库里躺着三条音频工作流', async () => {
+  routes(modeRoutes());
+  const screen = await ready();
+  expect(screen.queryByRole('radiogroup', { name: '音频模式' })).toBeNull();
+  // 音频族只有一条时也不摆：一颗按钮的开关不是模式选择
+  routes({ ...baseRoutes(), '/api/clone/templates': { items: [A_CLONE] } });
+  cleanup();
+  const again = await ready({ image: AUDIO_CARD });
+  expect(again.queryByRole('radiogroup', { name: '音频模式' })).toBeNull();
+  expect(again.getByRole('group', { name: /^参考音频/ })).toBeTruthy();
+});
+
+
+// ---------- 「切换工作流」清单：音频那三条收成一条「闪寻音频」 ----------
+
+it("清单里音频只占一行「闪寻音频」：三种出声方式由弹窗顶上那排按钮负责", async () => {
+  routes(modeRoutes());
+  const screen = await ready({ image: AUDIO_CARD });
+  await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
+  await screen.findByRole('menu', { name: '同款工作流' });
+  const rows = [...document.querySelectorAll('.cm-wf-row > .cm-wf')];
+  // 图片 / 视频 各一行 + 音频一行，不是五行的流水账
+  expect(rows.map((r) => r.querySelector('.cm-wf-name')?.textContent)).toEqual(['Qwen 多图编辑', '闪寻音频']);
+  expect(rows.map((r) => r.querySelector('.cm-wf-kind')?.textContent)).toEqual(['图片', '音频']);
+  // 正在用参考音色 ⇒ 这一行就是「当前」
+  expect(rows[1].querySelector('.cm-wf-tag')?.textContent).toBe('当前');
+  expect(rows[1].getAttribute('aria-checked')).toBe('true');
+  // 折叠行不给删除按钮（背后是三条工作流，删哪条不该由这颗 X 决定），图片那一行的 X 照旧在
+  const dels = [...document.querySelectorAll('.cm-wf-row > .cm-wf-del')];
+  expect(dels).toHaveLength(1);
+  expect(dels[0].getAttribute('aria-label')).toBe('删除工作流 Qwen 多图编辑');
+  expect(rows[1].getAttribute('title')).toContain('三种出声方式在弹窗顶上切换');
+  expect(rows[1].getAttribute('title')).toContain('参考音色 / 音色描述 / 指定音色');
+});
+
+it("已经在出声音时再点「闪寻音频」：只收起弹层，不把人从当前那种模式踢回默认", async () => {
+  routes(modeRoutes());
+  const screen = await ready({ image: AUDIO_CARD });
+  const group = await screen.findByRole('radiogroup', { name: '音频模式' });
+  // 清单里 is_active 的是 A_CLONE，音频族顺序是 参考音色 / 指定音色 / 音色描述
+  await fireEvent.click(group.querySelectorAll('button')[1]);
+  await tick();
+  expect(await screen.findByLabelText('音色描述')).toBeTruthy();
+  await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
+  const rows = await screen.findAllByRole('menuitemradio');
+  await fireEvent.click(rows[rows.length - 1]);
+  await tick();
+  // 还是那条「音色描述」：点族名不是「回到第一种」
+  expect(screen.queryByRole('menu', { name: '同款工作流' })).toBeNull();
+  expect(await screen.findByLabelText('音色描述')).toBeTruthy();
+  const again = await screen.findByRole('radiogroup', { name: '音频模式' });
+  expect([...again.querySelectorAll('button')].map((b) => b.getAttribute('aria-checked'))).toEqual([
+    'false', 'true', 'false',
+  ]);
+});
+
+it("从图片卡点「闪寻音频」：换到音频族库里标的那条，不是随便挑一条", async () => {
+  routes(modeRoutes());
+  const screen = await ready();
+  await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
+  const rows = await screen.findAllByRole('menuitemradio');
+  await fireEvent.click(rows[rows.length - 1]);
+  await tick();
+  // modeRoutes 里 is_active 的是 A_CLONE——音频族里唯一吃参考音频的那条
+  expect(screen.getByRole('group', { name: /^参考音频/ })).toBeTruthy();
+  const group = await screen.findByRole('radiogroup', { name: '音频模式' });
+  expect([...group.querySelectorAll('button')].map((b) => b.getAttribute('aria-checked'))).toEqual([
+    'true', 'false', 'false',
+  ]);
+});
+
+it("只有一条音频工作流时不折叠：那时候顶上根本没有模式按钮，藏名字就是让人认错工作流", async () => {
+  routes({ ...baseRoutes(), '/api/clone/templates': { items: [TPL, A_CLONE] } });
+  const screen = await ready();
+  await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
+  const rows = await screen.findAllByRole('menuitemradio');
+  expect(rows.map((r) => r.querySelector('.cm-wf-name')?.textContent)).toEqual(['Qwen 多图编辑', '闪寻参考音色']);
+});
+
+/* 跨族/同族换卡时工作流该跟谁。弹窗常驻在 Feed 里，关掉不销毁组件，templateId 会一路带下去。 */
+const AUDIO_CARD2 = { ...AUDIO_CARD, id: 9, filename: '另一段.flac' };
+
+it("音频卡用完再点图片卡：工作流要回到图片族，不能把出声音那条带过去", async () => {
+  routes(modeRoutes());
+  const screen = await ready({ image: AUDIO_CARD });
+  expect(screen.getByRole('group', { name: /^参考音频/ })).toBeTruthy();
+
+  screen.rerender({ image: SOURCE });
+  // 模板重挑要等一次接口回来，中间那一瞬音频模式按钮已经没了、工作流那颗还没回来
+  await vi.waitFor(() => expect(
+    screen.getByRole('button', { name: '同款工作流' }).textContent).toContain('Qwen 多图编辑'),
+  );
+  expect(screen.queryByRole('radiogroup', { name: '音频模式' })).toBeNull();
+  expect(screen.getByRole('group', { name: /^参考图/ })).toBeTruthy();
+});
+
+it("同族换卡：还留着用户挑的那种出声方式，不每次开弹窗都跳回库里标的那条", async () => {
+  routes({
+    ...modeRoutes(),
+    '/api/clone/sources/9': NO_SOURCES,
+    '/api/images/9/reverse-prompts': { items: [] },
+    '/api/images/9': { id: 9, filename: '另一段.flac', positive_prompt: '' },
+  });
+  const screen = await ready({ image: AUDIO_CARD });
+  const group = await screen.findByRole('radiogroup', { name: '音频模式' });
+  await fireEvent.click(group.querySelectorAll('button')[1]);
+  await vi.waitFor(() => expect(screen.queryByLabelText('音色描述')).toBeTruthy());
+
+  screen.rerender({ image: AUDIO_CARD2 });
+  await vi.waitFor(() => expect(screen.getAllByRole('radiogroup', { name: '音频模式' }).length).toBe(1));
+  expect(screen.queryByLabelText('音色描述')).toBeTruthy();
+  const again = screen.getByRole('radiogroup', { name: '音频模式' });
+  expect([...again.querySelectorAll('button')].map((b) => b.getAttribute('aria-checked'))).toEqual([
+    'false', 'true', 'false',
+  ]);
+});
+
+it("三种出声方式底下那颗都写「闪寻音频」：与切换清单那一行同一个叫法，全名进悬浮提示", async () => {
+  routes(modeRoutes());
+  const screen = await ready({ image: AUDIO_CARD });
+  const pill = () => screen.getByRole('button', { name: '同款工作流' });
+  expect(pill().textContent?.trim()).toBe('闪寻音频');
+  expect(document.querySelector('.cm-title')?.textContent).toBe('闪寻音频');
+  // 具体是哪一条没丢：悬浮提示里报到，设置页里也各占一行
+  expect(pill().getAttribute('title')).toContain('闪寻参考音色');
+
+  const group = await screen.findByRole('radiogroup', { name: '音频模式' });
+  await fireEvent.click(group.querySelectorAll('button')[1]);
+  await vi.waitFor(() => expect(pill().getAttribute('title')).toContain('音色描述'));
+  expect(pill().textContent?.trim()).toBe('闪寻音频');
+  expect(document.querySelector('.cm-title')?.textContent).toBe('闪寻音频');
+});
+
+it("图片工作流不该被折名：底部那颗仍是这份工作流自己的名字，悬浮提示不多余一句", async () => {
+  routes(modeRoutes());
+  const screen = await ready();
+  const pill = screen.getByRole('button', { name: '同款工作流' });
+  expect(pill.textContent?.trim()).toBe('Qwen 多图编辑');
+  expect(pill.getAttribute('title')).toBe('Qwen 多图编辑');
+});
+
+const A_CUSTOM9 = audioTpl({
+  id: 14, name: '闪寻指定音色',
+  slots: [
+    { kind: 'prompt', node: '37', input: 'text', label: '完整提示词' },
+    { kind: 'select', node: '37', input: 'speaker', label: '音色',
+      options: ['Vivian', 'Serena', 'Uncle_Fu', 'Dylan', 'Eric', 'Ryan', 'Aiden', 'Ono_Anna', 'Sohee'], value: 'Vivian' },
+    { kind: 'select', node: '37', input: 'language', label: '语言', options: ['Auto', 'Chinese'], value: 'Auto' },
+  ],
+  reference_cells: [],
+});
+
+it('指定音色那一格是九张脸：认得出的选项摆头像，语言格照旧是小圆点', async () => {
+  routes({ ...baseRoutes(), '/api/clone/templates': { items: [A_CUSTOM9] } });
+  const screen = await ready({ image: AUDIO_CARD });
+  // 选中谁，底部那颗胶囊就带上谁的脸——不用点开面板也知道现在用的是哪个音色
+  const pillFace = screen.container.querySelector('.cm-pill-face') as HTMLImageElement | null;
+  expect(pillFace?.getAttribute('src')).toBe('/voices/vivian.webp');
+  await fireEvent.click(screen.getByRole('button', { name: '画面参数' }));
+  const pop = await screen.findByRole('dialog', { name: '画面参数' });
+  const grids = [...pop.querySelectorAll('.cm-ratio-grid')];
+  const faces = [...grids[0].querySelectorAll('img.cm-ratio-face')];
+  expect(faces.map((img) => img.getAttribute('src'))).toEqual([
+    '/voices/vivian.webp', '/voices/serena.webp', '/voices/uncle-fu.webp',
+    '/voices/dylan.webp', '/voices/eric.webp', '/voices/ryan.webp',
+    '/voices/aiden.webp', '/voices/ono-anna.webp', '/voices/sohee.webp',
+  ]);
+  // 脸是装饰，名字才是可读的那一份：alt 必须空，字必须还在
+  expect(faces.every((img) => img.getAttribute('alt') === '')).toBe(true);
+  expect([...grids[0].querySelectorAll('.cm-ratio-label')].map((el) => el.textContent)).toEqual([
+    'Vivian', 'Serena', 'Uncle Fu', 'Dylan', 'Eric', 'Ryan', 'Aiden', 'Ono Anna', 'Sohee',
+  ]);
+  // 语种那一格没有脸，仍然走那颗小圆点
+  expect(grids[1].querySelectorAll('img.cm-ratio-face').length).toBe(0);
+  expect(grids[1].querySelectorAll('.cm-ratio-flat').length).toBe(2);
+  // 点到第三个人：胶囊上的脸跟着换
+  await fireEvent.click(screen.getByRole('button', { name: 'Uncle_Fu' }));
+  await tick();
+  expect((screen.container.querySelector('.cm-pill-face') as HTMLImageElement).getAttribute('src')).toBe('/voices/uncle-fu.webp');
+});
+
+it('模型自带的其它音色（用户自己练的）不许乱配脸，仍走小圆点', async () => {
+  routes({
+    ...baseRoutes(),
+    '/api/clone/templates': {
+      items: [audioTpl({
+        id: 15, name: '闪寻指定音色',
+        slots: [{ kind: 'select', node: '37', input: 'speaker', label: '音色', options: ['my_voice'], value: 'my_voice' }],
+        reference_cells: [],
+      })],
+    },
+  });
+  const screen = await ready({ image: AUDIO_CARD });
+  expect(screen.container.querySelector('.cm-pill-face')).toBeNull();
+  await fireEvent.click(screen.getByRole('button', { name: '画面参数' }));
+  const pop = await screen.findByRole('dialog', { name: '画面参数' });
+  expect(pop.querySelectorAll('img.cm-ratio-face').length).toBe(0);
+  expect(pop.querySelectorAll('.cm-ratio-flat').length).toBe(1);
 });

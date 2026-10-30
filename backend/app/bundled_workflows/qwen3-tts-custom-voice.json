@@ -1,0 +1,121 @@
+{
+  "key": "qwen3-tts-custom-voice",
+  "label": "闪寻指定音色",
+  "legacy_labels": [
+    "闪寻选定音色",
+    "闪寻音频-指定音色"
+  ],
+  "media_kind": "audio",
+  "notes": "Qwen3-TTS 指定音色：不吃参考音频，音色从模型自带的人物里挑（Vivian、Serena、Uncle_Fu 等九个），台词单独一格，另留一格可选的语气与风格描述。跑的是 CustomVoice 那条分支，与「参考音色」「音色描述」是两个不同的模型，切换模式时 ComfyUI 要重载模型，第一次会慢一些。",
+  "slots": [
+    {
+      "input": "text",
+      "kind": "prompt",
+      "label": "完整提示词",
+      "node": "37",
+      "value": "你好，这是一段用选定的音色念出来的台词。"
+    },
+    {
+      "input": "instruct",
+      "kind": "prompt",
+      "label": "语气与风格",
+      "node": "37",
+      "value": ""
+    },
+    {
+      "input": "speaker",
+      "kind": "select",
+      "label": "音色",
+      "node": "37",
+      "options": [
+        "Vivian",
+        "Serena",
+        "Uncle_Fu",
+        "Dylan",
+        "Eric",
+        "Ryan",
+        "Aiden",
+        "Ono_Anna",
+        "Sohee"
+      ],
+      "value": "Vivian"
+    },
+    {
+      "input": "language",
+      "kind": "select",
+      "label": "语言",
+      "node": "37",
+      "options": [
+        "Auto",
+        "Chinese",
+        "English",
+        "Japanese",
+        "Korean",
+        "German",
+        "French",
+        "Russian",
+        "Portuguese",
+        "Spanish",
+        "Italian"
+      ],
+      "value": "Auto"
+    }
+  ],
+  "source": "F:/常用/闪寻音频.json（仅保留 CustomVoice 分支）",
+  "workflow": {
+    "37": {
+      "_meta": {
+        "title": "Qwen3-TTS 指定音色",
+        "aux_id": "DarioFT/ComfyUI-Qwen3-TTS",
+        "cnr_id": "comfyui-qwen3-tts",
+        "ver": "3751cf3eada5b17f6f1bc82b0c8c318407181c68"
+      },
+      "class_type": "Qwen3CustomVoice",
+      "inputs": {
+        "text": "你好，这是一段用选定的音色念出来的台词。",
+        "language": "Auto",
+        "speaker": "Vivian",
+        "seed": 42,
+        "instruct": "",
+        "custom_speaker_name": "",
+        "max_new_tokens": 2048,
+        "model": [
+          "43",
+          0
+        ]
+      }
+    },
+    "43": {
+      "_meta": {
+        "title": "Qwen3-TTS Loader",
+        "aux_id": "DarioFT/ComfyUI-Qwen3-TTS",
+        "cnr_id": "comfyui-qwen3-tts",
+        "ver": "3751cf3eada5b17f6f1bc82b0c8c318407181c68"
+      },
+      "class_type": "Qwen3Loader",
+      "inputs": {
+        "attention": "auto",
+        "local_model_path": "D:\\AI\\ComfyUI_windows_313_v0.16.4\\ComfyUI\\models\\Qwen3\\Qwen3-TTS-12Hz-1.7B-CustomVoice",
+        "precision": "bf16",
+        "repo_id": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+        "source": "ModelScope"
+      }
+    },
+    "47": {
+      "_meta": {
+        "title": "保存音频（高级）",
+        "cnr_id": "comfy-core",
+        "ver": "0.32.0"
+      },
+      "class_type": "SaveAudioAdvanced",
+      "inputs": {
+        "audio": [
+          "37",
+          0
+        ],
+        "filename_prefix": "audio/闪寻指定音色",
+        "format": "flac"
+      }
+    }
+  }
+}

@@ -327,3 +327,45 @@ describe('导入视频工作流', () => {
       .toContain('已导入「H3参考视频」：图片 9 格 / 音频 3 格 / 视频 3 格。视频卡右下角的图标就是它。');
   });
 });
+
+describe('音频一族在设置页', () => {
+  const AUDIO_TPL = {
+    id: 3, name: '闪寻音频克隆', is_active: true, default_prompt: '', created_at: '', updated_at: '',
+    node_count: 4, prompt_count: 2, reference_count: 1, control_count: 1, media_kind: 'audio',
+    slots: [
+      { kind: 'prompt', node: '45', input: 'ref_text', label: '参考音频的文本' },
+      { kind: 'prompt', node: '45', input: 'text', label: '完整提示词' },
+      { kind: 'audio', node: '44', input: 'audio', label: '加载音频' },
+      { kind: 'select', node: '45', input: 'language', label: '语言', options: ['Auto', 'Chinese'], value: 'Auto' },
+    ],
+  };
+
+  it('三族徽标各自上色，音频那条分开报「音频 1」', async () => {
+    routes({ '/api/clone/templates': { items: [TPL, VIDEO_TPL, AUDIO_TPL] } });
+    const screen = render(CloneTemplates, {});
+    await screen.findByText('旧的同款');
+    const badges = [...screen.container.querySelectorAll('.clone-tpl-kind')];
+    expect(badges.map((el) => el.textContent)).toEqual(['图片', '视频', '音频']);
+    expect(badges.map((el) => [...el.classList].includes('is-audio'))).toEqual([false, false, true]);
+    const li = screen.getByText('闪寻音频克隆').closest('li')!;
+    expect(li.textContent).toContain('音频 1');
+  });
+
+  it('改判下拉三个选项都在：判错族别不必删了重导', async () => {
+    routes({
+      '/api/clone/templates': { items: [AUDIO_TPL] },
+      '/api/clone/templates/3': (init?: RequestInit) => ({ ...AUDIO_TPL, ...JSON.parse(String(init?.body)) }),
+    });
+    const screen = render(CloneTemplates, {});
+    await screen.findByText('闪寻音频克隆');
+    const select = screen.getByLabelText('「闪寻音频克隆」的产出类型') as HTMLSelectElement;
+    expect(select.value).toBe('audio');
+    expect([...select.querySelectorAll('option')].map((o) => [o.value, o.textContent]))
+      .toEqual([['image', '出图'], ['video', '出片'], ['audio', '出声音']]);
+    await fireEvent.change(select, { target: { value: 'image' } });
+    await tick();
+    await tick();
+    const patch = http.mock.calls.find(([path, init]) => path === '/api/clone/templates/3' && (init as RequestInit)?.method === 'PATCH');
+    expect(JSON.parse(String((patch?.[1] as RequestInit)?.body))).toEqual({ media_kind: 'image' });
+  });
+});

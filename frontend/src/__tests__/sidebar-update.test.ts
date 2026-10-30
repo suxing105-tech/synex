@@ -105,18 +105,41 @@ it('switches the card copy while installing and preparing', () => {
   expect(ui.getByRole('status').querySelector('.update-card-title')?.textContent).toBe('正在准备更新');
   expect(ui.getByRole('status').querySelector('.update-progress-state')?.textContent).toBe('正在准备…');
 });
-it('keeps the background startup check silent and only shows the card once the user clicks', async () => {
+it('keeps the background startup check silent and only shows the modal once the user clicks', async () => {
   updateStatus.set({ ...status('checking'), version: '0.2.11' });
   const ui = render(SidebarUpdateButton);
-  expect(document.querySelector('.update-progress-card')).toBeNull();
+  expect(document.querySelector('.update-modal')).toBeNull();
   expect(ui.getByRole('button', { name: '有可用更新 v0.2.11' })).toBeTruthy();
   oneClickUpdating.set(true);
   await tick();
-  expect(document.querySelector('.update-progress-card')).not.toBeNull();
+  expect(document.querySelector('.update-modal')).not.toBeNull();
 });
-it('centers the progress card horizontally at the bottom of the window', () => {
+it('更新弹窗居中，背后整屏虚化连侧栏一起糊掉', () => {
   const css = readFileSync('src/components/SidebarUpdateButton.svelte', 'utf8');
-  expect(css).toMatch(/\.update-progress-card\s*\{[\s\S]*?left:\s*50%;[\s\S]*?transform:\s*translateX\(-50%\);/);
+  // 遮罩铺满整屏（侧栏也在里面），虚化照抄一键同款 .cm-backdrop 那一档 blur
+  expect(css).toMatch(/\.update-scrim\s*\{[^}]*position:\s*fixed;[^}]*inset:\s*0;/);
+  expect(css).toMatch(/\.update-scrim\s*\{[^}]*backdrop-filter:\s*blur\(22px\)/);
+  // 居中靠 flex 居中，不再靠贴底那条 left:50% + translateX
+  expect(css).toMatch(/\.update-scrim\s*\{[^}]*align-items:\s*center;[^}]*justify-content:\s*center;/);
+  expect(css).not.toMatch(/\.update-scrim\s*\{[^}]*bottom:/);
+  // 盖得住侧栏 tooltip（70）与文本弹窗（90），但让过 toast / 右键菜单（100）
+  const scrimZ = Number(/\.update-scrim\s*\{[^}]*z-index:\s*(\d+)/.exec(css)?.[1] ?? 0);
+  expect(scrimZ).toBeGreaterThanOrEqual(91);
+  expect(scrimZ).toBeLessThan(100);
+});
+it('有新版本时侧栏那颗图标高亮，没有更新时整颗不渲染', () => {
+  const css = readFileSync('src/components/SidebarUpdateButton.svelte', 'utf8');
+  expect(css).toMatch(/\.sidebar-update\.is-active\s*\{[^}]*color:\s*#f24e4e/);
+  // available：高亮
+  expect(render(SidebarUpdateButton).getByRole('button', { name: '有可用更新 v0.2.11' }).classList.contains('is-active')).toBe(true);
+  cleanup();
+  // downloading：仍在高亮，而且弹窗已经盖上来
+  updateStatus.set({ ...status('downloading'), downloaded: 10, total: 100 });
+  expect(render(SidebarUpdateButton).getByRole('button').classList.contains('is-active')).toBe(true);
+  cleanup();
+  updateStatus.set({ ...status('latest'), version: null });
+  cleanup();
+  expect(render(SidebarUpdateButton).queryByRole('button')).toBeNull();
 });
 it('keeps the tooltip reachable and labelled when the portable install cannot update', () => {
   const css = readFileSync('src/components/SidebarUpdateButton.svelte', 'utf8');
@@ -125,9 +148,10 @@ it('keeps the tooltip reachable and labelled when the portable install cannot up
   render(SidebarUpdateButton);
   expect(document.querySelector('.update-tooltip')?.textContent).toBe('请使用完整安装包更新');
 });
-it('keeps no install card when nothing is happening', () => {
+it('keeps no install modal when nothing is happening', () => {
   render(SidebarUpdateButton);
-  expect(document.querySelector('.update-progress-card')).toBeNull();
+  expect(document.querySelector('.update-modal')).toBeNull();
+  expect(document.querySelector('.update-scrim')).toBeNull();
 });
 it('positions update after settings, reversing the column only when collapsed', () => {
   const app = readFileSync('src/App.svelte', 'utf8');

@@ -9,6 +9,8 @@
   // 后台自动检查不该弹出进度卡片，只有用户点了更新、或真的在下/装包时才显示。
   const cardVisible = $derived($oneClickUpdating || ["downloading", "installing"].includes(status?.phase ?? ""));
   const unsupported = $derived(!!status && !status.installable);
+  // 有新版本就高亮：这一颗平时跟设置按钮同色（text-muted），有更新时它是侧栏里唯一发亮的东西。
+  const highlighted = $derived(visible);
   const tooltip = $derived(unsupported ? "请使用完整安装包更新" : "有可用更新");
   const entryLabel = $derived(unsupported ? "请使用完整安装包更新" :
     status?.phase === "downloading" ? `正在下载更新${percent === null ? "" : ` ${percent}%`}` :
@@ -27,6 +29,7 @@
 {#if visible}
   <span class="sidebar-update-wrap relative inline-flex shrink-0">
     <button class="sidebar-update w-10 h-10 flex items-center justify-center rounded-lg text-muted shrink-0 disabled:opacity-50"
+      class:is-active={highlighted}
       aria-label={entryLabel} aria-busy={busy}
       disabled={busy || unsupported || !status?.configured} onclick={update}>
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -42,16 +45,21 @@
 {/if}
 
 {#if cardVisible}
-  <div class="update-progress-card" role="status" aria-live="polite">
-    <h4 class="update-card-title">{cardTitle}</h4>
-    <p class="update-card-note">安装完成后，闪寻空间 将重新启动。</p>
-    <div class="update-card-row">
-      <div class="update-progress-track" role="progressbar" aria-label={cardTitle}
-        aria-valuemin="0" aria-valuemax="100" aria-valuenow={percent ?? undefined}>
-        <div class="update-progress-fill" class:indeterminate={percent === null}
-          style:width={percent === null ? undefined : `${percent}%`}></div>
+  <!-- 下载与安装期间整屏糊掉、弹窗居中：和「一键同款」同一套背景虚化，侧栏也在糊掉的那一层里。
+       这段过程没有可撤销的动作（装完就重启），所以底不做出声、也不给关闭按钮。 -->
+  <div class="update-scrim">
+    <div class="update-modal" role="status" aria-live="polite">
+      <p class="update-card-kicker">闪寻空间 · 软件更新</p>
+      <h4 class="update-card-title">{cardTitle}</h4>
+      <p class="update-card-note">正在更新到 v{status?.version ?? ""}。安装完成后，闪寻空间 将重新启动。</p>
+      <div class="update-card-row">
+        <div class="update-progress-track" role="progressbar" aria-label={cardTitle}
+          aria-valuemin="0" aria-valuemax="100" aria-valuenow={percent ?? undefined}>
+          <div class="update-progress-fill" class:indeterminate={percent === null}
+            style:width={percent === null ? undefined : `${percent}%`}></div>
+        </div>
+        <span class="update-progress-state">{cardState}</span>
       </div>
-      <span class="update-progress-state">{cardState}</span>
     </div>
   </div>
 {/if}
@@ -89,20 +97,50 @@
     pointer-events: none;
   }
 
-  /* 下载/安装中的卡片：标题 + 说明 + 进度条 + 右侧状态文字。 */
-  .update-progress-card {
+  /* 有新版本 / 正在装：图标染成品牌色并铺一层底色，侧栏里一眼看到它。
+     两条类的选择器比工具类 .text-muted 重，颜色压得住。 */
+  .sidebar-update.is-active {
+    color: #f24e4e;
+    background: rgb(242 78 78 / 14%);
+    box-shadow: inset 0 0 0 1px rgb(242 78 78 / 28%);
+  }
+
+  .sidebar-update.is-active:hover {
+    color: #ff6a4d;
+    background: rgb(242 78 78 / 20%);
+  }
+
+  /* 下载/安装中的弹窗：居中，背后整屏虚化（与一键同款 .cm-backdrop 同一套 blur）。
+     遮罩 inset:0 且盖住侧栏——这段时间用户要看的只有这一件事。 */
+  .update-scrim {
     position: fixed;
-    left: 50%;
-    transform: translateX(-50%);
-    bottom: calc(var(--desktop-titlebar-height, 0px) + 74px);
-    z-index: 70;
-    width: min(360px, calc(100vw - 32px));
-    padding: 14px 16px 16px;
-    border-radius: 14px;
-    border: 1px solid #2e2e33;
-    background: rgb(24 24 27 / 96%);
-    box-shadow: 0 18px 40px rgb(0 0 0 / 50%);
-    backdrop-filter: blur(6px);
+    inset: 0;
+    z-index: 95;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.55);
+    -webkit-backdrop-filter: blur(22px) saturate(112%);
+    backdrop-filter: blur(22px) saturate(112%);
+  }
+
+  .update-modal {
+    width: min(420px, 100%);
+    padding: 20px 22px 22px;
+    border-radius: 20px;
+    border: 1px solid rgb(255 255 255 / 8%);
+    background: rgba(19, 19, 22, 0.88);
+    -webkit-backdrop-filter: blur(36px);
+    backdrop-filter: blur(36px);
+    box-shadow: 0 32px 90px rgba(0, 0, 0, 0.62);
+  }
+
+  .update-card-kicker {
+    margin: 0 0 6px;
+    font-size: 11.5px;
+    letter-spacing: .02em;
+    color: #7f7f87;
   }
 
   .update-card-title {

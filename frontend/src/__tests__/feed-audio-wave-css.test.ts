@@ -86,30 +86,18 @@ it("光晕的 blur 套在没蒙版的父层上，否则糊不出光", () => {
   expect(decls(".audio-wave-halo")["mask-image"]).toBeUndefined();
 });
 
-it("播放控件坐在页脚右端，尺寸跟着页脚高度走", () => {
-  const btn = decls(".audio-play-btn");
-  expect(btn.cursor).toBe("pointer");
-  expect(btn.position).toBe("absolute");
-  // 曾经是 inset-0 铺满整张卡压在波形中间，出现 inset 就是退回去了
-  expect(btn.inset).toBeUndefined();
-  expect(btn.right).toBe("8px");
-  // 垂直位置靠 --card-footer-h 居中在页脚那一格里（Feed 内联，与 footerHeightFor 同源）
-  expect(btn.bottom).toContain("--card-footer-h");
-
-  const clamp = decls(".media-card.is-audio")["--audio-btn"];
-  expect(clamp, "角标尺寸要由页脚高度派生").toMatch(
-    /^clamp\([0-9.]+px, calc\(var\(--card-footer-h, 0px\) - [0-9.]+px\), [0-9.]+px\)$/
-  );
-  // 上限是被否过的 22px 之外重新定的，太小他还要再说一轮；下限保证没有页脚时仍点得到
-  const upper = Number.parseFloat(/, ([0-9.]+)px\)$/.exec(clamp)?.[1] ?? "0");
-  const lower = Number.parseFloat(/^clamp\(([0-9.]+)px/.exec(clamp)?.[1] ?? "0");
-  expect(upper).toBeGreaterThanOrEqual(30);
-  expect(lower).toBeGreaterThanOrEqual(18);
-
-  // 文件名要让开角标，否则长名字会伸到按钮底下
-  expect(decls(".media-card.is-audio .media-card-footer")["padding-right"]).toContain("var(--audio-btn)");
-  expect(decls(".audio-play-icon")["pointer-events"]).toBe("auto");
-  expect(decls(".audio-play-btn:hover .audio-play-icon").transform).toContain("scale(");
+it("音频卡上没有播放角标（整张卡就是播放控件）", () => {
+  // 2026-10-30 苏醒：悬停那颗压在波形上的播放圆标去掉。曾经它先是铺满整张卡、再退到页脚右端、
+  // 再挪到画面左下角，三轮之后确认它本身就是噪声——单击/双击卡片一直都能播，暂停同理。
+  // 类名只查 style 块：注释里留着 .audio-play-btn 这个名字是给后来人解释「为什么这里空了」
+  expect(styleBlock).not.toMatch(/\.audio-play-btn/);
+  expect(styleBlock).not.toMatch(/\.audio-play-icon/);
+  expect(source).not.toContain("--audio-btn");
+  // 音频也不该再单独给页脚右侧留让位：那一格是三类共用的一键同款，规矩在 app.css 一处
+  expect(decls(".media-card.is-audio .media-card-footer")["padding-right"]).toBeUndefined();
+  const appCss = readFileSync("src/app.css", "utf8");
+  const cloneBlock = /\.media-card\.is-cloneable \.media-card-footer \{[^}]*\}/.exec(appCss)?.[0] ?? "";
+  expect(cloneBlock, "页脚右侧让位要由 .is-cloneable 负责").toContain("var(--clone-btn)");
 });
 
 it("贯穿亮线 + 常态静止：动画只给 hover 与正在播放那一张", () => {

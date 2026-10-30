@@ -1214,32 +1214,9 @@ import { hoverPlay } from "../lib/hover-play";
                       <Icon name="comfyui" size={15} />
                     </div>
                   {/if}
-                  {#if it.kind === "audio" && (hoveredId === it.id || $playingAudio?.id === it.id)}
-                    <!-- 播放从右下角退到画面左下角：那个角落现在跟图片卡、视频卡一样，是「一键同款」的。
-                         悬停或正在播放时才出现，与视频卡悬停即播同一套习惯；双击卡片仍然直接播。 -->
-                    <div
-                      role="button"
-                      tabindex="-1"
-                      class="audio-play-btn audio-play-btn--media"
-                      title={$playingAudio?.id === it.id ? "暂停音频" : "播放音频"}
-                      aria-label={($playingAudio?.id === it.id ? "暂停 " : "播放 ") + it.filename}
-                      onclick={(e) => { e.stopPropagation(); e.preventDefault(); if (draggedOriginal) { draggedOriginal = false; return; } toggleAudio(it); }}
-                      onpointerdown={(e) => { e.stopPropagation(); pointerOnImage(e, it); }}
-                      onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleAudio(it); } }}
-                    >
-                      {#if $playingAudio?.id === it.id}
-                        <svg viewBox="0 0 24 24" aria-hidden="true" class="audio-play-icon drop-shadow-lg">
-                          <circle cx="12" cy="12" r="9.2" fill="rgba(0,0,0,0.28)" stroke="#fff" stroke-width="1.25"/>
-                          <path d="M9.9 8.4v7.2M14.1 8.4v7.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
-                        </svg>
-                      {:else}
-                        <svg viewBox="0 0 24 24" aria-hidden="true" class="audio-play-icon drop-shadow-lg">
-                          <circle cx="12" cy="12" r="9.2" fill="rgba(0,0,0,0.28)" stroke="#fff" stroke-width="1.25"/>
-                          <path d="M9.7 7.9 16.4 12 9.7 16.1 Z" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"/>
-                        </svg>
-                      {/if}
-                    </div>
-                  {/if}
+                  <!-- 音频卡不放播放角标：整张卡就是播放控件（点一下播、再点停），
+                       悬停时压一颗圆按钮在波形上只是噪声。暂停状态靠波形呼吸 + 进度轨读，
+                       右键菜单里也还有「播放 / 暂停」这一项。 -->
                 </div>
                 {#if footerTier > 0}
                   <!-- 页脚不依赖图片，立即渲染，本身就是加载占位；NEW 从呼吸角标退成名字前一个红点，
@@ -1267,7 +1244,7 @@ import { hoverPlay } from "../lib/hover-play";
                   </div>
                   {#if it.kind === "image" || it.kind === "video" || it.kind === "audio"}
                     <!-- 「一键同款」角标：图片、视频、音频三类卡共用同一颗，右下角位置与尺寸只有一套规矩。
-                         音频卡原来右下角那颗播放键挪进了画面左下角（右下角统一给一键同款），单击/双击卡片照播。
+                         音频卡不再有播放角标（单击/双击卡片本身就播），右下角只有这一颗。
                          卡片本身是 <button>，所以这里只能再用 role="button" 的 div，并且按下的事件都要拦，
                          否则点图标会变成选中/拖动那张卡。点开的是同一个弹窗，只是默认换成那一族的当前工作流。 -->
                     <div
@@ -1547,47 +1524,9 @@ import { hoverPlay } from "../lib/hover-play";
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
     z-index: 2;
   }
-  /* 音频播放控件在页脚右端（文件名那两行的右边），不压在波形上。
-     尺寸跟着页脚高度走：两行页脚 44px → 32px；单行 26px → 20px；
-     页脚被隐藏（卡太窄）时退到图区右下角——播放入口不能跟着页脚一起消失。 */
-  .media-card.is-audio {
-    --audio-btn: clamp(20px, calc(var(--card-footer-h, 0px) - 12px), 34px);
-  }
-  /* 文件名要让开角标，否则长名字会伸到按钮底下 */
-  .media-card.is-audio .media-card-footer {
-    padding-right: calc(8px + var(--audio-btn) + 6px);
-  }
-  .audio-play-btn {
-    position: absolute;
-    right: 8px;
-    /* 在页脚那条高度里垂直居中；没有页脚时贴卡片底 */
-    bottom: max(4px, calc((var(--card-footer-h, 0px) - var(--audio-btn)) / 2));
-    width: var(--audio-btn);
-    height: var(--audio-btn);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    z-index: 2;
-  }
-  /* 播放挪进画面左下角：右下角交给了与图片/视频同一颗「一键同款」。
-     尺寸沿用 --audio-btn，位置改成贴画面左下角，不再参与页脚高度的垂直居中。 */
-  .audio-play-btn--media {
-    left: 8px;
-    right: auto;
-    bottom: 8px;
-  }
-  .audio-play-icon {
-    width: 100%;
-    height: 100%;
-    pointer-events: auto;
-    opacity: 0.9;
-    transition: transform 0.15s ease, opacity 0.15s ease;
-  }
-  .audio-play-btn:hover .audio-play-icon {
-    opacity: 1;
-    transform: scale(1.06);
-  }
+  /* 音频卡不再有播放角标（悬停那颗圆标已删：整张卡就是播放控件）。
+     右下角那一颗是图片/视频/音频共用的「一键同款」，页脚右侧的让位由 app.css 的
+     .media-card.is-cloneable 一处负责，这里不再重复第二条尺寸公式。 */
   /* 图片的淡入与 hover 放大搬到了全局 .media-card-img；这里只留卡片自身的交互约束 */
   .thumb { user-select: none; touch-action: none; flex: none; min-height: 0; }
   /* 列数滑块：精致风格 — 细轨 + 圆形 thumb + filled 进度 + hover 反馈 */

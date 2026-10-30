@@ -74,23 +74,18 @@ it('图片卡文件名右边常驻一键同款图标，点它只开弹窗、不�
   expect([...get(multiSelectedIds)]).toEqual([]);
 });
 
-it('角标的尺寸沿用音频角标那套公式，位置是页脚右下角（播放键已挪进画面左下角）', () => {
-  // 角标样式在全局 app.css，音频播放键的规范在 Feed.svelte 的 scoped style 里，两边都要读
+it('角标的尺寸由页脚高度派生，位置是右下角，页脚让位公式全站只有一份', () => {
   const appCss = readFileSync('src/app.css', 'utf8');
   const feedCss = readFileSync('src/components/Feed.svelte', 'utf8');
   const clone = appCss.slice(appCss.indexOf('.media-card.is-cloneable'), appCss.indexOf('.media-card-meta'));
-  const audio = feedCss.slice(feedCss.indexOf('.media-card.is-audio'), feedCss.indexOf('.audio-play-icon'));
-  // 尺寸：clamp(20px, 页脚高 - 12px, 34px) 这条公式两边必须一致
+  // 尺寸：clamp(20px, 页脚高 - 12px, 34px) —— 两行页脚 44px → 32px，单行 26px → 20px
   expect(clone).toContain('clamp(20px, calc(var(--card-footer-h, 0px) - 12px), 34px)');
-  expect(audio).toContain('clamp(20px, calc(var(--card-footer-h, 0px) - 12px), 34px)');
   // 位置：right: 8px + 在页脚高度里垂直居中
   expect(clone).toContain('right: 8px');
-  expect(audio).toContain('right: 8px');
   expect(clone).toContain('max(4px, calc((var(--card-footer-h, 0px) - var(--clone-btn)) / 2))');
-  expect(audio).toContain('max(4px, calc((var(--card-footer-h, 0px) - var(--audio-btn)) / 2))');
-  // 名字要让开角标
+  // 名字要让开角标；音频卡上那颗播放角标删掉后，这条让位规矩只剩这一处
   expect(clone).toContain('padding-right: calc(8px + var(--clone-btn) + 6px)');
-  expect(audio).toContain('padding-right: calc(8px + var(--audio-btn) + 6px)');
+  expect(feedCss).not.toContain('--audio-btn');
 });
 
 it('角标不加边框也不加底色，悬停只是图标变品牌色，焦点环关掉', () => {
@@ -129,15 +124,16 @@ it('三类卡挂同一颗一键同款角标，量词按族：一张 / 一条 / �
   }
 });
 
-it('音频卡的播放角标挪进画面，右下角只留一键同款那一个控件', async () => {
+it('音频卡悬停后也只有「一键同款」这一颗角标，画面里不再长出播放键', async () => {
   const screen = await openFeed([
     card({ id: 3, kind: 'audio', filename: 'a.mp3', original_url: '/api/audio/3/file', thumbnail_url: '/api/audio/3/waveform' }),
   ]);
   const cardEl = screen.getByRole('button', { name: '用同款工作流再生成一段' }).closest('.media-card') as HTMLElement;
   await fireEvent.mouseEnter(cardEl);
   await tick();
-  const play = screen.getByRole('button', { name: '播放 a.mp3' }) as HTMLElement;
-  expect(play.closest('.media-card-media')).toBeTruthy();
+  // 悬停曾经在画面左下角长一颗播放圆标，压在波形上；现在整张卡就是播放入口
+  expect(screen.queryByRole('button', { name: '播放 a.mp3' })).toBeNull();
+  expect(cardEl.querySelectorAll('.audio-play-btn')).toHaveLength(0);
   const clone = screen.getByRole('button', { name: '用同款工作流再生成一段' }) as HTMLElement;
   expect(clone.closest('.media-card-media')).toBeNull();
 });

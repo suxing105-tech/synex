@@ -101,22 +101,20 @@ describe("音频卡", () => {
     expect(container.querySelector(".media-card-meta")?.textContent).toBe("0:42");
   });
 
-  it("悬停时播放入口出现在画面左下角，右下角常驻的是「一键同款」", async () => {
+  it("悬停不长播放角标：整张卡就是播放控件，右下角只有「一键同款」", async () => {
     const { container } = renderFeed();
     await tick();
     const card = thumbOf(container, "氛围底噪.mp3").closest("button") as HTMLElement;
-    // 右下角那颗不再是播放键：三类卡在同一个位置共用同一颗一键同款
-    expect(container.querySelector('[aria-label="播放 氛围底噪.mp3"]')).toBeNull();
+    // 三类卡右下角共用同一颗一键同款，它挂在卡片上、不坐页脚那一格
     const cloneBtn = container.querySelector<HTMLElement>(".media-clone-btn");
     expect(cloneBtn).toBeTruthy();
     expect(cloneBtn?.closest(".media-card-media")).toBeNull();
+    // 悬停曾经会让一颗播放圆标压在波形左下角，现在整张卡就是那个入口
     await fireEvent.mouseEnter(card);
     await tick();
-    const play = container.querySelector<HTMLElement>('[aria-label="播放 氛围底噪.mp3"]');
-    expect(play).not.toBeNull();
-    expect(play?.getAttribute("title")).toBe("播放音频");
-    // 它挂在画面里（左下角），不再坐页脚那一格
-    expect(play?.closest(".media-card-media")).toBeTruthy();
+    expect(container.querySelector(".audio-play-btn")).toBeNull();
+    expect(container.querySelector(".audio-play-icon")).toBeNull();
+    expect(container.querySelector('[aria-label="播放 氛围底噪.mp3"]')).toBeNull();
   });
 
   it("波形 404 时降级成音符图形，而不是把音频从库里删掉", async () => {
@@ -128,14 +126,17 @@ describe("音频卡", () => {
     expect(imagesApi.presence).not.toHaveBeenCalled();
   });
 
-  it("点播放三角就地播放，不落进图片 Lightbox", async () => {
+  it("播放中也不长出暂停角标：再点一次卡片就是停", async () => {
     const { container } = renderFeed();
     await tick();
     const card = thumbOf(container, "氛围底噪.mp3").closest("button") as HTMLElement;
-    await fireEvent.mouseEnter(card);
-    await tick();
-    await fireEvent.click(container.querySelector('[aria-label="播放 氛围底噪.mp3"]') as Element);
+    await fireEvent.click(card);
     expect(get(playingAudio)?.id).toBe(7);
+    await tick();
+    expect(container.querySelector(".audio-play-btn")).toBeNull();
+    expect(container.querySelector('[aria-label="暂停 氛围底噪.mp3"]')).toBeNull();
+    await fireEvent.click(card);
+    expect(get(playingAudio)).toBeNull();
   });
 
   it("单击卡片也会播放（音频没有「打开大图」这层语义）", async () => {
@@ -214,15 +215,13 @@ describe("音频卡", () => {
     // 底部进度轨常驻，播放前只是空的暗轨
     expect(container.querySelector(".audio-track")).toBeTruthy();
     expect(container.querySelector(".audio-progress")).toBeNull();
-    // 播放角标挪进画面左下角：右下角那一颗交给三类共用的「一键同款」
+    // 悬停什么都不长出来：画面里不许再有播放角标，右下角那一颗交给三类共用的「一键同款」
     await fireEvent.mouseEnter(card);
     await tick();
-    const playBtn = container.querySelector<HTMLElement>(".audio-play-btn");
-    expect(playBtn).toBeTruthy();
-    expect(playBtn?.classList.contains("audio-play-btn--media")).toBe(true);
-    expect(playBtn?.closest(".media-card-media")).toBeTruthy();
-    expect(container.querySelector(".audio-play-icon")).toBeTruthy();
+    expect(container.querySelector(".audio-play-btn")).toBeNull();
     expect(container.querySelector(".media-clone-btn")).toBeTruthy();
+    // 页脚右侧的让位由 .media-card.is-cloneable 一处负责，音频不再自带第二条公式
+    expect(FEED_SOURCE).not.toContain("--audio-btn");
   });
 
   it("波形 404：频谱层与进度轨一起撤掉，退回音符图形", async () => {
@@ -234,20 +233,19 @@ describe("音频卡", () => {
     expect(container.querySelector(".audio-track")).toBeNull();
     expect(container.querySelector('[aria-label="波形暂不可用"]')).toBeTruthy();
   });
-  it("播放三角在播放时换成暂停图标并改文案，而且不用把鼠标留在卡片上", async () => {
+  it("正在播的状态靠波形呼吸 + 进度轨读，鼠标移开也不掉", async () => {
     const { container } = renderFeed();
     await tick();
     const card = thumbOf(container, "氛围底噪.mp3").closest("button") as HTMLElement;
-    await fireEvent.mouseEnter(card);
+    await fireEvent.click(card);
     await tick();
-    await fireEvent.click(container.querySelector('[aria-label="播放 氛围底噪.mp3"]') as Element);
-    await tick();
-    expect(container.querySelector('[aria-label="播放 氛围底噪.mp3"]')).toBeNull();
-    expect(container.querySelector('[aria-label="暂停 氛围底噪.mp3"]')?.getAttribute("title")).toBe("暂停音频");
-    // 鼠标移开也留得下来：正在播就是它的常驻理由，否则暂停只能靠再点一次卡片
+    expect(card.classList.contains("is-playing")).toBe(true);
+    expect(container.querySelector(".audio-progress")).toBeTruthy();
     await fireEvent.mouseLeave(card);
     await tick();
-    expect(container.querySelector('[aria-label="暂停 氛围底噪.mp3"]')).toBeTruthy();
+    // 没有角标可以「留在原地」，播放状态本身写在卡片 class 与进度轨上
+    expect((thumbOf(container, "氛围底噪.mp3").closest("button") as HTMLElement).classList.contains("is-playing")).toBe(true);
+    expect(get(playingAudio)?.id).toBe(7);
   });
 
   it("内核解不了的容器：点卡片直接走系统播放器，不假装在播", async () => {

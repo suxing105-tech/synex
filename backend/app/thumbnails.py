@@ -27,6 +27,25 @@ Image.MAX_IMAGE_PIXELS = None
 
 _LOCK = threading.Lock()
 
+# 海报帧是「一张静态图」，编码质量必须按静态图定，不能按视频流那一套给个位数。
+# 0.2.32 之前这里传的是 ``-q:v 4``：libwebp 把这个值当 0-100 的质量档，于是所有海报
+# 一直在用 4/100 编码 —— 用户反馈的「缩略图比播放时糊」就是它。同一帧（1024 宽）对
+# 无损参考帧实测亮度 PSNR：q4 34.6dB / q85 42.6dB / q90 43.4dB（294 号视频），
+# q90 比 q4 大 5 倍体积、代价 0.1s 编码时间，本地读取不构成代价。
+# 缩放顺手改成 lanczos，与 Pillow 图片预览的 LANCZOS 同一套重采样。
+POSTER_QUALITY = "90"
+POSTER_SCALE_FLAGS = "lanczos"
+
+
+def poster_webp_args() -> list[str]:
+    """海报帧与自定义封面共用的 WebP 编码参数（一处定口径，别再各写一份）。"""
+    return ["-q:v", POSTER_QUALITY, "-compression_level", "6"]
+
+
+def poster_scale_filter(max_size: int) -> str:
+    """只缩不放：源比 max_size 窄时保持原尺寸，避免 upscale 变糊。"""
+    return f"scale='min({max_size},iw)':-2:flags={POSTER_SCALE_FLAGS}"
+
 
 def generate_preview(
     image_path: Path,
@@ -168,10 +187,13 @@ def generate_audio_waveform(
 
 
 def generate_video_thumbnail(video_path: Path, video_id: int, max_size: int = 1024) -> Path | None:
-    """用 ffmpeg 截取视频封面帧，按源文件内容摘要缓存到 ``previews/``。
+    """用 ffmpeg 截取视频封面帧，按「质量档 + 源文件内容摘要」缓存到 ``previews/``。
 
     输出为 WebP（与图片预览一致），失败返回 ``None``。不会抛异常。
     优先取 ~1s 的帧；若视频过短导致取不到帧，则回退到首帧（``-ss 0``）。
+
+    缓存名里带 ``q{POSTER_QUALITY}``：换质量升级时老海报自然失效重做，
+    不然同一个源摘要会永远命中那张 4/100 质量的旧文件。
     """
     import hashlib
     import os
@@ -183,7 +205,7 @@ def generate_video_thumbnail(video_path: Path, video_id: int, max_size: int = 10
             source_digest = hashlib.file_digest(source_file, "sha256").hexdigest()
     except OSError:
         return None
-    out_path = previews_dir() / f"{video_id}_poster_{source_digest}.webp"
+    out_path = previews_dir() / f"{video_id}_poster_q{POSTER_QUALITY}_{source_digest}.webp"
     if out_path.exists():
         return out_path
 
@@ -202,8 +224,8 @@ def generate_video_thumbnail(video_path: Path, video_id: int, max_size: int = 10
                 "-ss", seek,
                 "-i", str(video_path),
                 "-frames:v", "1",
-                "-vf", f"scale='min({max_size},iw)':-2",
-                "-q:v", "4",
+                "-vf", poster_scale_filter(max_size),
+                *poster_webp_args(),
                 "-f", "webp",
                 str(temp_path),
             ]
@@ -258,8 +280,8 @@ def generate_video_cover(
             "-ss", f"{seek:.3f}",
             "-i", str(video_path),
             "-frames:v", "1",
-            "-vf", f"scale='min({max_size},iw)':-2",
-            "-q:v", "2",
+            "-vf", poster_scale_filter(max_size),
+            *poster_webp_args(),
             "-f", "webp",
             str(temp_path),
         ]

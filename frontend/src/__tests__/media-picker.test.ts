@@ -396,3 +396,86 @@ describe('滑过播视频、点开听音频', () => {
     expect(css).toMatch(/tabindex="-1"[\s\S]{0,60}class="mp-audio-btn"/);
   });
 });
+
+describe("搜索框要真能搜", () => {
+  /** 取最后一次发给后端的查询参数：搜索有没有生效，只看这一处最准。 */
+  function lastQuery(): Record<string, unknown> {
+    const calls = (imagesApi.list as ReturnType<typeof vi.fn>).mock.calls;
+    return calls[calls.length - 1][0] as Record<string, unknown>;
+  }
+  function callCount(): number {
+    return (imagesApi.list as ReturnType<typeof vi.fn>).mock.calls.length;
+  }
+  function searchBox(screen: { container: HTMLElement }): HTMLInputElement {
+    return screen.container.querySelector(".mp-search") as HTMLInputElement;
+  }
+
+  /**
+   * 真机踩到的 BUG：搜索框敲一个字就被清空，点「搜索」永远发出去空查询。
+   * 根因是「换族就重读列表」那条 effect 里顺手调了 load()，而 load() 读 query
+   * ⇒ query 成了 effect 的依赖 ⇒ 打字 = 触发 effect = 把刚敲的字抹掉再重读。
+   */
+  it("敲进关键词点搜索：请求带上 q，框里的字不许被抹掉", async () => {
+    const screen = await opened();
+    const box = searchBox(screen);
+    await fireEvent.input(box, { target: { value: "红发" } });
+    await fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    await vi.waitFor(() => expect(lastQuery()).toMatchObject({ q: "红发" }));
+    expect(box.value).toBe("红发");
+  });
+
+  it("回车就是搜索，不必再点那颗按钮", async () => {
+    const screen = await opened();
+    const box = searchBox(screen);
+    await fireEvent.input(box, { target: { value: "wide" } });
+    const before = callCount();
+    await fireEvent.keyDown(box, { key: "Enter" });
+    await vi.waitFor(() => expect(callCount()).toBeGreaterThan(before));
+    expect(lastQuery()).toMatchObject({ q: "wide" });
+  });
+
+  it("打字本身不许触发重读：边写边重读等于把关键词越写越短", async () => {
+    const screen = await opened();
+    const box = searchBox(screen);
+    const before = callCount();
+    for (const ch of ["图", "图片", "图片编辑"]) {
+      await fireEvent.input(box, { target: { value: ch } });
+    }
+    await tick();
+    expect(callCount()).toBe(before);
+    expect(box.value).toBe("图片编辑");
+  });
+
+  it("换族才清关键词：族没动就不许碰用户敲进去的字", async () => {
+    (imagesApi.list as ReturnType<typeof vi.fn>).mockResolvedValue({ items: [], total: 0 });
+    const screen = render(MediaPickerModal, {
+      open: true, kind: "image", kinds: ["image", "audio", "video"], onPick: () => {}, onClose: () => {},
+    });
+    await tick();
+    const box = searchBox(screen);
+    await fireEvent.input(box, { target: { value: "abc" } });
+    await fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    await tick();
+    expect(box.value).toBe("abc");
+    await fireEvent.click(screen.getByRole("button", { name: "音频" }));
+    await tick();
+    expect(box.value).toBe("");
+    expect(lastQuery()).toMatchObject({ kind: "audio" });
+    expect(lastQuery().q).toBeUndefined();
+  });
+
+  it("搜完翻页还在同一批结果里：加载更多不许把查询丢了", async () => {
+    // 第二页必须换一批 id：keyed each 拿到重复 id 会先炸在 each_key_duplicate 上，测不到正题。
+    const page2 = [{ id: 11, filename: "p11.png", path: "D:/p11.png", kind: "image", width: 768, height: 1360, original_url: "/api/images/11/file", thumbnail_url: "/api/images/11/file" }];
+    (imagesApi.list as ReturnType<typeof vi.fn>).mockImplementation(async (arg: any) =>
+      arg.offset ? { items: page2, total: 9 } : { items: ITEMS, total: 9 });
+    const screen = render(MediaPickerModal, { open: true, onPick: () => {}, onClose: () => {} });
+    await screen.findByRole("button", { name: "tall.png" });
+    const box = searchBox(screen);
+    await fireEvent.input(box, { target: { value: "tall" } });
+    await fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    await tick();
+    await fireEvent.click(await screen.findByRole("button", { name: /还有/ }));
+    await vi.waitFor(() => expect(lastQuery()).toMatchObject({ q: "tall", offset: 3 }));
+  });
+});

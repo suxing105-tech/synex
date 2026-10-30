@@ -8,6 +8,7 @@
    * 卡片复用 app.css 的 .media-card 规范；画面框按每份素材自己的宽高比排，
    * 配合 .media-card-img 的 object-fit，保证不按扁、不拉伸（固定 4:3 会把竖图挤变形）。
    */
+  import { untrack } from "svelte";
   import { get } from "svelte/store";
   import { audioApi, imagesApi } from "../lib/api";
   import { backendUrl } from "../lib/backend-url";
@@ -133,14 +134,25 @@
     tab = list.includes(target) ? null : (list[0] ?? null);
   });
 
+  /**
+   * 换一族＝换一批素材：换目标格（prop kind 变）或在顶部 tab 之间切换，列表都得跟着重读。
+   *
+   * 这一族只准认 open 与 activeKind，其余副作用必须整段 untrack。
+   * load() 会读 query（拼进 q=），loaded 也在它里面读；不 untrack 的话这些读全部算作本
+   * effect 的依赖 ⇒ 在搜索框里敲一个字就等价于「换了一批素材」⇒ effect 重跑 ⇒ 把刚敲进去
+   * 的关键词抹成空串再重读一遍全量。用户看到的症状是搜索框不能搜索：字打不进去，
+   * 点「搜索」永远发的是空查询。试听那条同理（stopPreviewAudio 读了 playingAudio store），
+   * 否则放一段音频也会顺手清空搜索框。
+   */
   $effect(() => {
     if (!open) return;
-    // 换一族＝换一批素材：换目标格（prop kind 变）或在顶部 tab 之间切换，列表都得跟着重读。
     void activeKind;
-    query = "";
-    hoveredId = null;
-    stopPreviewAudio();
-    void load();
+    untrack(() => {
+      query = "";
+      hoveredId = null;
+      stopPreviewAudio();
+      void load();
+    });
   });
 
   // 关弹窗（选完、Esc、点外面）：把这里起的试听收掉。试听是临时的，选完不该还在响。

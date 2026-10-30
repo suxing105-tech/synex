@@ -2029,7 +2029,9 @@ it('点 Ryan 就把语种换成英文：官方表里他 native 就是 English', 
   const pill = screen.getByRole('button', { name: '画面参数' });
   await openPop(screen);
   watch(sampleOf(screen));
-  expect(pressed(screen, 'Auto')).toBe('true'); // 开局照旧是工作流自带那份「自动」
+  // 载入时已经落在默认那位（Vivian）的母语上，不再是工作流自带那份「自动」
+  expect(pressed(screen, 'Chinese')).toBe('true');
+  expect(pressed(screen, 'Auto')).toBe('false');
   await fireEvent.click(voiceCell(screen, 'Ryan'));
   await tick();
   expect(pressed(screen, 'Auto')).toBe('false');
@@ -2050,18 +2052,18 @@ it('母语跟着人走：Sohee 韩文、Ono_Anna 日文、Uncle Fu 中文', asyn
   }
 });
 
-it('语种那一格没有英文就不动：宁可留在自动，也不发明一个工作流不认的值', async () => {
+it('语种那一格没有英文就不动：宁可留在中文，也不发明一个工作流不认的值', async () => {
   nineVoices(); // 这份工作流的语言只有 Auto / Chinese
   const screen = await ready({ image: AUDIO_CARD });
   await openPop(screen);
   watch(sampleOf(screen));
+  expect(pressed(screen, 'Chinese')).toBe('true'); // 开局是 Vivian 的母语
   await fireEvent.click(voiceCell(screen, 'Ryan'));
   await tick();
-  expect(pressed(screen, 'Auto')).toBe('true');
-  // 同一个人换成 Uncle Fu（中文）就在，说明不是没找到语种格
-  await fireEvent.click(voiceCell(screen, 'Uncle_Fu'));
-  await tick();
-  expect(pressed(screen, 'Chinese')).toBe('true');
+  expect(pressed(screen, 'Chinese')).toBe('true'); // 换人到 Ryan：这一格没英文，原样不动
+  expect(pressed(screen, 'Auto')).toBe('false'); // 也没被悄悄退回「自动」
+  // 这一格里根本没有「英文」这一项，不是没找到语种格（语种格找没找到上一条已钉死）
+  expect(screen.queryByRole('button', { name: 'English' })).toBeNull();
 });
 
 it('手动改过语种之后，再点同一个人不许刷回去：那是用户自己挑的', async () => {
@@ -2093,4 +2095,85 @@ it('模型里的其它音色（自己练的）没有母语可对：语种保持�
   await tick();
   expect(pressed(screen, 'English')).toBe('true'); // 不猜、也不回滚成自动
   expect(pressed(screen, 'Auto')).toBe('false');
+});
+
+// ---------- 载入工作流那一刻就把语种对上母语 ----------
+
+/** 随包那条「指定音色」的形状，只把默认音色换成 Ryan：打开就该是他的母语。 */
+const loadRyanWith = (languageOptions: string[], speaker = 'Ryan') =>
+  routes({
+    ...baseRoutes(),
+    '/api/clone/templates': {
+      items: [audioTpl({
+        id: 18, name: '闪寻指定音色·默认Ryan',
+        slots: [
+          { kind: 'prompt', node: '37', input: 'text', label: '完整提示词' },
+          { kind: 'select', node: '37', input: 'speaker', label: '音色', options: ['Vivian', 'Ryan', 'Sohee', 'my_voice'], value: speaker },
+          { kind: 'select', node: '37', input: 'language', label: '语言', options: languageOptions, value: 'Auto' },
+        ],
+        reference_cells: [],
+      })],
+    },
+  });
+
+it('载入默认就是 Ryan 的工作流：语种已经是英文，不用先点一下人', async () => {
+  loadRyanWith(['Auto', 'Chinese', 'English', 'Korean']);
+  const screen = await ready({ image: AUDIO_CARD });
+  await openPop(screen);
+  expect(pressed(screen, 'English')).toBe('true');
+  expect(pressed(screen, 'Auto')).toBe('false');
+  // 胶囊那行字跟着母语走，不点开面板也知道这次说什么语种
+  expect(screen.getByRole('button', { name: '画面参数' }).textContent).toContain('Ryan / 英文');
+});
+
+it('载入时语种格里没有英文就不动：还是工作流自带那份自动', async () => {
+  loadRyanWith(['Auto', 'Chinese']);
+  const screen = await ready({ image: AUDIO_CARD });
+  await openPop(screen);
+  expect(pressed(screen, 'Auto')).toBe('true');
+});
+
+it('载入的工作流默认是自己练的音色：语种保持自动，不猜', async () => {
+  loadRyanWith(['Auto', 'Chinese', 'English'], 'my_voice');
+  const screen = await ready({ image: AUDIO_CARD });
+  await openPop(screen);
+  expect(pressed(screen, 'Auto')).toBe('true');
+});
+
+it('载入已经对齐了母语，之后手动改回自动，再点同一个人不许刷回去', async () => {
+  loadRyanWith(['Auto', 'Chinese', 'English', 'Korean']);
+  const screen = await ready({ image: AUDIO_CARD });
+  await openPop(screen);
+  expect(pressed(screen, 'English')).toBe('true');
+  await fireEvent.click(voiceCell(screen, 'Auto'));
+  await tick();
+  const sample = watch(sampleOf(screen));
+  await fireEvent.click(voiceCell(screen, 'Ryan')); // 同一个人再点一下是停/放试听，不是重选
+  await tick();
+  expect(pressed(screen, 'Auto')).toBe('true');
+  expect(sample.play).toHaveBeenCalledTimes(1);
+});
+
+it('换到另一条工作流：语种按那条自己的默认音色重算，不留上一条的英文', async () => {
+  // 两条都是音频工作流，会折成「闪寻音频」一族，切换走弹窗顶上那排出声方式按钮。
+  const plan = (id: number, name: string, value: string) => audioTpl({
+    id, name,
+    slots: [
+      { kind: 'select', node: '37', input: 'speaker', label: '音色', options: ['Vivian', 'Ryan'], value },
+      { kind: 'select', node: '37', input: 'language', label: '语言', options: ['Auto', 'Chinese', 'English'], value: 'Auto' },
+    ],
+    reference_cells: [],
+  });
+  routes({ ...baseRoutes(), '/api/clone/templates': { items: [plan(18, '甲号试听', 'Ryan'), plan(19, '乙号试听', 'Vivian')] } });
+  const screen = await ready({ image: AUDIO_CARD });
+  await openPop(screen);
+  expect(pressed(screen, 'English')).toBe('true');
+  const group = await screen.findByRole('radiogroup', { name: '音频模式' });
+  await fireEvent.click(group.querySelectorAll('button')[1]); // 换成乙号试听（默认 Vivian）
+  await tick();
+  const after = await screen.findByRole('radiogroup', { name: '音频模式' });
+  expect([...after.querySelectorAll('button')].map((b) => b.getAttribute('aria-checked'))).toEqual(["false", "true"]);
+  await openPop(screen);
+  expect(pressed(screen, 'Chinese')).toBe('true');
+  expect(pressed(screen, 'English')).toBe('false');
 });

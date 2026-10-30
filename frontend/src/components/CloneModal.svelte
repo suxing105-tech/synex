@@ -24,7 +24,7 @@
     allowsTextMode, controlSlots, controlSummary, defaultControlValues, defaultReferences, latestReversePrompt,
     promptGroupValues, modeFromRefCount, modeLabel, numberPresets, numberUnit,
     primaryPromptGroup, promptGroupHint, promptPlaceholder, promptSlots, promptSourceLabel, secondaryPromptGroups,
-    ratioShape, referenceCells, referenceIssues, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, visibleRefCells, voiceAvatar, voiceSample, voiceNativeLanguage, languageSlotAmong, languageOptionFor,
+    ratioShape, referenceCells, referenceIssues, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, visibleRefCells, voiceAvatar, voiceSample, nativeLanguageOverride,
     firstFreeRefKey, mergedRefCells, openRefKinds, REF_DISPLAY_ORDER,
     CLONE_SETTINGS_TAB,
     applyMention, caretCoordinates, mentionAddLabel, mentionChunks, mentionInsertText, mentionItems as buildMentionItems, mentionToken,
@@ -516,7 +516,16 @@
   function bindTemplate(next: CloneTemplate | null) {
     // 从视频卡点开的，这张视频默认站在「视频1」；从图片卡点开的仍是「图片1」。
     refs = defaultReferences(next, image, sources?.references ?? [], { kind: cardKind });
-    controls = defaultControlValues(next);
+    // 母语对齐只读这份局部值：bindTemplate 是被 $effect 调的，在这里读一次 controls
+    // 再写回去，effect 就会自己追自己——Svelte 5 这个坑本轮踩过一次，别再踩第二遍。
+    const values = defaultControlValues(next);
+    // 工作流默认就写着官方九人之一时，语种先挪到他的母语：打开「指定音色」不该先挂
+    // 「自动」让他猜一遍，也不该等用户去点一下人才换。格子里没这个语种就原样不动。
+    const native = nativeLanguageOverride(
+      controlSlots(next).filter((slot) => slot.kind === "select"),
+      values,
+    );
+    controls = Object.keys(native).length > 0 ? { ...values, ...native } : values;
     // 附框预填工作流里此刻写着的那段话：空着就等于把原话交给后端回落成台词，
     // 用户什么也没动，音色却变了。
     extraPrompts = promptGroupValues(next, sources && sources.template_id === next?.id ? sources.slot_prompts : null);
@@ -567,12 +576,10 @@
    * 填一个它不认的值等于把参数丢回给后端猜。
    */
   function followNativeLanguage(voiceKeyArg: string, option: string) {
-    const wanted = voiceNativeLanguage(option);
-    if (!wanted) return;
-    const slot = languageSlotAmong(selectSlots, voiceKeyArg);
-    if (!slot) return;
-    const match = languageOptionFor(slot, wanted);
-    if (match !== null) controls[slotKey(slot)] = match;
+    // 把刚点的这位当成这格的值交给同一个函数：载入与点人要是分成两套算法，
+    // 迟早会出现「打开是自动、点一下才换英文」这种说不上来的差别。
+    const patch = nativeLanguageOverride(selectSlots, { ...controls, [voiceKeyArg]: option }, voiceKeyArg);
+    for (const [key, value] of Object.entries(patch)) controls[key] = value;
   }
 
   /**

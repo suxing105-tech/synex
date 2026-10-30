@@ -12,7 +12,7 @@ import {
   defaultPromptGroupValues, primaryPromptGroup, promptGroupHint, promptGroupValues, promptGroups, promptPlaceholder, secondaryPromptGroups,
   audioModeLabel, audioModeTemplates, promptGroupPlaceholder, REFERENCE_TRANSCRIPT_LABEL, VOICE_DESIGN_LABEL, VOICE_STYLE_LABEL,
   workflowMenuRows, workflowDisplayName, AUDIO_MODE_GROUP_LABEL, voiceAvatar, voiceSample,
-  voiceNativeLanguage, isLanguageSlot, languageSlotAmong, languageOptionFor,
+  voiceNativeLanguage, isLanguageSlot, languageSlotAmong, languageOptionFor, nativeLanguageOverride,
   firstFreeRefKey, mergedRefCells, openRefKinds, REF_DISPLAY_ORDER, sortByDisplayFamily,
   type CloneMode, type CloneSlot, type CloneTemplate,
 } from "../lib/clone";
@@ -1161,5 +1161,56 @@ describe("官方九人的母语：选了人就顺手把语种对上", () => {
     expect(languageSlotAmong([voice, lang], slotKey(voice))).toBe(lang);
     expect(languageSlotAmong([voice], slotKey(voice))).toBeNull();
     expect(languageSlotAmong([lang], slotKey(lang))).toBeNull();
+  });
+});
+
+describe("nativeLanguageOverride：载入与点人共用的那条母语规矩", () => {
+  const voice = (value: string, options: string[] = ["Vivian", "Ryan", "Sohee", "my_voice"]): CloneSlot =>
+    ({ kind: "select", node: "37", input: "speaker", label: "音色", options, value });
+  const lang = (options: string[]): CloneSlot =>
+    ({ kind: "select", node: "37", input: "language", label: "语言", options, value: "Auto" });
+
+  it("默认值里就是 Ryan：载入这份默认表交回 English，取的是工作流自己的原值", () => {
+    const speaker = voice("Ryan");
+    const language = lang(["Auto", "Chinese", "English", "Korean"]);
+    const template = tpl([speaker, language]);
+    expect(nativeLanguageOverride([speaker, language], defaultControlValues(template)))
+      .toEqual({ "37.language": "English" });
+  });
+
+  it("随包那条「指定音色」的形状：默认 Vivian → 载入落在 Chinese，不再是 Auto", () => {
+    const speaker = voice("Vivian", ["Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric", "Ryan", "Aiden", "Ono_Anna", "Sohee"]);
+    const language = lang(["Auto", "Chinese", "English", "Japanese", "Korean", "German", "French", "Russian", "Portuguese", "Spanish", "Italian"]);
+    expect(nativeLanguageOverride([speaker, language], defaultControlValues(tpl([speaker, language]))))
+      .toEqual({ "37.language": "Chinese" });
+  });
+
+  it("语种格里没有这个语种：交回空对象，绝不发明一个工作流不认的值", () => {
+    const speaker = voice("Ryan");
+    const language = lang(["Auto", "Chinese"]);
+    expect(nativeLanguageOverride([speaker, language], defaultControlValues(tpl([speaker, language])))).toEqual({});
+  });
+
+  it("默认是自定义音色、或这份工作流根本没有音色格：一律不动语种", () => {
+    const mine = voice("my_voice");
+    const language = lang(["Auto", "Chinese", "English"]);
+    expect(nativeLanguageOverride([mine, language], defaultControlValues(tpl([mine, language])))).toEqual({});
+    expect(nativeLanguageOverride([language], defaultControlValues(tpl([language])))).toEqual({});
+  });
+
+  it("刚点的那个人优先：另一格音色自带的默认不许压过他", () => {
+    const a: CloneSlot = { kind: "select", node: "37", input: "speaker", label: "音色A", options: ["Vivian", "Ryan"], value: "Vivian" };
+    const b: CloneSlot = { kind: "select", node: "38", input: "speaker", label: "音色B", options: ["Vivian", "Sohee"], value: "Vivian" };
+    const language = lang(["Auto", "Chinese", "English", "Korean"]);
+    const values = { "37.speaker": "Vivian", "38.speaker": "Sohee", "37.language": "Auto" };
+    expect(nativeLanguageOverride([a, b, language], values, slotKey(b))).toEqual({ "37.language": "Korean" });
+    // 不指定优先级时按槽位顺序认，先撞上 A 格的 Vivian —— 载入路径就是这个行为
+    expect(nativeLanguageOverride([a, b, language], values)).toEqual({ "37.language": "Chinese" });
+  });
+
+  it("数字格不参与认人：值不是字符串就当没这个人", () => {
+    const seed: CloneSlot = { kind: "number", node: "37", input: "seed", label: "种子", value: 42 };
+    const language = lang(["Auto", "Chinese", "English"]);
+    expect(nativeLanguageOverride([seed, language], { "37.seed": 42, "37.language": "Auto" })).toEqual({});
   });
 });

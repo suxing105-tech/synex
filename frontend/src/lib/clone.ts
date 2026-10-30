@@ -1092,6 +1092,34 @@ export function languageOptionFor(slot: CloneSlot, wanted: string): string | nul
   return (slot.options ?? []).find((o) => languageOf(o) === wanted) ?? null;
 }
 
+/**
+ * 「刚点了某个人」和「刚载入这份工作流」共用的一条规矩：值表里出现官方九人之一，
+ * 语种那一格就换成他的母语。两边口径必须一样，否则同一条工作流打开是一个语种、
+ * 点一下人变成另一个语种。
+ *
+ * priorityKey 是刚点进去的那一格，先认它的值——两个音色格时不能让另一格自带的默认
+ * 压过用户刚点的那位。载入时没有「刚点的格子」，留空，按槽位顺序认默认值。
+ * 交回「语种格键 → 这一格自己的原值选项」；对不上就是空对象，绝不替工作流发明选项。
+ */
+export function nativeLanguageOverride(
+  slots: CloneSlot[],
+  values: Record<string, string | number>,
+  priorityKey = "",
+): Record<string, string> {
+  const language = languageSlotAmong(slots, priorityKey);
+  if (!language) return {};
+  const rest = slots.filter((slot) => slotKey(slot) !== slotKey(language));
+  const preferred = priorityKey ? rest.find((slot) => slotKey(slot) === priorityKey) ?? null : null;
+  const ordered = preferred ? [preferred, ...rest.filter((slot) => slot !== preferred)] : rest;
+  for (const slot of ordered) {
+    const current = values[slotKey(slot)];
+    if (typeof current !== "string") continue;
+    const match = languageOptionFor(language, voiceNativeLanguage(current));
+    if (match !== null) return { [slotKey(language)]: match };
+  }
+  return {};
+}
+
 const RATIO_PATTERN = /^\s*(\d+(?:\.\d+)?)\s*[:：xX×]\s*(\d+(?:\.\d+)?)\s*$/;
 
 export interface RatioShape {

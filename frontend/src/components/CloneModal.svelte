@@ -10,11 +10,11 @@
    * 3. 弹窗里不放「在 ComfyUI 中打开」：这是后台出图的入口，调试去设置页看模板 JSON。
    */
   import { get } from "svelte/store";
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import { comfyuiApi, imagesApi } from "../lib/api";
   import { backendUrl } from "../lib/backend-url";
   import { basenameOnly } from "../lib/media-format";
-  import { comfyuiStatus, overlayMuted } from "../lib/stores";
+  import { comfyuiStatus, overlayMuted, stopAudio } from "../lib/stores";
   import { pushToast } from "../lib/toast";
   import { modalFocus } from "../lib/modal-focus";
   import Icon from "./Icon.svelte";
@@ -24,7 +24,7 @@
     allowsTextMode, controlSlots, controlSummary, defaultControlValues, defaultReferences, latestReversePrompt,
     promptGroupValues, modeFromRefCount, modeLabel, numberPresets, numberUnit,
     primaryPromptGroup, promptGroupHint, promptPlaceholder, promptSlots, promptSourceLabel, secondaryPromptGroups,
-    ratioShape, referenceCells, referenceIssues, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, visibleRefCells, voiceAvatar,
+    ratioShape, referenceCells, referenceIssues, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, visibleRefCells, voiceAvatar, voiceSample,
     firstFreeRefKey, mergedRefCells, openRefKinds, REF_DISPLAY_ORDER,
     CLONE_SETTINGS_TAB,
     applyMention, caretCoordinates, mentionAddLabel, mentionChunks, mentionInsertText, mentionItems as buildMentionItems, mentionToken,
@@ -85,6 +85,20 @@
   let probing = $state(false);
   let popOpen = $state(false);
   let wfOpen = $state(false);
+  /**
+   * 音色试听：正在放的那一个选项值，"" = 没在放。
+   *
+   * 走组件里自己那条隐藏 <audio>，不走全局 AudioEngine：那条只认后端给的 play_url，
+   * 而样本是随安装包走的静态文件；更要紧的是它一响就把图库卡片的状态抢过去，
+   * 试听个音色不该让右侧的音频卡片跟着变「正在播放」。
+   * 两条 <audio> 用 bind:this 拿到（和 AudioEngine 一个口径）。它们只许在事件回调和
+   * untrack 里读写：试听开关一读它们就进依赖表，下面那条 effect 会在「刚点起播放」
+   * 那一次重跑里自己把声音停掉。
+   */
+  let hearingVoice = $state("");
+  let sampleEl = $state<HTMLAudioElement | null>(null);
+  /** 左边那张音频卡自带的播放器：同一时刻只准有一个声音在响。 */
+  let heroEl = $state<HTMLAudioElement | null>(null);
   /** 一次只让一条删除在飞：删完要重读列表，中途再点会去删已经不存在的 id。 */
   let wfDeleting = $state(false);
   let workflowLoading = $state(false);
@@ -531,6 +545,51 @@
   }
 
   /**
+   * 是不是真的让播放器在放东西。普通 let，不进界面也不进依赖表：
+   * 它只是 stopVoiceSample 的闸门——没在放就别去按暂停（effect 一挂载就会调 stop）。
+   */
+  let sampling = false;
+  /** 正在听的那一格属于哪个槽位。同样只是普通值：换语种不该把音色试听掐掉。 */
+  let hearingKey = "";
+
+  /** 停下试听。只写状态、只碰 DOM，不读任何响应式值——上面那条 effect 靠这一点才安全。 */
+  function stopVoiceSample() {
+    hearingVoice = "";
+    hearingKey = "";
+    if (!sampling) return;
+    sampling = false;
+    sampleEl?.pause();
+  }
+
+  /**
+   * 点一个人：先按原来的规矩选中他，再就地放他那一段。
+   * 同一个人再点一下就是停止；换人换源；图库那张卡正在放的声音先让路。
+   * 改别的槽位（语种、比例）不许掐掉这段——听的是人，不是语种。
+   */
+  function pickVoiceValue(key: string, option: string) {
+    controls[key] = option;
+    const el = sampleEl;
+    const url = voiceSample(option);
+    // 没有样本（用户自己练的音色）或播放器还没挂上：只选中，不出声。
+    // 但换的要是正在听的那一格，就得停下——听着 A 的话却选上了 B 比安静更糟。
+    if (!url || !el) {
+      if (hearingKey === key) stopVoiceSample();
+      return;
+    }
+    if (hearingVoice === option) return stopVoiceSample();
+    heroEl?.pause();
+    stopAudio();
+    hearingVoice = option;
+    hearingKey = key;
+    sampling = true;
+    el.src = url;
+    // 宿主放不出来（WebView 缺解码、文件没打进包）就退回静默：小条跟着停，别留着骗人
+    void el.play().catch(() => {
+      if (hearingVoice === option) stopVoiceSample();
+    });
+  }
+
+  /**
    * 点 X 直接删掉库里那份 API JSON，不再问第二遍：X 只在悬停那一下才出现，本来就误点不了，
    * 中间插一层「确认删除 / 取消」只是把清理工作流变成两次点击。已经生成过的图不受影响。
    * 删的正好是当前这条也没关系：后端会把另一条顶成 is_active，loadTemplates 顺势切过去。
@@ -657,6 +716,19 @@
   $effect(() => {
     if (!open) return;
     bindTemplate(template);
+  });
+
+  /*
+   * 试听只在这层弹层开着时有意义：收弹层、关弹窗、组件被换掉，声音都得跟着停——
+   * 关掉的菜单里有人在说话是 bug，不是彩蛋。untrack 是必须的：stopVoiceSample 要写
+   * hearingVoice，让它进依赖表的话，effect 会在刚点起播放那次重跑里把声音停掉。
+   */
+  $effect(() => {
+    const live = open && popOpen;
+    untrack(() => {
+      if (!live) stopVoiceSample();
+    });
+    return () => untrack(stopVoiceSample);
   });
 
   /* 背景虚化时把右侧栏的分割线和折叠箭头一起藏掉（样式在 App.svelte，糊成一条灰竖杠很难看）。 */
@@ -861,11 +933,13 @@
             {#if image.playable !== false && (image.play_url || image.original_url)}
               <!-- svelte-ignore a11y_media_has_caption -->
               <audio
+                bind:this={heroEl}
                 class="cm-hero-audio"
                 src={backendUrl(image.play_url || image.original_url!)}
                 controls
                 preload="metadata"
                 aria-label={`预览${image.filename}`}
+                onplay={stopVoiceSample}
               ></audio>
             {/if}
           {:else if image?.original_url || image?.thumbnail_url}
@@ -1061,18 +1135,27 @@
                             {#each slot.options ?? [] as option (option)}
                               {@const shape = ratioShape(option)}
                               {@const face = voiceAvatar(option)}
+                              {@const hearing = hearingVoice === option && voiceSample(option) !== null}
                               <button
                                 class="cm-ratio"
+                                class:is-voice={face !== null}
                                 class:is-on={controls[key] === option}
-                                title={option}
+                                class:is-hearing={hearing}
+                                title={face ? `试听并选用：${option}` : option}
                                 aria-label={option}
                                 aria-pressed={controls[key] === option}
-                                onclick={() => (controls[key] = option)}
+                                onclick={() => pickVoiceValue(key, option)}
                               >
                                 {#if face}
                                   <!-- 内置音色：认得出是谁就摆那张脸。名字仍在下面，不看图也不影响读；
-                                       圆形遮罩由 CSS 负责，图自己按「脸居中、头顶留白」出。 -->
-                                  <img class="cm-ratio-face" src={face} alt="" draggable="false" />
+                                       圆形遮罩由 CSS 负责，图自己按「脸居中、头顶留白」出。
+                                       正在放的那位右上角挂三条跳动的窄条——扫一眼就知道在听谁。 -->
+                                  <span class="cm-ratio-face-wrap">
+                                    <img class="cm-ratio-face" src={face} alt="" draggable="false" />
+                                    {#if hearing}
+                                      <span class="cm-voice-eq" aria-hidden="true"><i></i><i></i><i></i></span>
+                                    {/if}
+                                  </span>
                                 {:else if shape.ratio}
                                   <span class="cm-ratio-box" style="width: {shape.box.w}px; height: {shape.box.h}px;" aria-hidden="true"></span>
                                 {:else}
@@ -1234,6 +1317,16 @@
         </div>
         <!-- 常驻的隐藏文件框：底部那颗「工作流」按钮和空态共用它，所以不能只在菜单开着的时候存在。
              位置别挪到组件模板最外层：实测挪出去之后元素还在 DOM 里，但 change 事件不再进 handler。 -->
+        <!-- 音色试听用的播放器：整个弹窗共用一条，换人只换 src。放在弹层外面，
+             收弹层时元素不会被销毁（销毁才是最容易漏掉的一条停音路径）。 -->
+        <!-- svelte-ignore a11y_media_has_caption -->
+        <audio
+          bind:this={sampleEl}
+          class="cm-voice-sample"
+          preload="none"
+          onended={stopVoiceSample}
+          onerror={stopVoiceSample}
+        ></audio>
         <input
           bind:this={wfInput}
           class="cm-file"
@@ -1442,6 +1535,36 @@
      不新造一套选中语言；未选中只留一层极淡的内描边，免得黑底头像看起来像没图。 */
   .cm-ratio-face { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; background: #2a2a2e; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 12%); }
   .cm-ratio.is-on .cm-ratio-face { box-shadow: inset 0 0 0 2px rgb(242 78 78 / 85%), 0 0 0 1px rgb(0 0 0 / 45%); }
+  /*
+   * 音色那一格不拿底色当指示：用户是挨个点九个脸听音色的，每点一下换一块灰底，
+   * 整块菜单像被刷花，也看不出到底在放谁。改成——选中 = 名字变品牌红 + 头像描一圈品牌色；
+   * 正在试听 = 名字品牌红 + 头像右上角那三条窄条在跳。语种那一格照旧用灰底，
+   * 那是一排字，没有脸可以描边。
+   */
+  .cm-ratio.is-voice,
+  .cm-ratio.is-voice:hover,
+  .cm-ratio.is-voice.is-on { background: transparent; }
+  .cm-ratio.is-voice.is-on .cm-ratio-label,
+  .cm-ratio.is-hearing .cm-ratio-label { color: #f24e4e; }
+  .cm-ratio-face-wrap { position: relative; width: 40px; height: 40px; }
+  .cm-voice-sample { display: none; }
+  /* 右上角那三条：不要圆圈底，就是三根裸着的品牌红窄条压在头像右上角（用户给的那张图）。
+     静置时从左到右 6/10/14px 一阶梯，跑起来各自绕底边缩放，错开相位就是波形。
+     压到浅色头像上靠一层很淡的投影撑住，深底上看不出来。 */
+  .cm-voice-eq { position: absolute; top: -1px; right: -5px; display: flex; align-items: flex-end; gap: 2px; height: 14px; filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 45%)); }
+  .cm-voice-eq i { width: 3px; border-radius: 999px; background: #f24e4e; transform-origin: bottom center; animation: cm-voice-eq 900ms ease-in-out infinite; }
+  .cm-voice-eq i:nth-child(1) { height: 6px; animation-delay: -300ms; }
+  .cm-voice-eq i:nth-child(2) { height: 10px; animation-delay: -150ms; }
+  .cm-voice-eq i:nth-child(3) { height: 14px; }
+  @keyframes cm-voice-eq {
+    0%, 100% { transform: scaleY(0.42); }
+    50% { transform: scaleY(1); }
+  }
+  /* 关了动效的人听到的还是同一段声音，只是那三条不跳，停在 6/10/14 那一阶梯上。 */
+  @media (prefers-reduced-motion: reduce) {
+    .cm-voice-eq i { animation: none; }
+  }
+
   .cm-pill-face { flex: none; width: 20px; height: 20px; border-radius: 50%; object-fit: cover; background: #2a2a2e; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 14%); }
   .cm-seg { display: flex; flex-wrap: wrap; gap: 6px; }
   .cm-seg-item { min-width: 46px; height: 30px; padding: 0 10px; font-size: 12.5px; color: #b8b8bf; background: rgb(255 255 255 / 5%); border-radius: 8px; cursor: pointer; }

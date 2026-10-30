@@ -1011,10 +1011,37 @@ const VOICE_AVATARS: Record<string, string> = {
   sohee: "/voices/sohee.webp",
 };
 
+/**
+ * 九个内置音色的试听样本：官方 speaker 一人一段，文件名跟头像走同一套 kebab 名。
+ *
+ * 为什么和头像分开两张表：认得出是谁 ≠ 手上有那段声音。用户自己练的音色有脸也没样本，
+ * 硬拼路径会让点击变成一次 404。所以两张表各自兜底，认不出的一律 null。
+ */
+const VOICE_SAMPLES: Record<string, string> = {
+  vivian: "/voices/vivian.flac",
+  serena: "/voices/serena.flac",
+  unclefu: "/voices/uncle-fu.flac",
+  dylan: "/voices/dylan.flac",
+  eric: "/voices/eric.flac",
+  ryan: "/voices/ryan.flac",
+  aiden: "/voices/aiden.flac",
+  onoanna: "/voices/ono-anna.flac",
+  sohee: "/voices/sohee.flac",
+};
+
+/** 「Uncle_Fu」「Ono_Anna（日语）」这类选项 → 谁都可以共用的身份键；先把显示名切干净。 */
+function voiceKey(option: string): string {
+  return optionLabel(option).toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
 /** 「Uncle_Fu」「Ono_Anna（日语）」这类选项 → 头像路径；认不出返回 null。 */
 export function voiceAvatar(option: string): string | null {
-  const key = optionLabel(option).toLowerCase().replace(/[^a-z0-9]/g, "");
-  return VOICE_AVATARS[key] ?? null;
+  return VOICE_AVATARS[voiceKey(option)] ?? null;
+}
+
+/** 同一个选项 → 试听样本路径；没有样本（含用户自己练的音色）返回 null。 */
+export function voiceSample(option: string): string | null {
+  return VOICE_SAMPLES[voiceKey(option)] ?? null;
 }
 
 const RATIO_PATTERN = /^\s*(\d+(?:\.\d+)?)\s*[:：xX×]\s*(\d+(?:\.\d+)?)\s*$/;

@@ -11,7 +11,7 @@ import {
   referenceCounter, referenceFamilies, referenceNoun,
   defaultPromptGroupValues, primaryPromptGroup, promptGroupHint, promptGroupValues, promptGroups, promptPlaceholder, secondaryPromptGroups,
   audioModeLabel, audioModeTemplates, promptGroupPlaceholder, REFERENCE_TRANSCRIPT_LABEL, VOICE_DESIGN_LABEL, VOICE_STYLE_LABEL,
-  workflowMenuRows, workflowDisplayName, AUDIO_MODE_GROUP_LABEL, voiceAvatar,
+  workflowMenuRows, workflowDisplayName, AUDIO_MODE_GROUP_LABEL, voiceAvatar, voiceSample,
   firstFreeRefKey, mergedRefCells, openRefKinds, REF_DISPLAY_ORDER, sortByDisplayFamily,
   type CloneMode, type CloneSlot, type CloneTemplate,
 } from "../lib/clone";
@@ -994,6 +994,48 @@ describe("内置音色的头像：认得出是谁才给脸", () => {
       // RIFF....WEBP
       expect(buf.subarray(0, 4).toString("latin1")).toBe("RIFF");
       expect(buf.subarray(8, 12).toString("latin1")).toBe("WEBP");
+      expect(buf.length).toBeGreaterThan(2000);
+    }
+  });
+});
+
+describe("内置音色的试听样本：点一下就能听是谁", () => {
+  // 键与头像同一套口径，文件名跟头像一致，只是换成 .flac（源文件就是无损 FLAC，不转码）
+  const NINE: [string, string][] = [
+    ["Vivian", "/voices/vivian.flac"],
+    ["Serena", "/voices/serena.flac"],
+    ["Uncle_Fu", "/voices/uncle-fu.flac"],
+    ["Dylan", "/voices/dylan.flac"],
+    ["Eric", "/voices/eric.flac"],
+    ["Ryan", "/voices/ryan.flac"],
+    ["Aiden", "/voices/aiden.flac"],
+    ["Ono_Anna", "/voices/ono-anna.flac"],
+    ["Sohee", "/voices/sohee.flac"],
+  ];
+
+  it("九个内置音色各配一段样本，下划线和括号后缀都不影响", () => {
+    for (const [option, path] of NINE) {
+      expect(voiceSample(option), option).toBe(path);
+    }
+    expect(voiceSample("Ono_Anna（日语）")).toBe("/voices/ono-anna.flac");
+    expect(voiceSample(" uncle_fu ")).toBe("/voices/uncle-fu.flac");
+  });
+
+  it("认不出的选项没有样本：没有样本就不许点出一次 404", () => {
+    for (const option of ["Auto", "中文", "9:16", "my_voice", "Viv", ""]) {
+      expect(voiceSample(option), option).toBeNull();
+    }
+  });
+
+  it("九段样本真的在 public/voices/ 下，且是 FLAC", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    for (const [, urlPath] of NINE) {
+      const p = path.resolve(__dirname, "..", "..", "public", urlPath.replace(/^\//, ""));
+      expect(fs.existsSync(p), `${urlPath} 应在 public/ 下`).toBe(true);
+      const buf = fs.readFileSync(p);
+      // FLAC 的魔数就是四个字母 fLaC
+      expect(buf.subarray(0, 4).toString("latin1")).toBe("fLaC");
       expect(buf.length).toBeGreaterThan(2000);
     }
   });

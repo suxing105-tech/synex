@@ -62,6 +62,8 @@ async function ready(over: Record<string, unknown> = {}) {
 afterEach(() => {
   cleanup();
   http.mockReset();
+  // 试听那几条用 spyOn 顶掉了 play/pause，不收干净会漏给后面的用例
+  vi.restoreAllMocks();
   cloneJob.set(EMPTY_CLONE_JOB);
   comfyuiStatus.set({ running: true, enabled: true, url: 'http://127.0.0.1:8188', checked_at: 0 });
 });
@@ -1810,4 +1812,188 @@ it('模型自带的其它音色（用户自己练的）不许乱配脸，仍走�
   const pop = await screen.findByRole('dialog', { name: '画面参数' });
   expect(pop.querySelectorAll('img.cm-ratio-face').length).toBe(0);
   expect(pop.querySelectorAll('.cm-ratio-flat').length).toBe(1);
+});
+
+// ---------- 点人物就试听那一段音色 ----------
+
+/**
+ * 盯住某一条 <audio>。不顶 HTMLMediaElement.prototype：弹窗里有两条（左边卡片自己那条 +
+ * 试听这条），数原型会把「让路的那次暂停」算到试听头上，测出来的是个说不清的数。
+ */
+function watch(el: HTMLAudioElement) {
+  return {
+    play: vi.spyOn(el, 'play').mockImplementation(() => Promise.resolve()),
+    pause: vi.spyOn(el, 'pause').mockImplementation(() => {}),
+  };
+}
+
+/** 打开底部那颗胶囊上面的参数面板。 */
+async function openPop(screen: Awaited<ReturnType<typeof ready>>) {
+  await fireEvent.click(screen.getByRole('button', { name: '画面参数' }));
+  return screen.findByRole('dialog', { name: '画面参数' });
+}
+
+const sampleOf = (screen: Awaited<ReturnType<typeof ready>>) =>
+  screen.container.querySelector('audio.cm-voice-sample') as HTMLAudioElement;
+const heroOf = (screen: Awaited<ReturnType<typeof ready>>) =>
+  screen.container.querySelector('audio.cm-hero-audio') as HTMLAudioElement;
+const voiceCell = (screen: Awaited<ReturnType<typeof ready>>, name: string) =>
+  screen.getByRole('button', { name }) as HTMLElement;
+const nineVoices = () =>
+  routes({ ...baseRoutes(), '/api/clone/templates': { items: [A_CUSTOM9] } });
+
+it('点一个音色：选中他、马上播他那一段，头像右上角挂上三条跳动的窄条', async () => {
+  nineVoices();
+  const screen = await ready({ image: AUDIO_CARD });
+  const pop = await openPop(screen);
+  const grids = [...pop.querySelectorAll('.cm-ratio-grid')];
+  // 九个音色格全都算「音色格」，语种那一格不算（它照旧用灰底当选中）
+  expect([...grids[0].querySelectorAll('.cm-ratio.is-voice')]).toHaveLength(9);
+  expect(grids[1].querySelectorAll('.cm-ratio.is-voice')).toHaveLength(0);
+
+  const cell = voiceCell(screen, 'Eric');
+  expect(cell.querySelector('.cm-voice-eq')).toBeNull(); // 没在放的时候不许先亮窄条
+  expect(sampleOf(screen).getAttribute('src')).toBeNull();
+
+  const sample = watch(sampleOf(screen));
+  const hero = watch(heroOf(screen));
+  await fireEvent.click(cell);
+  await tick();
+  expect(sampleOf(screen).src).toContain('/voices/eric.flac');
+  expect(sample.play).toHaveBeenCalledTimes(1);
+  expect(sample.pause).not.toHaveBeenCalled();
+  // 左边那张音频卡正在放的话得让路：同一时刻只准一个声音在响
+  expect(hero.pause).toHaveBeenCalledTimes(1);
+  expect(cell.classList.contains('is-hearing')).toBe(true);
+  expect(cell.classList.contains('is-on')).toBe(true); // 选中照旧跟着点走，只是不铺底色
+  expect(cell.querySelectorAll('.cm-voice-eq i')).toHaveLength(3);
+  // 悬浮提示说清这一笔点下去会发生什么；语种那格没有样本，标题还是选项原值
+  expect(cell.getAttribute('title')).toBe('试听并选用：Eric');
+  expect(voiceCell(screen, 'Chinese').getAttribute('title')).toBe('Chinese');
+});
+
+it('同一个人再点一下就是停下：窄条收掉，暂停落到试听那条上', async () => {
+  nineVoices();
+  const screen = await ready({ image: AUDIO_CARD });
+  await openPop(screen);
+  const cell = voiceCell(screen, 'Eric');
+  const sample = watch(sampleOf(screen));
+  await fireEvent.click(cell);
+  await tick();
+  await fireEvent.click(cell);
+  await tick();
+  expect(sample.play).toHaveBeenCalledTimes(1);
+  expect(sample.pause).toHaveBeenCalledTimes(1);
+  expect(cell.classList.contains('is-hearing')).toBe(false);
+  expect(cell.querySelector('.cm-voice-eq')).toBeNull();
+  // 停下不等于取消选中：他还是这次要用的音色
+  expect(cell.classList.contains('is-on')).toBe(true);
+});
+
+it('换人听就换源：窄条只挂在正在放的那一位头上', async () => {
+  nineVoices();
+  const screen = await ready({ image: AUDIO_CARD });
+  await openPop(screen);
+  const sample = watch(sampleOf(screen));
+  const eric = voiceCell(screen, 'Eric');
+  const ryan = voiceCell(screen, 'Ryan');
+  await fireEvent.click(eric);
+  await tick();
+  await fireEvent.click(ryan);
+  await tick();
+  expect(sampleOf(screen).src).toContain('/voices/ryan.flac');
+  expect(sample.play).toHaveBeenCalledTimes(2);
+  expect(eric.classList.contains('is-hearing')).toBe(false);
+  expect(eric.querySelector('.cm-voice-eq')).toBeNull();
+  expect(ryan.classList.contains('is-hearing')).toBe(true);
+});
+
+it('收起参数面板必须停音：重开面板不许还有人挂着在放', async () => {
+  nineVoices();
+  const screen = await ready({ image: AUDIO_CARD });
+  await openPop(screen);
+  const sample = watch(sampleOf(screen));
+  await fireEvent.click(voiceCell(screen, 'Eric'));
+  await tick();
+  await fireEvent.click(screen.getByRole('button', { name: '画面参数' }));
+  await tick();
+  expect(sample.pause).toHaveBeenCalledTimes(1);
+  const pop = await openPop(screen);
+  expect(pop.querySelector('.cm-ratio.is-hearing')).toBeNull();
+  expect(screen.container.querySelectorAll('.cm-voice-eq')).toHaveLength(0);
+});
+
+it('卡片自己那段开始放的时候试听先让路：一屏只准一个声音', async () => {
+  nineVoices();
+  const screen = await ready({ image: AUDIO_CARD });
+  await openPop(screen);
+  const cell = voiceCell(screen, 'Eric');
+  const sample = watch(sampleOf(screen));
+  await fireEvent.click(cell);
+  await tick();
+  await fireEvent.play(heroOf(screen));
+  await tick();
+  expect(sample.pause).toHaveBeenCalledTimes(1);
+  expect(cell.classList.contains('is-hearing')).toBe(false);
+});
+
+it('试听途中去改语种：声音不许被掐掉——听的是人，不是语种', async () => {
+  nineVoices();
+  const screen = await ready({ image: AUDIO_CARD });
+  await openPop(screen);
+  const cell = voiceCell(screen, 'Eric');
+  const sample = watch(sampleOf(screen));
+  await fireEvent.click(cell);
+  await tick();
+  await fireEvent.click(voiceCell(screen, 'Chinese'));
+  await tick();
+  expect(sample.pause).not.toHaveBeenCalled();
+  expect(sample.play).toHaveBeenCalledTimes(1);
+  expect(cell.classList.contains('is-hearing')).toBe(true);
+  expect(voiceCell(screen, 'Chinese').classList.contains('is-on')).toBe(true);
+});
+
+it('模型里的其它音色没有样本：只选中，不出声，也不许挂窄条', async () => {
+  routes({
+    ...baseRoutes(),
+    '/api/clone/templates': {
+      items: [audioTpl({
+        id: 16, name: '闪寻指定音色',
+        slots: [{
+          kind: 'select', node: '37', input: 'speaker', label: '音色',
+          options: ['Vivian', 'my_voice'], value: 'Vivian',
+        }],
+        reference_cells: [],
+      })],
+    },
+  });
+  const screen = await ready({ image: AUDIO_CARD });
+  await openPop(screen);
+  const sample = watch(sampleOf(screen));
+  await fireEvent.click(voiceCell(screen, 'Vivian'));
+  await tick();
+  expect(sample.play).toHaveBeenCalledTimes(1);
+  await fireEvent.click(voiceCell(screen, 'my_voice'));
+  await tick();
+  // 换到没有样本的那一格：先把上一段停下，再保持安静，src 也不许乱指
+  expect(sample.pause).toHaveBeenCalledTimes(1);
+  expect(sample.play).toHaveBeenCalledTimes(1);
+  expect(sampleOf(screen).src).toContain('/voices/vivian.flac');
+  expect(voiceCell(screen, 'my_voice').classList.contains('is-hearing')).toBe(false);
+});
+
+it('音色格不许拿底色当指示：悬停、选中、试听三态都 transparent，名字才是品牌色', () => {
+  const raw = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  const css = raw.slice(raw.indexOf('<style>')); // 判样式要看 style 块，整份源码里有同名类名
+  expect(css).toMatch(/\.cm-ratio\.is-voice,\s*\.cm-ratio\.is-voice:hover,\s*\.cm-ratio\.is-voice\.is-on\s*\{\s*background:\s*transparent;\s*\}/);
+  expect(css).toMatch(/\.cm-ratio\.is-voice\.is-on \.cm-ratio-label,\s*\.cm-ratio\.is-hearing \.cm-ratio-label\s*\{\s*color:\s*#f24e4e;/);
+  expect(css).toMatch(/\.cm-ratio-face-wrap \{ position: relative/);
+  // 右上角那三条是裸条：贴在头像右上角，但没有圆圈底（用户给的参考图就是三根裸条）
+  const eq = /\.cm-voice-eq \{[^}]*\}/.exec(css)?.[0] ?? "";
+  expect(eq).toContain("position: absolute");
+  expect(eq).not.toMatch(/border-radius:\s*50%|width:\s*\d+px|background:\s*#1|box-shadow/);
+  const bar = /\.cm-voice-eq i \{[^}]*\}/.exec(css)?.[0] ?? "";
+  expect(bar).toMatch(/background:\s*#f24e4e/);
+  expect(bar).toMatch(/border-radius:\s*999px/);
+  expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.cm-voice-eq i \{ animation: none;/);
 });

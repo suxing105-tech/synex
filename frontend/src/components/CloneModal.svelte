@@ -24,7 +24,7 @@
     allowsTextMode, controlSlots, controlSummary, defaultControlValues, defaultReferences, latestReversePrompt,
     promptGroupValues, modeFromRefCount, modeLabel, numberPresets, numberUnit,
     primaryPromptGroup, promptGroupHint, promptPlaceholder, promptSlots, promptSourceLabel, secondaryPromptGroups,
-    ratioShape, referenceCells, referenceIssues, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, visibleRefCells, voiceAvatar, voiceSample,
+    ratioShape, referenceCells, referenceIssues, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, visibleRefCells, voiceAvatar, voiceSample, voiceNativeLanguage, languageSlotAmong, languageOptionFor,
     firstFreeRefKey, mergedRefCells, openRefKinds, REF_DISPLAY_ORDER,
     CLONE_SETTINGS_TAB,
     applyMention, caretCoordinates, mentionAddLabel, mentionChunks, mentionInsertText, mentionItems as buildMentionItems, mentionToken,
@@ -562,12 +562,29 @@
   }
 
   /**
+   * 选了人就把语种那一格挪到他的母语：Ryan 开口是英文、Sohee 是韩文，还挂着「自动」
+   * 等于让他先猜一遍。只挑工作流自己给的那些选项值——语种那一格里没有「英文」就不动，
+   * 填一个它不认的值等于把参数丢回给后端猜。
+   */
+  function followNativeLanguage(voiceKeyArg: string, option: string) {
+    const wanted = voiceNativeLanguage(option);
+    if (!wanted) return;
+    const slot = languageSlotAmong(selectSlots, voiceKeyArg);
+    if (!slot) return;
+    const match = languageOptionFor(slot, wanted);
+    if (match !== null) controls[slotKey(slot)] = match;
+  }
+
+  /**
    * 点一个人：先按原来的规矩选中他，再就地放他那一段。
    * 同一个人再点一下就是停止；换人换源；图库那张卡正在放的声音先让路。
    * 改别的槽位（语种、比例）不许掐掉这段——听的是人，不是语种。
    */
   function pickVoiceValue(key: string, option: string) {
+    // 换人才跟着换语种：同一个人再点一下是停/放试听，别把用户手动挑的语种又刷回去
+    const changed = controls[key] !== option;
     controls[key] = option;
+    if (changed) followNativeLanguage(key, option);
     const el = sampleEl;
     const url = voiceSample(option);
     // 没有样本（用户自己练的音色）或播放器还没挂上：只选中，不出声。

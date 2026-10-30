@@ -12,6 +12,7 @@ import {
   defaultPromptGroupValues, primaryPromptGroup, promptGroupHint, promptGroupValues, promptGroups, promptPlaceholder, secondaryPromptGroups,
   audioModeLabel, audioModeTemplates, promptGroupPlaceholder, REFERENCE_TRANSCRIPT_LABEL, VOICE_DESIGN_LABEL, VOICE_STYLE_LABEL,
   workflowMenuRows, workflowDisplayName, AUDIO_MODE_GROUP_LABEL, voiceAvatar, voiceSample,
+  voiceNativeLanguage, isLanguageSlot, languageSlotAmong, languageOptionFor,
   firstFreeRefKey, mergedRefCells, openRefKinds, REF_DISPLAY_ORDER, sortByDisplayFamily,
   type CloneMode, type CloneSlot, type CloneTemplate,
 } from "../lib/clone";
@@ -1113,5 +1114,52 @@ describe("弹窗标题与底部那颗胶囊的名字跟着清单那一行", () =
   it("模板还没选：空串，标题上不许出现 undefined", () => {
     expect(workflowDisplayName([], null)).toBe("");
     expect(workflowDisplayName([IMG], null)).toBe("");
+  });
+});
+
+describe("官方九人的母语：选了人就顺手把语种对上", () => {
+  it("官方表那列 Native language 一人一条，北京话四川话按中文算", () => {
+    expect(voiceNativeLanguage("Vivian")).toBe("中文");
+    expect(voiceNativeLanguage("Serena")).toBe("中文");
+    expect(voiceNativeLanguage("Uncle_Fu")).toBe("中文");
+    expect(voiceNativeLanguage("Dylan")).toBe("中文"); // Beijing Dialect
+    expect(voiceNativeLanguage("Eric")).toBe("中文"); // Sichuan Dialect
+    expect(voiceNativeLanguage("Ryan")).toBe("英文");
+    expect(voiceNativeLanguage("Aiden")).toBe("英文");
+    expect(voiceNativeLanguage("Ono_Anna（日语）")).toBe("日文");
+    expect(voiceNativeLanguage("Sohee")).toBe("韩文");
+    // 认不出是谁就不许替人编语种
+    expect(voiceNativeLanguage("my_voice")).toBe("");
+    expect(voiceNativeLanguage("Auto")).toBe("");
+  });
+
+  it("语种格认得出来：比例格、音色格、只有一个选项的都不许冒充", () => {
+    const lang = (options: string[]): CloneSlot =>
+      ({ kind: "select", node: "37", input: "language", label: "语言", options });
+    expect(isLanguageSlot(lang(["Auto", "Chinese", "English"]))).toBe(true);
+    expect(isLanguageSlot(lang(["自动", "中文", "韩文"]))).toBe(true); // 后端已经给中文写法
+    expect(isLanguageSlot(lang(["Vivian", "Serena"]))).toBe(false);
+    expect(isLanguageSlot(lang(["1:1", "16:9"]))).toBe(false);
+    expect(isLanguageSlot(lang(["Auto"]))).toBe(false);
+  });
+
+  it("母语对齐到选项原值：Chinese / zh / 中文 都落回工作流自己那份值", () => {
+    const lang = (options: string[]): CloneSlot =>
+      ({ kind: "select", node: "37", input: "language", label: "语言", options });
+    expect(languageOptionFor(lang(["Auto", "Chinese", "English"]), "英文")).toBe("English");
+    expect(languageOptionFor(lang(["auto", "zh", "en"]), "英文")).toBe("en");
+    expect(languageOptionFor(lang(["自动", "中文", "韩文"]), "韩文")).toBe("韩文");
+    expect(languageOptionFor(lang(["Chinese（中文）", "English"]), "英文")).toBe("English");
+    // 这一格没这个语种：宁可不动，也绝不发明一个工作流不认的值
+    expect(languageOptionFor(lang(["Auto", "Chinese"]), "英文")).toBeNull();
+    expect(languageOptionFor(lang(["1:1", "16:9"]), "英文")).toBeNull();
+  });
+
+  it("在同族里挑得出语种格，且不许自己指自己", () => {
+    const voice: CloneSlot = { kind: "select", node: "37", input: "speaker", label: "音色", options: ["Vivian", "Ryan"] };
+    const lang: CloneSlot = { kind: "select", node: "37", input: "language", label: "语言", options: ["Auto", "Chinese", "English"] };
+    expect(languageSlotAmong([voice, lang], slotKey(voice))).toBe(lang);
+    expect(languageSlotAmong([voice], slotKey(voice))).toBeNull();
+    expect(languageSlotAmong([lang], slotKey(lang))).toBeNull();
   });
 });

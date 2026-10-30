@@ -1997,3 +1997,100 @@ it('音色格不许拿底色当指示：悬停、选中、试听三态都 transp
   expect(bar).toMatch(/border-radius:\s*999px/);
   expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.cm-voice-eq i \{ animation: none;/);
 });
+
+// ---------- 选了人，语种跟着换成他的母语 ----------
+
+/** 语种那一格有没有被选中：aria-pressed 是唯一口径，显示出来的是中文。 */
+const pressed = (screen: Awaited<ReturnType<typeof ready>>, name: string) =>
+  screen.getByRole('button', { name }).getAttribute('aria-pressed');
+
+/** 语言选项齐全的九人工作流：官方表里的母语全都点得到。 */
+const A_NINE_LANG = audioTpl({
+  id: 17, name: '闪寻指定音色',
+  slots: [
+    { kind: 'prompt', node: '37', input: 'text', label: '完整提示词' },
+    {
+      kind: 'select', node: '37', input: 'speaker', label: '音色',
+      options: ['Vivian', 'Serena', 'Uncle_Fu', 'Dylan', 'Eric', 'Ryan', 'Aiden', 'Ono_Anna', 'Sohee', 'my_voice'],
+      value: 'Vivian',
+    },
+    {
+      kind: 'select', node: '37', input: 'language', label: '语言',
+      options: ['Auto', 'Chinese', 'English', 'Japanese', 'Korean'], value: 'Auto',
+    },
+  ],
+  reference_cells: [],
+});
+const nineLang = () => routes({ ...baseRoutes(), '/api/clone/templates': { items: [A_NINE_LANG] } });
+
+it('点 Ryan 就把语种换成英文：官方表里他 native 就是 English', async () => {
+  nineLang();
+  const screen = await ready({ image: AUDIO_CARD });
+  const pill = screen.getByRole('button', { name: '画面参数' });
+  await openPop(screen);
+  watch(sampleOf(screen));
+  expect(pressed(screen, 'Auto')).toBe('true'); // 开局照旧是工作流自带那份「自动」
+  await fireEvent.click(voiceCell(screen, 'Ryan'));
+  await tick();
+  expect(pressed(screen, 'Auto')).toBe('false');
+  expect(pressed(screen, 'English')).toBe('true');
+  // 胶囊上那行字跟着变，不点开面板也知道这次要说什么语种
+  expect(pill.textContent).toContain('Ryan / 英文');
+});
+
+it('母语跟着人走：Sohee 韩文、Ono_Anna 日文、Uncle Fu 中文', async () => {
+  nineLang();
+  const screen = await ready({ image: AUDIO_CARD });
+  await openPop(screen);
+  watch(sampleOf(screen));
+  for (const [who, lang] of [['Sohee', 'Korean'], ['Ono_Anna', 'Japanese'], ['Uncle_Fu', 'Chinese']] as const) {
+    await fireEvent.click(voiceCell(screen, who));
+    await tick();
+    expect(pressed(screen, lang), who).toBe('true');
+  }
+});
+
+it('语种那一格没有英文就不动：宁可留在自动，也不发明一个工作流不认的值', async () => {
+  nineVoices(); // 这份工作流的语言只有 Auto / Chinese
+  const screen = await ready({ image: AUDIO_CARD });
+  await openPop(screen);
+  watch(sampleOf(screen));
+  await fireEvent.click(voiceCell(screen, 'Ryan'));
+  await tick();
+  expect(pressed(screen, 'Auto')).toBe('true');
+  // 同一个人换成 Uncle Fu（中文）就在，说明不是没找到语种格
+  await fireEvent.click(voiceCell(screen, 'Uncle_Fu'));
+  await tick();
+  expect(pressed(screen, 'Chinese')).toBe('true');
+});
+
+it('手动改过语种之后，再点同一个人不许刷回去：那是用户自己挑的', async () => {
+  nineLang();
+  const screen = await ready({ image: AUDIO_CARD });
+  await openPop(screen);
+  watch(sampleOf(screen));
+  const ryan = voiceCell(screen, 'Ryan');
+  await fireEvent.click(ryan);
+  await tick();
+  expect(pressed(screen, 'English')).toBe('true');
+  await fireEvent.click(voiceCell(screen, 'Auto'));
+  await tick();
+  await fireEvent.click(ryan); // 同一个人再点一下是停/放试听，不是重选
+  await tick();
+  expect(pressed(screen, 'Auto')).toBe('true');
+  expect(pressed(screen, 'English')).toBe('false');
+});
+
+it('模型里的其它音色（自己练的）没有母语可对：语种保持不动', async () => {
+  nineLang();
+  const screen = await ready({ image: AUDIO_CARD });
+  await openPop(screen);
+  watch(sampleOf(screen));
+  await fireEvent.click(voiceCell(screen, 'Ryan'));
+  await tick();
+  expect(pressed(screen, 'English')).toBe('true');
+  await fireEvent.click(voiceCell(screen, 'my_voice'));
+  await tick();
+  expect(pressed(screen, 'English')).toBe('true'); // 不猜、也不回滚成自动
+  expect(pressed(screen, 'Auto')).toBe('false');
+});

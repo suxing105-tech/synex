@@ -1044,6 +1044,54 @@ export function voiceSample(option: string): string | null {
   return VOICE_SAMPLES[voiceKey(option)] ?? null;
 }
 
+/**
+ * 官方九人的母语（官方表里那列 Native language）。
+ *
+ * 北京话、四川话按「中文」算：语种那一格里没有方言选项，硬填一个工作流没有的值
+ * 等于把参数丢回给后端猜。存中文标签而不是选项值，是因为语种格的选项是工作流里的
+ * 原值（Chinese / zh / 中文 都可能），只能先把两边收到同一张中文口径上对齐，
+ * 交回去的仍然是它自己那份原值。
+ */
+const NATIVE_LANGUAGE: Record<string, string> = {
+  vivian: "中文", serena: "中文", unclefu: "中文", dylan: "中文", eric: "中文",
+  ryan: "英文", aiden: "英文", onoanna: "日文", sohee: "韩文",
+};
+
+/** 这个音色开口说什么语种（中文标签）；不是官方九人之一就返回 ""。 */
+export function voiceNativeLanguage(option: string): string {
+  return NATIVE_LANGUAGE[voiceKey(option)] ?? "";
+}
+
+const LANGUAGE_ZH_LABELS = new Set(Object.values(LANGUAGE_LABELS));
+
+/**
+ * 选项 → 中文语种名。后端给的可能是 Chinese、zh，也可能已经写成「中文」——
+ * languageLabel 只认英式键名和代码，所以「中文」这种要反过来查一次值表。
+ */
+function languageOf(option: string): string {
+  const direct = languageLabel(option);
+  if (direct) return direct;
+  const shown = optionLabel(option);
+  return LANGUAGE_ZH_LABELS.has(shown) ? shown : "";
+}
+
+/** 这一格是不是语种格：整列选项都能收成中文语种名，且至少两个选项。 */
+export function isLanguageSlot(slot: Pick<CloneSlot, "kind" | "options">): boolean {
+  const list = slot.options ?? [];
+  return slot.kind === "select" && list.length >= 2 && list.every((o) => languageOf(o) !== "");
+}
+
+/** 同一份工作流里「语种」那一格。excludeKey 是刚点进去的那格，不许自己指自己。 */
+export function languageSlotAmong(slots: CloneSlot[], excludeKey: string): CloneSlot | null {
+  return slots.find((slot) => slotKey(slot) !== excludeKey && isLanguageSlot(slot)) ?? null;
+}
+
+/** 要说的语种在这一格里对应哪个原值选项；这一格没这个语种就 null，绝不替工作流发明选项。 */
+export function languageOptionFor(slot: CloneSlot, wanted: string): string | null {
+  if (!wanted || !isLanguageSlot(slot)) return null;
+  return (slot.options ?? []).find((o) => languageOf(o) === wanted) ?? null;
+}
+
 const RATIO_PATTERN = /^\s*(\d+(?:\.\d+)?)\s*[:：xX×]\s*(\d+(?:\.\d+)?)\s*$/;
 
 export interface RatioShape {

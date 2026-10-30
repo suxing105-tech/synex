@@ -1,0 +1,16 @@
+修升级后「参考音色」凭空消失：拆分之前的那次删除不该吃掉新模式
+
+现场（F:\SeekX-Data\db.sqlite 只读查的）：meta.clone_bundled_templates_dismissed =
+["qwen-multi-image-edit","qwen3-tts-voice-clone"]。0.2.31 把一条「闪寻音频」拆成参考音色/
+指定音色/音色描述三条，seed 照名单把新出现的两条装进去、唯独拒掉拉黑中的 voice-clone，
+于是打包版只剩两种模式、界面上也没有任何解释；dev 用的是新库所以三种齐全。不是打包漏文件。
+
+seed 之前先放行一次 qwen3-tts-voice-clone，并把名字真从名单里抹掉；旗标
+clone_bundled_split_rescued 落库保证只放行一次——第一版没记旗标，「放行→再删→名字回名单→
+下次又放行」成了无限复活，被 test_the_rescue_happens_only_once 先跑红抓出来。
+新库在 initialize() 里就 seed 过，旗标当场写上，此后删参考音色仍是永久删。
+未拆过的图片/视频/另外两条声音模板不受影响，其余拉黑记录一个字不动。
+
+验证：5 条新测试（backend 783 passed）；拿真实库副本走 sqlite backup API 演升级首启，
+参考音色作为 id 7 长回来、qwen-multi-image-edit 的拉黑保持原样
+（outputs/audio-modes-v1/upgrade_dry_run.txt）。

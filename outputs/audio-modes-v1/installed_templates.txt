@@ -1,0 +1,11 @@
+tables=['clone_sources', 'clone_templates', 'meta']
+
+== clone_templates ==
+cols=['id', 'name', 'workflow', 'slots', 'default_prompt', 'is_active', 'created_at', 'updated_at', 'media_kind', 'bundled_key', 'bundled_sha']
+{"id": 1, "name": "Qwen-image-2.1", "media_kind": "image", "is_active": 1, "bundled_key": null, "sha": "", "updated_at": "2026-10-29T06:59:21.909Z"}
+{"id": 2, "name": "闪寻参考生视频", "media_kind": "video", "is_active": 1, "bundled_key": "h3-reference-video", "sha": "41c15d425267", "updated_at": "2026-10-29T10:17:33.392Z"}
+{"id": 5, "name": "闪寻指定音色", "media_kind": "audio", "is_active": 1, "bundled_key": "qwen3-tts-custom-voice", "sha": "087417dddef0", "updated_at": "2026-10-30T07:00:55.146Z"}
+{"id": 6, "name": "闪寻音色描述", "media_kind": "audio", "is_active": 0, "bundled_key": "qwen3-tts-voice-design", "sha": "f134a1c4cb65", "updated_at": "2026-10-30T07:00:55.146Z"}
+
+== meta keys (clone/bundled) ==
+{"key": "clone_bundled_templates_dismissed", "v": "[\"qwen-multi-image-edit\", \"qwen3-tts-voice-clone\"]"}

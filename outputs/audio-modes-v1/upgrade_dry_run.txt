@@ -1,0 +1,6 @@
+dismissed=['qwen-multi-image-edit']
+[1, "Qwen-image-2.1", "image", 1, null]
+[2, "闪寻参考生视频", "video", 1, "h3-reference-video"]
+[5, "闪寻指定音色", "audio", 1, "qwen3-tts-custom-voice"]
+[6, "闪寻音色描述", "audio", 0, "qwen3-tts-voice-design"]
+[7, "闪寻参考音色", "audio", 0, "qwen3-tts-voice-clone"]

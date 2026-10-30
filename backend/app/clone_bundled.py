@@ -40,6 +40,10 @@ logger = logging.getLogger(__name__)
 
 SEED_ENV = "SUXING_SEED_BUNDLED_TEMPLATES"
 DISMISSED_META_KEY = "clone_bundled_templates_dismissed"
+# 0.2.31 把「闪寻音频」一条拆成参考音色 / 指定音色 / 音色描述三条。
+# 只有被拆过的那条需要放行：图片、视频、以及拆完新增的两条，删了就是用户本意。
+SPLIT_RESCUE_KEYS = ("qwen3-tts-voice-clone",)
+SPLIT_RESCUE_FLAG = "clone_bundled_split_rescued"
 _DIR_NAME = "bundled_workflows"
 _REQUIRED = ("key", "label", "media_kind", "workflow", "slots")
 
@@ -117,6 +121,37 @@ def note_dismissal(conn, key: str) -> None:
     )
 
 
+def forgive_split_keys(conn) -> list[str]:
+    """抹掉「拆分之前那次删除」留下的拉黑记录，返回这次放行的是哪几条。
+
+    老库里删掉的是一条叫「闪寻音频」的声音工作流，拉黑记的名字却是拆完之后其中一条的
+    key（qwen3-tts-voice-clone）。升级后 seed 照单全拒，三种出声方式凭空少一种、界面也
+    不解释，用户只会以为是打包漏了。那次删除不可能是拒绝「参考音色」——它当时还不存在。
+
+    只放行一次，旗标落库。不记旗标就是「放行 → 用户再删 → 名字回到名单 → 下次启动又放行」
+    的无限复活，用户永远删不掉它（这条是测试先跑红才发现的）。
+    代价：升级前一天刚删过参考音色的人会被放回一次，比让所有人少一种模式小得多。
+    """
+    if conn.execute("SELECT 1 FROM meta WHERE key=?", (SPLIT_RESCUE_FLAG,)).fetchone() is not None:
+        return []
+    gone = dismissed(conn)
+    hit = set(SPLIT_RESCUE_KEYS)
+    forgiven = sorted(gone & hit)
+    conn.execute(
+        "INSERT INTO meta(key, value) VALUES(?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (SPLIT_RESCUE_FLAG, "1"),
+    )
+    if forgiven:
+        conn.execute(
+            "INSERT INTO meta(key, value) VALUES(?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (DISMISSED_META_KEY, json.dumps(sorted(gone - hit), ensure_ascii=False)),
+        )
+        logger.info("内置工作流放行：%s（拆分之前的删除不该吃掉新模式）", "、".join(forgiven))
+    return forgiven
+
+
 def cell_keys_of(template: dict) -> list[str]:
     """给测试用：这份工作流在弹窗里会摆出哪些参考格（含自动扩位）。"""
     _nodes, slots = _prepare(template)
@@ -171,9 +206,10 @@ def seed(conn) -> dict:
     """把内置模板装进库。幂等：每启动一次跑一次也不会重复、不会覆盖用户的手改。"""
     # inserted 里带格子清单（h3-reference-video(9image/3audio/1video)），日志里一眼能核对
     summary = {"inserted": [], "updated": [], "adopted": [], "renamed": [],
-               "skipped": [], "dismissed": []}
+               "skipped": [], "dismissed": [], "rescued": []}
     if not seed_enabled():
         return summary
+    summary["rescued"] = forgive_split_keys(conn)
     gone = dismissed(conn)
     for item in entries():
         key = str(item["key"])

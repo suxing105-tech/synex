@@ -109,16 +109,76 @@ def dismissed(conn) -> set[str]:
     return {str(one) for one in raw} if isinstance(raw, list) else set()
 
 
+def _set_dismissed(conn, keys: set[str]) -> None:
+    """拉黑名单整体覆写。记删除、恢复、拆分放行三处都写它，共用一份。"""
+    conn.execute(
+        "INSERT INTO meta(key, value) VALUES(?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (DISMISSED_META_KEY, json.dumps(sorted(str(k) for k in keys), ensure_ascii=False)),
+    )
+
+
 def note_dismissal(conn, key: str) -> None:
     """用户删掉一条内置模板 → 记一笔，别下次启动又塞回去。"""
     if not key:
         return
-    keys = dismissed(conn) | {str(key)}
-    conn.execute(
-        "INSERT INTO meta(key, value) VALUES(?, ?) "
-        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        (DISMISSED_META_KEY, json.dumps(sorted(keys), ensure_ascii=False)),
-    )
+    _set_dismissed(conn, dismissed(conn) | {str(key)})
+
+
+class RestoreBlocked(ValueError):
+    """恢复被挡住的具体原因。路由层照它决定 409 说什么话。"""
+
+
+def hidden_templates() -> list[dict]:
+    """被删掉、因此不再自动装载的内置工作流（设置页列出来，附一颗恢复）。
+
+    这条接口存在的理由：以前删内置工作流是单向门，名单既看不见也没有反悔，
+    删错只能进库改。随包清单读不出来时返回空表 → 设置页顶多少一颗恢复按钮，
+    不该把整页拖崩。
+    """
+    from .db import get_pool
+
+    conn = get_pool().main()
+    gone = dismissed(conn)
+    if not gone:
+        return []
+    try:
+        catalog = entries()
+    except ValueError as exc:
+        logger.warning("随包工作流清单读不出来，隐藏列表先空着：%s", exc)
+        return []
+    alive = {str(r[0]) for r in conn.execute(
+        "SELECT bundled_key FROM clone_templates WHERE bundled_key IS NOT NULL")}
+    return [{"key": str(item["key"]), "name": str(item["label"]),
+             "media_kind": str(item["media_kind"])}
+            for item in catalog
+            if str(item["key"]) in gone and str(item["key"]) not in alive]
+
+
+def restore(key: str) -> dict:
+    """恢复一条被删掉的内置工作流：先从拉黑名单摘掉名字，再走一次装载。
+
+    走的是和首次装载同一条路（seed），不另开一套插入逻辑，所以槽位、默认台词、
+    「同族没有当前才当当前」这些规矩只有一份。
+    """
+    from .db import get_pool
+
+    conn = get_pool().main()
+    clean = str(key or "").strip()
+    if clean not in dismissed(conn):
+        raise KeyError("这一条不在已隐藏的内置工作流里，可能没删过，也可能已经恢复过了。")
+    catalog = {str(item["key"]): item for item in entries()}
+    if clean not in catalog:
+        # 新版安装包已经不带这条了：顺手把死名字从名单里清掉，别让它永远占着
+        _set_dismissed(conn, dismissed(conn) - {clean})
+        raise RestoreBlocked("这一条新版安装包已经不带了，名单里的记录顺手清掉了。")
+    _set_dismissed(conn, dismissed(conn) - {clean})
+    seed(conn)
+    row = conn.execute("SELECT id FROM clone_templates WHERE bundled_key=?", (clean,)).fetchone()
+    if row is None:
+        # 模板名有唯一索引，名字被别条占着就装不进来。要说清楚下一步做什么。
+        raise RestoreBlocked("库里已经有一条同名的工作流了，先给它改个名再恢复。")
+    return {"id": int(row["id"]), "name": str(catalog[clean]["label"])}
 
 
 def forgive_split_keys(conn) -> list[str]:
@@ -143,11 +203,7 @@ def forgive_split_keys(conn) -> list[str]:
         (SPLIT_RESCUE_FLAG, "1"),
     )
     if forgiven:
-        conn.execute(
-            "INSERT INTO meta(key, value) VALUES(?, ?) "
-            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            (DISMISSED_META_KEY, json.dumps(sorted(gone - hit), ensure_ascii=False)),
-        )
+        _set_dismissed(conn, gone - hit)
         logger.info("内置工作流放行：%s（拆分之前的删除不该吃掉新模式）", "、".join(forgiven))
     return forgiven
 

@@ -15,7 +15,7 @@
     cloneApi, cloneError, promptSlots, imageSlots, controlSlots, referenceCells, slotKey, templateDisplayName,
     familyCells, isAudioTemplate, isVideoTemplate, referenceFamilies, REF_KIND_NAMES,
     templateMediaKind, WF_KIND_WORDS, WF_OUTPUT_WORDS,
-    type CloneInspect, type CloneSlot, type CloneTemplate,
+    type CloneHiddenBuiltin, type CloneInspect, type CloneSlot, type CloneTemplate,
   } from "../lib/clone";
 
   let templates = $state<CloneTemplate[]>([]);
@@ -24,6 +24,8 @@
   let busy = $state(false);
   let error = $state("");
   let notice = $state("");
+  // 删掉的内置工作流。以前删了就是永别，这一栏是后悔药；老后端没这个接口时留空。
+  let hidden = $state<CloneHiddenBuiltin[]>([]);
 
   // 导入的两条路：磁盘路径（Tauri 拖放/手填，由后端读文件）与 JSON 文本（浏览器里拖或粘贴）。
   let pathInput = $state("");
@@ -44,6 +46,8 @@
       // 后端答话形状不对也不该白屏：当成「没有模板」，右下角给提示。
       templates = Array.isArray(res?.items) ? res.items : [];
       failed = false;
+      // 隐藏列表读不到不能牵连模板本身（老后端根本没这个接口），单独吞掉。
+      hidden = await cloneApi.hiddenTemplates().catch(() => []);
     } catch (e) {
       failed = true;
       if (!quiet) error = cloneError(e);
@@ -180,6 +184,12 @@
     }
   }
 
+  /** 恢复一条内置工作流。产出族别的中文名自己判：隐藏项没有模板那些字段。 */
+  function hiddenKindWord(kind: string): string {
+    return kind === "video" || kind === "audio" || kind === "image"
+      ? WF_KIND_WORDS[kind as "image" | "video" | "audio"] : kind;
+  }
+
   async function run(fn: () => Promise<void>, okMessage = "") {
     busy = true;
     error = "";
@@ -260,7 +270,7 @@
                   class:is-audio={templateMediaKind(tpl) === "audio"}>{WF_KIND_WORDS[templateMediaKind(tpl)]}</span>
                 {#if tpl.is_active}<span class="clone-tpl-tag">当前</span>{/if}
                 {#if tpl.is_builtin}<span class="clone-tpl-tag clone-tpl-tag-builtin"
-                  title="安装包自带的官方工作流。删掉就不会下次启动又装回来；自己改过之后，版本更新也不会覆盖你这份。">内置</span>{/if}
+                  title="安装包自带的官方工作流。删掉后不再自动装回来，设置页下方可以恢复；自己改过之后，版本更新也不会覆盖你这份。">内置</span>{/if}
                 <span class="settings-hint">{counts(tpl)}</span>
               {/if}
             </div>
@@ -294,11 +304,34 @@
               <button class="setting-button" disabled={busy} onclick={() => { renaming = tpl.id; renameValue = templateDisplayName(tpl.name); }}>改名</button>
               <button class="setting-button" disabled={busy} onclick={() => void exportTemplate(tpl)}>导出 JSON</button>
               {#if confirmDelete === tpl.id}
-                <button class="setting-button bg-danger text-bg" disabled={busy} onclick={() => void run(async () => { await cloneApi.remove(tpl.id); confirmDelete = null; await reload(true); }, tpl.is_builtin ? "内置模板已删除，以后启动不会再自动装回来。已生成的素材不受影响。" : "模板已删除。已生成的图不受影响。")}>确认删除</button>
+                <button class="setting-button bg-danger text-bg" disabled={busy} onclick={() => void run(async () => { await cloneApi.remove(tpl.id); confirmDelete = null; await reload(true); }, tpl.is_builtin ? "内置模板已删除，启动不会再自动装回来；下面「已隐藏的内置工作流」里可以恢复。已生成的素材不受影响。" : "模板已删除。已生成的图不受影响。")}>确认删除</button>
                 <button class="setting-button" onclick={() => (confirmDelete = null)}>取消</button>
               {:else}
                 <button class="setting-button setting-button-ghost" disabled={busy} onclick={() => (confirmDelete = tpl.id)}>删除</button>
               {/if}
+            </div>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    {#if hidden.length}
+      <!-- 删内置工作流以前是单向门：拉黑名单看不见也没有反悔，删错只能进库改。
+           v0.2.31 那次「音频少一种模式」就是这个洞，所以这栏既是列表也是解药。 -->
+      <p class="settings-hint clone-hidden-title">已隐藏的内置工作流 {hidden.length} 条：删掉之后启动不会再自动装回来，要用的话在这里恢复。</p>
+      <ul class="clone-tpl-list">
+        {#each hidden as one (one.key)}
+          <li class="clone-tpl clone-tpl-hidden">
+            <div class="clone-tpl-main">
+              <span class="clone-tpl-name" title={one.name}>{templateDisplayName(one.name)}</span>
+              <span class="clone-tpl-kind" class:is-video={one.media_kind === "video"}
+                class:is-audio={one.media_kind === "audio"}>{hiddenKindWord(one.media_kind)}</span>
+            </div>
+            <div class="clone-tpl-actions">
+              <button class="setting-button" disabled={busy}
+                onclick={() => void run(async () => {
+                  await cloneApi.restoreHidden(one.key);
+                  await reload(true);
+                }, `已恢复「${templateDisplayName(one.name)}」，弹窗里重新能选它了。`)}>恢复</button>
             </div>
           </li>
         {/each}
@@ -371,6 +404,9 @@
   .clone-tpl.is-active { border-color: rgb(242 78 78 / 60%); }
   .clone-tpl-main { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; min-width: 0; }
   .clone-tpl-name { font-weight: 600; color: #ececed; }
+  .clone-hidden-title { margin: 14px 0 6px; }
+  .clone-tpl-hidden { background: #17171a; }
+  .clone-tpl-hidden .clone-tpl-name { font-weight: 500; color: #a1a1aa; }
   .clone-tpl-tag { padding: 1px 6px; border-radius: 999px; background: rgb(242 78 78 / 18%); color: #ff8f8f; font-size: 11px; }
   .clone-tpl-tag-builtin { background: rgb(59 130 246 / 16%); color: #93c5fd; }
   .clone-tpl-kind { padding: 1px 6px; border-radius: 999px; background: rgb(59 130 246 / 16%); color: #93c5fd; font-size: 11px; }

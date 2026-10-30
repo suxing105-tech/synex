@@ -12,7 +12,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 
-from .. import clone_jobs, clone_sources, clone_templates
+from .. import clone_bundled, clone_jobs, clone_sources, clone_templates
 from ..comfyui_client import ComfyUIClient
 from ..config import load_config
 
@@ -141,6 +141,12 @@ def list_templates() -> dict:
     return {"items": clone_templates.list_templates()}
 
 
+@router.get("/templates/hidden")
+def list_hidden_bundled_templates() -> dict:
+    """被用户删掉的随包工作流。设置页列出来，附一颗恢复按钮。"""
+    return {"items": clone_bundled.hidden_templates()}
+
+
 @router.post("/templates/inspect")
 async def inspect_template(payload: InspectInput) -> dict:
     """导入预览：返回检测到的槽位、可选控件候选、节点清单与建议名字。
@@ -229,6 +235,22 @@ def delete_template(template_id: int) -> dict:
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc
     return {"ok": True, "deleted": template_id}
+
+
+@router.post("/templates/hidden/{key}/restore")
+def restore_hidden_bundled_template(key: str) -> dict:
+    """恢复一条被删掉的随包工作流。
+
+    404 = 这条根本不在隐藏名单里；409 = 名字被别条占着（模板名有唯一索引），
+    得先改名。两种都得说人话，不然用户只会以为按钮坏了。
+    """
+    try:
+        restored = clone_bundled.restore(key)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except clone_bundled.RestoreBlocked as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"ok": True, **restored}
 
 
 @router.post("/templates/{template_id}/redetect")

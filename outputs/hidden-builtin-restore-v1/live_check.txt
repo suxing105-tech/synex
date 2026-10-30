@@ -1,0 +1,8 @@
+templates#1: 闪寻图片编辑[image]* 闪寻参考生视频[video]* 闪寻参考音色[audio]* 闪寻指定音色[audio] 闪寻音色描述[audio]
+hidden#1:  (count=0)
+delete id=11
+hidden#2: 闪寻参考音色/audio
+restore: ok=True id=14 name=闪寻参考音色
+templates#2: 闪寻图片编辑[image]* 闪寻参考生视频[video]* 闪寻指定音色[audio]* 闪寻音色描述[audio] 闪寻参考音色[audio]
+hidden#3 count=0
+restore again -> 404

@@ -397,3 +397,93 @@ def test_rescuing_leaves_the_other_dismissals_alone(seeded):
     assert again["rescued"] == [AUDIO_KEY]
     assert clone_bundled.dismissed(conn) == {DESIGN_KEY}
     assert [r for r in clone_templates.list_templates() if r["bundled_key"] == DESIGN_KEY] == []
+
+
+# ---------- 已隐藏的内置工作流：看得见，也能反悔 ----------
+
+def test_a_deleted_builtin_shows_up_as_hidden(seeded):
+    """删掉的内置工作流必须出现在隐藏列表里。以前它只躺在 meta 里，谁都不知道。"""
+    row = [r for r in clone_templates.list_templates() if r["bundled_key"] == AUDIO_KEY][0]
+    clone_templates.delete_template(row["id"])
+    with TestClient(app) as client:
+        items = client.get("/api/clone/templates/hidden").json()["items"]
+    assert [i["key"] for i in items] == [AUDIO_KEY]
+    assert items[0]["name"] == "闪寻参考音色" and items[0]["media_kind"] == "audio"
+
+
+def test_the_hidden_list_is_empty_when_nothing_was_deleted(seeded):
+    with TestClient(app) as client:
+        assert client.get("/api/clone/templates/hidden").json()["items"] == []
+
+
+def test_restore_brings_the_builtin_back_through_the_api(seeded):
+    row = [r for r in clone_templates.list_templates() if r["bundled_key"] == AUDIO_KEY][0]
+    clone_templates.delete_template(row["id"])
+    with TestClient(app) as client:
+        res = client.post("/api/clone/templates/hidden/" + AUDIO_KEY + "/restore")
+        assert res.status_code == 200, res.text
+        assert res.json()["name"] == "闪寻参考音色"
+        items = client.get("/api/clone/templates").json()["items"]
+        assert client.get("/api/clone/templates/hidden").json()["items"] == []
+    assert {i["bundled_key"] for i in items} == set(ALL_KEYS)
+    assert clone_bundled.dismissed(seeded.main()) == set(), "恢复要把名字从名单里摘干净"
+
+
+def test_a_restored_mode_does_not_steal_the_current_one(seeded):
+    """恢复回来的那条不许抢「当前」：同族已经有正在用的了，不然用户的默认被换掉。"""
+    rows = {r["bundled_key"]: r for r in clone_templates.list_templates()}
+    clone_templates.delete_template(rows[AUDIO_KEY]["id"])
+    before = [r for r in clone_templates.list_templates()
+              if r["media_kind"] == "audio" and r["is_active"]][0]["bundled_key"]
+    clone_bundled.restore(AUDIO_KEY)
+    audio = [r for r in clone_templates.list_templates() if r["media_kind"] == "audio"]
+    assert len(audio) == 3
+    assert [r["bundled_key"] for r in audio if r["is_active"]] == [before]
+
+
+def test_restoring_something_never_hidden_is_404(seeded):
+    with TestClient(app) as client:
+        assert client.post("/api/clone/templates/hidden/" + AUDIO_KEY + "/restore").status_code == 404
+
+
+def test_restore_is_409_when_another_template_holds_the_name(seeded):
+    """名字被**别一条**工作流占着（模板名有唯一索引）时装不进来：回 409 并说清下一步。"""
+    row = [r for r in clone_templates.list_templates() if r["bundled_key"] == AUDIO_KEY][0]
+    clone_templates.delete_template(row["id"])
+    other = [r for r in clone_templates.list_templates() if r["bundled_key"] == VIDEO_KEY][0]
+    clone_templates.update_template(other["id"], {"name": "闪寻参考音色"})
+    with TestClient(app) as client:
+        res = client.post("/api/clone/templates/hidden/" + AUDIO_KEY + "/restore")
+        assert res.status_code == 409, res.text
+        assert "改个名" in res.json()["detail"]
+    assert [r for r in clone_templates.list_templates() if r["bundled_key"] == AUDIO_KEY] == []
+
+
+def test_restore_adopts_a_same_name_template_the_user_imported(seeded):
+    """用户自己导过一份同名的 → 恢复走装载那条老路：认领这一条，不造重名的。
+
+    内容是用户那份，bundled_sha 记的是随包指纹，两者不等就等于「他改过」，
+    以后版本更新不会覆盖他。这条不是新规矩，和首次装载同一套。
+    """
+    row = [r for r in clone_templates.list_templates() if r["bundled_key"] == AUDIO_KEY][0]
+    clone_templates.delete_template(row["id"])
+    mine = clone_templates.create_template("闪寻参考音色", _fake_entry(label="闪寻参考音色")["workflow"])
+    with TestClient(app) as client:
+        res = client.post("/api/clone/templates/hidden/" + AUDIO_KEY + "/restore")
+        assert res.status_code == 200, res.text
+    after = [r for r in clone_templates.list_templates() if int(r["id"]) == int(mine["id"])][0]
+    assert after["bundled_key"] == AUDIO_KEY and after["is_builtin"] is True
+    raw = clone_templates.get_template(int(mine["id"]))
+    assert clone_bundled.workflow_sha(raw["workflow"]) != raw["bundled_sha"], "内容仍是用户那份"
+    assert clone_bundled.dismissed(seeded.main()) == set()
+
+
+def test_restore_clears_a_key_the_package_no_longer_ships(seeded, monkeypatch):
+    """新版本不再随包这条：409 说清楚，同时把死名字从名单里清掉，别让它永远占着。"""
+    row = [r for r in clone_templates.list_templates() if r["bundled_key"] == AUDIO_KEY][0]
+    clone_templates.delete_template(row["id"])
+    monkeypatch.setattr(clone_bundled, "entries", lambda *a, **k: [])
+    with TestClient(app) as client:
+        res = client.post("/api/clone/templates/hidden/" + AUDIO_KEY + "/restore")
+        assert res.status_code == 409, res.text
+    assert clone_bundled.dismissed(seeded.main()) == set()

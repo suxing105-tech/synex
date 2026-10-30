@@ -1120,6 +1120,9 @@ export const CLONE_SETTINGS_TAB = "一键同款";
 
 // ---------- 接口 ----------
 
+/** 被删掉的随包工作流：设置页「已隐藏的内置工作流」那一栏用它。 */
+export type CloneHiddenBuiltin = { key: string; name: string; media_kind: string };
+
 export const cloneApi = {
   templates(): Promise<{ items: CloneTemplate[] }> {
     return api.http<{ items: CloneTemplate[] }>("/api/clone/templates");
@@ -1139,6 +1142,18 @@ export const cloneApi = {
   },
   remove(id: number): Promise<{ ok: boolean; deleted: number }> {
     return api.http<{ ok: boolean; deleted: number }>(`/api/clone/templates/${id}`, { method: "DELETE" });
+  },
+  /** 已隐藏的随包工作流。只认带 key 的条目：老后端没这个接口、测试里按前缀路由
+      也可能把 /api/clone/templates 的答话一起给它，没 key 就不是隐藏项。 */
+  hiddenTemplates(): Promise<CloneHiddenBuiltin[]> {
+    return api.http<{ items?: CloneHiddenBuiltin[] }>("/api/clone/templates/hidden")
+      .then((res) => (Array.isArray(res?.items)
+        ? res.items.filter((one) => typeof one?.key === "string") : []));
+  },
+  /** 恢复一条被删掉的随包工作流：名字被占时后端回 409，话由它说。 */
+  restoreHidden(key: string): Promise<{ ok: boolean; id: number; name: string }> {
+    return api.http<{ ok: boolean; id: number; name: string }>(
+      `/api/clone/templates/hidden/${encodeURIComponent(key)}/restore`, { method: "POST" });
   },
   /** 导出：把 JSON 文本交给调用方落盘，不新增上传接口。 */
   workflow(id: number): Promise<string> {

@@ -369,3 +369,56 @@ describe('音频一族在设置页', () => {
     expect(JSON.parse(String((patch?.[1] as RequestInit)?.body))).toEqual({ media_kind: 'image' });
   });
 });
+
+
+// ---------- 已隐藏的内置工作流：看得见，也能反悔 ----------
+
+const HIDDEN_VOICE = { key: 'qwen3-tts-voice-clone', name: '闪寻参考音色', media_kind: 'audio' };
+
+it('已隐藏的内置工作流列出来，点恢复只 POST 那一条的 key', async () => {
+  let hiddenItems: unknown[] = [HIDDEN_VOICE];
+  let restoredPath: string | null = null;
+  http.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (String(path).endsWith('/restore')) {
+      restoredPath = path;
+      hiddenItems = [];
+      return { ok: true, id: 9, name: '闪寻参考音色' };
+    }
+    if (path === '/api/clone/templates/hidden') return { items: hiddenItems };
+    if (path === '/api/clone/templates') {
+      return { items: hiddenItems.length ? [TPL] : [TPL, { ...TPL, id: 9, name: '闪寻参考音色' }] };
+    }
+    throw new Error(`未预演的接口：${path}`);
+  });
+  const screen = render(CloneTemplates, {});
+  expect(await screen.findByText(/已隐藏的内置工作流 1 条/)).toBeTruthy();
+  await fireEvent.click(screen.getByRole('button', { name: '恢复' }));
+  await tick();
+  await tick();
+  expect(restoredPath).toBe('/api/clone/templates/hidden/qwen3-tts-voice-clone/restore');
+  expect(screen.queryByRole('button', { name: '恢复' })).toBeNull();
+  expect(await screen.findByText('闪寻参考音色')).toBeTruthy();
+});
+
+it('老后端没有隐藏接口时不炸，也不显示这一栏', async () => {
+  http.mockImplementation(async (path: string) => {
+    if (path === '/api/clone/templates') return { items: [TPL] };
+    if (String(path).includes('/hidden')) throw new Error('404 Not Found');
+    throw new Error(`未预演的接口：${path}`);
+  });
+  const screen = render(CloneTemplates, {});
+  expect(await screen.findByText('旧的同款')).toBeTruthy();
+  expect(screen.queryByText(/已隐藏的内置工作流/)).toBeNull();
+});
+
+it('隐藏接口答话里没有 key 就不当隐藏项渲染', async () => {
+  // /api/clone/templates/hidden 是 /api/clone/templates 的前缀扩展，
+  // 按前缀路由的预演很容易把模板答话喂给它。没有 key 就不是隐藏项。
+  http.mockImplementation(async (path: string) => {
+    if (String(path).startsWith('/api/clone/templates')) return { items: [TPL] };
+    throw new Error(`未预演的接口：${path}`);
+  });
+  const screen = render(CloneTemplates, {});
+  expect(await screen.findByText('旧的同款')).toBeTruthy();
+  expect(screen.queryByText(/已隐藏的内置工作流/)).toBeNull();
+});

@@ -784,15 +784,31 @@ def rename_image(image_id: int, new_filename: str) -> dict:
     if new_path.exists():
         raise RenameError("目标文件已存在")
 
+    from .indexer import suppress_watcher_events
+    # 改名在 watcher 眼里是「旧文件删除 + 新文件创建」。索引这边自己会把 images.path
+    # 改好，再让它跑一遍就会按新路径插一条重复行（网格里多一张缩略图），甚至反过来
+    # 把刚改好的那行删掉。「移动到文件夹」早就在抑制这两条路径，改名是同一种动作。
+    suppress_watcher_events([old_path, new_path])
     old_path.rename(new_path)
     from .texts import remap
     remap(old_path, new_path)
     stat = new_path.stat()
     new_mtime = float(stat.st_mtime)
+    # images.path 全站只有一种写法：绝对路径 + 正斜杠（索引和「移动到…」用的都是它）。
+    # 写成 str(new_path) 会留下反斜杠，而 path 上的 UNIQUE 只比字符串——同一个文件的
+    # 正斜杠那个键就此空出来，watcher 下一次上报把它当新文件再插一行。
+    normalized = _normalize_path(new_path.resolve())
     with transaction() as c:
+        # 目标路径上要是还赖着一行索引，说明那个文件先前并不存在（上面刚查过），
+        # 是条失效索引；不清掉它这条 UPDATE 会撞 UNIQUE，改名整个失败。
+        ghost = c.execute(
+            "SELECT id FROM images WHERE path = ? AND id <> ?", (normalized, image_id)
+        ).fetchone()
+        if ghost:
+            c.execute("DELETE FROM images WHERE id = ?", (ghost["id"],))
         c.execute(
             "UPDATE images SET path = ?, filename = ?, mtime = ? WHERE id = ?",
-            (str(new_path), final_name, new_mtime, image_id),
+            (normalized, final_name, new_mtime, image_id),
         )
     updated = conn.execute(
         "SELECT * FROM images WHERE id = ?", (image_id,)

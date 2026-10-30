@@ -661,3 +661,15 @@ def get_indexer() -> Indexer:
     if _INDEXER is None:
         _INDEXER = Indexer()
     return _INDEXER
+
+
+def suppress_watcher_events(paths: "list[Path | str] | tuple[Path | str, ...]", *, seconds: float = 5.0) -> None:
+    """应用自己动磁盘文件时，忽略这些路径上的 watchdog 事件。
+
+    调用方自己把索引写好了，watcher 再跑一遍会插重复行或删掉正确的行。监听没起来
+    （单测、拆分前的老流程）时本来就没有事件，这里安静地跳过。
+    """
+    try:
+        get_indexer().suppress_events(paths, seconds=seconds)
+    except Exception as exc:  # noqa: BLE001 - 抑制失败不该让改名/移动本身失败
+        log.warning("watchdog 抑制窗口没开成：%s", exc)

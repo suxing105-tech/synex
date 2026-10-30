@@ -30,6 +30,8 @@ logger = logging.getLogger(__name__)
 
 # 收藏列删除前的一次性备份目录名（唯一回滚手段，存在即不再备份）
 PRE_FAVORITE_DROP_DIR = "pre-0.2.21"
+# 路径写法统一 + 同文件重复行合并前的一次性备份目录名
+PRE_PATH_DEDUPE_DIR = "pre-0.2.33"
 
 
 SCHEMA = r"""
@@ -165,6 +167,12 @@ class ConnectionPool:
             migrate_system_folders(self._main)
             migrate_media_kind(self._main)
             migrate_drop_favorite(self._main, self.path)
+            # 改名接口写坏的 path：统一写法并把同一个文件的重复索引行并成一行，
+            # 不然那张多出来的缩略图会一直挂在网格里。坏了只吵日志，不拦启动。
+            try:
+                migrate_image_path_identity(self._main, self.path)
+            except sqlite3.Error as exc:
+                logger.warning("图片索引路径整理没跑成，重复缩略图可能要手动清理：%s", exc)
             # 搜索索引必须在任何线程写 images 之前修好：老库的 contentless 索引是坏过的
             # （见 migrate_fts），而触发器也依赖 images_fts 存在。
             try:
@@ -418,12 +426,12 @@ def migrate_media_kind(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_images_kind ON images(kind)")
 
 
-def backup_before_drop_favorite(conn: sqlite3.Connection, db_path: Path) -> Path | None:
-    """删收藏列之前的一次性备份：备份已存在就不覆盖、也不再重复备份。
+def backup_database(conn: sqlite3.Connection, db_path: Path, dirname: str) -> Path | None:
+    """动数据之前的一次性备份：备份已存在就不覆盖、也不再重复备份。
 
     走 sqlite3 的在线备份 API，WAL 模式下也能拿到一致快照。
     """
-    target_dir = db_path.parent / "backup" / PRE_FAVORITE_DROP_DIR
+    target_dir = db_path.parent / "backup" / dirname
     target = target_dir / db_path.name
     if target.exists():
         return None
@@ -440,8 +448,12 @@ def backup_before_drop_favorite(conn: sqlite3.Connection, db_path: Path) -> Path
         os.replace(temp, target)
     finally:
         temp.unlink(missing_ok=True)
-    logger.info("删除收藏列前已备份数据库到 %s", target)
+    logger.info("改动数据库前已备份到 %s", target)
     return target
+
+
+def backup_before_drop_favorite(conn: sqlite3.Connection, db_path: Path) -> Path | None:
+    return backup_database(conn, db_path, PRE_FAVORITE_DROP_DIR)
 
 
 def migrate_drop_favorite(conn: sqlite3.Connection, db_path: Path | None = None) -> bool:
@@ -476,6 +488,96 @@ def migrate_drop_favorite(conn: sqlite3.Connection, db_path: Path | None = None)
             logger.warning("%s.favorite 列删除失败（不影响功能）：%s", table, exc)
     conn.commit()
     return dropped
+
+
+def _slashes(path: str) -> str:
+    """images.path 全站唯一写法：绝对路径 + 正斜杠（索引与「移动到文件夹」都写它）。"""
+    return str(path).replace("\\", "/")
+
+
+def _repoint_image(conn: sqlite3.Connection, loser: int, keep: int) -> None:
+    """把挂在 loser 上的关联整条搬到 keep，别让「并成一行」顺手删掉标签和反推。"""
+    conn.execute(
+        "INSERT OR IGNORE INTO image_tags(image_id, tag_id)"
+        " SELECT ?, tag_id FROM image_tags WHERE image_id = ?",
+        (keep, loser),
+    )
+    conn.execute("DELETE FROM image_tags WHERE image_id = ?", (loser,))
+    conn.execute(
+        "INSERT OR IGNORE INTO image_folders(image_id, folder_id)"
+        " SELECT ?, folder_id FROM image_folders WHERE image_id = ?",
+        (keep, loser),
+    )
+    conn.execute("DELETE FROM image_folders WHERE image_id = ?", (loser,))
+    conn.execute("UPDATE reverse_prompts SET image_id = ? WHERE image_id = ?", (keep, loser))
+    conn.execute("UPDATE video_prompt_runs SET video_id = ? WHERE video_id = ?", (keep, loser))
+    # clone_sources.image_id 是主键：keep 自己有来源就丢 loser 那份，否则整条搬过去
+    if conn.execute("SELECT 1 FROM clone_sources WHERE image_id = ?", (keep,)).fetchone():
+        conn.execute("DELETE FROM clone_sources WHERE image_id = ?", (loser,))
+    else:
+        conn.execute("UPDATE clone_sources SET image_id = ? WHERE image_id = ?", (keep, loser))
+    conn.execute(
+        "UPDATE clone_sources SET source_image_id = ? WHERE source_image_id = ?", (keep, loser)
+    )
+
+
+def migrate_image_path_identity(conn: sqlite3.Connection, db_path: Path | None = None) -> dict:
+    """幂等迁移：images.path 统一成正斜杠写法，并把同一个文件的重复索引行并成一行。
+
+    重复行怎么来的：改名接口一度把 path 写成反斜杠形式（v0.2.32 及以前）。path 上那个
+    UNIQUE 只比字符串、不比这两个字符串指的是不是同一个文件，于是同一个文件留下两行，
+    网格里就是两张一模一样的缩略图。这里把老写法改回全站那一种，重复的并成一行——
+    标签、所属文件夹、反推提示词、一键同款来源、视频提示词记录都跟到留下来的那一行上。
+
+    合并只删「和另一行指向同一个文件」的索引行，图片文件本身一个都不动。
+    动数据前强制备份一次（唯一回滚手段）；备份失败就跳过迁移。
+    返回 {"rewritten": n, "merged": n}，两个 0 表示这个库本来就是干净的。
+    """
+    rows = conn.execute("SELECT id, path FROM images ORDER BY id").fetchall()
+    paths = {r["id"]: r["path"] for r in rows}
+    groups: dict[str, list[int]] = {}
+    for r in rows:
+        groups.setdefault(_slashes(r["path"]), []).append(r["id"])
+    dupes = {k: v for k, v in groups.items() if len(v) > 1}
+    stale = [i for i, path in paths.items() if path != _slashes(path)]
+    if not dupes and not stale:
+        return {"rewritten": 0, "merged": 0}
+    if db_path is not None:
+        try:
+            backup_database(conn, db_path, PRE_PATH_DEDUPE_DIR)
+        except sqlite3.Error as exc:
+            logger.warning("统一图片路径前的数据库备份失败，本次跳过该迁移：%s", exc)
+            return {"rewritten": 0, "merged": 0}
+
+    merged = 0
+    conn.execute("BEGIN")
+    try:
+        for key, ids in dupes.items():
+            # 已经是标准写法的那一行留下（它的键本来就对），否则留 id 最小的
+            keep = min((i for i in ids if paths[i] == key), default=min(ids))
+            for loser in sorted(ids):
+                if loser == keep:
+                    continue
+                _repoint_image(conn, loser, keep)
+                conn.execute("DELETE FROM images WHERE id = ?", (loser,))
+                merged += 1
+        rewritten = 0
+        for image_id in stale:
+            if image_id not in paths or not conn.execute(
+                "SELECT 1 FROM images WHERE id = ?", (image_id,)
+            ).fetchone():
+                continue  # 这一行刚被并进别的行了
+            conn.execute(
+                "UPDATE images SET path = ? WHERE id = ?", (_slashes(paths[image_id]), image_id)
+            )
+            rewritten += 1
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    if merged or rewritten:
+        logger.info("图片索引路径已整理：改写 %d 行，合并重复 %d 行", rewritten, merged)
+    return {"rewritten": rewritten, "merged": merged}
 
 
 def get_int_meta(key: str, default: int = 0) -> int:

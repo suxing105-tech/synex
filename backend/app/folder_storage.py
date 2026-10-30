@@ -267,11 +267,8 @@ def _unique_path(directory: Path, filename: str) -> Path:
 
 def _suppress_watcher(paths: list[Path]) -> None:
     """移动期间忽略这些路径的 watchdog 事件（索引由本模块自己改）。"""
-    try:
-        from .indexer import get_indexer
-        get_indexer().suppress_events(paths, seconds=5.0)
-    except Exception:  # noqa: BLE001 - 监听未启动时本来就没有事件
-        pass
+    from .indexer import suppress_watcher_events
+    suppress_watcher_events(paths)
 
 
 def _move_on_disk(source: Path, destination: Path) -> None:

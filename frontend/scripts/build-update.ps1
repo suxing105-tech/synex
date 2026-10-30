@@ -15,6 +15,14 @@ if (!(Test-Path -LiteralPath $ReleaseNotes)) { throw "缺少版本说明。" }
 $Config = Get-Content "$RepoRoot/frontend/src-tauri/tauri.conf.json" -Raw -Encoding UTF8 | ConvertFrom-Json
 $Version = $Config.version
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+# 发布前先确认每一轮都已经 commit：工作区还是脏的，说明某一轮没进版本库，
+# 发出去就没有「回滚到某一轮」的落点了。
+$PreviousEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+& $Python "$PSScriptRoot/check-worktree-committed.py" *> "$OutputDir/worktree-committed.log"
+$CommittedCheck = $LASTEXITCODE
+$ErrorActionPreference = $PreviousEap
+if ($CommittedCheck) { throw "工作区还有未提交的改动，已停止发布。查看 worktree-committed.log" }
 # 发布前先锁版本号：0.2.7 曾漏改 backend/app/version.py，
 # 打出的安装包一启动就变砖，只能重装。不一致就禁止发布。
 $VersionCheck = 1

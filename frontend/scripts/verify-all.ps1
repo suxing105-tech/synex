@@ -52,6 +52,14 @@ function Suite([string]$name, [string]$dir, [scriptblock]$sb, [string]$logName) 
   if ($code) { $script:fail = $script:fail + $name }
 }
 
+# Gate 0: the AGENTS.md rule says "commit every round, immediately". It was still
+# skipped for five rounds before v0.2.31, so it is enforced in code, not prose.
+$Gate = Join-Path $PSScriptRoot 'check-worktree-committed.py'
+$GateLog = Join-Path $Out 'worktree-committed.log'
+$GateCode = RunNative { & $Python $Gate } $GateLog
+Write-Output ('{0,-18} exit={1}  {2}' -f 'worktree committed', $GateCode, (Tail $GateLog))
+if ($GateCode) { $fail = $fail + 'worktree committed' }
+
 Suite 'backend pytest' (Join-Path $Repo 'backend') { & $Python -m pytest -q } 'backend-tests.log'
 Suite 'frontend vitest' (Join-Path $Repo 'frontend') { pnpm test } 'frontend-tests.log'
 Suite 'svelte-check' (Join-Path $Repo 'frontend') { pnpm exec svelte-check --threshold error } 'svelte-check.log'

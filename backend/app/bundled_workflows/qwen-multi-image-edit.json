@@ -1,7 +1,8 @@
 {
  "key": "qwen-multi-image-edit",
- "label": "闪寻图片编辑",
+ "label": "闪寻图片",
  "legacy_labels": [
+  "闪寻图片编辑",
   "Qwen 多图编辑",
   "Qwen_image_2.1 多图编辑"
  ],

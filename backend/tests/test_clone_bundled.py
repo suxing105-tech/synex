@@ -69,9 +69,9 @@ def test_ships_one_workflow_per_family():
     by_key = {e["key"]: e for e in clone_bundled.entries()}
     assert set(by_key) == set(ALL_KEYS)
     assert by_key[IMAGE_KEY]["media_kind"] == "image"
-    assert by_key[IMAGE_KEY]["label"] == "闪寻图片编辑"
+    assert by_key[IMAGE_KEY]["label"] == "闪寻图片"
     assert by_key[VIDEO_KEY]["media_kind"] == "video"
-    assert by_key[VIDEO_KEY]["label"] == "闪寻参考生视频"
+    assert by_key[VIDEO_KEY]["label"] == "闪寻视频"
     assert {by_key[k]["media_kind"] for k in (AUDIO_KEY, DESIGN_KEY, CUSTOM_KEY)} == {"audio"}
     assert {by_key[k]["label"] for k in (AUDIO_KEY, DESIGN_KEY, CUSTOM_KEY)} == AUDIO_LABELS
 
@@ -153,7 +153,7 @@ def test_shipped_slots_point_at_real_nodes():
 
 def test_fresh_install_seeds_every_family(seeded):
     rows = clone_templates.list_templates()
-    assert {r["name"] for r in rows} == {"闪寻图片编辑", "闪寻参考生视频"} | AUDIO_LABELS
+    assert {r["name"] for r in rows} == {"闪寻图片", "闪寻视频"} | AUDIO_LABELS
     assert all(r["is_builtin"] for r in rows)
     assert {r["media_kind"] for r in rows} == {"image", "video", "audio"}
     # 每族各自一个「当前」：声音三条也只能有一条是当前，弹窗开出来才有唯一默认
@@ -242,7 +242,7 @@ def test_a_same_named_template_is_adopted_not_duplicated(tmp_path: Path, monkeyp
     assert len(rows) == len(ALL_KEYS), "认领一条 + 装上另外四条"
     adopted = [r for r in rows if r["bundled_key"] == VIDEO_KEY][0]
     assert adopted["id"] == created["id"] and adopted["is_builtin"] is True
-    assert adopted["name"] == "闪寻参考生视频"
+    assert adopted["name"] == "闪寻视频"
     row = _row_of_key(pool, VIDEO_KEY)
     assert clone_bundled.workflow_sha(json.loads(row["workflow"])) != row["bundled_sha"], \
         "他那份与包里的不同 → 记成改过，以后不覆盖"
@@ -266,7 +266,28 @@ def test_an_older_install_gets_renamed(seeded):
     result = clone_bundled.seed(conn)
     assert result["renamed"] == [VIDEO_KEY]
     again = _row_of_key(seeded, VIDEO_KEY)
-    assert again["name"] == "闪寻参考生视频" and int(again["id"]) == int(row["id"])
+    assert again["name"] == "闪寻视频" and int(again["id"]) == int(row["id"])
+
+
+def test_the_names_shipped_last_version_get_renamed(seeded):
+    """上一版安装包叫「闪寻图片编辑」「闪寻参考生视频」：升级后跟着改口。
+
+    改名只动 label，旧名留在 legacy_labels 里，seed 才认得出这条就是它自己；
+    记录不换、素材不重导、哪条是「当前」也不跟着抖。
+    """
+    conn = seeded.main()
+    before = {key: _row_of_key(seeded, key) for key in (IMAGE_KEY, VIDEO_KEY)}
+    conn.execute("UPDATE clone_templates SET name=? WHERE id=?",
+                 ("闪寻图片编辑", int(before[IMAGE_KEY]["id"])))
+    conn.execute("UPDATE clone_templates SET name=? WHERE id=?",
+                 ("闪寻参考生视频", int(before[VIDEO_KEY]["id"])))
+    result = clone_bundled.seed(conn)
+    assert sorted(result["renamed"]) == sorted([IMAGE_KEY, VIDEO_KEY])
+    for key, label in ((IMAGE_KEY, "闪寻图片"), (VIDEO_KEY, "闪寻视频")):
+        after = _row_of_key(seeded, key)
+        assert after["name"] == label
+        assert int(after["id"]) == int(before[key]["id"]), "改名不该换一条记录"
+        assert int(after["is_active"]) == int(before[key]["is_active"]), "改名不该动「当前」"
 
 
 def test_deleted_builtin_does_not_come_back(seeded):
@@ -317,7 +338,7 @@ def test_switch_off_keeps_a_fresh_db_empty(tmp_path: Path, monkeypatch):
 def test_api_reports_builtin_templates(seeded):
     with TestClient(app) as client:
         items = client.get("/api/clone/templates").json()["items"]
-    assert {i["name"] for i in items} == {"闪寻图片编辑", "闪寻参考生视频"} | AUDIO_LABELS
+    assert {i["name"] for i in items} == {"闪寻图片", "闪寻视频"} | AUDIO_LABELS
     assert all(i["is_builtin"] for i in items)
     assert {i["media_kind"] for i in items} == {"image", "video", "audio"}
 

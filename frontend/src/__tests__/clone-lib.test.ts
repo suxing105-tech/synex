@@ -912,8 +912,8 @@ describe("音频的三种出声方式", () => {
     tpl([{ kind: "prompt", node: "38", input: "text", label: "完整提示词" }], { id: name.length, name, media_kind: "audio", ...over });
 
   it("模式按钮只列音频族：图片、视频工作流不许混进这一排", () => {
-    const imageTpl = tpl([promptSlot, imageSlot], { name: "闪寻图片编辑", media_kind: "image" });
-    const videoTpl = tpl([promptSlot, imageSlot], { id: 9, name: "闪寻参考生视频", media_kind: "video" });
+    const imageTpl = tpl([promptSlot, imageSlot], { name: "闪寻图片", media_kind: "image" });
+    const videoTpl = tpl([promptSlot, imageSlot], { id: 9, name: "闪寻视频", media_kind: "video" });
     const noKind = tpl([promptSlot], { id: 8, name: "没标族别的老模板" });
     const list = audioModeTemplates([imageTpl, audioTpl("闪寻参考音色"), videoTpl, noKind, audioTpl("闪寻音色描述")]);
     expect(list.map((t) => t.name)).toEqual(["闪寻参考音色", "闪寻音色描述"]);
@@ -1046,15 +1046,15 @@ describe("内置音色的试听样本：点一下就能听是谁", () => {
 describe("切换工作流那一列：音频族收成一条", () => {
   const wf = (id: number, name: string, kind: string, over: Partial<CloneTemplate> = {}): CloneTemplate =>
     tpl([promptSlot], { id, name, media_kind: kind as CloneTemplate["media_kind"], is_active: false, ...over });
-  const IMG = wf(1, "闪寻图片编辑", "image", { is_active: true });
-  const VID = wf(2, "闪寻参考生视频", "video", { is_active: true });
+  const IMG = wf(1, "闪寻图片", "image", { is_active: true });
+  const VID = wf(2, "闪寻视频", "video", { is_active: true });
   const A1 = wf(3, "闪寻参考音色", "audio", { is_active: true });
   const A2 = wf(4, "闪寻指定音色", "audio");
   const A3 = wf(5, "闪寻音色描述", "audio");
 
   it("图片视频各占一行，三条音频并成一行「闪寻音频」，位置在第一条音频那儿", () => {
     const rows = workflowMenuRows([IMG, VID, A1, A2, A3]);
-    expect(rows.map((r) => r.label)).toEqual(["闪寻图片编辑", "闪寻参考生视频", AUDIO_MODE_GROUP_LABEL]);
+    expect(rows.map((r) => r.label)).toEqual(["闪寻图片", "闪寻视频", AUDIO_MODE_GROUP_LABEL]);
     expect(rows.map((r) => r.kind)).toEqual(["image", "video", "audio"]);
     const group = rows[2];
     expect(group.collapsed).toBe(true);
@@ -1078,7 +1078,7 @@ describe("切换工作流那一列：音频族收成一条", () => {
 
   it("只有一条音频工作流时不折叠，照名字列出来", () => {
     const rows = workflowMenuRows([IMG, A1]);
-    expect(rows.map((r) => [r.label, r.collapsed])).toEqual([["闪寻图片编辑", false], ["闪寻参考音色", false]]);
+    expect(rows.map((r) => [r.label, r.collapsed])).toEqual([["闪寻图片", false], ["闪寻参考音色", false]]);
     expect(workflowMenuRows(null)).toEqual([]);
   });
 
@@ -1091,7 +1091,7 @@ describe("切换工作流那一列：音频族收成一条", () => {
 describe("弹窗标题与底部那颗胶囊的名字跟着清单那一行", () => {
   const w = (id: number, name: string, kind: string, over: Partial<CloneTemplate> = {}): CloneTemplate =>
     tpl([promptSlot], { id, name, media_kind: kind as CloneTemplate["media_kind"], is_active: false, ...over });
-  const IMG = w(1, "闪寻图片编辑", "image", { is_active: true });
+  const IMG = w(1, "闪寻图片", "image", { is_active: true });
   const C1 = w(3, "闪寻参考音色", "audio", { is_active: true });
   const C2 = w(4, "闪寻指定音色", "audio");
   const C3 = w(5, "闪寻音色描述", "audio");
@@ -1104,7 +1104,7 @@ describe("弹窗标题与底部那颗胶囊的名字跟着清单那一行", () =
   });
 
   it("图片工作流照自己的名字，一个字都不多余", () => {
-    expect(workflowDisplayName([IMG, C1, C2, C3], IMG)).toBe("闪寻图片编辑");
+    expect(workflowDisplayName([IMG, C1, C2, C3], IMG)).toBe("闪寻图片");
   });
 
   it("库里只有一条音频工作流时不折叠：名字仍是那条工作流", () => {

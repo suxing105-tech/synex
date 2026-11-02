@@ -926,7 +926,7 @@
 
       {#if !$comfyuiStatus.enabled || !$comfyuiStatus.running}
         <div class="cm-banner" role="status">
-          <span>{$comfyuiStatus.enabled ? `连不上 ComfyUI（${$comfyuiStatus.url}），先把它启动起来才能出图。` : "ComfyUI 集成没打开，去设置 → ComfyUI 里启用。"}</span>
+          <span>{$comfyuiStatus.enabled ? ($comfyuiStatus.reason ? `连不上 ComfyUI：${$comfyuiStatus.reason}` : `连不上 ComfyUI（${$comfyuiStatus.url}），先把它启动起来才能出图。`) : "ComfyUI 集成没打开，去设置 → ComfyUI 里启用。"}</span>
           <button class="cm-btn" disabled={probing} onclick={() => void refreshComfyui()}>{probing ? "探测中…" : "重新探测"}</button>
         </div>
       {/if}

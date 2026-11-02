@@ -69,4 +69,42 @@ describe("comfyuiApi", () => {
     } as unknown as Response);
     await expect(comfyuiApi.openWorkflow(99)).rejects.toThrow(/400/);
   });
+  it("status(draft) → 探未保存的地址用 ?draft=，空白草稿回落到已生效地址", async () => {
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ running: true, url: "http://127.0.0.1:8189", enabled: true, checked_at: 1 })
+    );
+    const s = await comfyuiApi.status("  http://127.0.0.1:8189  ");
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      "/api/integrations/comfyui/status?draft=http%3A%2F%2F127.0.0.1%3A8189"
+    );
+    expect(s.url).toBe("http://127.0.0.1:8189");
+    // 后端参数名就叫 draft：前端拼错一个字母，设置页「先验证再保存」会静默失效
+    expect(mockFetch.mock.calls[0][0]).not.toContain("?url=");
+
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ running: false, url: "http://127.0.0.1:8188", enabled: true, checked_at: 2, reason: "x", reason_code: "refused" })
+    );
+    const blank = await comfyuiApi.status("   ");
+    expect(mockFetch.mock.calls[1][0]).toBe("/api/integrations/comfyui/status");
+    expect(blank.reason_code).toBe("refused");
+  });
+
+  it("scan() → GET /api/integrations/comfyui/scan，带回本机候选与失败原因", async () => {
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
+        current: "http://127.0.0.1:8188",
+        running: false,
+        reason: "127.0.0.1:8188 上没有服务在监听",
+        reason_code: "refused",
+        candidates: [{ url: "http://127.0.0.1:8189", version: "0.43.0" }],
+      })
+    );
+    const r = await comfyuiApi.scan();
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(url).toBe("/api/integrations/comfyui/scan");
+    expect(init.method).toBeUndefined();
+    expect(r.running).toBe(false);
+    expect(r.reason_code).toBe("refused");
+    expect(r.candidates).toEqual([{ url: "http://127.0.0.1:8189", version: "0.43.0" }]);
+  });
 });

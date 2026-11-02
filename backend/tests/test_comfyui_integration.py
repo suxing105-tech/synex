@@ -16,6 +16,8 @@
 """
 from __future__ import annotations
 
+import os
+import socket
 import urllib.error
 from pathlib import Path
 
@@ -56,31 +58,39 @@ def client(tmp_path: Path, monkeypatch):
 
 @pytest.fixture
 def offline_probe(monkeypatch):
-    """让 comfyui.probe 一律返回 False，避免依赖本机是否真在跑。"""
-    monkeypatch.setattr("app.routes.comfyui.probe", lambda url: False)
+    """让状态探测一律报「没在跑」，避免依赖本机是否真开着 ComfyUI。"""
+    monkeypatch.setattr(
+        "app.routes.comfyui.probe_detail",
+        lambda url, timeout=None: comfyui.ProbeResult(False, "127.0.0.1:8188 上没有服务在监听", "refused"),
+    )
     return monkeypatch
 
 
 @pytest.fixture
 def online_probe(monkeypatch):
-    """让 comfyui.probe 一律返回 True，模拟本机 ComfyUI 在线。"""
-    monkeypatch.setattr("app.routes.comfyui.probe", lambda url: True)
+    """让状态探测一律报「在跑」，模拟本机 ComfyUI 在线。"""
+    monkeypatch.setattr("app.routes.comfyui.probe_detail", lambda url, timeout=None: comfyui.ProbeResult(True))
     return monkeypatch
+
 # ---------- probe() ----------
+#
+# 这些用例一律打桩在 ``comfyui._open`` 上，不是 ``urllib.request.urlopen``：
+# 探测走的是自建 opener（代理表为空），打桩 urlopen 已经拦不到它了——
+# 真打 urlopen 的话，这台机器上开着 ComfyUI 就会一路全绿，把回归全放过。
+
+
+def _refused(*a, **kw):
+    raise urllib.error.URLError(ConnectionRefusedError("拒绝连接"))
 
 
 def test_probe_offline(monkeypatch):
-    """指向不存在的端口 → probe 返回 False。"""
-
-    def _fail(*a, **kw):
-        raise urllib.error.URLError("refused")
-
-    monkeypatch.setattr(urllib.request, "urlopen", _fail)
+    """端口上没人 → False。"""
+    monkeypatch.setattr(comfyui, "_open", _refused)
     assert comfyui.probe("http://127.0.0.1:1") is False
 
 
 def test_probe_online(monkeypatch):
-    """模拟 200 → probe 返回 True。"""
+    """任一探测路径 200 → True。"""
 
     class _Resp:
         status = 200
@@ -91,22 +101,111 @@ def test_probe_online(monkeypatch):
         def __exit__(self, *a):
             return False
 
-    def _ok(*a, **kw):
-        return _Resp()
-
-    monkeypatch.setattr(urllib.request, "urlopen", _ok)
+    monkeypatch.setattr(comfyui, "_open", lambda *a, **kw: _Resp())
     assert comfyui.probe("http://127.0.0.1:8188") is True
 
 
 def test_probe_timeout(monkeypatch):
-    """超时 → False。"""
+    """超时 → False，并且原因说得出超时。"""
 
     def _timeout(*a, **kw):
         raise TimeoutError("slow")
 
-    monkeypatch.setattr(urllib.request, "urlopen", _timeout)
-    assert comfyui.probe("http://127.0.0.1:8188") is False
+    monkeypatch.setattr(comfyui, "_open", _timeout)
+    result = comfyui.probe_detail("http://127.0.0.1:8188", timeout=3.0)
+    assert result.running is False
+    assert result.reason_code == "timeout"
+    assert "3 秒" in result.reason
 
+
+def test_probe_reason_refused_names_host_and_port(monkeypatch):
+    """「没连上」必须说清楚是哪儿没人监听——只说没连上等于把定位丢给用户。"""
+    monkeypatch.setattr(comfyui, "_open", _refused)
+    result = comfyui.probe_detail("http://127.0.0.1:8188")
+    assert result.running is False
+    assert result.reason_code == "refused"
+    assert "127.0.0.1:8188" in result.reason
+
+
+def test_probe_reason_http_error_is_not_running(monkeypatch):
+    """有人应答但返回 5xx：不算在跑，原因要说「不像 ComfyUI」。"""
+
+    def _boom(*a, **kw):
+        raise urllib.error.HTTPError("http://127.0.0.1:8188/", 502, "Bad Gateway", {}, None)
+
+    monkeypatch.setattr(comfyui, "_open", _boom)
+    result = comfyui.probe_detail("http://127.0.0.1:8188")
+    assert result.running is False
+    assert result.reason_code == "http"
+    assert "502" in result.reason
+
+
+def test_probe_reason_dns(monkeypatch):
+    """地址写成一个解析不了的主机名。"""
+
+    def _gaierror(*a, **kw):
+        raise urllib.error.URLError(socket.gaierror("no such host"))
+
+    monkeypatch.setattr(comfyui, "_open", _gaierror)
+    result = comfyui.probe_detail("http://comfyui-host:8188")
+    assert result.reason_code == "dns"
+
+
+def test_probe_ignores_environment_proxy():
+    """环境变量里有代理也必须直连本机 ComfyUI。
+
+    浏览器永远跳过 loopback，Python 不跳过。这一条不对，就会出现
+    「ComfyUI 自己打得开、图库说连不上」，而且只在装了代理工具的机器上发生。
+    """
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 - BaseHTTPRequestHandler 的命名
+            body = b'{"system": {"comfyui_version": "0.43.0"}}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):  # 静音
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), _Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    old = {k: os.environ.get(k) for k in ("HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy")}
+    try:
+        # 端口 9（discard）上不会有任何代理在听：一旦被用上，探测必然失败。
+        os.environ["HTTP_PROXY"] = "http://127.0.0.1:9"
+        os.environ["http_proxy"] = "http://127.0.0.1:9"
+        os.environ.pop("NO_PROXY", None)
+        os.environ.pop("no_proxy", None)
+        url = f"http://127.0.0.1:{server.server_port}"
+        assert comfyui.probe(url) is True
+        assert comfyui.comfyui_version(url) == "0.43.0"
+    finally:
+        for key, value in old.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        server.shutdown()
+        server.server_close()
+
+
+def test_http_client_also_ignores_environment_proxy(monkeypatch):
+    """执行链路那条（httpx）同样不能读环境代理：两条链路必须同一个口径。"""
+    import asyncio
+    import httpx
+
+    from app.comfyui_client import ComfyUIClient
+
+    client = ComfyUIClient("http://127.0.0.1:8188", transport=httpx.MockTransport(lambda r: httpx.Response(200)))
+    try:
+        assert client._client.trust_env is False
+    finally:
+        asyncio.run(client.aclose())
 
 # ---------- sanitize_filename ----------
 
@@ -320,3 +419,118 @@ def test_list_temp_files(client):
     assert r.status_code == 200
     body = r.json()
     assert "a.json" in body["files"]
+
+# ---------- 扫本机 ComfyUI ----------
+
+NETSTAT_SAMPLE = """
+Active Connections
+
+  Proto  Local Address          Foreign Address        State           PID
+  TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       1892
+  TCP    127.0.0.1:8188         0.0.0.0:0              LISTENING       38988
+  TCP    [::]:8000              [::]:0                 LISTENING       40000
+  TCP    192.168.1.20:8188      0.0.0.0:0              LISTENING       41000
+  TCP    127.0.0.1:54321        127.0.0.1:54322        ESTABLISHED     42000
+  UDP    0.0.0.0:5353           *:*                                    43000
+"""
+
+
+def test_parse_netstat_listeners_only_loopback_and_only_listening():
+    rows = comfyui.parse_netstat_listeners(NETSTAT_SAMPLE)
+    assert ("127.0.0.1", 8188) in rows
+    assert ("[::]", 8000) in rows
+    assert ("0.0.0.0", 135) in rows
+    # 局域网地址上的服务不是「本机 ComfyUI」，扫它就是替用户端口扫描别人的机器
+    assert all(host != "192.168.1.20" for host, _ in rows)
+    # 已连接的会话、UDP 行都不算监听
+    assert all(port != 54321 for _, port in rows)
+
+
+def test_url_for_maps_wildcard_addresses():
+    assert comfyui.url_for("0.0.0.0", 8188) == "http://127.0.0.1:8188"
+    assert comfyui.url_for("127.0.0.1", 8188) == "http://127.0.0.1:8188"
+    # 只绑 IPv6 的 ComfyUI：不带方括号根本连不上
+    assert comfyui.url_for("[::]", 8000) == "http://[::1]:8000"
+    assert comfyui.url_for("::1", 8000) == "http://[::1]:8000"
+
+
+def test_scan_candidates_only_lists_real_comfyui(monkeypatch):
+    monkeypatch.setattr(
+        comfyui,
+        "loopback_listeners",
+        lambda: [("127.0.0.1", 8188), ("[::]", 8000), ("127.0.0.1", 54321)],
+    )
+    known = {"http://127.0.0.1:8188": "0.43.0", "http://[::1]:8000": "0.340.0"}
+    monkeypatch.setattr(comfyui, "comfyui_version", lambda url: known.get(url, ""))
+    urls = [item["url"] for item in comfyui.scan_candidates(exclude_url="http://127.0.0.1:8188")]
+    assert "http://127.0.0.1:8188" not in urls      # 当前地址不该再当候选
+    assert "http://[::1]:8000" in urls              # 只绑 IPv6 的那台也要被认出来
+    assert "http://127.0.0.1:54321" not in urls     # 应答了但不是 ComfyUI 的端口不列
+
+
+def test_scan_candidates_sorts_common_ports_first(monkeypatch):
+    monkeypatch.setattr(
+        comfyui,
+        "loopback_listeners",
+        lambda: [("127.0.0.1", 57001), ("127.0.0.1", 8000)],
+    )
+    monkeypatch.setattr(comfyui, "comfyui_version", lambda url: "0.43.0")
+    urls = [item["url"] for item in comfyui.scan_candidates()]
+    assert urls.index("http://127.0.0.1:8000") == 0
+
+
+# ---------- /status 与 /scan ----------
+
+
+def test_status_carries_reason(client, offline_probe):
+    r = client.get("/api/integrations/comfyui/status")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["running"] is False
+    assert body["reason_code"] == "refused"
+    assert "没有服务在监听" in body["reason"]
+
+
+def test_status_draft_probes_without_saving(client, monkeypatch, tmp_path: Path):
+    """设置页要能先验证刚敲进去的地址再保存：探草稿地址绝不能改 config.json。"""
+    probed: list[str] = []
+
+    def fake(url: str, timeout: float | None = None) -> comfyui.ProbeResult:
+        probed.append(url)
+        return comfyui.ProbeResult(url.endswith(":8000"))
+
+    monkeypatch.setattr("app.routes.comfyui.probe_detail", fake)
+    r = client.get("/api/integrations/comfyui/status", params={"draft": "http://127.0.0.1:8000"})
+    assert r.status_code == 200
+    assert r.json()["url"] == "http://127.0.0.1:8000"
+    assert r.json()["running"] is True
+    assert probed == ["http://127.0.0.1:8000"]
+    cfg_path = tmp_path / "config.json"
+    assert not cfg_path.exists() or "8000" not in cfg_path.read_text(encoding="utf-8")
+
+
+def test_scan_lists_candidates_when_configured_url_is_dead(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.routes.comfyui.probe_detail",
+        lambda url, timeout=None: comfyui.ProbeResult(False, "127.0.0.1:8188 上没有服务在监听", "refused"),
+    )
+    monkeypatch.setattr(
+        "app.routes.comfyui.scan_candidates",
+        lambda exclude_url="": [{"url": "http://127.0.0.1:8000", "version": "0.43.0"}],
+    )
+    body = client.get("/api/integrations/comfyui/scan").json()
+    assert body["running"] is False
+    assert body["reason_code"] == "refused"
+    assert body["candidates"] == [{"url": "http://127.0.0.1:8000", "version": "0.43.0"}]
+
+
+def test_scan_skips_scanning_when_already_connected(client, monkeypatch):
+    """没坏就别扫：当前地址连通时 /scan 不该再翻一遍端口。"""
+    monkeypatch.setattr("app.routes.comfyui.probe_detail", lambda url, timeout=None: comfyui.ProbeResult(True))
+    monkeypatch.setattr(
+        "app.routes.comfyui.scan_candidates",
+        lambda exclude_url="": pytest.fail("已经连上了就不该再扫端口"),
+    )
+    body = client.get("/api/integrations/comfyui/scan").json()
+    assert body["running"] is True
+    assert body["candidates"] == []

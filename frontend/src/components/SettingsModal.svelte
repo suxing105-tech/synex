@@ -174,23 +174,80 @@
   });
 
   let comfyuiUrlInput = $state<string>("http://127.0.0.1:8188");
-  $effect(() => { if (open) void refreshComfyui(); });
+  /** 已经写进 config.json 的那条地址。区分「输入框里的草稿」和「真正生效的地址」全靠它。 */
+  let savedComfyuiUrl = $state<string>("http://127.0.0.1:8188");
+  $effect(() => { if (open) untrack(() => void refreshComfyui()); });
   let comfyuiEnabledLocal = $state<boolean>(true);
   let probing = $state<boolean>(false);
-  let comfyuiStatusLocal = $state<{ running: boolean; url: string } | null>(null);
+  let comfyuiStatusLocal = $state<{ running: boolean; url: string; reason: string } | null>(null);
+  let scanning = $state<boolean>(false);
+  let applyingComfyuiUrl = $state<string>("");
+  let comfyuiCandidates = $state<{ url: string; version: string }[]>([]);
+  let comfyuiScanNotice = $state<string>("");
 
+  /**
+   * 探测一次 ComfyUI。输入框和已保存的不一致时，探的是输入框里那一条：
+   * 「改动后要重新探测再保存」只有在这种前提下才成立。以前点一下探测就把
+   * 用户刚敲的地址打回旧值，换机器时永远试不出正确端口。
+   * 草稿地址探出来的结果不回写 store——顶栏和一键同款弹窗说的必须是真正生效的地址。
+   */
   async function refreshComfyui() {
+    const draft = comfyuiUrlInput.trim();
+    const isDraft = draft !== "" && draft !== savedComfyuiUrl;
     probing = true;
     try {
-      const s = await comfyuiApi.status();
-      comfyuiStatusLocal = { running: s.running, url: s.url };
-      comfyuiUrlInput = s.url;
+      const s = await comfyuiApi.status(isDraft ? draft : undefined);
+      comfyuiStatusLocal = { running: s.running, url: s.url, reason: s.reason ?? "" };
       comfyuiEnabledLocal = s.enabled;
-      comfyuiStatus.set(s);
-    } catch (e) {
-      comfyuiStatusLocal = { running: false, url: comfyuiUrlInput };
+      if (!isDraft) {
+        comfyuiUrlInput = s.url;
+        savedComfyuiUrl = s.url;
+        comfyuiStatus.set(s);
+      }
+    } catch {
+      comfyuiStatusLocal = { running: false, url: draft || savedComfyuiUrl, reason: "" };
     } finally {
       probing = false;
+    }
+  }
+
+  /** 扫本机 loopback，把真正在跑的 ComfyUI 列出来：换机器、忘端口、只绑 IPv6 都靠它。 */
+  async function scanComfyui() {
+    scanning = true;
+    comfyuiScanNotice = "";
+    try {
+      const r = await comfyuiApi.scan();
+      comfyuiCandidates = r.candidates ?? [];
+      comfyuiStatusLocal = { running: r.running, url: r.current, reason: r.reason ?? "" };
+      comfyuiScanNotice = comfyuiCandidates.length
+        ? "下面这些是本机真正在跑的 ComfyUI，点「用这个」直接换过去。"
+        : r.running
+          ? "现在这条地址已经连上了，不用换。"
+          : `本机没找到在跑的 ComfyUI（${r.reason || "原因未知"}）。先把 ComfyUI 启动起来再扫一次。`;
+    } catch {
+      comfyuiScanNotice = "扫描没跑成，重启闪寻空间后再试一次。";
+    } finally {
+      scanning = false;
+    }
+  }
+
+  /** 采用扫到的地址：保存 + 当场重探一次，不让用户填完还得再点一遍保存。 */
+  async function useComfyuiCandidate(url: string) {
+    applyingComfyuiUrl = url;
+    try {
+      const s = await comfyuiApi.updateConfig({ url, enabled: comfyuiEnabledLocal });
+      comfyuiUrlInput = s.url;
+      savedComfyuiUrl = s.url;
+      comfyuiStatusLocal = { running: s.running, url: s.url, reason: s.reason ?? "" };
+      comfyuiStatus.set(s);
+      comfyuiCandidates = [];
+      comfyuiScanNotice = s.running
+        ? `已改用 ${s.url}，连上了。`
+        : `已改用 ${s.url}，还是连不上：${s.reason || "原因未知"}`;
+    } catch {
+      comfyuiScanNotice = "换地址没成功，也可以直接在上面的服务地址里手填。";
+    } finally {
+      applyingComfyuiUrl = "";
     }
   }
 
@@ -218,8 +275,12 @@
         url: comfyuiUrlInput,
         enabled: comfyuiEnabledLocal,
       });
-      comfyuiStatusLocal = { running: s.running, url: s.url };
+      comfyuiStatusLocal = { running: s.running, url: s.url, reason: s.reason ?? "" };
+      comfyuiUrlInput = s.url;
+      savedComfyuiUrl = s.url;
       comfyuiStatus.set(s);
+      comfyuiCandidates = [];
+      comfyuiScanNotice = "";
     } catch (e) {
       pushToast("ComfyUI 设置保存失败", { kind: "error" });
     }
@@ -400,12 +461,36 @@
                     <button class="setting-button" disabled={probing} onclick={refreshComfyui}>{probing ? "探测中…" : "重新探测"}</button>
                   {/snippet}
                 </SettingsRow>
-                <SettingsRow title="连接状态" description="连不上也能看图，只是打不开工作流。">
+                <SettingsRow title="连接状态" description="连不上也能看图，只是打不开工作流与一键同款。">
                   {#snippet control()}
                     <span class="status-dot" class:bg-success={comfyuiStatusLocal?.running} class:bg-danger={comfyuiStatusLocal && !comfyuiStatusLocal.running} class:bg-muted={!comfyuiStatusLocal}></span>
                     <span role="status">{comfyuiStatusLocal?.running ? "已连接 ComfyUI" : probing ? "正在探测服务…" : "未连接 ComfyUI"}</span>
                   {/snippet}
                 </SettingsRow>
+                {#if !comfyuiStatusLocal?.running && comfyuiStatusLocal?.reason}
+                  <p class="comfyui-notice" role="status">{comfyuiStatusLocal.reason}。</p>
+                {/if}
+                <SettingsRow title="在本机找 ComfyUI" description="换机器、换了端口、或只记得「它开着」时用这个。只扫本机 127.0.0.1 与 ::1，不碰局域网。">
+                  {#snippet control()}
+                    <button class="setting-button" disabled={scanning} onclick={() => void scanComfyui()}>{scanning ? "扫描中…" : "扫描本机 ComfyUI"}</button>
+                  {/snippet}
+                </SettingsRow>
+                {#if comfyuiCandidates.length}
+                  <ul class="comfyui-found">
+                    {#each comfyuiCandidates as item (item.url)}
+                      <li>
+                        <span class="comfyui-found-url">{item.url}</span>
+                        <span class="comfyui-found-version">ComfyUI {item.version}</span>
+                        <button class="setting-button" aria-label={`改用 ${item.url}`} disabled={applyingComfyuiUrl !== ""} onclick={() => void useComfyuiCandidate(item.url)}>
+                          {applyingComfyuiUrl === item.url ? "切换中…" : "用这个"}
+                        </button>
+                      </li>
+                    {/each}
+                  </ul>
+                {/if}
+                {#if comfyuiScanNotice}
+                  <p class="comfyui-notice" role="status">{comfyuiScanNotice}</p>
+                {/if}
                 <SettingsRow title="工作流集成" description="ComfyUI 运行时，带有工作流的图片或视频会显示打开按钮。">
                   {#snippet control()}
                     <label class="settings-switch"><input type="checkbox" aria-label="启用工作流一键打开" bind:checked={comfyuiEnabledLocal} /><span class="switch-track"></span></label>
@@ -552,6 +637,11 @@
   .about-zoom-figure { display: flex; flex-direction: column; align-items: center; gap: 14px; margin: 0; }
   .about-zoom img { max-width: min(90vw, 440px); max-height: 62%; border-radius: 10px; background: #fafafa; }
   .about-zoom figcaption { font-size: 13px; color: #a1a1aa; }
+  .comfyui-found { display: flex; flex-direction: column; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
+  .comfyui-found li { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px; background: #101013; font-size: 13px; }
+  .comfyui-found-url { flex: 1 1 auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #e4e4e7; }
+  .comfyui-found-version { font-size: 12px; color: #85858f; }
+  .comfyui-notice { margin: 10px 0 0; font-size: 12px; line-height: 1.6; color: #a1a1aa; }
   @media (max-width: 1180px) {
     .settings-shell { grid-template-columns: 228px minmax(0, 1fr); }
   }

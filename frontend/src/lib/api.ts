@@ -3,6 +3,7 @@ import type { MoveResult } from "./move-result";
 import type {
   ArchivedFolder,
   ComfyuiConfigUpdate,
+  ComfyuiScanResult,
   ComfyuiStatus,
   ConfigOut,
   FeedQuery,
@@ -295,8 +296,17 @@ export const statsApi = {
 
 
 export const comfyuiApi = {
-  status(): Promise<ComfyuiStatus> {
-    return http<ComfyuiStatus>("/api/integrations/comfyui/status");
+  /**
+   * 探测 ComfyUI。传 url 就探那一条（设置页里「还没保存的草稿地址」），
+   * 不传就探配置里生效的那一条。
+   */
+  status(url?: string): Promise<ComfyuiStatus> {
+    const draft = url && url.trim() ? `?draft=${encodeURIComponent(url.trim())}` : "";
+    return http<ComfyuiStatus>(`/api/integrations/comfyui/status${draft}`);
+  },
+  /** 扫本机 loopback，列出真正在跑的 ComfyUI。 */
+  scan(): Promise<ComfyuiScanResult> {
+    return http<ComfyuiScanResult>("/api/integrations/comfyui/scan");
   },
   updateConfig(patch: ComfyuiConfigUpdate): Promise<ComfyuiStatus> {
     return http<ComfyuiStatus>("/api/integrations/comfyui/config", {

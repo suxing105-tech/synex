@@ -205,6 +205,24 @@ export interface ComfyuiStatus {
   url: string;
   enabled: boolean;
   checked_at: number;
+  /** 连不上时的人话原因，例如「127.0.0.1:8188 上没有服务在监听」。 */
+  reason?: string;
+  /** 原因码：refused / timeout / http / dns / unreachable / disabled。 */
+  reason_code?: string;
+}
+
+export interface ComfyuiCandidate {
+  url: string;
+  /** /system_stats 报回来的版本号；认出版本失败时是「已认出」。 */
+  version: string;
+}
+
+export interface ComfyuiScanResult {
+  current: string;
+  running: boolean;
+  reason?: string;
+  reason_code?: string;
+  candidates: ComfyuiCandidate[];
 }
 
 export interface ComfyuiConfigUpdate {

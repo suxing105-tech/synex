@@ -1,7 +1,9 @@
-"""ComfyUI 集成路由：状态探测 + open_workflow + config 更新。
+"""ComfyUI 集成路由：状态探测 + 本机扫描 + open_workflow + config 更新。
 
 设计要点：
 - 探测独立于图片，仅需 ComfyUI URL；前端可手动触发重探测。
+- 探测失败必须带原因（``reason`` / ``reason_code``）：换机器后 ComfyUI 换了端口，
+  只说「没连上」用户无从下手。``GET /scan`` 顺带把这台机器上真在跑的 ComfyUI 列出来。
 - open_workflow 需要媒体（图片或视频）存在且携带 workflow；写临时文件后由前端负责
   打开 / 复用 ComfyUI 浏览器标签页（统一窗口名，浏览器自动复用）。
   后端不再调用 ``webbrowser.open``，避免 ``new=2`` 每次都新开标签页。
@@ -16,8 +18,20 @@ from fastapi import APIRouter, HTTPException, Request
 
 from ..config import load_config, save_config
 from ..db import get_pool
-from ..integrations.comfyui import DEFAULT_URL, comfyui_temp_dir, probe, write_workflow_temp
-from ..models import ComfyuiConfigUpdate, ComfyuiStatus, OpenWorkflowResult
+from ..integrations.comfyui import (
+    DEFAULT_URL,
+    comfyui_temp_dir,
+    probe_detail,
+    scan_candidates,
+    write_workflow_temp,
+)
+from ..models import (
+    ComfyuiCandidate,
+    ComfyuiConfigUpdate,
+    ComfyuiScanResult,
+    ComfyuiStatus,
+    OpenWorkflowResult,
+)
 
 router = APIRouter(prefix="/api/integrations/comfyui", tags=["comfyui"])
 log = logging.getLogger("suxing_gallery.comfyui")
@@ -35,13 +49,45 @@ def _current_url_and_enabled() -> tuple[str, bool]:
 
 
 @router.get("/status", response_model=ComfyuiStatus)
-def get_status() -> ComfyuiStatus:
-    """探测本机 ComfyUI 是否在跑（``/system_stats`` 或 ``/`` 任一 200 即视为在跑）。"""
-    url, enabled = _current_url_and_enabled()
+def get_status(draft: str | None = None) -> ComfyuiStatus:
+    """探测本机 ComfyUI 是否在跑（``/system_stats`` 或 ``/`` 任一 200 即视为在跑）。
+
+    没跑的时候一并给出原因：是端口上没人监听、是超时、还是有人应答但不是 ComfyUI。
+
+    ``draft`` 传了就只探那一条、**不写盘**：设置页要能先验证用户刚敲进去的地址再保存，
+    否则「改动后要重新探测」这句提示是假的——点一下探测只会把输入框打回已保存的旧值。
+    """
+    saved_url, enabled = _current_url_and_enabled()
+    url = (draft or "").strip() or saved_url
+    now = time.time()
     if not enabled:
-        return ComfyuiStatus(running=False, url=url, enabled=False, checked_at=time.time())
-    running = probe(url)
-    return ComfyuiStatus(running=running, url=url, enabled=enabled, checked_at=time.time())
+        return ComfyuiStatus(
+            running=False, url=url, enabled=False, checked_at=now,
+            reason="设置里 ComfyUI 集成是关闭状态", reason_code="disabled",
+        )
+    result = probe_detail(url)
+    return ComfyuiStatus(
+        running=result.running, url=url, enabled=enabled, checked_at=now,
+        reason=result.reason, reason_code=result.reason_code,
+    )
+
+
+@router.get("/scan", response_model=ComfyuiScanResult)
+def scan() -> ComfyuiScanResult:
+    """扫本机 loopback，把真在跑的 ComfyUI 列出来，供设置页「用这个」一键采用。
+
+    只读、只碰 127.0.0.1 / ::1，不扫局域网。当前地址已经连通时不返回候选，
+    免得用户在一堆地址里挑——本来就没坏。
+    """
+    cfg = load_config()
+    result = probe_detail(cfg.comfyui_url)
+    if result.running:
+        return ComfyuiScanResult(current=cfg.comfyui_url, running=True)
+    found = [ComfyuiCandidate(**item) for item in scan_candidates(exclude_url=cfg.comfyui_url)]
+    return ComfyuiScanResult(
+        current=cfg.comfyui_url, running=False,
+        reason=result.reason, reason_code=result.reason_code, candidates=found,
+    )
 
 
 # ---------- 配置更新 ----------

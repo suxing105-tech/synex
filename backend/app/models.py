@@ -173,6 +173,29 @@ class ComfyuiStatus(BaseModel):
     url: str
     enabled: bool = True
     checked_at: float = 0.0
+    # 连不上时的人话原因与原因码（refused / timeout / http / dns / unreachable / disabled）。
+    # 只说「没连上」等于把定位工作丢给用户，换机器时只能瞎猜是端口还是代理。
+    reason: str = ""
+    reason_code: str = ""
+
+
+class ComfyuiCandidate(BaseModel):
+    """扫到的一个本机 ComfyUI 服务。``version`` 取自 /system_stats。"""
+
+
+    url: str
+    version: str = ""
+
+
+class ComfyuiScanResult(BaseModel):
+    """「扫本机 ComfyUI」的结果：当前地址的失败原因 + 可用候选。"""
+
+
+    current: str
+    running: bool
+    reason: str = ""
+    reason_code: str = ""
+    candidates: list[ComfyuiCandidate] = []
 
 
 class ComfyuiConfigUpdate(BaseModel):

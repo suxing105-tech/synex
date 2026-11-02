@@ -16,6 +16,7 @@ import pytest
 
 from app.db import get_pool, init_pool
 from app.indexer import Indexer
+from app.integrations.comfyui import ProbeResult
 from app.parser import extract_video_comfyui_metadata, parse_video_metadata
 
 UI_WORKFLOW = {
@@ -352,7 +353,7 @@ def test_open_workflow_route_accepts_video(tmp_path, monkeypatch, samples):
     from app.main import app
 
     _isolate(tmp_path, monkeypatch)
-    monkeypatch.setattr("app.routes.comfyui.probe", lambda url: True)
+    monkeypatch.setattr("app.routes.comfyui.probe_detail", lambda url, timeout=None: ProbeResult(True))
     Indexer()._process_path_sync(samples["tag"])
     video_id = get_pool().main().execute("SELECT id FROM images").fetchone()["id"]
     with TestClient(app) as client:

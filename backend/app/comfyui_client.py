@@ -94,7 +94,15 @@ class ComfyUIClient:
         timeout: float = DEFAULT_TIMEOUT,
     ) -> None:
         self.base_url = (base_url or "").rstrip("/") or "http://127.0.0.1:8188"
-        self._client = httpx.AsyncClient(base_url=self.base_url, timeout=timeout, transport=transport)
+        # trust_env=False：httpx 默认会读 HTTP_PROXY / ALL_PROXY。ComfyUI 是本机服务，
+        # 浏览器会自动跳过 loopback，httpx 不会——机器上挂着代理工具时，
+        # 「ComfyUI 明明在跑」会被判成「连不上」，而且只在 Python 这一侧发生。
+        self._client = httpx.AsyncClient(
+            base_url=self.base_url,
+            timeout=timeout,
+            transport=transport,
+            trust_env=False,
+        )
 
     async def aclose(self) -> None:
         await self._client.aclose()

@@ -300,3 +300,73 @@ def test_dynamic_model_list_failure_tells_how_to_proceed(client, monkeypatch):
 
 def test_custom_provider_has_no_model_list(client):
     assert client.get("/api/model-providers/custom/models").status_code == 422
+
+
+# ---------- 清除 Key：即时生效，而且从 Key 真正的家里拿 ----------
+
+
+def shared_flags(client):
+    item = next(p for p in client.get("/api/model-providers").json() if p["id"] == "runninghub")
+    return item["shared_has_key"], item["shared_has_workflow_key"]
+
+
+def test_clear_shared_key_endpoint_kills_both_uses(client):
+    """「清除」这一个动作把反推与一键同款同时停用：它删的是同一把 Key。"""
+    client.post("/api/model-configs", json=runninghub_draft(api_key="RH-CLEAR-1"))
+    assert shared_flags(client) == (True, False)
+    out = client.delete("/api/model-providers/runninghub/key")
+    assert out.status_code == 200
+    assert out.json() == {"shared_has_key": False, "shared_has_workflow_key": False}
+    assert shared_flags(client) == (False, False)
+    assert "RH-CLEAR-1" not in client.get("/api/model-providers").text
+
+
+def test_clear_workflow_key_leaves_the_model_key_alone(client):
+    """工作流那把单独清，模型那把一根毛都不动。"""
+    client.post("/api/model-configs", json=runninghub_draft(api_key="RH-KEEP-1", workflow_api_key="RH-DROP-1"))
+    assert shared_flags(client) == (True, True)
+    client.delete("/api/model-providers/runninghub/key", params={"kind": "workflow"})
+    assert shared_flags(client) == (True, False)
+    assert "RH-KEEP-1" not in client.get("/api/model-providers").text
+
+
+def test_clear_key_invents_no_account(client):
+    """一个账号都没有时点「清除」，不许顺手凭空建出一条。"""
+    assert accounts_rows() == []
+    assert client.delete("/api/model-providers/runninghub/key").status_code == 200
+    assert accounts_rows() == []
+
+
+def test_clear_key_on_a_local_vendor_points_back_at_the_config(client):
+    """别家的 Key 存在模型配置里：往服务商那条删，当场说清该去哪儿。"""
+    resp = client.delete("/api/model-providers/qwen/key")
+    assert resp.status_code == 400
+    assert "模型配置" in resp.json()["detail"]
+
+
+def test_clear_key_rejects_a_kind_that_vendor_has_not(client):
+    client.post("/api/model-configs", json=runninghub_draft(api_key="RH-KIND"))
+    assert client.delete("/api/model-providers/runninghub/key", params={"kind": "nonsense"}).status_code == 422
+
+
+def test_clear_config_key_touches_only_the_key(client):
+    """普通配置：清完 Key，名字/模型/地址一个字没变，也不用先把表单填全。"""
+    created = client.post("/api/model-configs", json={
+        "name": "本机视觉", "base_url": "https://example.com/v1", "model": "vl", "api_key": "sk-clear-1"}).json()
+    assert client.delete("/api/model-configs/%s/key" % created["id"]).status_code == 200
+    row = next(r for r in client.get("/api/model-configs").json() if r["id"] == created["id"])
+    assert row["has_api_key"] is False
+    assert row["name"] == "本机视觉" and row["model"] == "vl" and row["timeout"] == 120
+    assert "sk-clear-1" not in client.get("/api/model-configs").text
+
+
+def test_clear_config_key_refuses_the_shared_one(client):
+    """共用 Key 那家的 Key 不在这条配置上：从这儿清会清错地方，顶回去。"""
+    created = client.post("/api/model-configs", json=runninghub_draft(api_key="RH-SHARED-9")).json()
+    resp = client.delete("/api/model-configs/%s/key" % created["id"])
+    assert resp.status_code == 400
+    assert shared_flags(client) == (True, False)
+
+
+def test_clear_config_key_missing_config_is_404(client):
+    assert client.delete("/api/model-configs/999999/key").status_code == 404

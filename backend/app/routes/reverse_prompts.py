@@ -129,6 +129,22 @@ def update_config(config_id: int, payload: ModelPatch):
     return service.save_config(config_values(payload), config_id)
 
 
+@router.delete("/model-configs/{config_id}/key")
+def clear_config_key(config_id: int):
+    """即时拿掉这条配置自带的 Key：不碰其他字段，也不用先把表单填全。"""
+    return service.clear_config_key(config_id)
+
+
+@router.delete("/model-providers/{provider_id}/key")
+def clear_provider_key(provider_id: str, kind: str = Query("model", pattern="^(model|workflow)$")):
+    """拿掉共用那把 Key（或工作流那把），从它真正的家：云端账号那一行。
+
+    这一条存在的理由：「清除」不能等「保存模型」。以前那颗复选框要人先勾再保存，
+    可这一格永远是空的（Key 存在库里，界面从来不读回来），留空只能表示「不换」。
+    """
+    return service.clear_shared_key(provider_id, kind)
+
+
 @router.delete("/model-configs/{config_id}")
 def delete_config(config_id: int):
     service.get_config(config_id)

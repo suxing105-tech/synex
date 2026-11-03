@@ -190,6 +190,46 @@ def save_config(values: dict, config_id: int | None = None):
     return public_config(get_config(config_id))
 
 
+def clear_config_key(config_id: int) -> dict:
+    """只拿掉一条配置自带的 Key，其余字段一个字不动。
+
+    为什么单开一条路：「清除」是即时的，不该要求此刻表单里名字和模型都填全。
+    挤到保存那条路上，先撞上的是一句 422「请填写配置名称」，想清 Key 的人反而被挡在门外。
+    共用 Key 那几家归不着这里：它们的 Key 在云端那一行，从这里清会清错地方。
+    """
+    row = get_config(config_id)
+    if shares_cloud_key(row.get("provider")):
+        raise HTTPException(400, "这一家的 Key 不归这条配置管，请在服务商那一格清除")
+    with db.transaction() as conn:
+        conn.execute("UPDATE model_configs SET credential=NULL WHERE id=?", (config_id,))
+    _session_keys.pop(credential_scope(config_id), None)
+    return public_config(get_config(config_id))
+
+
+def clear_shared_key(provider_id: str, kind: str = "model") -> dict:
+    """把共用那把 Key（或工作流那把）从它真正的家里拿掉：云端账号那一行。
+
+    不带 config_id 也能清，是刻意的——这把 Key 的家本来不在模型配置里。
+    先确认那一行真在才动：一个都没有时「清除」不许顺手凭空建出一条账号。
+    回去的是两个布尔，界面据此立刻把「已配置 N/M」改对；永远不是 Key 本身。
+    """
+    preset = providers.get_preset(provider_id)
+    if preset is None:
+        raise HTTPException(404, "没有这家服务商")
+    if preset.get("credential_scope") != "cloud":
+        raise HTTPException(400, "这家的 Key 存在模型配置里，请用那条配置里的「清除」")
+    if kind == "workflow" and not preset.get("workflow_key"):
+        raise HTTPException(422, "这一家服务商没有「工作流 API Key」这一说")
+    from .cloud import accounts
+
+    if accounts.shared_row() is not None:
+        if kind == "workflow":
+            accounts.put_shared_workflow_key("")
+        else:
+            accounts.put_shared_key("")
+    return {"shared_has_key": bool(cloud_key()), "shared_has_workflow_key": bool(cloud_workflow_key())}
+
+
 def normalize_url(value: str) -> str:
     try:
         parts = urlsplit(value.strip())

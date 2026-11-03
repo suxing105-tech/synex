@@ -48,6 +48,12 @@ export const reverseApi = {
     http<ProviderModelList>(`/api/model-providers/${encodeURIComponent(provider)}/models`),
   saveModel: (draft: ModelDraft, id?: number) => http<ModelConfig>(`/api/model-configs${id ? `/${id}` : ""}`, json(id ? "PATCH" : "POST", draft)),
   deleteModel: (id: number) => http(`/api/model-configs/${id}`, { method: "DELETE" }),
+  /** 即时拿掉一条配置自带的 Key：别的字段一个字不动，也不用先把表单填全。 */
+  clearModelKey: (id: number) => http<ModelConfig>(`/api/model-configs/${id}/key`, { method: "DELETE" }),
+  /** 即时拿掉共用那把 Key（或工作流那把），从它真正的家——云端那一行账号。回的只有布尔。 */
+  clearProviderKey: (provider: string, kind: "model" | "workflow" = "model") =>
+    http<{ shared_has_key: boolean; shared_has_workflow_key: boolean }>(
+      `/api/model-providers/${encodeURIComponent(provider)}/key?kind=${kind}`, { method: "DELETE" }),
   test: (draft: ModelDraft) => http<{ message: string; text: string }>("/api/model-configs/test", json("POST", draft)),
   settings: () => http<ReverseSettings>("/api/reverse-prompt-settings"),
   saveSettings: (value: ReverseSettings) => http<ReverseSettings>("/api/reverse-prompt-settings", json("PUT", value)),

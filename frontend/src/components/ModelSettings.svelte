@@ -10,7 +10,6 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
   let draft = $state<ModelDraft>(blank());
   let editingId = $state<number | undefined>();
   let keyInput = $state("");
-  let clearKey = $state(false);
   let hasKey = $state(false);
   let busy = $state(false);
   let error = $state("");
@@ -97,7 +96,6 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
     });
   }
   let workflowKeyInput = $state("");
-  let clearWorkflowKey = $state(false);
   const configsFor = (id: string) => $modelConfigs.filter(c => c.provider === id);
   const presetReady = (item: ProviderPreset) => item.credential_scope === "cloud"
     ? !!(item.shared_has_key || item.shared_has_workflow_key || configsFor(item.id).some(c => c.has_api_key))
@@ -105,7 +103,7 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
   const avatar = (name: string) => (name.trim().slice(0, 2) || "?").toUpperCase();
   function selectProvider(id: string) {
     const existing = configsFor(id)[0];
-    workflowKeyInput = ""; clearWorkflowKey = false;
+    workflowKeyInput = "";
     if (existing) {
       choose(existing);
       if (providers.find(p => p.id === id)?.models_dynamic) void fetchModels();
@@ -226,13 +224,13 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
       draft.model = ""; draft.base_url = ""; draft.name = ""; draft.timeout = 120;
       modelList = []; modelListNote = ""; modelListError = ""; modelOpen = false;
     }
-    keyInput = ""; clearKey = false; hasKey = false;
+    keyInput = ""; hasKey = false;
   }
   function choose(config?: ModelConfig) {
     editingId = config?.id;
     draft = config ? { name: config.name, base_url: config.base_url, model: config.model, timeout: config.timeout, provider: config.provider ?? CUSTOM } : blank();
-    keyInput = ""; clearKey = false; hasKey = !!config?.has_api_key;
-    workflowKeyInput = ""; clearWorkflowKey = false;
+    keyInput = ""; hasKey = !!config?.has_api_key;
+    workflowKeyInput = "";
     error = ""; notice = ""; testingText = ""; confirmDelete = false;
     modelList = []; modelListNote = ""; modelListError = ""; modelOpen = false;
   }
@@ -240,10 +238,39 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
     return {
       ...draft,
       provider: draft.provider ?? CUSTOM,
-      ...(clearKey ? { api_key: "" } : keyInput ? { api_key: keyInput } : {}),
-      ...(clearWorkflowKey ? { workflow_api_key: "" }
-        : workflowKeyInput.trim() ? { workflow_api_key: workflowKeyInput.trim() } : {}),
+      // 留空＝这把不换。清除不走这里，走 clearKeyNow() 那两条即时接口：
+      // 这一格永远是空的（Key 存在库里，界面从不读回来），把留空当删除，改一次模型名就会把 Key 清掉。
+      ...(keyInput ? { api_key: keyInput } : {}),
+      ...(workflowKeyInput.trim() ? { workflow_api_key: workflowKeyInput.trim() } : {}),
     };
+  }
+  /**
+   * 「清除」是即时的，不挂在「保存模型」上。三条理由：
+   * - 这一格永远是空的（Key 存在库里，界面从不读回来），「把框清空」根本不是一个动作；
+   *   真把留空当成删除，改一次模型名就会把 Key 清掉。
+   * - 复选框那一行只在删除这一刻有用，其余时间白占一行，而且还得再点一次「保存」才真删。
+   * - 清完角标立刻从「已配置 N/M」掉下去，所见即所得。
+   * 走哪条接口看这把 Key 的家：共用那把在云端那一行账号，其余在配置自己身上。
+   */
+  async function clearKeyNow(kind: "model" | "workflow") {
+    const shared = sharedKey, provider = preset, configId = editingId;
+    await run(async () => {
+      if (shared) {
+        if (!provider) return;
+        await reverseApi.clearProviderKey(provider.id, kind);
+      } else {
+        if (!configId) return;
+        await reverseApi.clearModelKey(configId);
+      }
+      if (kind === "model") hasKey = false;
+      await refreshReverseConfig();
+      await refreshProviderPresets();
+      notice = kind === "workflow"
+        ? "工作流那把 Key 已清除，模型那一把没动。"
+        : shared
+          ? "这把 Key 已清除：图片反推与一键同款同时停用。想恢复就粘一把新的再保存。"
+          : "这条配置的 Key 已清除。";
+    });
   }
   async function saveModel() {
     await run(async () => {
@@ -304,6 +331,7 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
               <li>模型 API 密钥（企业级-共享）：图片反推与出图、出片、出声音都走它，花的是钱包余额。</li>
               <li>工作流 API 密钥（消费级-会员）：跑云端工作流用它，花的是账户积分（RH币）。这条链路还没接上，先存住就行。</li>
               <li>两把都在控制台各自生成，分别粘在下面对应的格子里；保存后不回显，改一把不动另一把。</li>
+              <li>格子里留空＝这把不换。要删掉哪一把，点它右边那颗「清除」，当场生效，不用再点保存。</li>
             </ul>
           </details>
         {/if}
@@ -400,10 +428,16 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
           <div class="api-key-section">
             <p class="api-key-title">工作流 API 密钥（消费级-会员）</p>
             <p class="api-key-desc">调用云端工作流 / AI 应用，扣 RH币（账户积分）。</p>
-            <input aria-label="工作流 API Key" type="password" autocomplete="new-password" bind:value={workflowKeyInput} disabled={clearWorkflowKey} />
-            {#if workflowReady}
-              <label class="flex gap-2"><input type="checkbox" aria-label="清除工作流密钥" bind:checked={clearWorkflowKey} />清掉这把（只影响云端工作流，模型那把不动）</label>
-            {:else}
+            <div class="api-key-row">
+              <input class="secret" type="text" autocomplete="off" spellcheck="false"
+                     aria-label="工作流 API Key" bind:value={workflowKeyInput}
+                     placeholder={workflowReady ? "已存过一把：留空就是不换" : "粘贴工作流 API 密钥"} />
+              {#if workflowReady}
+                <button class="setting-button setting-button-ghost api-key-clear"
+                        aria-label="清除工作流这把 Key" onclick={() => void clearKeyNow("workflow")}>清除</button>
+              {/if}
+            </div>
+            {#if !workflowReady}
               <p class="settings-hint">这把还没有也不要紧：模型那一把照常用。工作流这条链路还没接上，先存住，接上就直接能用。</p>
             {/if}
           </div>
@@ -416,12 +450,17 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
             {:else}
               本地无认证服务可以留空。Windows 按当前用户加密保存密钥；其他系统仅在当前运行期间保存。
             {/if}
-            {keyReady ? "已配置，这一格留空就是保留原来那把。" : ""}
+            {keyReady ? "已配置：这一格留空就是不换，要删掉点右边的「清除」。" : ""}
           </p>
-          <input aria-label="API Key" type="password" autocomplete="new-password" bind:this={keyInputEl} bind:value={keyInput} disabled={clearKey} />
-          {#if keyReady}
-            <label class="flex gap-2"><input type="checkbox" aria-label="清除已保存密钥" bind:checked={clearKey} />{sharedKey ? "清掉这把 Key（反推与一键同款同时失效）" : "清除已保存密钥"}</label>
-          {/if}
+          <div class="api-key-row">
+            <input class="secret" type="text" autocomplete="off" spellcheck="false"
+                   aria-label="API Key" bind:this={keyInputEl} bind:value={keyInput}
+                   placeholder={keyReady ? "已存过一把：留空就是不换" : "粘贴 API Key"} />
+            {#if keyReady}
+              <button class="setting-button setting-button-ghost api-key-clear"
+                      aria-label="清除这把 Key" onclick={() => void clearKeyNow("model")}>清除</button>
+            {/if}
+          </div>
         </div>
         {#if isPreset}
           <details class="space-y-2">
@@ -600,4 +639,11 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
   .api-model-option { display: block; width: 100%; padding: 7px 9px; text-align: left; background: none; border: 0; border-radius: 5px; color: #d4d4d8; font-size: 12.5px; cursor: pointer; }
   .api-model-option.api-model-on { color: #f87171; background: #1d1416; }
   .api-model-empty { margin: 0; padding: 8px 9px; font-size: 12px; line-height: 1.6; color: #8b8b94; }
+  /* Key 那一格不能是 type=password：Chrome 把它当登录密码，先问你要不要存，下次再自动填一串点进来，
+     看着就像「这格里存了一把看不见的 Key」（苏醒就是被这串点骗过一回，键盘删干净以为把 Key 清了）。
+     打点交给 CSS，密码管理器就不认它；要删有「清除」那颗，不靠「把框清空」这个假动作。 */
+  .api-key-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  .api-key-row input { flex: 1; min-width: 0; margin-top: 0; }
+  .api-key-row .api-key-clear { flex: none; }
+  .secret { -webkit-text-security: disc; }
 </style>

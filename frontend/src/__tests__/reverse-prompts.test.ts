@@ -196,16 +196,38 @@ describe("reverse prompts", () => {
     await waitFor(() => expect(list).toHaveBeenCalled());
   });
 
-  it("clears keys explicitly and previews endpoint without duplication", async () => {
-    const save = vi.spyOn(reverseApi, "saveModel").mockResolvedValue({ ...model, has_api_key: false });
+  it("非共用厂商点「清除」：即时删这条配置自己的 Key，不用先保存", async () => {
+    const clear = vi.spyOn(reverseApi, "clearModelKey").mockResolvedValue({ ...model, has_api_key: false });
+    const save = vi.spyOn(reverseApi, "saveModel").mockResolvedValue(model);
     const panel = render(ModelSettings);
     await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
     await fireEvent.click(panel.getByText("测试视觉"));
     await fireEvent.input(panel.getByLabelText("Base URL"), { target: { value: "https://example.com/v1/chat/completions/" } });
     expect(panel.getByText("请求地址：https://example.com/v1/chat/completions")).toBeTruthy();
-    await fireEvent.click(panel.getByLabelText("清除已保存密钥"));
+    await fireEvent.click(panel.getByRole("button", { name: "清除这把 Key" }));
+    await waitFor(() => expect(clear).toHaveBeenCalledWith(1));
+    expect(save).not.toHaveBeenCalled();
+    expect(await panel.findByText(/这条配置的 Key 已清除/)).toBeTruthy();
+  });
+  it("Key 那一格留空点保存＝不换：请求体里连 api_key 这个键都不该出现", async () => {
+    // 守的是最容易伤人的一种误伤：留空被当成删除，那改一次模型名就会把 Key 清掉
+    const save = vi.spyOn(reverseApi, "saveModel").mockResolvedValue(model);
+    const panel = render(ModelSettings);
+    await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
+    await fireEvent.click(panel.getByText("测试视觉"));
     await fireEvent.click(panel.getByText("保存模型"));
-    await waitFor(() => expect(save.mock.calls[0][0].api_key).toBe(""));
+    await waitFor(() => expect(save).toHaveBeenCalled());
+    expect("api_key" in save.mock.calls[0][0]).toBe(false);
+    expect("workflow_api_key" in save.mock.calls[0][0]).toBe(false);
+  });
+  it("Key 那一格不是 password：Chrome 不能把它当登录密码，自动填一串点进来装成已配置", async () => {
+    // 苏醒真机就是这么被骗的：框里那串点是浏览器填的，键盘删干净以后库里那把一根毛都没动
+    const panel = render(ModelSettings);
+    await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
+    const box = panel.getByLabelText("API Key") as HTMLInputElement;
+    expect(box.type).toBe("text");
+    expect(box.getAttribute("autocomplete")).toBe("off");
+    expect(panel.container.textContent).not.toContain("清掉这把");
   });
   it("preset autofills model and saves with only an API Key", async () => {
     const save = vi.spyOn(reverseApi, "saveModel").mockResolvedValue({ ...model, provider: "qwen", name: "通义千问 Qwen · Qwen2.5-VL-72B", base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen2.5-vl-72b-instruct", has_api_key: true });
@@ -261,24 +283,26 @@ describe("reverse prompts", () => {
     await waitFor(() => expect((panel.getByLabelText("API Key") as HTMLInputElement).value).toBe(""));
     expect(panel.container.textContent).not.toContain("RH-SECRET-VALUE");
   });
-  it("勾「清掉这把 Key」时把空串交出去，并说清两边一起失效", async () => {
+  it("RunningHub 点「清除」：即时删掉共用那把，并说清两边一起失效", async () => {
     vi.mocked(reverseApi.providers).mockResolvedValue([
       preset, { ...cloudPreset, shared_has_key: true },
       // 已存在的共用配置：has_api_key 走的是云端那条账号
     ]);
     modelConfigs.set([{ ...model, provider: "runninghub", name: "RunningHub", has_api_key: true }]);
     vi.mocked(reverseApi.models).mockResolvedValue([{ ...model, provider: "runninghub", name: "RunningHub", has_api_key: true }]);
-    const save = vi.spyOn(reverseApi, "saveModel").mockResolvedValue({ ...model, provider: "runninghub", has_api_key: false });
+    const clear = vi.spyOn(reverseApi, "clearProviderKey")
+      .mockResolvedValue({ shared_has_key: false, shared_has_workflow_key: false });
+    const save = vi.spyOn(reverseApi, "saveModel");
     const panel = render(ModelSettings);
     // 服务商下拉里也有这一个词，所以要按角色点那颗配置按钮；等偏好读回来，在那之前整张卡是禁用的
     await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
     await waitFor(() => expect((panel.getByRole("button", { name: "RunningHub" }) as HTMLButtonElement).disabled).toBe(false));
     await fireEvent.click(panel.getByRole("button", { name: "RunningHub" }));
-    const clear = panel.getByLabelText("清除已保存密钥") as HTMLInputElement;
-    expect(clear.parentElement?.textContent).toContain("反推与一键同款同时失效");
-    await fireEvent.click(clear);
-    await fireEvent.click(panel.getByText("保存模型"));
-    await waitFor(() => expect(save.mock.calls[0][0].api_key).toBe(""));
+    await fireEvent.click(panel.getByRole("button", { name: "清除这把 Key" }));
+    // 删的是云端那一行账号，不是这条模型配置：一把 Key 走天下，只能有一个家
+    await waitFor(() => expect(clear).toHaveBeenCalledWith("runninghub", "model"));
+    expect(save).not.toHaveBeenCalled();
+    expect(await panel.findByText(/图片反推与一键同款同时停用/)).toBeTruthy();
   });
   it("从一键同款那一屏点「设置 RunningHub 的 API Key」：直接落在 RunningHub 那一格", async () => {
     // 设置页是按下这颗按钮之后才挂载的，所以来意要留在模块里，由挂载那一次取走
@@ -361,6 +385,23 @@ describe("reverse prompts", () => {
     // 控制台外链只在这家确认过地址时才画
     const link = panel.container.querySelector("a.api-console") as HTMLAnchorElement;
     expect(link?.href).toBe("https://www.runninghub.cn/");
+  });
+  it("清除工作流那把：只碰工作流，并说清模型那一把没动", async () => {
+    vi.mocked(reverseApi.providers).mockResolvedValue([
+      preset, { ...cloudPreset, workflow_key: true, shared_has_workflow_key: true },
+    ]);
+    const clear = vi.spyOn(reverseApi, "clearProviderKey")
+      .mockResolvedValue({ shared_has_key: false, shared_has_workflow_key: false });
+    const panel = render(ModelSettings);
+    await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
+    await pickProvider(panel, "runninghub");
+    // 撤了复选框以后，「怎么删」这件事得在页面上说得出人话
+    expect(panel.container.querySelector(".api-help")?.textContent).toContain("点它右边那颗「清除」");
+    await fireEvent.click(panel.getByRole("button", { name: "清除工作流这把 Key" }));
+    await waitFor(() => expect(clear).toHaveBeenCalledWith("runninghub", "workflow"));
+    expect(await panel.findByText(/模型那一把没动/)).toBeTruthy();
+    // 没存过的那一把不许长出「清除」：没东西可删
+    expect(panel.queryByRole("button", { name: "清除这把 Key" })).toBeNull();
   });
   it("版式复刻：标题行报「已配置 1/2」，右边是「测试连接」与「获取 API Key」", async () => {
     vi.mocked(reverseApi.providers).mockResolvedValue([

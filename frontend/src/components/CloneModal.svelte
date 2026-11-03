@@ -200,7 +200,7 @@
       const bits = [row.label, WF_OUTPUT_WORDS[row.kind], "云端收费模型 · 出一次扣 RH币"];
       if (item.cloud?.verified === false) bits.push("端点还没实测过，第一次先拿最便宜的试");
       if (cloudReason) bits.push(`现在点不动：${cloudReason}`);
-      bits.push("行末的 X 只是把它从清单里去掉，设置 → 模型与反推里能恢复回来");
+      bits.push("行末的 X 只是把它从清单里去掉，设置 → 模型API配置里能恢复回来");
       return bits.join(" · ");
     }
     return `${row.label} · ${WF_OUTPUT_WORDS[row.kind]} · ${item.node_count} 个节点 · ${item.control_count} 个参数`;
@@ -1469,7 +1469,7 @@
                         </div>
                       {/each}
                       {#if wfTab === "cloud" && !popRows.length}
-                        <p class="cm-pop-empty">云端这一屏还空着：去设置 → 模型与反推填 RunningHub 的 API Key。</p>
+                        <p class="cm-pop-empty">云端这一屏还空着：去设置 → 模型API配置填 RunningHub 的 API Key。</p>
                       {/if}
                       <div class="cm-pop-sep"></div>
                       {#if wfTab === "local"}

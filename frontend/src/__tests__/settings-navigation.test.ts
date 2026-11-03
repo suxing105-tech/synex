@@ -15,7 +15,7 @@ vi.mock('../lib/api', () => ({
 // 目录点击 = 把该分组的标题滚到滚动区顶部（-28 的余量），所以期望值直接由位置表算出来。
 const positions: Record<string, number> = {
   'settings-general': 36, 'settings-archived': 636, 'settings-shortcuts': 1036,
-  'settings-models': 1636, 'settings-comfyui': 2236, 'settings-clone': 2536,
+  'settings-model-api': 1636, 'settings-reverse': 1936, 'settings-comfyui': 2236, 'settings-clone': 2536,
   'settings-media': 2836,
   'settings-update': 3236, 'settings-about': 3636,
 };
@@ -28,7 +28,7 @@ beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'scrollTo').mockImplementation(function(this: HTMLElement, options: any) { this.scrollTop = options.top; });
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
-it('目录跳转保留监听路径和快捷键草稿，且九个分组同时存在', async () => {
+it('目录跳转保留监听路径和快捷键草稿，且十个分组同时存在', async () => {
   const screen = render(SettingsModal, { open: true, tab: '通用' });
   const input = await screen.findByLabelText('新增监听目录');
   await fireEvent.input(input, { target: { value: 'D:/未保存素材' } });
@@ -42,15 +42,15 @@ it('目录跳转保留监听路径和快捷键草稿，且九个分组同时存�
   await fireEvent.click(screen.getByRole('button', { name: '通用' }));
   expect((input as HTMLInputElement).value).toBe('D:/未保存素材');
   expect(recording.textContent).toContain('J');
-  expect(screen.container.querySelectorAll('.settings-section')).toHaveLength(9);
+  expect(screen.container.querySelectorAll('.settings-section')).toHaveLength(10);
   await fireEvent.click(screen.getByRole('button', { name: '添加目录' }));
   await fireEvent.click(screen.getByRole('button', { name: '保存通用设置' }));
   expect(settingsApi.update).toHaveBeenCalledWith({ watch_dirs: ['C:/素材', 'D:/未保存素材'], live_enabled: true });
 });
 it('滚动同步目录位置，点目录项仍能跳回通用；目录底部不再挂提示与回到顶部', async () => {
-  const screen = render(SettingsModal, { open: true, tab: '模型与反推' });
+  const screen = render(SettingsModal, { open: true, tab: '模型API配置' });
   const scroller = screen.container.querySelector('.settings-content')!;
-  await waitFor(() => expect(scroller.scrollTop).toBe(top('settings-models')));
+  await waitFor(() => expect(scroller.scrollTop).toBe(top('settings-model-api')));
   scroller.scrollTop = 620;
   await fireEvent.scroll(scroller);
   expect(screen.getByRole('button', { name: '已归档目录' }).getAttribute('aria-current')).toBe('location');
@@ -74,12 +74,12 @@ it('目录搜索只留下命中的分组，正文跟着收窄，清空后恢复�
   expect(await screen.findByRole('status')).toBeTruthy();
   expect(screen.container.querySelectorAll('.settings-section')).toHaveLength(0);
   await fireEvent.click(screen.getByRole('button', { name: '清除搜索' }));
-  expect(screen.container.querySelectorAll('.settings-nav-item')).toHaveLength(9);
-  expect(screen.container.querySelectorAll('.settings-section')).toHaveLength(9);
+  expect(screen.container.querySelectorAll('.settings-nav-item')).toHaveLength(10);
+  expect(screen.container.querySelectorAll('.settings-section')).toHaveLength(10);
 });
 
 it("指路的话不许指向已经不存在的那一页", () => {
-  // 「云端生成」曾经是一整页，现在缩成「模型与反推」里的一张卡。
+  // 「云端生成」曾经是一整页，现在缩成「模型API配置」里的一张卡。
   // 页名从目录里撤掉之后，任何还写着旧页名的提示都会把人支去一页不存在的东西，
   // 而这种话散在前端与后端六处，靠眼睛扫是扫不干净的。
   // 仓库里 CRLF 与 LF 混着放，不先把 EOL 统一掉，\n 锚点会整段匹配不上（踩过）
@@ -88,7 +88,7 @@ it("指路的话不许指向已经不存在的那一页", () => {
   const block = /const navGroups[\s\S]*?^\s*\];/m.exec(modal)?.[0] ?? '';
   const pages = [...block.matchAll(/label:\s*"([^"]+)"/g)].map((m) => m[1]);
   expect(block).not.toBe(''); // 上面的解析先钉住，别让它悄悄退化成空匹配
-  expect(pages).toContain('模型与反推');
+  expect(pages).toEqual(expect.arrayContaining(['模型API配置', '反推指令']));
   expect(pages).not.toContain('云端生成');
   expect(modal).not.toContain('settings-cloud');
   const files = [
@@ -112,7 +112,7 @@ it("云端那张卡撤干净了：设置页不许再长出第二个云端入口"
   // 界面没有开关的闸门等于死路，所以这个词连同字段名一起钉在这里，别让下一次偷偷加回来。
   const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8').replace(/\r\n/g, '\n');
   const files = [
-    '../components/SettingsModal.svelte', '../components/ModelSettings.svelte',
+    '../components/SettingsModal.svelte', '../components/ModelApiSettings.svelte', '../components/ReversePromptSettings.svelte',
     '../components/CloneModal.svelte', '../lib/clone.ts',
     '../../../backend/app/cloud/engine.py', '../../../backend/app/routes/clone.py',
   ];

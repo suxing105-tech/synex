@@ -1361,14 +1361,14 @@ export interface CloneSources {
 export const CLONE_SETTINGS_TAB = "一键同款";
 /**
  * 云端 API Key 所在那一组的名字。它不再是独立一页（第一版是「云端生成」一页三节），
- * 走这条路只要一把 Key，就摆进「模型与反推」——弹窗里「设置 RunningHub 的 API Key」跳的是这儿。
+ * 走这条路只要一把 Key，就摆进「模型API配置」——弹窗里「设置 RunningHub 的 API Key」跳的是这儿。
  */
-export const CLOUD_SETTINGS_TAB = "模型与反推";
+export const CLOUD_SETTINGS_TAB = "模型API配置";
 
 /**
  * 「一键同款」API 那屏的「设置 RunningHub 的 API Key」按下去时先记一笔。
  * 设置页这时才刚要挂载，用 window 事件会放早了（听的人还没到场），
- * 所以由 ModelSettings 在读回配置那一次取走，直接把光标停在 Key 那一格。
+ * 所以由 ModelApiSettings 在读回配置那一次取走，直接把光标停在 Key 那一格。
  */
 let cloudKeyEditPending = false;
 export function requestCloudKeyEdit(): void { cloudKeyEditPending = true; }

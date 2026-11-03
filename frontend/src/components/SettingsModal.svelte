@@ -6,7 +6,8 @@
   import type { ArchivedFolder, ConfigOut } from "../lib/types";
   import { refreshFeed, refreshFolders, refreshStats } from "../lib/stores";
   import ShortcutSettings from "./ShortcutSettings.svelte";
-  import ModelSettings from "./ModelSettings.svelte";
+  import ModelApiSettings from "./ModelApiSettings.svelte";
+  import ReversePromptSettings from "./ReversePromptSettings.svelte";
   import CloneTemplates from "./CloneTemplates.svelte";
   import UpdatePanel from "./UpdatePanel.svelte";
   import SettingsRow from "./SettingsRow.svelte";
@@ -33,7 +34,8 @@
       { id: "shortcuts", label: "快捷键", keywords: "按键 键盘 组合键 沉浸 全屏 搜索 侧栏 灯箱 对比 所有素材" },
     ] },
     { label: "AI 与集成", items: [
-      { id: "models", label: "模型与反推", keywords: "api key 服务商 视觉模型 反推 指令 seedance h3 视频提示词 超时 密钥 默认模型 云端 runninghub minimax 收费 扣费 花费 余额 出图 出片 配音 图片api 视频api 音频api 取回" },
+      { id: "model-api", label: "模型API配置", keywords: "api key 服务商 视觉模型 密钥 清除 key 识别模型 超时 云端 runninghub minimax 收费 扣费 花费 余额 出图 出片 配音 图片api 视频api 音频api 取回 一把走天下 测试连接 模型服务api" },
+      { id: "reverse", label: "反推指令", keywords: "反推 指令 默认模型 图片反推 视频反推 seedance h3 视频提示词 帧数 单元时长 分镜 恢复默认 中英文" },
       { id: "comfyui", label: "ComfyUI", keywords: "工作流 服务地址 端口 连接 探测 节点" },
       { id: "clone", label: "一键同款", keywords: "工作流 模板 提示词 参考图 生成 一键同款 同款 ComfyUI 出图" },
     ] },
@@ -49,7 +51,8 @@
     general: ["M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0", "M16 4v4M10 10v4M18 16v4"],
     archived: ["M3 7h18v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7Z", "M2 4h20v3H2Z", "M10 11h4"],
     shortcuts: ["M3 6h18v12H3z", "M7 10h.01M11 10h.01M15 10h.01M8 14h8"],
-    models: ["M12 3l1.7 4.3L18 9l-4.3 1.7L12 15l-1.7-4.3L6 9l4.3-1.7Z", "M18 15l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8Z"],
+    "model-api": ["M12 3l1.7 4.3L18 9l-4.3 1.7L12 15l-1.7-4.3L6 9l4.3-1.7Z", "M18 15l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8Z"],
+    reverse: ["M4 5h16v10H9l-5 5V5Z", "M8 9h8M8 12h5"],
     comfyui: ["M9 2v6M15 2v6", "M6 8h12v3a6 6 0 0 1-12 0V8Z", "M12 17v5"],
     clone: ["M8 3h9a3 3 0 0 1 3 3v9", "M6 8h9a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-7a3 3 0 0 1 3-3Z"],
     media: ["M3 5h18v14H3z", "M7 5v14M17 5v14M3 12h18"],
@@ -442,11 +445,19 @@
             </section>
           {/if}
 
-          {#if shown("models")}
-            <section id="settings-models" class="settings-section" aria-labelledby="settings-models-title">
-              <h3 id="settings-models-title">模型与反推</h3>
-              <p class="section-description">配置图片与视频反推用的模型、指令与偏好，以及一键同款的云端 API Key。</p>
-              <ModelSettings />
+          {#if shown("model-api")}
+            <section id="settings-model-api" class="settings-section" aria-labelledby="settings-model-api-title">
+              <h3 id="settings-model-api-title">模型API配置</h3>
+              <p class="section-description">一家服务商一把 Key：图片、视频、语音与一键同款的云端生成都走它。</p>
+              <ModelApiSettings />
+            </section>
+          {/if}
+
+          {#if shown("reverse")}
+            <section id="settings-reverse" class="settings-section" aria-labelledby="settings-reverse-title">
+              <h3 id="settings-reverse-title">反推指令</h3>
+              <p class="section-description">图片与视频反推各说什么话、默认用哪个模型，都在这一页改。</p>
+              <ReversePromptSettings />
             </section>
           {/if}
 

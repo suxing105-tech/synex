@@ -47,8 +47,8 @@ KEY_KINDS = {
     "workflow": ("credential_workflow", "gen_account_wf"),
 }
 _MISSING = {
-    "model": "这条云端账号还没有填模型 API Key（企业级-共享），去设置 → 模型与反推里填。",
-    "workflow": "这条云端账号还没有填工作流 API Key（消费级-会员），去设置 → 模型与反推里填。",
+    "model": "这条云端账号还没有填模型 API Key（企业级-共享），去设置 → 模型API配置里填。",
+    "workflow": "这条云端账号还没有填工作流 API Key（消费级-会员），去设置 → 模型API配置里填。",
 }
 # 老库补列：credential_workflow 是后加的，不补列的库会在第一次读 workflow 时炸
 _ADDED_COLUMNS = (("credential_workflow", "BLOB"),)

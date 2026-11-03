@@ -2282,7 +2282,7 @@ it('API 那一屏一条都没装时给空态，底部那颗改口去设置：清
   // 底部那颗跟着屏走：API 屏不该给「加载本地工作流 JSON」
   expect(screen.queryByRole('menuitem', { name: /加载本地工作流 JSON/ })).toBeNull();
   await fireEvent.click(screen.getByRole('menuitem', { name: /设置 RunningHub 的 API Key/ }));
-  expect(onOpenSettings).toHaveBeenCalledWith('模型与反推');
+  expect(onOpenSettings).toHaveBeenCalledWith('模型API配置');
 });
 
 it('音频卡点开一条只吃图的云端 API：不把音频硬塞进「图1」，并说清为什么没放', async () => {

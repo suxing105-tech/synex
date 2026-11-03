@@ -523,7 +523,7 @@ async def refetch(task_id: int) -> dict:
     ids, produced = await asyncio.to_thread(_register_cloud_files, params, files)
     if not ids:
         cloud_tasks.update(int(task_id), state="lost", error="产物下载下来了但没能收进图库")
-        raise ValueError("产物取回来了但没能收进图库，去设置 → 模型与反推里看这条任务。")
+        raise ValueError("产物取回来了但没能收进图库，去设置 → 模型API配置里看这条任务。")
     cloud_tasks.finish(int(task_id), "done", image_ids=ids)
     return {"task_id": int(task_id), "image_ids": ids, "outputs": produced,
             "count": len(ids), "cost_coins": task.get("cost_coins")}

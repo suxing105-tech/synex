@@ -1,9 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { modelConfigs, reverseSettings, refreshReverseConfig, refreshProviderPresets, providerPresets, reverseApi, errorMessage } from "../lib/reverse-prompts";
-  import type { ModelConfig, ModelDraft, ProviderModel, ProviderPreset, ReverseSettings } from "../lib/reverse-prompts";
-import { H3_MODES, SEEDANCE_MODES, MODE_LABELS, videoPromptApi, videoPromptSettings, refreshVideoPromptSettings } from "../lib/video-prompts";
-import type { VideoPromptSettings } from "../lib/video-prompts";
+  import type { ModelConfig, ModelDraft, ProviderModel, ProviderPreset } from "../lib/reverse-prompts";
   import { cloudApi, takeCloudKeyEdit } from "../lib/clone";
   const CUSTOM = "custom";
   const blank = (): ModelDraft => ({ name: "", base_url: "", model: "", timeout: 120, provider: CUSTOM });
@@ -11,13 +9,12 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
   let editingId = $state<number | undefined>();
   let keyInput = $state("");
   let hasKey = $state(false);
-  let busy = $state(false);
+  // 挂载即在读：初始就置忙，卡片与按钮在服务商清单读回来之前一律按不住，测试也有一个「读完了」的判据。
+  let busy = $state(true);
   let error = $state("");
   let notice = $state("");
   let testingText = $state("");
   let confirmDelete = $state(false);
-  let preferences = $state<ReverseSettings | null>(null);
-  let videoPrefs = $state<VideoPromptSettings | null>(null);
   const providers = $derived($providerPresets);
   const isPreset = $derived(!!draft.provider && draft.provider !== CUSTOM);
   const preset = $derived($providerPresets.find(p => p.id === draft.provider));
@@ -82,15 +79,18 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
       testingCloud = false;
     }
   }
-  /** 「设为默认站点」在我们这儿就是「这条模型是图片反推的默认模型」，点了直接存住。 */
-  const canSetDefault = $derived(!!editingId && !!preferences);
-  const isDefaultModel = $derived(!!editingId && preferences?.default_model_id === editingId);
+  /**
+   * 「设为默认站点」在我们这儿就是「这条模型是图片反推的默认模型」，点了直接存住。
+   * 默认模型这个值住在偏好里（隔壁「反推指令」那页的 select 也读它），所以这里不再抄一份
+   * 本地副本：抄了就有人会拿着旧值把对方刚存的选择盖回去。
+   */
+  const canSetDefault = $derived(!!editingId && !!$reverseSettings);
+  const isDefaultModel = $derived(!!editingId && $reverseSettings?.default_model_id === editingId);
   async function setDefaultModel() {
-    // 先抓两份局部副本：$state 的属性在闭包里窄不掉，TS 不认「上面判过空」
-    const current = preferences, id = editingId;
+    const current = $reverseSettings, id = editingId;
     if (!current || !id) return;
     await run(async () => {
-      preferences = await reverseApi.saveSettings({ ...current, default_model_id: id });
+      await reverseApi.saveSettings({ ...current, default_model_id: id });
       await refreshReverseConfig();
       notice = "已把这条模型设为图片反推的默认模型。";
     });
@@ -115,11 +115,9 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
   const endpoint = $derived((draft.base_url || "").trim().replace(/\/+$/, "").replace(/\/chat\/completions$/, "") + "/chat/completions");
   const canSave = $derived(!!draft.model?.trim() && (isPreset ? true : !!(draft.name?.trim() && draft.base_url?.trim())));
   // 两份偏好在两张卡片里各自渲染，所以任一半读失败都单独标记，卡片给「重新加载」而不是卡在「正在读取…」。
-  let loadFailed = $state(false);
   async function loadReversePart() {
     await refreshProviderPresets();
     await refreshReverseConfig();
-    preferences = $reverseSettings ? { ...$reverseSettings } : null;
     if (!editingId && draft.provider === CUSTOM && $providerPresets.length) {
       // 落点落在已经配好 Key 的那一家，而不是清单里排第一的 OpenAI：默认摊开一张没配的表单，
       // 等于每次进来都要重新找自己那家。这里不调 selectProvider——它会顺手去拉模型清单，
@@ -130,19 +128,9 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
       else applyProvider((ready ?? $providerPresets[0]).id, true);
     }
   }
-  async function loadVideoPart() {
-    try {
-      await refreshVideoPromptSettings();
-      videoPrefs = $videoPromptSettings ? { ...$videoPromptSettings } : null;
-    } catch (e) { videoPrefs = null; throw e; }
-  }
   function loadAll() {
-    loadFailed = false;
-    // 视频那半不等：它慢或挂了都不该让图片这半一直转圈、按钮一直禁用。
-    void loadVideoPart().catch(() => { loadFailed = true; });
-    return loadReversePart().catch(() => { loadFailed = true; });
+    return loadReversePart();
   }
-  const reloadSettings = () => run(loadAll);
   /** 向服务商现拉模型清单。拉不到不编一份：后端那句「可以手填模型 ID」原样说给人听。 */
   async function fetchModels() {
     if (!draft.provider) return;
@@ -276,7 +264,6 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
     await run(async () => {
       const saved = await reverseApi.saveModel(payload(), editingId);
       choose(saved); await refreshReverseConfig(); await refreshProviderPresets();
-      if (preferences) preferences.default_model_id = $reverseSettings?.default_model_id ?? null;
       notice = "模型配置已保存";
     });
   }
@@ -284,13 +271,11 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
     if (!editingId) return;
     await run(async () => {
       await reverseApi.deleteModel(editingId!); choose(); await refreshReverseConfig();
-      if (preferences) preferences.default_model_id = $reverseSettings?.default_model_id ?? null;
       notice = "模型配置已删除，历史记录已保留";
     });
   }
 </script>
-<section class="fill-interactions model-settings" aria-label="模型与反推">
-  <h4 class="settings-group-label">模型服务API</h4>
+<section class="fill-interactions model-settings" aria-label="模型API配置">
   <div class="settings-card">
     <div class="settings-model-body">
       {#if $modelConfigs.length}
@@ -493,84 +478,6 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
     </div>
   </div>
 
-  <h4 class="settings-group-label">图片反推</h4>
-  <div class="settings-card">
-    <div class="settings-model-body">
-      {#if preferences}
-        <fieldset disabled={busy} class="space-y-3">
-          <label>默认模型<select aria-label="默认模型" bind:value={preferences.default_model_id}>
-            <option value={null}>请选择模型</option>
-            {#each $modelConfigs as model}<option value={model.id}>{model.name} · {model.model}</option>{/each}
-          </select></label>
-          <label>反推指令<textarea aria-label="反推指令" rows="5" bind:value={preferences.instruction}></textarea></label>
-          <p class="settings-hint">可修改内容和风格偏好，程序始终要求输出中文与英文两个版本。</p>
-        </fieldset>
-      {:else}
-        <div class="settings-load-state" role="status"><p>{loadFailed ? "暂时读取不到图片反推设置，可以重试。" : "正在读取图片反推设置…"}</p>{#if loadFailed}<button class="setting-button" onclick={reloadSettings}>重新加载</button>{/if}</div>
-      {/if}
-    </div>
-    {#if preferences}
-      <div class="settings-card-footer">
-        <span class="settings-hint">默认模型与指令一起保存</span>
-        <button class="setting-button" onclick={() => { if (preferences) preferences.instruction = preferences.default_instruction; }}>恢复默认（图片指令）</button>
-        <button class="setting-button bg-accent text-bg" onclick={() => run(async () => { if (preferences) { preferences = await reverseApi.saveSettings(preferences); await refreshReverseConfig(); notice = "反推偏好已保存"; } })}>保存反推偏好</button>
-      </div>
-    {/if}
-  </div>
-
-  <h4 class="settings-group-label">视频反推（Seedance 2.0 / MiniMax H3）</h4>
-  <div class="settings-card">
-    <div class="settings-model-body">
-      {#if videoPrefs}
-        <fieldset disabled={busy} class="space-y-3">
-          <label>默认模型<select aria-label="视频反推默认模型" bind:value={videoPrefs.default_model_id}>
-            <option value={null}>跟随图片反推默认模型</option>
-            {#each $modelConfigs as model}<option value={model.id}>{model.name} · {model.model}</option>{/each}
-          </select></label>
-          <div class="grid grid-cols-2 gap-2">
-            <label>默认 Seedance 模式<select aria-label="默认 Seedance 模式" bind:value={videoPrefs.default_mode_seedance}>
-              {#each SEEDANCE_MODES as option}<option value={option}>{MODE_LABELS[option]}</option>{/each}
-            </select></label>
-            <label>默认 H3 模式<select aria-label="默认 H3 模式" bind:value={videoPrefs.default_mode_h3}>
-              {#each H3_MODES as option}<option value={option}>{MODE_LABELS[option]}</option>{/each}
-            </select></label>
-          </div>
-          <div class="grid grid-cols-3 gap-2">
-            <label>帧数上限<input aria-label="视频帧数上限" type="number" min="4" max="16" bind:value={videoPrefs.frame_limit} /></label>
-            <label>单元时长上限（秒）<input aria-label="单元时长上限" type="number" min="5" max="15" bind:value={videoPrefs.max_unit_seconds} /></label>
-            <label>单元数上限<input aria-label="单元数上限" type="number" min="1" max="24" bind:value={videoPrefs.max_units} /></label>
-          </div>
-          <p class="settings-hint">每段按镜头切点装箱，不超单元时长上限；超过单元数上限会要求缩小区间或调大设置。帧数越多越贵。</p>
-          <label>分镜方案指令
-            <textarea aria-label="分镜方案指令" rows="4" bind:value={videoPrefs.instruction_plan}></textarea>
-          </label>
-          <button class="setting-button setting-button-ghost restore-plan" onclick={() => { if (videoPrefs) videoPrefs.instruction_plan = videoPrefs.defaults.instruction_plan; }}>恢复默认（分镜方案）</button>
-          <label>Seedance 2.0 指令
-            <textarea aria-label="Seedance 指令" rows="5" bind:value={videoPrefs.instruction_seedance}></textarea>
-          </label>
-          <button class="setting-button setting-button-ghost restore-seedance" onclick={() => { if (videoPrefs) videoPrefs.instruction_seedance = videoPrefs.defaults.instruction_seedance; }}>恢复默认（Seedance）</button>
-          <label>MiniMax H3 指令
-            <textarea aria-label="H3 指令" rows="5" bind:value={videoPrefs.instruction_h3}></textarea>
-          </label>
-          <button class="setting-button setting-button-ghost restore-h3" onclick={() => { if (videoPrefs) videoPrefs.instruction_h3 = videoPrefs.defaults.instruction_h3; }}>恢复默认（H3）</button>
-        </fieldset>
-      {:else}
-        <div class="settings-load-state" role="status"><p>{loadFailed ? "暂时读取不到视频反推设置，可以重试。" : "正在读取视频反推设置…"}</p>{#if loadFailed}<button class="setting-button" onclick={reloadSettings}>重新加载</button>{/if}</div>
-      {/if}
-    </div>
-    {#if videoPrefs}
-      <div class="settings-card-footer">
-        <span class="settings-hint">两种格式的正文各自独立保存，互不覆盖；正文语言由上面的指令决定</span>
-        <button class="setting-button bg-accent text-bg" onclick={() => run(async () => {
-          if (!videoPrefs) return;
-          videoPrefs = await videoPromptApi.saveSettings(videoPrefs);
-          await refreshVideoPromptSettings();
-          notice = "视频反推偏好已保存";
-        })}>保存视频反推偏好</button>
-      </div>
-    {/if}
-  </div>
-
   {#if busy}<p class="settings-hint" role="status">处理中…</p>{/if}
   {#if error}<p class="model-error" role="alert">{error}</p>{/if}
   {#if notice}<p class="model-notice" role="status">{notice}</p>{/if}
@@ -583,8 +490,6 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
   .settings-model-body { padding: 20px; }
   /* 竖排表单铺满卡片：右边缘要和卡片、右下角保存条对齐（固定宽度会在右边留一条空白）。 */
   .model-settings fieldset { max-width: none; }
-  /* 指令框里是长段文字：白字压黑底太刺眼，行距也偏挤，所以压灰一档、行距放到 1.9。 */
-  .model-settings textarea { color: #c2c2ca; line-height: 1.9; letter-spacing: .01em; }
   .model-chips { display: flex; gap: 8px; flex-wrap: wrap; }
   /* 服务商卡片区：一厂商一卡，状态写在卡上。清单长度不由我们决定，所以给它一个会滚的筐。 */
   .api-filter { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
@@ -619,7 +524,8 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
   fieldset:first-child { margin-top: 0; }
   legend { margin-bottom: 10px; font-size: 14px; font-weight: 500; color: #e6e6ea; }
   label { display: block; font-size: 13px; color: #b8b8c3; }
-  input:not([type=checkbox]), textarea, select { display: block; width: 100%; margin-top: 6px; padding: 9px 12px; color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 6px; }
+  /* 这一页没有长文本框（指令都在「反推指令」那一页），所以选择器里不留 textarea。 */
+  input:not([type=checkbox]), select { display: block; width: 100%; margin-top: 6px; padding: 9px 12px; color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 6px; }
   button:disabled { opacity: .5; }
   .model-summary { cursor: pointer; }
   .model-confirm { display: flex; align-items: center; gap: 10px; margin-top: 16px; font-size: 12.5px; color: #b8b8c3; flex-wrap: wrap; }

@@ -60,7 +60,7 @@
   let settingsOpen = $state(false);
   let settingsTab = $state("通用");
   onMount(() => {
-    const openModels = () => { settingsTab = "模型与反推"; settingsOpen = true; };
+    const openModels = () => { settingsTab = "模型API配置"; settingsOpen = true; };
     // 归档提示条的「查看」：直接落到设置的已归档目录（tab 按 label 定位）
     const openArchived = () => { settingsTab = "已归档目录"; settingsOpen = true; };
     window.addEventListener("open-model-settings", openModels);

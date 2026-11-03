@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, fireEvent, waitFor, cleanup } from "@testing-library/svelte";
 import VideoPromptPanel from "../components/VideoPromptPanel.svelte";
-import ModelSettings from "../components/ModelSettings.svelte";
+import ReversePromptSettings from "../components/ReversePromptSettings.svelte";
 import { modelConfigs, reverseApi, reverseSettings } from "../lib/reverse-prompts";
 import { segmentQueue, translationJobs, videoPromptApi, videoPromptJobs, videoPromptSettings } from "../lib/video-prompts";
 import type { PromptMode, PromptReference, PromptRun, SegmentRecord, VideoPromptHistory, VideoPromptSettings } from "../lib/video-prompts";
@@ -443,7 +443,7 @@ describe("视频反推面板", () => {
       videoPromptSettings.set({ ...prefs, ...value });
       return { ...prefs, ...value };
     });
-    const panel = render(ModelSettings);
+    const panel = render(ReversePromptSettings);
     await waitFor(() => expect(panel.getByLabelText("视频反推默认模型")).toBeTruthy());
     expect((panel.getByLabelText("分镜方案指令") as HTMLTextAreaElement).value).toBe("拆分镜");
     await fireEvent.click(panel.getByText("恢复默认（分镜方案）"));
@@ -463,26 +463,26 @@ describe("视频反推面板", () => {
     });
   });
 
-  it("设置页两个模块：保存按钮都在卡片右下角并用主按钮色", async () => {
+  it("拆页之后反推指令页只剩两个模块：保存按钮都在卡片右下角并用主按钮色", async () => {
     modelConfigs.set([model]);
-    vi.spyOn(reverseApi, "providers").mockResolvedValue([]);
-    const panel = render(ModelSettings);
+    const panel = render(ReversePromptSettings);
     await waitFor(() => expect(panel.getByLabelText("视频反推默认模型")).toBeTruthy());
     expect([...panel.container.querySelectorAll(".settings-group-label")].map((n) => n.textContent)).toEqual([
-      // 第一节现在叫「模型服务API」：那里是选厂商填 Key 的地方，反推只是它的一路用途
-      "模型服务API", "图片反推", "视频反推（Seedance 2.0 / MiniMax H3）",
+      "图片反推", "视频反推（Seedance 2.0 / MiniMax H3）",
     ]);
     const footers = panel.container.querySelectorAll(".settings-card-footer");
-    expect(footers).toHaveLength(3);
-    for (const name of ["保存模型", "保存反推偏好", "保存视频反推偏好"]) {
+    expect(footers).toHaveLength(2);
+    for (const name of ["保存反推偏好", "保存视频反推偏好"]) {
       const button = panel.getByText(name);
       expect(button.className).toContain("bg-accent");
       expect(button.closest(".settings-card-footer")).toBeTruthy();
     }
     // 每个模块的主保存按钮都排在最右边。
-    expect(footers[0].lastElementChild).toBe(panel.getByText("保存模型"));
-    expect(footers[1].lastElementChild).toBe(panel.getByText("保存反推偏好"));
-    expect(footers[2].lastElementChild).toBe(panel.getByText("保存视频反推偏好"));
+    expect(footers[0].lastElementChild).toBe(panel.getByText("保存反推偏好"));
+    expect(footers[1].lastElementChild).toBe(panel.getByText("保存视频反推偏好"));
+    // 选厂商、填 Key、「保存模型」都在隔壁「模型API配置」那一页，这一页不许再长出来。
+    expect(panel.queryByText("保存模型")).toBeNull();
+    expect(panel.container.querySelectorAll(".api-card")).toHaveLength(0);
   });
   it("编辑保存为新版本", async () => {
     const edit = vi.spyOn(videoPromptApi, "edit").mockResolvedValue({ ...seg(31, 1, "seedance2", "改过"),

@@ -63,7 +63,7 @@ def availability() -> dict:
         for row in accounts.list_accounts():
             if row["enabled"] and not row["has_api_key"]:
                 return {"available": False, "reason": "这条云端账号还没有填 API Key"}
-        return {"available": False, "reason": "还没有可用的云端账号，去设置 → 模型与反推里填 Key"}
+        return {"available": False, "reason": "还没有可用的云端账号，去设置 → 模型API配置里填 Key"}
     return {"available": True, "reason": "", "account_name": account["name"]}
 
 

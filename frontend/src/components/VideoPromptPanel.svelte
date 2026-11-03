@@ -292,7 +292,7 @@
 
   {#if !$modelConfigs.length}
     <button class="vp-button" onclick={() => window.dispatchEvent(new CustomEvent("open-model-settings"))}>配置模型</button>
-    <p class="text-[10px] text-muted">需要先在「设置 · 模型与反推」里配置一个支持图片输入的模型。</p>
+    <p class="text-[10px] text-muted">需要先在「设置 · 模型API配置」里配置一个支持图片输入的模型。</p>
   {:else}
     <div class="space-y-2">
       <label class="block text-[11px] text-muted">反推模型

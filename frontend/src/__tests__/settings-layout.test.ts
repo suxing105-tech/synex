@@ -70,20 +70,27 @@ describe("设置页版式：左目录 + 卡片行", () => {
     expect(modal).not.toContain(".settings-top ");
   });
 
-  it("模型与反推拆成模块，保存动作统一在卡片右下角高亮", () => {
-    const model = read("components/ModelSettings.svelte");
-    // 和通用的「导入 / 监听」一样：一个模块一个小标题 + 一张卡片。
-    expect(model.match(/settings-group-label/g)).toHaveLength(3);
-    expect(model.match(/class="settings-card"/g)).toHaveLength(3);
-    // 反推指令不再是一个模块，已按用户要求拆成图片反推 / 视频反推。
-    expect(model).not.toContain(">反推指令</h4>");
-    const footers = model.split('class="settings-card-footer"').slice(1);
-    expect(footers).toHaveLength(3);
+  it("模型API配置与反推指令各占一页，保存动作统一在卡片右下角高亮", () => {
+    const api = read("components/ModelApiSettings.svelte");
+    const prompt = read("components/ReversePromptSettings.svelte");
+    // 这一页只剩服务商与 Key：一整页就一张卡，不再自带小标题（页名由设置页的 h3 出）。
+    expect(api).not.toContain("settings-group-label");
+    expect(api.match(/class="settings-card"/g)).toHaveLength(1);
+    expect(api.split('class="settings-card-footer"').slice(1)).toHaveLength(1);
     // 主按钮用全局高亮样式并排在右下角，和保存通用设置 / 保存快捷键一致。
-    expect(footers[0]).toContain("class=\"setting-button bg-accent text-bg\" onclick={saveModel}");
-    expect(footers[1]).toContain("保存反推偏好");
-    expect(footers[1]).not.toContain("保存视频反推偏好");
-    expect(footers[2]).toContain("保存视频反推偏好");
+    expect(api).toContain('class="setting-button bg-accent text-bg" onclick={saveModel}');
+    // 反推那一页仍是「一个模块一个小标题 + 一张卡片」，两页合起来等于原来的「模型与反推」。
+    expect([...prompt.matchAll(/class="settings-group-label">([^<]*)</g)].map((m) => m[1])).toEqual([
+      "图片反推", "视频反推（Seedance 2.0 / MiniMax H3）",
+    ]);
+    expect(prompt.match(/class="settings-card"/g)).toHaveLength(2);
+    const footers = prompt.split('class="settings-card-footer"').slice(1);
+    expect(footers).toHaveLength(2);
+    expect(footers[0]).toContain("保存反推偏好");
+    expect(footers[0]).not.toContain("保存视频反推偏好");
+    expect(footers[1]).toContain("保存视频反推偏好");
+    // 反推指令不再是一个模块，已按用户要求拆成图片反推 / 视频反推。
+    expect(prompt).not.toContain(">反推指令</h4>");
     // 卡片由组件自己出，外层不再包一层，避免双层圆角与双层内边距。
     expect(read("components/SettingsModal.svelte")).not.toContain("settings-card-pad");
   });

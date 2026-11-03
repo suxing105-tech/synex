@@ -22,10 +22,14 @@ describe("设置与反推使用底色交互", () => {
     expect(read('app.css')).toMatch(/\.setting-row-desc \{[^}]*max-width: 88ch/);
     expect(read('app.css')).toMatch(/\.settings-hint \{[^}]*max-width: 88ch/);
     // 竖排表单右边缘必须与卡片/保存条对齐（固定宽度会在右边留一条空白）
-    const modelCss = read('components/ModelSettings.svelte');
-    expect(modelCss).toMatch(/\.model-settings fieldset \{ max-width: none; \}/);
-    // 指令框文字压灰一档并加行距，白字压黑底太刺眼
-    expect(modelCss).toMatch(/\.model-settings textarea \{ color: #c2c2ca; line-height: 1\.9/);
+    // 拆成两页之后，两页各自都要把竖排表单铺满卡片：fieldset 不限宽这条规则两页都得有。
+    const apiCss = read('components/ModelApiSettings.svelte');
+    const promptCss = read('components/ReversePromptSettings.svelte');
+    expect(apiCss).toMatch(/\.model-settings fieldset \{ max-width: none; \}/);
+    expect(promptCss).toMatch(/\.model-settings fieldset \{ max-width: none; \}/);
+    // 指令框只出现在「反推指令」那一页：文字压灰一档并加行距，白字压黑底太刺眼
+    expect(promptCss).toMatch(/\.model-settings textarea \{ color: #c2c2ca; line-height: 1\.9/);
+    expect(apiCss).not.toMatch(/textarea \{ color: /);
     expect(source).not.toMatch(/max-w-\[94vw\]|88vh|bg-black\/75/);
   });
   it("底部保留设置入口，导入目录进入通用设置", () => {
@@ -57,7 +61,7 @@ describe("设置与反推使用底色交互", () => {
     expect(states.join()).toContain(':enabled:hover');
     expect(states.join()).toContain(':enabled:focus-visible');
   });
-  it.each(["SettingsModal", "ModelSettings", "ReversePromptPanel", "UpdatePanel", "HeaderBar"])(
+  it.each(["SettingsModal", "ModelApiSettings", "ReversePromptSettings", "ReversePromptPanel", "UpdatePanel", "HeaderBar"])(
     "%s 不引入悬停或选中的高亮边框", (name) => {
       const source = read(`components/${name}.svelte`);
       expect(source).not.toMatch(/(?:hover|focus|focus-visible):border-(?:accent|danger)|class:!?border-accent/);

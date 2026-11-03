@@ -3,6 +3,7 @@
 基线：0.2.33（93eacd5）。日期：2026-11-02。
 本文只定方案与顺序，不含代码改动。
 2026-11-03 补：弹窗与设置页的确切交互以 **§11** 为准（苏醒给了草图）。
+2026-11-03 定：服务商只做 **RunningHub**，接入形态、端点与两处待验证项以 **§12** 为准；§5「先接火山方舟+MiniMax」的建议作废，§6 里「云端只吃图片参考」的限制对 RunningHub 的工作流路**不成立**。
 
 ---
 
@@ -265,3 +266,91 @@ TTS（含音色克隆一条：参考音频上传 + 台词/参考原文两段文�
 - 前端 3 处：`workflowMenuRows()` 带出 engine 并改排序、菜单底部那颗「选择 API…」与它的小清单、云端模板下把不支持的参考族置灰。
 - 后端 4 处：`list_templates()` 排序键、`cloud/` 包（spec + 适配器 + 凭据）、`gen_accounts` / `gen_tasks` 两张表、`_run()` 按 engine 分派。
 - **不动**：`/api/clone/generate` 请求体、`clone_progress` 现有字段、素材选择器、产出认领与来源记录、音频波形与视频首帧那套缩略图口径。
+
+---
+
+## 12. RunningHub 接入（2026-11-03 定稿：只做这一家）
+
+> 依据：RunningHub 官方 API 文档站 runninghub-api-doc-cn（今日抓取）。凡我没抓到的字段一律标「待验证」，不猜。
+
+### 12.1 为什么这家把你的工作量砍掉一半
+
+RunningHub 卖的是**云端 ComfyUI**：你在它平台上有自己的工作流（`workflowId`），提交时用 `nodeInfoList` 覆盖节点里的值。而你的 `nodeInfoList` 就是「改某个节点的某个输入」——**和一键同款现在存的槽位（`slot_key(slot)` = `node` + `input` + 值）是一一对应的**：
+
+    本机：  build_workflow(nodes, slots, …) → 整份 API 工作流 → POST /prompt
+    云端：  slots → [{nodeId, fieldName, fieldValue}, …] → POST /task/openapi/*
+
+所以 D1/D2/D3 全部成立，而且 **D2「云端要新写一份声明式槽位」这条路在 RunningHub 上不需要了**——槽位直接从你已经检测准的那份复用。原 §5 建议的火山方舟/MiniMax 才需要声明式槽位，那条建议作废。
+
+顺带一条：它的模型 API 目录里就有 **MiniMax-H3 多模态参考生视频 / 图生视频 / 文生视频**、**seedance2.0 多模态视频**、**千问3-语音合成 / Qwen3 TTS 声音设计**、**Doubao 声音复刻**、**seedream-v5**——和你本机那三条工作流（Qwen-image、H3 参考生视频、Qwen3-TTS 音色克隆）对得上。含义：**工作流路万一跑不通（缺自定义节点或缺模型），同一家就有退路**，不用换服务商。
+
+### 12.2 两条传输路，先花一小时测再定（S0）
+
+文档给了两条，第二条是意外发现：
+
+| | A. OpenAPI 任务路 | B. 原生 ComfyUI 代理路 |
+|---|---|---|
+| 地址 | `https://www.runninghub.cn/task/openapi/*` | `https://www.runninghub.cn/proxy/your-api-key`（48G 是 `/proxy-plus/`） |
+| 官方说法 | 上传资源 → 提交任务 → 查任务 → 取 fileUrl → 可取消 | 「该地址功能等同于本地部署的 ComfyUI 地址 http://127.0.0.1:8188」 |
+| 我们要写的代码 | 新适配器：slots→nodeInfoList、下载 fileUrl | **几乎为零**：现成的 `ComfyUIClient`（upload_image / queue / history / view / interrupt）换个 base_url |
+| 计费形态 | 按任务，产物回 fileUrl | 按占用机器的时长（冷启动、会话是否常驻，文档没说清） |
+| 关键未知 | 高级版提交端点的完整字段（文档页抓取超时）；产物链接有效期 | `/upload/image` `/history` `/view` `/interrupt` 是否全通；十分钟长任务会不会被切；机器怎么分配；**key 在 URL 路径里** |
+
+**S0（开工前必做，约一小时，只花你账号里几毛钱）**：用你自己的 key 各跑一次——B 路打 `/proxy/<key>/system_stats` → 推一张参考 → 提交闪寻图片那条 → 轮 `/history` → `/view` 取回；A 路打 `/task/openapi/upload` → 提交（带 nodeInfoList）→ 查状态 → 取 fileUrl 下载。
+
+决策规则写死在这里，免得到时候凭感觉：
+- B 路四个端点全通、长任务不被切、且能拿到明确的计费口径 → **走 B**：`ComfyUIClient` 加一个「URL 里带 key」的模式（并强制打码），云端就退化成「换一台 ComfyUI 的地址」，R2/R3/R4 的工作量各砍一大半。
+- 有任一项不通 → **走 A**：写 `RunningHubWorkflowBackend`（submit / poll / fetch / cancel 四个方法），B 路不碰。
+- 允许「B 跑图、A 跑视频」这种混搭，但必须落在 `CloudBackend` 协议后面，别让弹窗知道有几条路——这是 Round 40「两条链路两个网络栈」那条教训的唯一防线。
+
+### 12.3 已核实的端点与字段（A 路）
+
+| 用途 | 端点 | 要点 | 
+|---|---|---|
+| 上传素材 | `POST /task/openapi/upload` | multipart：`apiKey`、`fileType=input`、`file`；返回 `fileName`，**填进 LoadImage 那类节点的 fieldValue**。示例明确说支持 image/audio/video → 参考族限制全部照本机 |
+| 提交（简易） | `POST /task/openapi/create` | `{apiKey, workflowId}`，等价于「不改任何参数直接点运行」；带参数改写要 nodeInfoList |
+| 提交（高级） | 文档页 `api-425749013` 抓取超时 | 字段以官方文档为准，S0 一并核；预期是 workflowId + nodeInfoList（+ instanceType default/plus/ultra、webhookUrl、title） |
+| 查询产物 | `POST /task/openapi/outputs` | `{taskId, apiKey}`；进行中回 code 804(运行中)/813(排队中)；成功后 `data[]` 带 `fileUrl` |
+| 取消 | 有独立端点 | 「取消」不等于退费，文案仍按 §3.5 说实话 |
+| 账户 | `POST /uc/openapi/accountStatus` | 回 `remainCoins`（RH币余额）与 `currentTaskCounts`（运行中任务数）→ 设置页直接显示余额与并发，不用我们自己记账才知道还剩多少 |
+
+`nodeInfoList` 的形状（官方举例）：`[{"nodeId":"6","fieldName":"text","fieldValue":"…"}]`。 `slot_key()` 拆出来的就是这两段，映射是纯字符串活，写一次测一次。
+
+### 12.4 计费与余额（官网当前标价，会漂，以 accountStatus 为准）
+
+- 机型按秒计：Lite ¥0.4/小时、Standard 24G ¥4/小时、Plus 48G ¥6/小时、Ultra ¥9/小时（`instanceType` 选 default/plus/ultra）。另一处页面写标准任务 24G 每秒 0.2 RH币、Plus 48G 每秒 0.4 RH币。
+- 三方模型 API（seedance / H3 / TTS 那批）**另有单次调用费**，走钱包余额，与 RH币是两笔钱。**弹窗上的预估必须写「按运行时长计费，取决于排队与机型」这种区间口径**，别给一个假装精确的数。
+- 落库：跑完把 `accountStatus` 的 `remainCoins` 差值记进 `gen_tasks`，这才是你真正看得懂的「这条花了多少」。**这是唯一诚实的计价方式**，比按厂商单价自己乘出来的准。
+- `instanceType` 要做成模板参数：你 H3 那条 2K 片子和一条 TTS 十几秒的语音，不该用同一种机器。
+
+### 12.5 API Key 保密（你点名要的那条）
+
+- 设置页自己填：输入框 `type=password` + 「显示」开关默认关；粘贴后不预览明文；保存后接口只回 `has_api_key=true`，**任何接口都不回明文**，也不接受「读出来再填回去」这种流程。
+- 存储走 D6 的 DPAPI（当前用户，不落明文文件，不进数据库备份可读文本）。非 Windows 只存本次进程，重启要重填，并在界面上说清。
+- `清除` 一颗：清 BLOB 并让 `has_api_key` 立刻变 false。
+- **B 路把 key 放在 URL 路径里**（`/proxy/<key>`）：所有日志、异常信息、`ComfyUIError.message`、以及 `outputs/comfyui-diag` 那类诊断脚本输出，一律按「scheme+host+」截断，绝不带路径。**这是新增的泄漏面**，A 路把 key 放 body 就没这问题——S0 测完要把这条算进选型。
+- 「测试连通」用 `accountStatus` 打真请求：能一次同时验证 key 有效、网络通、余额可读，比只测 TCP 连上不连上有用。
+- Key 不写进 `config.json`（那是可读明文配置文件），只进 `gen_accounts.credential`。
+
+### 12.6 里程碑调整（其余不变）
+
+- **S0**：一小时真机二选一，结论回写本节与 MEMORY。产出物：一段跑通的调用记录 + 一份「B 路支持哪些端点」的实测清单。
+- R1 底座：不变（凭据 / 两张表 / `cloud/` 骨架 / engine 列 / 分派）。
+- R2 出图：跑通**闪寻图片那一条**的云端跑法（同一条工作流、同一套槽位，只是换传输），这是最小可验证闭环。
+- R3 出声音：Qwen3-TTS 那条 + `instanceType` 选小机器 + 时长/语种控件沿用。
+- R4 出片：H3 那条 + 长任务 `gen_tasks` 落库与重启取回 + 取消实话 + 产物过期后 `/refetch`。
+- R5 收口：余额显示、按 remainCoins 差值记账、失败自救、README/MEMORY 回写。
+
+### 12.7 §6 的更正
+
+「云端只吃文本 + 图片参考、音频/视频格子置灰」这条**在 RunningHub 的工作流路上不成立**：跑的就是你本机那份工作流，`LoadImage` / `LoadAudio` / `VHS_LoadVideo` 三族都能喂，官方上传接口示例就写了支持 image/audio/video。所以三族参考的连着放规则、素材选择器、编号口径，云端与本机**完全一致**，不需要置灰。
+
+仍然要留的边界只剩两条：单文件体积上限（待 S0 实测，超限要说人话）；以及万一某条改走「模型 API 路」（不是跑工作流）时，才需要那份声明式槽位与张数上限收敛。
+
+### 12.8 §10 三条的状态
+
+- 「先接哪两家」→ **已定**：只接 RunningHub，§5 那条建议作废。
+- 「产物位置」→ **已定**：`<数据盘>\SeekX-Data\generated\<类>\<日期>\`。
+- 「账号」→ **还等你**：RunningHub 的 API Key（你自己在设置里填，我碰不到）、RH币/钱包是否有余额、以及你工作台里那三条工作流各自的 `workflowId`（云端提交要它；一条工作流一个 id，从 `…/workflow/<id>` 链接末尾取）。
+- 「一族一个「当前」，本机与云端共抢」→ 你回「按你的建议来」，**按共抢实现**（§11.6）。
+- 唯一还需要你动手的：**S0 那一小时**。它要真打你账号、真扣几毛钱 RH币，我不会自己发起。而且那时候设置页还没有 key 输入框（那是 R1 的活），所以 S0 的做法是：我写一个只读脚本，key 从环境变量或交互输入取、**全程不打印不回显**，你自己跑，把结果文件发我。我不会读你的 key，也不要你贴进对话。

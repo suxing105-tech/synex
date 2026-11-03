@@ -201,10 +201,13 @@
           {#if status?.availability?.available}
             云端可用：{status.availability.reason || "三条 API 都能跑"}。
           {:else}
-            现在还不能生成：{status?.availability?.reason || blockers.join("；")}
+            <!-- 这里不照抄 availability.reason：那句是给「一键同款」弹窗写的，里面带
+                 「去设置 → 模型与反推里打开」，而这张卡就在那一页里，开关还在它头顶二十像素处。
+                 本页只说自己在屏幕上看得见的原因；后端那句留作兜底。 -->
+            现在还不能生成：{blockers.join("；") || status?.availability?.reason || "还说不准差哪一步"}
           {/if}
         </p>
-        {#if blockers.length && !status?.availability?.available}
+        {#if blockers.length > 1 && !status?.availability?.available}
           <ul class="cloud-blockers">
             {#each blockers as line (line)}<li>{line}</li>{/each}
           </ul>

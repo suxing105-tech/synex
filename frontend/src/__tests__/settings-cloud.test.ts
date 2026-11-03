@@ -247,16 +247,37 @@ it("待取回列表非空时给「取回结果」，点了只重新查那一条�
   expect(http.mock.calls.filter(([p]) => p === "/api/clone/cloud/tasks/77/refetch").length).toBe(1);
 });
 
-it("availability.available=false 时把后端那句 reason 原样显示，不只报「不可用」", async () => {
-  const reason = "这个账号还没填 API Key：去 RunningHub 控制台生成一把粘进来";
+it("这张卡不说「去设置 → 模型与反推里打开」：那句是给一键同款弹窗写的，这里的开关就在头顶", async () => {
   routes({
-    availability: { available: false, reason },
+    cloud_enabled: false,   // 卡片自己查得出的那一步：总开关在这张卡头顶
+    availability: { available: false, reason: "云端生成没启用，去设置 → 模型与反推里打开" },
+    accounts: [{ ...ACCOUNT, has_api_key: true }],
+  });
+  const screen = render(CloudServices, {});
+  await screen.findByText(/三条 API 挂在/);
+  const state = screen.container.querySelector(".cloud-state")?.textContent ?? "";
+  expect(state).toContain("云端生成总开关是关的");
+  expect(state).not.toContain("去设置");
+  expect(screen.container.querySelector(".cloud-state")?.className).not.toContain("cloud-ready");
+});
+
+it("本地查不出具体差哪一步时，后端那句 reason 仍原样说给人听", async () => {
+  const reason = "余额不足，今天的花费已经到顶了";
+  routes({ availability: { available: false, reason } }); // 账号开着、Key 也填了 → blockers 为空
+  const screen = render(CloudServices, {});
+  await screen.findByText(/三条 API 挂在/);
+  expect(screen.container.querySelector(".cloud-state")?.textContent).toContain(reason);
+});
+
+it("差两步就列两条：开关关着 + Key 没填，一句都不许省", async () => {
+  routes({
+    cloud_enabled: false,
+    availability: { available: false, reason: "云端生成没启用，去设置 → 模型与反推里打开" },
     accounts: [{ ...ACCOUNT, has_api_key: false }],
   });
   const screen = render(CloudServices, {});
   await screen.findByText(/三条 API 挂在/);
-  expect(screen.container.querySelector(".cloud-state")?.textContent).toContain(reason);
-  expect(screen.container.querySelector(".cloud-state")?.className).not.toContain("cloud-ready");
-  // reason 原样显示之外，还差哪一步列哪一步：这里缺的就是 Key
-  expect(screen.container.querySelector(".cloud-blockers")?.textContent).toContain("这把 API Key 还没填");
+  const list = screen.container.querySelector(".cloud-blockers")?.textContent ?? "";
+  expect(list).toContain("云端生成总开关是关的");
+  expect(list).toContain("这把 API Key 还没填");
 });

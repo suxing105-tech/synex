@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { modelConfigs, reverseSettings, refreshReverseConfig, refreshProviderPresets, providerPresets, reverseApi, errorMessage } from "../lib/reverse-prompts";
-  import type { ModelConfig, ModelDraft, ReverseSettings } from "../lib/reverse-prompts";
+  import type { ModelConfig, ModelDraft, ProviderModel, ReverseSettings } from "../lib/reverse-prompts";
 import { H3_MODES, SEEDANCE_MODES, MODE_LABELS, videoPromptApi, videoPromptSettings, refreshVideoPromptSettings } from "../lib/video-prompts";
 import type { VideoPromptSettings } from "../lib/video-prompts";
   const CUSTOM = "custom";
@@ -22,6 +22,21 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
   const isPreset = $derived(!!draft.provider && draft.provider !== CUSTOM);
   const preset = $derived($providerPresets.find(p => p.id === draft.provider));
   const providerModels = $derived(preset?.models ?? []);
+  /**
+   * RunningHub 这类服务商有两处不一样，界面跟着分叉：
+   * - credential_scope=cloud：Key 的家在「RunningHub 云端生成」那条账号里，这一条不另存一份；
+   * - models_dynamic：模型清单由服务商自己报，代码里不抄一份会过期的表。
+   */
+  const sharedKey = $derived(preset?.credential_scope === "cloud");
+  const dynamicModels = $derived(!!preset?.models_dynamic);
+  /** 新建那条配置自己还不知道 Key 在不在，这时照服务商清单带回的布尔说。 */
+  const keyReady = $derived(sharedKey ? (hasKey || !!preset?.shared_has_key) : hasKey);
+  const cloudPreset = $derived($providerPresets.find(p => p.credential_scope === "cloud"));
+  let modelList = $state<ProviderModel[]>([]);
+  let modelListNote = $state("");
+  let modelListError = $state("");
+  let fetchingModels = $state(false);
+  let keyInputEl = $state<HTMLInputElement | null>(null);
   const endpoint = $derived((draft.base_url || "").trim().replace(/\/+$/, "").replace(/\/chat\/completions$/, "") + "/chat/completions");
   const canSave = $derived(!!draft.model?.trim() && (isPreset ? true : !!(draft.name?.trim() && draft.base_url?.trim())));
   // 两份偏好在两张卡片里各自渲染，所以任一半读失败都单独标记，卡片给「重新加载」而不是卡在「正在读取…」。
@@ -47,7 +62,44 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
     return loadReversePart().catch(() => { loadFailed = true; });
   }
   const reloadSettings = () => run(loadAll);
-  onMount(() => { void run(loadAll); });
+  /** 向服务商现拉模型清单。拉不到不编一份：后端那句「可以手填模型 ID」原样说给人听。 */
+  async function fetchModels() {
+    if (!draft.provider) return;
+    fetchingModels = true;
+    modelListError = "";
+    try {
+      const out = await reverseApi.modelList(draft.provider);
+      modelList = out.models;
+      modelListNote = out.reason ?? "";
+      if (!draft.model) draft.model = (out.models.find(m => m.recommended) ?? out.models[0])?.id ?? "";
+    } catch (e) {
+      modelList = []; modelListNote = ""; modelListError = errorMessage(e);
+    } finally {
+      fetchingModels = false;
+    }
+  }
+  /** 云端那张卡上的「填 Key / 改 Key」落到这里：切到共用 Key 那一家，光标停在 Key 那一格。 */
+  async function editSharedKey() {
+    if (!cloudPreset) return;
+    // 已经有这一家的配置就改那一条。一把 Key 只认一个家，模型配置跟着只认一条；
+    // 在这里另起一张空表单，点保存就多出一条 RunningHub，之后没人说得清哪条是活的。
+    const existing = $modelConfigs.find(c => c.provider === cloudPreset.id);
+    if (existing) {
+      choose(existing);
+      void fetchModels();
+    } else {
+      choose();
+      applyProvider(cloudPreset.id);
+    }
+    await tick();
+    keyInputEl?.focus();
+    keyInputEl?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+  onMount(() => {
+    void run(loadAll);
+    window.addEventListener("edit-cloud-key", editSharedKey);
+    return () => window.removeEventListener("edit-cloud-key", editSharedKey);
+  });
   async function run(action: () => Promise<void>) {
     busy = true; error = ""; notice = "";
     try { await action(); } catch (e) { error = errorMessage(e); } finally { busy = false; }
@@ -60,9 +112,13 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
       draft.model = rec?.id ?? "";
       draft.base_url = p?.base_url ?? "";
       draft.timeout = p?.default_timeout ?? 120;
-      draft.name = p ? `${p.name} · ${rec?.label ?? ""}` : "";
+      // 清单要现拉的那几家，一开始没有推荐项：名字先只写服务商，别留一个「· 」在那儿
+      draft.name = p ? (rec ? `${p.name} · ${rec.label}` : p.name) : "";
+      modelList = []; modelListNote = ""; modelListError = "";
+      if (p?.models_dynamic) void fetchModels();
     } else {
       draft.model = ""; draft.base_url = ""; draft.name = ""; draft.timeout = 120;
+      modelList = []; modelListNote = ""; modelListError = "";
     }
     keyInput = ""; clearKey = false; hasKey = false;
   }
@@ -71,6 +127,7 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
     draft = config ? { name: config.name, base_url: config.base_url, model: config.model, timeout: config.timeout, provider: config.provider ?? CUSTOM } : blank();
     keyInput = ""; clearKey = false; hasKey = !!config?.has_api_key;
     error = ""; notice = ""; testingText = ""; confirmDelete = false;
+    modelList = []; modelListNote = ""; modelListError = "";
   }
   function payload(): ModelDraft {
     return {
@@ -82,7 +139,9 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
   async function saveModel() {
     await run(async () => {
       const saved = await reverseApi.saveModel(payload(), editingId);
-      choose(saved); await refreshReverseConfig();
+      choose(saved); await refreshReverseConfig(); await refreshProviderPresets();
+      // 共用 Key 那一家在这里改完了，云端那张卡要跟着改口，别让人以为还得再去填一遍
+      if (sharedKey) window.dispatchEvent(new Event("cloud-credentials-changed"));
       if (preferences) preferences.default_model_id = $reverseSettings?.default_model_id ?? null;
       notice = "模型配置已保存";
     });
@@ -114,7 +173,24 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
             <option value={CUSTOM}>自定义（手动填写）</option>
           </select>
         </label>
-        {#if isPreset}
+        {#if isPreset && dynamicModels}
+          <label>反推模型 ID
+            <input aria-label="反推模型 ID" bind:value={draft.model} placeholder="点下面清单挑一个，或者直接手填" />
+          </label>
+          <div class="model-picks">
+            <button class="setting-button setting-button-ghost" disabled={busy || fetchingModels} onclick={() => void fetchModels()}>
+              {fetchingModels ? "正在拉取…" : "拉取模型清单"}
+            </button>
+            {#each modelList as item (item.id)}
+              <button class="setting-button" aria-pressed={draft.model === item.id} disabled={busy}
+                onclick={() => (draft.model = item.id)}>{item.label}</button>
+            {/each}
+          </div>
+          <p class="settings-hint" role="status">
+            {modelListError || modelListNote || (modelList.length ? `服务商自己报了 ${modelList.length} 个模型` : "还没拉清单：点上面那颗，或者直接把模型 ID 填在框里")}
+          </p>
+          <p class="settings-hint">反推只能挑看得懂图的那一个。挑错了这边会报「模型不支持图片」。</p>
+        {:else if isPreset}
           <label>反推模型
             <select aria-label="反推模型" bind:value={draft.model}>
               {#each providerModels as m}<option value={m.id}>{m.label}{m.recommended ? "（推荐）" : ""}</option>{/each}
@@ -127,11 +203,22 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
           <p class="settings-hint break-all">请求地址：{draft.base_url ? endpoint : "填写 Base URL 后显示"}</p>
           <label>模型 ID<input aria-label="模型 ID" bind:value={draft.model} placeholder="服务商提供的模型名称" /></label>
         {/if}
-        <label>API Key {hasKey ? "（已配置；留空保留）" : "（本地无认证服务可留空）"}
-          <input aria-label="API Key" type="password" autocomplete="new-password" bind:value={keyInput} disabled={clearKey} />
-        </label>
-        {#if hasKey}<label class="flex gap-2"><input type="checkbox" aria-label="清除已保存密钥" bind:checked={clearKey} />清除已保存密钥</label>{/if}
-        <p class="settings-hint">Windows 按当前用户加密保存密钥；其他系统仅在当前运行期间保存。</p>
+        {#if sharedKey}
+          <label>API Key {keyReady ? "（已配置；留空保留）" : "（一把 Key 通用，粘进来就存住）"}
+            <input aria-label="API Key" type="password" autocomplete="new-password" bind:this={keyInputEl} bind:value={keyInput} disabled={clearKey} />
+          </label>
+          {#if keyReady}<label class="flex gap-2"><input type="checkbox" aria-label="清除已保存密钥" bind:checked={clearKey} />清掉这把 Key（反推与一键同款同时失效）</label>{/if}
+          <p class="settings-hint">
+            RunningHub 一把 Key 走天下：这一把同时管「反推」和下面那张「RunningHub 云端生成」，
+            只存一份，在任一处改都一起生效。花费上限那两道闸管的是 RH币出图出片出声音；反推按 token 计价，不走那两道闸。
+          </p>
+        {:else}
+          <label>API Key {keyReady ? "（已配置；留空保留）" : "（本地无认证服务可留空）"}
+            <input aria-label="API Key" type="password" autocomplete="new-password" bind:this={keyInputEl} bind:value={keyInput} disabled={clearKey} />
+          </label>
+          {#if keyReady}<label class="flex gap-2"><input type="checkbox" aria-label="清除已保存密钥" bind:checked={clearKey} />清除已保存密钥</label>{/if}
+          <p class="settings-hint">Windows 按当前用户加密保存密钥；其他系统仅在当前运行期间保存。</p>
+        {/if}
         {#if isPreset}
           <details class="space-y-2">
             <summary class="settings-hint model-summary">高级设置</summary>
@@ -256,6 +343,8 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
   /* 指令框里是长段文字：白字压黑底太刺眼，行距也偏挤，所以压灰一档、行距放到 1.9。 */
   .model-settings textarea { color: #c2c2ca; line-height: 1.9; letter-spacing: .01em; }
   .model-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  /* 现拉的清单长短不由我们决定：给它一个会滚的筐，别把整张卡顶长。 */
+  .model-picks { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; max-height: 132px; overflow: auto; }
   fieldset { margin-top: 18px; }
   fieldset:first-child { margin-top: 0; }
   legend { margin-bottom: 10px; font-size: 14px; font-weight: 500; color: #e6e6ea; }

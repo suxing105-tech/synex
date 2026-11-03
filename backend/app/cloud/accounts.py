@@ -97,6 +97,36 @@ def key_for(row: dict, *, quiet: bool = False) -> str:
     raise ValueError("这条云端账号还没有填 API Key，去设置 → 模型与反推里填。")
 
 
+def shared_row() -> dict | None:
+    """「一把 Key 走天下」里那把 Key 落在哪一行。
+
+    先给 usable_account()：反推侧和一键同款必须读同一行，否则会出现「一键同款能跑、
+    反推说没 Key」这种查起来最费劲的分叉。一家都没配 Key 时退到第一行 RunningHub 账号，
+    让第一次填 Key 有唯一去处。
+    """
+    usable = usable_account()
+    if usable:
+        return usable
+    row = _conn().execute(
+        "SELECT * FROM gen_accounts WHERE provider=? ORDER BY id LIMIT 1", (cloud_spec.PROVIDER,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def shared_key(quiet: bool = True) -> str:
+    """反推侧发请求时拿的那把 Key；没有就回空串，让界面能说清「差这一步」。"""
+    row = shared_row()
+    return key_for(row, quiet=quiet) if row else ""
+
+
+def put_shared_key(text: str) -> dict:
+    """把 Key 写进唯一那个家：有账号就改那一行，一家都没有就顺手建一家。"""
+    row = shared_row()
+    if row is None:
+        return save_account({"api_key": text, "name": cloud_spec.PROVIDER_LABEL})
+    return save_account({"api_key": text}, int(row["id"]))
+
+
 def usable_account() -> dict | None:
     """能用的那家账号：开了、填了 key、服务商是我们支持的那家。
 

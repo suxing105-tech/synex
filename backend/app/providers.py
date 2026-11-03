@@ -112,6 +112,25 @@ PRESETS: dict[str, dict] = {
         "format": "openai",
         "note": "使用 ModelScope（魔搭）推理 API Key；模型支持图片识别。",
     },
+    # RunningHub：官方 LLM API 与 OpenAI 协议兼容，所以它和别家一样进这个下拉。
+    # 但它有两处和别家不同，落在下面这两个字段上：
+    # - credential_scope=cloud：这把 Key 的家在「RunningHub 云端生成」那条账号（gen_accounts）里，
+    #   这条模型配置不再另存一份。RunningHub 本来就是一把 Key 走天下，存两份迟早对不上。
+    # - models_dynamic：能反推的模型 id 由它自己和用户账号决定，抄在这里第二天就过期，
+    #   所以清单走 GET /models 现拉，拉不到就让人手填。
+    "runninghub": {
+        "id": "runninghub",
+        "name": "RunningHub",
+        "base_url": "https://llm.runninghub.cn/v1",
+        "models": {},
+        "models_dynamic": True,
+        "credential_scope": "cloud",
+        "default_timeout": 120,
+        "format": "openai",
+        "note": "一把 Key 走天下：这里的 Key 与「RunningHub 云端生成」共用同一把，只存一份，"
+                "在任一处改都一起生效。反推按 token 计价（CNY / 1M tokens），"
+                "不吃云端生成那两道 RH币花费上限；官方要求两类接口都用企业级-共享 API Key。",
+    },
 }
 
 
@@ -130,6 +149,9 @@ def list_presets():
             "models": models,
             "default_timeout": preset["default_timeout"],
             "note": preset.get("note", ""),
+            # 这两个开关决定界面长什么样：清单是现拉的还是抄来的、Key 是自家存还是共用
+            "models_dynamic": bool(preset.get("models_dynamic")),
+            "credential_scope": preset.get("credential_scope", "local"),
         })
     return result
 

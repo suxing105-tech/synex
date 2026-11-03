@@ -28,9 +28,6 @@
   let error = $state("");
   let notice = $state("");
 
-  // Key 只在这一个局部状态里待着，保存成功后立刻清空——不进 status，不进任何长生命周期状态。
-  let keyInput = $state("");
-  let revealKey = $state(false);
   let maxSingle = $state(0);
   let maxDaily = $state(0);
   let enabled = $state(true);
@@ -74,7 +71,21 @@
       error = cloneError(e);
     }
   }
-  onMount(() => { void reload(); });
+  onMount(() => {
+    void reload();
+    // 上面那张卡（服务商选 RunningHub 那一格）改了这把 Key，这里跟着改口，别各说各话。
+    const onKeyChange = () => void reload(true);
+    window.addEventListener("cloud-credentials-changed", onKeyChange);
+    return () => window.removeEventListener("cloud-credentials-changed", onKeyChange);
+  });
+
+  /**
+   * Key 的输入口在上面那张卡——服务商选 RunningHub 那一格。RunningHub 本来就是一把 Key 走天下，
+   * 这里再摆一个输入框等于给同一把 Key 安第二个家，迟早一边新一边旧。
+   */
+  function gotoKey() {
+    window.dispatchEvent(new Event("edit-cloud-key"));
+  }
 
   /** 一串动作统一收在这里：busy 一处管，错误一律说人话，成功话由调用方给。 */
   async function run(fn: () => Promise<void>, okMessage = "") {
@@ -89,36 +100,6 @@
     } finally {
       busy = false;
     }
-  }
-
-  /** 存这把 Key。库里还没有账号就顺手建一个（名字固定 RunningHub，UI 不再问这个）。 */
-  async function saveKey() {
-    const key = keyInput.trim();
-    if (!key) return;
-    await run(async () => {
-      const current = (status?.accounts ?? [])[0];
-      await cloudApi.saveAccount(
-        current ? { api_key: key } : { api_key: key, name: "RunningHub" },
-        current?.id ?? null,
-      );
-      keyInput = "";
-      revealKey = false;
-      testResult = null;
-      await reload(true);
-      notice = "Key 已存住。点「测一下连通与余额」跑一次，才知道这把 Key 有效、账户里还剩多少 RH币。";
-    });
-  }
-
-  async function clearKey() {
-    const current = (status?.accounts ?? [])[0];
-    if (!current) return;
-    await run(async () => {
-      await cloudApi.saveAccount({ api_key: "" }, current.id);
-      keyInput = "";
-      testResult = null;
-      await reload(true);
-      notice = "已清掉这把 API Key。三条 API 还挂在切换清单里，填回来就能继续用。";
-    });
   }
 
   /** 这是这张卡唯一会往外发请求的一颗按钮，只有你点它才发。 */
@@ -183,8 +164,8 @@
     const out: string[] = [];
     if (!status.cloud_enabled) out.push("云端生成总开关是关的");
     const first = (status.accounts ?? [])[0];
-    if (!first) out.push("还没填 RunningHub 的 API Key");
-    else if (!first.has_api_key) out.push("这把 API Key 还没填");
+    if (!first) out.push("还没填 RunningHub 的 API Key：在上面「反推模型」把服务商选成 RunningHub，粘 Key 保存");
+    else if (!first.has_api_key) out.push("这把 API Key 还没填：在上面「反推模型」里填，或点「去填 Key」");
     else if (!first.enabled) out.push("这个账号被停用了");
     return out;
   });
@@ -222,22 +203,14 @@
           </ul>
         {/if}
 
-        <label class="cloud-field">API Key {account?.has_api_key ? "（已配置；粘一把新的就覆盖）" : "（在 RunningHub 控制台生成，粘进来就存住）"}
-          <input
-            aria-label="云端 API Key"
-            type={revealKey ? "text" : "password"}
-            autocomplete="new-password"
-            bind:value={keyInput}
-            disabled={busy}
-            placeholder={account?.has_api_key ? "已配置，留空表示不动它" : "粘贴 RunningHub 的 API Key"}
-          />
-        </label>
+        <p class="cloud-key" class:cloud-key-set={account?.has_api_key} role="status">
+          API Key：{account?.has_api_key ? "已配置" : "还没填"}
+          <span class="settings-hint">与上面的「反推模型」共用同一把，只存一份。</span>
+          <button class="setting-button setting-button-ghost" disabled={busy} onclick={gotoKey}>
+            {account?.has_api_key ? "改 Key" : "去填 Key"}
+          </button>
+        </p>
         <div class="cloud-inline">
-          <label class="cloud-check"><input type="checkbox" aria-label="显示 API Key" bind:checked={revealKey} />显示出来核对一眼</label>
-          <button class="setting-button bg-accent text-bg" disabled={busy || !keyInput.trim()} onclick={() => void saveKey()}>保存 Key</button>
-          {#if account?.has_api_key}
-            <button class="setting-button" disabled={busy} onclick={() => void clearKey()}>清掉这把 Key</button>
-          {/if}
           <button class="setting-button" disabled={busy || testing || !account?.has_api_key} onclick={() => void testConnection()}>
             {testing ? "测中…" : "测一下连通与余额"}
           </button>
@@ -247,37 +220,40 @@
             </span>
           {/if}
         </div>
-        {#if keyPersistence}<p class="settings-hint">{keyPersistence}</p>{/if}
-        <p class="settings-hint">这里从不把 Key 读回来显示：任何接口都只回「有没有配过」，所以复制不走它。</p>
+        <p class="settings-hint">这把 Key 从不被读回来显示：任何接口都只回「有没有配过」，所以复制不走它。</p>
 
-        <div class="cloud-limits">
-          <label class="cloud-field">单次上限（RH币，0 = 不限）
-            <input aria-label="单次花费上限" type="number" min="0" max="1000000" step="1" bind:value={maxSingle} disabled={busy} />
-          </label>
-          <label class="cloud-field">当日上限（RH币，0 = 不限）
-            <input aria-label="当日花费上限" type="number" min="0" max="1000000" step="1" bind:value={maxDaily} disabled={busy} />
-          </label>
-          <button class="setting-button cloud-limits-save" disabled={busy} onclick={saveLimits}>保存花费上限</button>
-        </div>
-        <p class="settings-hint">
-          上限是闸，不是预算：超过就拦在提交之前，钱不会花出去。花费按余额差值记账 ·
-          今天已花 {coinsLabel(spend?.today_coins)} · {spend?.month ?? "本月"} 共 {coinsLabel(spend?.month_coins)}
-        </p>
+        <details class="cloud-more">
+          <summary>花费上限、三条 API 与记账</summary>
+          <div class="cloud-limits">
+            <label class="cloud-field">单次上限（RH币，0 = 不限）
+              <input aria-label="单次花费上限" type="number" min="0" max="1000000" step="1" bind:value={maxSingle} disabled={busy} />
+            </label>
+            <label class="cloud-field">当日上限（RH币，0 = 不限）
+              <input aria-label="当日花费上限" type="number" min="0" max="1000000" step="1" bind:value={maxDaily} disabled={busy} />
+            </label>
+            <button class="setting-button cloud-limits-save" disabled={busy} onclick={saveLimits}>保存花费上限</button>
+          </div>
+          <p class="settings-hint">
+            上限是闸，不是预算：超过就拦在提交之前，钱不会花出去。花费按余额差值记账 ·
+            今天已花 {coinsLabel(spend?.today_coins)} · {spend?.month ?? "本月"} 共 {coinsLabel(spend?.month_coins)}
+          </p>
 
-        <p class="settings-hint">
-          三条 API 挂在「一键同款」的切换清单里：{presetLine || "一条都没装，点下面恢复"}。
-          <button class="setting-button" disabled={busy} onclick={syncShortcuts}>恢复这三条</button>
-        </p>
-        {#if unverified.length}
-          <details class="cloud-notes">
-            <summary>{presets.length} 条里有 {unverified.length} 条端点还没在真账号上实测过</summary>
-            <ul>
-              {#each unverified as item (item.key)}
-                <li>{item.name}：{item.notes?.join("；") || "字段未实测"}</li>
-              {/each}
-            </ul>
-          </details>
-        {/if}
+          <p class="settings-hint">
+            三条 API 挂在「一键同款」的切换清单里：{presetLine || "一条都没装，点下面恢复"}。
+            <button class="setting-button" disabled={busy} onclick={syncShortcuts}>恢复这三条</button>
+          </p>
+          {#if keyPersistence}<p class="settings-hint">{keyPersistence}</p>{/if}
+          {#if unverified.length}
+            <details class="cloud-notes">
+              <summary>{presets.length} 条里有 {unverified.length} 条端点还没在真账号上实测过</summary>
+              <ul>
+                {#each unverified as item (item.key)}
+                  <li>{item.name}：{item.notes?.join("；") || "字段未实测"}</li>
+                {/each}
+              </ul>
+            </details>
+          {/if}
+        </details>
 
         {#if pending.length}
           <p class="cloud-section">待取回的产物</p>
@@ -314,7 +290,10 @@
   .cloud-field { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: #a1a1aa; }
   .cloud-field input { width: 100%; max-width: 420px; }
   .cloud-inline { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-  .cloud-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #a1a1aa; }
+  .cloud-key { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0; font-size: 12.5px; color: #fbbf24; }
+  .cloud-key-set { color: #4ade80; }
+  .cloud-more { display: grid; gap: 10px; font-size: 12.5px; color: #a1a1aa; }
+  .cloud-more > summary { cursor: pointer; color: #d4d4d8; }
   .cloud-test { font-size: 12.5px; }
   .cloud-ok { color: #4ade80; }
   .cloud-bad { color: #f87171; }

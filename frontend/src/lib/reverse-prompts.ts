@@ -2,7 +2,19 @@ import { writable } from "svelte/store";
 import { http } from "./api";
 
 export interface ProviderModel { id: string; label: string; recommended: boolean }
-export interface ProviderPreset { id: string; name: string; base_url: string; models: ProviderModel[]; default_timeout: number; note?: string }
+/**
+ * 一家预设服务商。两个字段决定界面长什么样：
+ * - credential_scope "cloud" = 这把 Key 的家在「RunningHub 云端生成」那条账号里，
+ *   这条模型配置不另存一份（RunningHub 一把 Key 走天下，存两份迟早对不上）；
+ * - models_dynamic = 模型清单由服务商自己报（下面 modelList），代码里不抄一份会过期的表。
+ */
+export interface ProviderPreset {
+  id: string; name: string; base_url: string; models: ProviderModel[]; default_timeout: number; note?: string;
+  credential_scope?: string; models_dynamic?: boolean;
+  /** 只有共用 Key 那几家带：那把 Key 存了没有。是布尔，永远不是 Key 本身。 */
+  shared_has_key?: boolean;
+}
+export interface ProviderModelList { models: ProviderModel[]; source: string; reason: string }
 export interface ModelConfig {
   id: number; name: string; base_url: string; model: string; timeout: number;
   provider: string | null; has_api_key: boolean; key_persistence: "encrypted" | "session";
@@ -22,6 +34,9 @@ const json = (method: string, body: unknown) => ({ method, body: JSON.stringify(
 export const reverseApi = {
   models: () => http<ModelConfig[]>("/api/model-configs"),
   providers: () => http<ProviderPreset[]>("/api/model-providers"),
+  /** 模型清单现拉：拉到什么列什么，拉不到后端会给一句原因，界面留手填这条路。 */
+  modelList: (provider: string) =>
+    http<ProviderModelList>(`/api/model-providers/${encodeURIComponent(provider)}/models`),
   saveModel: (draft: ModelDraft, id?: number) => http<ModelConfig>(`/api/model-configs${id ? `/${id}` : ""}`, json(id ? "PATCH" : "POST", draft)),
   deleteModel: (id: number) => http(`/api/model-configs/${id}`, { method: "DELETE" }),
   test: (draft: ModelDraft) => http<{ message: string; text: string }>("/api/model-configs/test", json("POST", draft)),

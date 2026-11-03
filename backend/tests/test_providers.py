@@ -101,3 +101,162 @@ def test_old_rows_migrated_to_custom(client, init_db):
     row = next(r for r in data if r["id"] == config_id)
     assert row["provider"] is None
     assert row["name"] == "旧配置" and row["base_url"] == "https://example.com/v1"
+
+
+# ---------- RunningHub：一把 Key 走天下 ----------
+
+
+def accounts_rows():
+    from app import db
+
+    return [dict(r) for r in db.get_pool().main().execute("SELECT * FROM gen_accounts ORDER BY id").fetchall()]
+
+
+def runninghub_draft(**kwargs):
+    return {"provider": "runninghub", "model": "some/deepseek-vl", **kwargs}
+
+
+def test_runninghub_offers_one_key_for_both_uses(client):
+    """它进的是服务商下拉，Key 却不归这条配置所有——这两件事必须同时成立，界面才说得通。"""
+    preset = next(p for p in client.get("/api/model-providers").json() if p["id"] == "runninghub")
+    assert preset["credential_scope"] == "cloud"
+    assert preset["models_dynamic"] is True
+    assert preset["base_url"] == "https://llm.runninghub.cn/v1"
+    assert "一把 Key 走天下" in preset["note"]
+
+
+def test_shared_key_presence_travels_with_the_preset(client):
+    """界面要知道那把共用的 Key 存了没有，只能靠这条清单带回这个布尔——而且是布尔，不是 Key。"""
+    def flag():
+        return next(p for p in client.get("/api/model-providers").json() if p["id"] == "runninghub")["shared_has_key"]
+
+    assert flag() is False
+    client.post("/api/model-configs", json=runninghub_draft(api_key="RH-FLAG"))
+    assert flag() is True
+    assert "RH-FLAG" not in client.get("/api/model-providers").text
+
+
+def test_runninghub_key_lives_in_the_cloud_account_not_the_config(client):
+    """在模型配置里填的 Key 落到云端那条账号：两处读的是同一行，不是两份抄本。"""
+    result = client.post("/api/model-configs", json=runninghub_draft(api_key="RH-SHARED-1")).json()
+    row = service.get_config(result["id"])
+    assert row["credential"] is None, "这条配置不许再存一份密文"
+    assert service.key_for(row) == "RH-SHARED-1"
+    assert result["has_api_key"] is True
+    accounts = accounts_rows()
+    assert len(accounts) == 1 and accounts[0]["provider"] == "runninghub"
+    # 一键同款那一侧看到的是同一个账号：不用他再填第二遍
+    from app.cloud import accounts as cloud_accounts
+
+    assert cloud_accounts.usable_account() is not None
+    assert cloud_accounts.key_for(cloud_accounts.usable_account()) == "RH-SHARED-1"
+
+
+def test_key_typed_on_the_cloud_side_reaches_the_reverse_model(client):
+    """反方向同理：在云端那张卡填的 Key，反推这边直接就能用。"""
+    from app.cloud import accounts as cloud_accounts
+
+    cloud_accounts.save_account({"api_key": "RH-SHARED-2", "name": "RunningHub"})
+    result = client.post("/api/model-configs", json=runninghub_draft()).json()
+    assert result["has_api_key"] is True
+    assert service.key_for(service.get_config(result["id"])) == "RH-SHARED-2"
+
+
+def test_clearing_the_shared_key_disables_both_uses(client):
+    """一把就是真一把：清一次，反推与一键同款同时失效，界面必须照这个说。"""
+    from app.cloud import accounts as cloud_accounts
+
+    config = client.post("/api/model-configs", json=runninghub_draft(api_key="RH-SHARED-3")).json()
+    assert cloud_accounts.usable_account() is not None
+    cleared = client.patch(f"/api/model-configs/{config['id']}", json={"api_key": "", "model": "some/deepseek-vl"}).json()
+    assert cleared["has_api_key"] is False
+    assert service.key_for(service.get_config(config["id"])) == ""
+    assert cloud_accounts.usable_account() is None
+
+
+def test_patch_without_provider_keeps_it(client):
+    """PATCH 不带 provider 时保留原值：只改模型的这一次编辑，不许把服务商抹成自定义。"""
+    config = client.post("/api/model-configs", json=preset_draft(api_key="keep-me")).json()
+    patched = client.patch(f"/api/model-configs/{config['id']}", json={"timeout": 300}).json()
+    assert patched["provider"] == "qwen" and patched["has_api_key"] is True
+    assert service.key_for(service.get_config(config["id"])) == "keep-me"
+
+
+def test_editing_the_model_does_not_touch_the_key(client):
+    """只改模型/超时不该把 Key 顺手带走——api_key 这个键没出现就是不动它。"""
+    config = client.post("/api/model-configs", json=runninghub_draft(api_key="RH-SHARED-4")).json()
+    patched = client.patch(f"/api/model-configs/{config['id']}", json={"model": "other/vision-model"}).json()
+    assert patched["model"] == "other/vision-model" and patched["has_api_key"] is True
+
+
+def test_deleting_the_runninghub_config_keeps_the_key(client):
+    """删配置删的是这条模型记录，不是那把两处共用的 Key。"""
+    from app.cloud import accounts as cloud_accounts
+
+    config = client.post("/api/model-configs", json=runninghub_draft(api_key="RH-SHARED-5")).json()
+    client.delete(f"/api/model-configs/{config['id']}")
+    assert len(accounts_rows()) == 1
+    assert cloud_accounts.public(accounts_rows()[0])["has_api_key"] is True
+
+
+# ---------- 模型清单：现拉，不抄 ----------
+
+
+def test_preset_model_list_still_comes_from_the_registry(client):
+    out = client.get("/api/model-providers/qwen/models").json()
+    assert out["source"] == "preset"
+    assert out["models"][0]["id"] == "qwen2.5-vl-72b-instruct"
+
+
+def test_dynamic_model_list_needs_the_key_first(client):
+    out = client.get("/api/model-providers/runninghub/models").json()
+    assert out["models"] == [] and out["source"] == "none"
+    assert "API Key" in out["reason"]
+
+
+def test_dynamic_model_list_lists_what_the_account_can_see(client, monkeypatch):
+    """清单以服务商报的为准；只有「默认选中哪个」用字样猜，能选哪些一个字都不编。"""
+    import httpx
+
+    service._MODEL_CACHE.clear()
+    client.post("/api/model-providers")  # 先让预设注册表被走过一遍（与真实使用顺序一致）
+    conf = client.post("/api/model-configs", json=runninghub_draft(api_key="RH-MODELS")).json()
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["auth"] = request.headers.get("authorization")
+        return httpx.Response(200, json={"data": [{"id": "x/deepseek-v4.1-flash"}, {"id": "y/qwen2.5-vl-72b"}]})
+
+    actual = httpx.AsyncClient
+    monkeypatch.setattr(service.httpx, "AsyncClient",
+                        lambda **kwargs: actual(transport=httpx.MockTransport(handler), **kwargs))
+    out = client.get("/api/model-providers/runninghub/models").json()
+    assert seen["url"] == "https://llm.runninghub.cn/v1/models"
+    assert seen["auth"] == "Bearer RH-MODELS"
+    assert [m["id"] for m in out["models"]] == ["x/deepseek-v4.1-flash", "y/qwen2.5-vl-72b"]
+    assert [m for m in out["models"] if m["recommended"]] == [{"id": "y/qwen2.5-vl-72b", "label": "y/qwen2.5-vl-72b", "recommended": True}]
+    assert out["source"] == "live" and conf["has_api_key"] is True
+    service._MODEL_CACHE.clear()
+
+
+def test_dynamic_model_list_failure_tells_how_to_proceed(client, monkeypatch):
+    import httpx
+
+    service._MODEL_CACHE.clear()
+    client.post("/api/model-configs", json=runninghub_draft(api_key="RH-BAD"))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, text="no such route")
+
+    actual = httpx.AsyncClient
+    monkeypatch.setattr(service.httpx, "AsyncClient",
+                        lambda **kwargs: actual(transport=httpx.MockTransport(handler), **kwargs))
+    resp = client.get("/api/model-providers/runninghub/models")
+    assert resp.status_code == 502
+    assert "手填模型 ID" in resp.json()["detail"]
+    service._MODEL_CACHE.clear()
+
+
+def test_custom_provider_has_no_model_list(client):
+    assert client.get("/api/model-providers/custom/models").status_code == 422

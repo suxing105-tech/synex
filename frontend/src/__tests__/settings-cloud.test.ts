@@ -9,6 +9,10 @@ import CloudServices from "../components/CloudServices.svelte";
  * 这张卡最要紧的不是好不好看，是两件不可逆的事：API Key 会不会被回显出去（回显＝落盘＝会泄露），
  * 以及花费闸与「待取回」会不会说谎（钱已经花出去了，产物还挂在会过期的链接上）。
  * 所以每条都直接盯 DOM 与真实请求参数。
+ *
+ * Key 的输入口不在这里了：RunningHub 一把 Key 走天下，反推与一键同款共用同一把，
+ * 输入口只留在上面那张「反推模型」里。这张卡只报状态 + 把「改 Key」这颗按钮送过去——
+ * 下面这几条钉的就是「这里既没有第二个输入框，也不许偷偷写 Key」。
  */
 
 const http = vi.fn();
@@ -109,47 +113,61 @@ function routes(over: Record<string, unknown> = {}, extra: Record<string, unknow
   });
 }
 
-const keyBox = (screen: { getByLabelText: (name: string) => HTMLElement }) =>
-  screen.getByLabelText("云端 API Key") as HTMLInputElement;
+const keyLine = (screen: { container: HTMLElement }) =>
+  screen.container.querySelector(".cloud-key")?.textContent ?? "";
 
 afterEach(() => { cleanup(); http.mockReset(); });
 
-it("Key 只回显「已配置」：后端就算误发明文，DOM 里也不许出现一个字符", async () => {
+it("Key 只报状态不回显：这张卡没有输入框，后端误发明文时 DOM 里也不许出现一个字符", async () => {
   routes();
   const screen = render(CloudServices, {});
   await screen.findByText(/三条 API 挂在/);
-  expect(screen.getByText(/已配置/)).toBeTruthy();
+  expect(keyLine(screen)).toContain("已配置");
   expect(screen.container.textContent).not.toContain(SECRET_KEY);
-  // 输入框永远从空开始，而且不是明文
-  expect(keyBox(screen).value).toBe("");
-  expect(keyBox(screen).type).toBe("password");
+  // 一把 Key 只有一个家：这张卡不再摆第二个输入框，免得同一把 Key 存两处、一边新一边旧
+  expect(screen.queryByLabelText("云端 API Key")).toBeNull();
   const inputs = Array.from(screen.container.querySelectorAll("input")) as HTMLInputElement[];
-  expect(inputs.some((input) => input.value.includes(SECRET_KEY))).toBe(false);
+  expect(inputs.some((input) => input.type === "password")).toBe(false);
 });
 
-it("保存 Key 时明文只出现在请求体里：PATCH 已有账号 / POST 新账号，URL 与界面都不带它", async () => {
+it("「改 Key」只把人送去上面那张卡，自己不写接口：一把 Key 不许有两个入口", async () => {
   routes();
-  let screen = render(CloudServices, {});
+  const seen: string[] = [];
+  const onEvent = (event: Event) => seen.push(event.type);
+  window.addEventListener("edit-cloud-key", onEvent);
+  const screen = render(CloudServices, {});
   await screen.findByText(/三条 API 挂在/);
-  await fireEvent.input(keyBox(screen), { target: { value: SECRET_KEY } });
-  await fireEvent.click(screen.getByRole("button", { name: "保存 Key" }));
-  await waitFor(() => expect(call("/api/clone/cloud/accounts/1", "PATCH")).toBeTruthy());
-  expect(bodyOf(call("/api/clone/cloud/accounts/1", "PATCH")).api_key).toBe(SECRET_KEY);
-  // 保存完立刻清空：key 不进 status、不进任何长生命周期状态，否则切个标签页就留在内存里
-  await waitFor(() => expect(keyBox(screen).value).toBe(""));
+  await fireEvent.click(screen.getByRole("button", { name: "改 Key" }));
+  expect(seen).toEqual(["edit-cloud-key"]);
+  await tick();
+  expect(http.mock.calls.filter(([path]) => String(path).startsWith("/api/clone/cloud/accounts"))).toHaveLength(0);
   expect(screen.container.textContent).not.toContain(SECRET_KEY);
-  cleanup();
+  window.removeEventListener("edit-cloud-key", onEvent);
+});
 
-  routes({ accounts: [] });
-  screen = render(CloudServices, {});
+it("上面那张卡改了 Key，这张卡自己重读一遍，不用人重开设置页", async () => {
+  routes();
+  const screen = render(CloudServices, {});
   await screen.findByText(/三条 API 挂在/);
-  await fireEvent.input(keyBox(screen), { target: { value: SECRET_KEY } });
-  await fireEvent.click(screen.getByRole("button", { name: "保存 Key" }));
-  await waitFor(() => expect(call("/api/clone/cloud/accounts", "POST")).toBeTruthy());
-  // 库里还没有账号时顺手建一把，名字固定 RunningHub：这些字段 UI 不再问人
-  expect(bodyOf(call("/api/clone/cloud/accounts", "POST"))).toEqual({ api_key: SECRET_KEY, name: "RunningHub" });
-  expect(http.mock.calls.every(([path]) => !String(path).includes(SECRET_KEY))).toBe(true);
-  expect(screen.container.textContent).not.toContain(SECRET_KEY);
+  const hits = () => http.mock.calls.filter(([path]) => path === "/api/clone/cloud/status").length;
+  const before = hits();
+  status = baseStatus({ accounts: [{ ...ACCOUNT, has_api_key: false }] });
+  window.dispatchEvent(new Event("cloud-credentials-changed"));
+  await waitFor(() => expect(hits()).toBeGreaterThan(before));
+  await waitFor(() => expect(keyLine(screen)).toContain("还没填"));
+});
+
+it("还没填 Key 时给「去填 Key」，测余额那颗点不动：没 Key 就不该往外发请求", async () => {
+  routes({
+    accounts: [{ ...ACCOUNT, has_api_key: false }],
+    availability: { available: false, reason: "这个账号还没填 API Key" },
+  });
+  const screen = render(CloudServices, {});
+  await screen.findByText(/三条 API 挂在/);
+  await fireEvent.click(screen.getByRole("button", { name: "去填 Key" }));
+  expect(keyLine(screen)).toContain("还没填");
+  expect((screen.getByRole("button", { name: "测一下连通与余额" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(http.mock.calls.filter(([path]) => String(path).endsWith("/test"))).toHaveLength(0);
 });
 
 it("三条 API 收成一行清单；没实测过的那条写在折叠说明里，别让人以为端点是稳的", async () => {
@@ -183,6 +201,10 @@ it("总开关一拨就 PUT /settings 落库；花费上限仍走自己那颗「�
   // 开关自己只发这一个字段：不顺手把两个上限按界面上的当前值盖回去
   await waitFor(() => expect(call("/api/clone/cloud/settings", "PUT")).toBeTruthy());
   expect(bodyOf(call("/api/clone/cloud/settings", "PUT"))).toEqual({ cloud_enabled: true });
+  const more = screen.container.querySelector(".cloud-more") as HTMLDetailsElement;
+  expect(more).toBeTruthy();
+  more.open = true;
+  await tick();
   await fireEvent.click(screen.getByRole("button", { name: "保存花费上限" }));
   await waitFor(() => expect(settingsCalls().length).toBe(2));
   expect(bodyOf(settingsCalls()[1])).toEqual({
@@ -217,24 +239,4 @@ it("availability.available=false 时把后端那句 reason 原样显示，不只
   expect(screen.container.querySelector(".cloud-state")?.className).not.toContain("cloud-ready");
   // reason 原样显示之外，还差哪一步列哪一步：这里缺的就是 Key
   expect(screen.container.querySelector(".cloud-blockers")?.textContent).toContain("这把 API Key 还没填");
-});
-
-it("Key 已配置时不粘新的就点不动：留空一次手滑不许把存住的那把清掉", async () => {
-  routes();
-  const screen = render(CloudServices, {});
-  await screen.findByText(/三条 API 挂在/);
-  const save = screen.getByRole("button", { name: "保存 Key" }) as HTMLButtonElement;
-  // 界面从不回显 Key，输入框永远从空开始，所以「保存」在留空时必须点不动——
-  // 发 api_key:"" 等于清掉这把 Key，那是另一颗按钮（清掉这把 Key）干的事。
-  expect(save.disabled).toBe(true);
-  await fireEvent.click(save);
-  await tick();
-  expect(http.mock.calls.filter(([path]) => String(path).startsWith("/api/clone/cloud/accounts"))).toHaveLength(0);
-  await fireEvent.input(keyBox(screen), { target: { value: SECRET_KEY } });
-  await tick();
-  expect((screen.getByRole("button", { name: "保存 Key" }) as HTMLButtonElement).disabled).toBe(false);
-  await fireEvent.click(screen.getByRole("button", { name: "保存 Key" }));
-  await waitFor(() => expect(call("/api/clone/cloud/accounts/1", "PATCH")).toBeTruthy());
-  // 这张卡只管 Key：账号名、服务商、代理方式都不再是这张卡的问题
-  expect(bodyOf(call("/api/clone/cloud/accounts/1", "PATCH"))).toEqual({ api_key: SECRET_KEY });
 });

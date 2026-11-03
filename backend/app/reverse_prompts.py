@@ -8,6 +8,7 @@ import ipaddress
 import json
 import re
 import sys
+import time
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -79,14 +80,36 @@ def get_config(config_id: int):
     return dict(row)
 
 
+def shares_cloud_key(provider) -> bool:
+    """这一家服务商的 Key 不归 model_configs 所有，而是与「RunningHub 云端生成」共用一把。
+
+    RunningHub 本来就是一把 API Key 走天下：同一把 Key 既走 LLM（反推）也走模型 API
+    （出图出片出声音）。在这里再存一份只会带来一种 bug——改了那边、这边还按旧的跑。
+    """
+    preset = providers.PRESETS.get(provider or "")
+    return bool(preset) and preset.get("credential_scope") == "cloud"
+
+
+def cloud_key(quiet: bool = True) -> str:
+    from .cloud import accounts  # 放到函数里：cloud 那边也延迟引本模块，避免导入期互相依赖
+
+    return accounts.shared_key(quiet=quiet)
+
+
 def public_config(row):
     result = {k: row[k] for k in ("id", "name", "base_url", "model", "timeout", "provider")}
-    result["has_api_key"] = bool(row["credential"] or _session_keys.get(credential_scope(row["id"])))
+    if shares_cloud_key(row["provider"]):
+        # 共用那把：照云端账号说「有没有」，这条配置自己那格永远是空的
+        result["has_api_key"] = bool(cloud_key())
+    else:
+        result["has_api_key"] = bool(row["credential"] or _session_keys.get(credential_scope(row["id"])))
     result["key_persistence"] = "encrypted" if sys.platform == "win32" else "session"
     return result
 
 
 def key_for(row):
+    if shares_cloud_key(row.get("provider")):
+        return cloud_key()
     if row.get("credential"):
         if sys.platform != "win32":
             raise HTTPException(400, "此密钥由 Windows 加密，请在当前设备重新输入")
@@ -98,8 +121,11 @@ def save_config(values: dict, config_id: int | None = None):
     old = get_config(config_id) if config_id is not None else None
     values = dict(values)
     key = values.pop("api_key", None)
-    # provider: 预设 id / custom / None（视作手动自定义）
-    provider = values.get("provider") or None
+    # provider: 预设 id / custom / None（视作手动自定义）。
+    # PATCH 没带这个键时保留原值：以前按 None 处理，等于「只改个模型」也把服务商抹成自定义——
+    # 对共用 Key 的那几家，抹掉就等于悄悄断了 Key（配置看着还在，反推说没密钥）。
+    provider = values["provider"] if "provider" in values else (old or {}).get("provider")
+    provider = provider or None
     if provider == providers.CUSTOM_ID:
         provider = None
     preset = providers.get_preset(provider) if provider else None
@@ -124,9 +150,15 @@ def save_config(values: dict, config_id: int | None = None):
         raise HTTPException(422, "请选择或填写模型 ID")
     if preset and not merged.get("name"):
         merged["name"] = f"{preset['name']} · {providers.model_label(preset, merged['model'])}"
-    credential = old["credential"] if old else None
-    if key is not None:
+    shared = shares_cloud_key(provider)
+    credential = None if shared else (old["credential"] if old else None)
+    if key is not None and not shared:
         credential = crypt(key.encode()) if key and sys.platform == "win32" else None
+    if key is not None and shared:
+        # 共用 Key 只有一个家：写进云端那一条账号。空串 = 清掉，两处一起失效（一把就是真一把）。
+        from .cloud import accounts
+
+        accounts.put_shared_key(key or "")
     with db.transaction() as conn:
         args = [merged[k] for k in ("name", "base_url", "model", "timeout", "provider")] + [credential]
         if old:
@@ -134,7 +166,7 @@ def save_config(values: dict, config_id: int | None = None):
         else:
             config_id = conn.execute("INSERT INTO model_configs(name,base_url,model,timeout,provider,credential) VALUES(?,?,?,?,?,?)", args).lastrowid
             conn.execute("UPDATE reverse_prompt_settings SET default_model_id=? WHERE default_model_id IS NULL", (config_id,))
-    if key is not None:
+    if key is not None and not shared:
         if key and sys.platform != "win32":
             _session_keys[credential_scope(config_id)] = key
         else:
@@ -168,6 +200,60 @@ def normalize_url(value: str) -> str:
         return urlunsplit((parts.scheme, parts.netloc, path, "", ""))
     except ValueError:
         raise HTTPException(422, "请输入有效的 HTTPS Base URL；HTTP 仅限本机或局域网地址，不得包含密钥或查询参数") from None
+
+
+# 拉到过一次就记着：清单是服务商自己的真话，抄进代码才会过期。
+_MODEL_CACHE: dict[str, tuple[float, dict]] = {}
+MODEL_CACHE_SECONDS = 600.0
+# 只有这几个字样能猜出「这个模型看得懂图」。仅用来决定默认选中哪一个，不影响能选哪些。
+_VISION_HINT = re.compile(r"vl|vision|image|4v|omni|multimodal", re.I)
+
+
+async def list_models(provider: str | None) -> dict:
+    """问服务商本身要模型清单（OpenAI 兼容的 GET /models），不在代码里抄一份。
+
+    为什么值得多这一步：能反推的模型只有那么几个，而账号开着哪些是会变的。
+    抄一份进代码，过期后的表现是「我要那个在下拉里选不到」，比手填难查得多。
+    所以：拉到什么列什么；拉不到就回空清单加一句原因，界面让人在高级里手填——不编。
+    """
+    preset = providers.get_preset(provider)
+    if preset is None:
+        raise HTTPException(422, "自定义服务请在下面直接填写模型 ID")
+    if not preset.get("models_dynamic"):
+        return {"models": [
+            {"id": mid, "label": info["label"], "recommended": bool(info.get("recommended"))}
+            for mid, info in preset["models"].items()
+        ], "source": "preset", "reason": ""}
+
+    cache_key = f'{preset["id"]}|{preset["base_url"]}'
+    key = cloud_key() if shares_cloud_key(preset["id"]) else ""
+    if not key:
+        cached = _MODEL_CACHE.get(cache_key)
+        if cached:
+            return {**cached[1], "source": "stale",
+                    "reason": "这一把 Key 还没存住，先列上次拉到的清单"}
+        return {"models": [], "source": "none", "reason": "先保存这把 API Key，才能向它要模型清单"}
+
+    url = normalize_url(preset["base_url"]) + "/models"
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
+            response = await client.get(url, headers={"Authorization": f"Bearer {key}"})
+        if response.status_code >= 300:
+            raise HTTPException(502, f"模型清单没拿到（HTTP {response.status_code}），可以在高级里手填模型 ID")
+        ids = [str(item.get("id")) for item in (response.json().get("data") or [])
+               if isinstance(item, dict) and item.get("id")]
+    except HTTPException:
+        raise
+    except (httpx.RequestError, ValueError, TypeError, AttributeError):
+        raise HTTPException(502, "连不上这家服务商的模型清单，可以在高级里手填模型 ID") from None
+    if not ids:
+        return {"models": [], "source": "empty",
+                "reason": "这家服务商没给出模型清单，请在高级里手填模型 ID"}
+    recommended = next((mid for mid in ids if _VISION_HINT.search(mid)), "")
+    result = {"models": [{"id": mid, "label": mid, "recommended": mid == recommended} for mid in ids],
+              "source": "live", "reason": ""}
+    _MODEL_CACHE[cache_key] = (time.monotonic(), result)
+    return result
 
 
 def resolve_draft(values: dict) -> dict:

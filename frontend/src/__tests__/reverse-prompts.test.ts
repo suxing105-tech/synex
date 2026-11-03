@@ -9,6 +9,11 @@ vi.mock("../lib/ws", () => ({ copyText: vi.fn().mockResolvedValue(true) }));
 
 const model = { id: 1, name: "测试视觉", base_url: "https://example.com/v1", model: "vision", timeout: 120, provider: null, has_api_key: true, key_persistence: "encrypted" as const };
 const preset = { id: "qwen", name: "通义千问 Qwen", base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1", models: [{ id: "qwen2.5-vl-72b-instruct", label: "Qwen2.5-VL-72B", recommended: true }], default_timeout: 120, note: "" };
+// RunningHub：Key 与「一键同款」云端生成共用一把（credential_scope=cloud），清单由它自己报（models_dynamic）
+const cloudPreset = {
+  id: "runninghub", name: "RunningHub", base_url: "https://llm.runninghub.cn/v1", models: [],
+  default_timeout: 120, note: "一把 Key 走天下：这里的 Key 与云端生成共用同一把", credential_scope: "cloud", models_dynamic: true,
+};
 const settings = { default_model_id: 1, instruction: "描述画面", default_instruction: "默认描述" };
 const record = { id: 10, image_id: 1, prompt_zh: "红色花朵", prompt_en: "red flower", raw_text: "", status: "complete" as const, source: "generated" as const, parent_id: null, model_name: "测试视觉", model: "vision", instruction: "", fingerprint: "abc", created_at: "2026-09-17T01:00:00Z" };
 
@@ -17,6 +22,7 @@ beforeEach(() => {
   vi.spyOn(reverseApi, "models").mockResolvedValue([model]);
   vi.spyOn(reverseApi, "settings").mockResolvedValue(settings);
   vi.spyOn(reverseApi, "providers").mockResolvedValue([preset]);
+  vi.spyOn(reverseApi, "modelList").mockResolvedValue({ models: [], source: "preset", reason: "" });
   vi.spyOn(reverseApi, "history").mockResolvedValue({ items: [], total: 0, running: false });
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -169,6 +175,89 @@ describe("reverse prompts", () => {
     await fireEvent.click(panel.getByText("保存模型"));
     await waitFor(() => expect(save).toHaveBeenCalled());
     expect(save.mock.calls[0][0]).toMatchObject({ provider: "qwen", model: "qwen2.5-vl-72b-instruct", api_key: "sk-123" });
+  });
+  it("选 RunningHub：Key 那一格说清这是一把共用的 Key，模型清单现拉不抄", async () => {
+    vi.mocked(reverseApi.providers).mockResolvedValue([preset, cloudPreset]);
+    const list = vi.spyOn(reverseApi, "modelList").mockResolvedValue({
+      models: [{ id: "x/deepseek-v4.1-flash", label: "x/deepseek-v4.1-flash", recommended: false },
+               { id: "y/qwen2.5-vl", label: "y/qwen2.5-vl", recommended: true }],
+      source: "live", reason: "",
+    });
+    const panel = render(ModelSettings);
+    await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
+    await fireEvent.change(panel.getByLabelText("服务商"), { target: { value: "runninghub" } });
+    expect(await panel.findByText(/一把 Key 走天下/)).toBeTruthy();
+    expect(panel.getByText(/只存一份，在任一处改都一起生效/)).toBeTruthy();
+    expect(list).toHaveBeenCalledWith("runninghub");
+    // 清单是服务商报的：点一下就填进模型 ID，不再假装我们有一份标准答案
+    await fireEvent.click(await panel.findByRole("button", { name: "y/qwen2.5-vl" }));
+    expect((panel.getByLabelText("反推模型 ID") as HTMLInputElement).value).toBe("y/qwen2.5-vl");
+    expect(panel.queryByLabelText("反推模型")).toBeNull();
+  });
+  it("RunningHub 的 Key 只往接口交出去一次：请求体里带 api_key，界面上不留明文", async () => {
+    vi.mocked(reverseApi.providers).mockResolvedValue([preset, cloudPreset]);
+    const save = vi.spyOn(reverseApi, "saveModel").mockResolvedValue({
+      ...model, provider: "runninghub", name: "RunningHub", base_url: "https://llm.runninghub.cn/v1",
+      model: "y/qwen2.5-vl", has_api_key: true,
+    });
+    const panel = render(ModelSettings);
+    await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
+    await fireEvent.change(panel.getByLabelText("服务商"), { target: { value: "runninghub" } });
+    await fireEvent.input(panel.getByLabelText("反推模型 ID"), { target: { value: "y/qwen2.5-vl" } });
+    await fireEvent.input(panel.getByLabelText("API Key"), { target: { value: "RH-SECRET-VALUE" } });
+    await fireEvent.click(panel.getByText("保存模型"));
+    await waitFor(() => expect(save).toHaveBeenCalled());
+    expect(save.mock.calls[0][0]).toMatchObject({ provider: "runninghub", model: "y/qwen2.5-vl", api_key: "RH-SECRET-VALUE" });
+    await waitFor(() => expect((panel.getByLabelText("API Key") as HTMLInputElement).value).toBe(""));
+    expect(panel.container.textContent).not.toContain("RH-SECRET-VALUE");
+  });
+  it("勾「清掉这把 Key」时把空串交出去，并说清两边一起失效", async () => {
+    vi.mocked(reverseApi.providers).mockResolvedValue([
+      preset, { ...cloudPreset, shared_has_key: true },
+      // 已存在的共用配置：has_api_key 走的是云端那条账号
+    ]);
+    modelConfigs.set([{ ...model, provider: "runninghub", name: "RunningHub", has_api_key: true }]);
+    vi.mocked(reverseApi.models).mockResolvedValue([{ ...model, provider: "runninghub", name: "RunningHub", has_api_key: true }]);
+    const save = vi.spyOn(reverseApi, "saveModel").mockResolvedValue({ ...model, provider: "runninghub", has_api_key: false });
+    const panel = render(ModelSettings);
+    // 服务商下拉里也有这一个词，所以要按角色点那颗配置按钮；等偏好读回来，在那之前整张卡是禁用的
+    await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
+    await waitFor(() => expect((panel.getByRole("button", { name: "RunningHub" }) as HTMLButtonElement).disabled).toBe(false));
+    await fireEvent.click(panel.getByRole("button", { name: "RunningHub" }));
+    const clear = panel.getByLabelText("清除已保存密钥") as HTMLInputElement;
+    expect(clear.parentElement?.textContent).toContain("反推与一键同款同时失效");
+    await fireEvent.click(clear);
+    await fireEvent.click(panel.getByText("保存模型"));
+    await waitFor(() => expect(save.mock.calls[0][0].api_key).toBe(""));
+  });
+  it("云端那张卡点「去填 Key」，这边直接切到 RunningHub 那一格并说清还差什么", async () => {
+    vi.mocked(reverseApi.providers).mockResolvedValue([preset, cloudPreset]);
+    vi.spyOn(reverseApi, "modelList").mockResolvedValue({ models: [], source: "none", reason: "先保存这把 API Key，才能向它要模型清单" });
+    const panel = render(ModelSettings);
+    await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
+    await waitFor(() => expect((panel.getByLabelText("服务商") as HTMLSelectElement).value).toBe("qwen"));
+    window.dispatchEvent(new Event("edit-cloud-key"));
+    await waitFor(() => expect((panel.getByLabelText("服务商") as HTMLSelectElement).value).toBe("runninghub"));
+    expect(await panel.findByText(/先保存这把 API Key/)).toBeTruthy();
+  });
+  it("云端卡点「改 Key」时改的是已有那条 RunningHub 配置，不新建第二条", async () => {
+    vi.mocked(reverseApi.providers).mockResolvedValue([preset, { ...cloudPreset, shared_has_key: true }]);
+    const existing = { ...model, id: 7, provider: "runninghub", name: "RunningHub",
+      base_url: "https://llm.runninghub.cn/v1", model: "y/qwen2.5-vl", has_api_key: true };
+    vi.mocked(reverseApi.models).mockResolvedValue([existing]);
+    modelConfigs.set([existing]);
+    const save = vi.spyOn(reverseApi, "saveModel").mockResolvedValue(existing);
+    const panel = render(ModelSettings);
+    await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
+    window.dispatchEvent(new Event("edit-cloud-key"));
+    await waitFor(() => expect((panel.getByLabelText("服务商") as HTMLSelectElement).value).toBe("runninghub"));
+    // 模型 ID 沿用那条配置里已有的值，不是一份空表单
+    expect((panel.getByLabelText("反推模型 ID") as HTMLInputElement).value).toBe("y/qwen2.5-vl");
+    await fireEvent.input(panel.getByLabelText("API Key"), { target: { value: "RH-NEW-KEY" } });
+    await fireEvent.click(panel.getByText("保存模型"));
+    await waitFor(() => expect(save).toHaveBeenCalled());
+    expect(save.mock.calls[0][1]).toBe(7);
+    expect(save.mock.calls[0][0]).toMatchObject({ provider: "runninghub", model: "y/qwen2.5-vl", api_key: "RH-NEW-KEY" });
   });
   it("switching to custom exposes manual fields and hides preset model dropdown", async () => {
     const panel = render(ModelSettings);

@@ -90,7 +90,23 @@ def list_configs():
 
 @router.get("/model-providers")
 def list_provider_presets():
-    return providers.list_presets()
+    """服务商清单顺带说清「共用那把 Key 存了没有」。
+
+    为什么在这儿算：RunningHub 那把 Key 的家不在 model_configs 里，界面想知道有没有，
+    只有这一条路。与其让人为一个布尔再打一次云端状态接口，不如这里顺手带回——
+    带回的是布尔，永远不是 Key 本身。
+    """
+    presets = providers.list_presets()
+    for item in presets:
+        if item.get("credential_scope") == "cloud":
+            item["shared_has_key"] = bool(service.cloud_key())
+    return presets
+
+
+@router.get("/model-providers/{provider_id}/models")
+async def list_provider_models(provider_id: str):
+    """清单由服务商自己报，代码里不抄一份会过期的表。失败说人话，界面留手填这条路。"""
+    return await service.list_models(provider_id)
 
 
 @router.post("/model-configs")

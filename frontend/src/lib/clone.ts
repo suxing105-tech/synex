@@ -1365,6 +1365,19 @@ export const CLONE_SETTINGS_TAB = "一键同款";
  */
 export const CLOUD_SETTINGS_TAB = "模型与反推";
 
+/**
+ * 「一键同款」API 那屏的「设置 RunningHub 的 API Key」按下去时先记一笔。
+ * 设置页这时才刚要挂载，用 window 事件会放早了（听的人还没到场），
+ * 所以由 ModelSettings 在读回配置那一次取走，直接把光标停在 Key 那一格。
+ */
+let cloudKeyEditPending = false;
+export function requestCloudKeyEdit(): void { cloudKeyEditPending = true; }
+export function takeCloudKeyEdit(): boolean {
+  const pending = cloudKeyEditPending;
+  cloudKeyEditPending = false;
+  return pending;
+}
+
 // ---------- 接口 ----------
 
 /** 被删掉的随包工作流：设置页「已隐藏的内置工作流」那一栏用它。 */
@@ -1511,8 +1524,8 @@ export interface CloudPendingTask {
   created_at: string;
 }
 
+/** 两道花费闸，0 = 不限。云端没有总开关：填了 Key 就是愿意走这条路。 */
 export interface CloudSettings {
-  cloud_enabled: boolean;
   cloud_max_single_coins: number;
   cloud_max_daily_coins: number;
 }

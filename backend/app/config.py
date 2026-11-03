@@ -33,9 +33,8 @@ class Config:
     scan_workers: int = 4
     comfyui_url: str = "http://127.0.0.1:8188"  # 本机 ComfyUI 地址
     comfyui_enabled: bool = True  # 是否启用 ComfyUI 集成
-    # 云端生成（RunningHub 的收费模型 API）。默认关：这条路是要花钱的，
-    # 花钱的入口不能因为「装了新版本」就自己冒出来，得用户自己去设置里开。
-    cloud_enabled: bool = False
+    # 云端生成（RunningHub 的收费模型 API）没有总开关：填了 Key 就是愿意走这条路。
+    # 挡在花钱前面的是那一下点击、弹窗里先报出来的预估价，和下面这两道上限。
     # 花钱闸门，0 = 不限。单次上限拦「这一条太贵」，当日上限拦「今天上头了」。
     cloud_max_single_coins: float = 0.0
     cloud_max_daily_coins: float = 0.0

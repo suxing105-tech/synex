@@ -351,7 +351,6 @@ class CloudAccountInput(BaseModel):
 
 
 class CloudSettingsInput(BaseModel):
-    cloud_enabled: bool | None = None
     cloud_max_single_coins: float | None = Field(default=None, ge=0, le=1000000)
     cloud_max_daily_coins: float | None = Field(default=None, ge=0, le=1000000)
 
@@ -365,7 +364,6 @@ class CloudEstimateInput(BaseModel):
 def _cloud_settings() -> dict:
     cfg = load_config()
     return {
-        "cloud_enabled": bool(cfg.cloud_enabled),
         "cloud_max_single_coins": float(cfg.cloud_max_single_coins or 0),
         "cloud_max_daily_coins": float(cfg.cloud_max_daily_coins or 0),
     }
@@ -386,14 +384,14 @@ def _cloud_mode(template: dict) -> str:
 
 @router.get("/cloud/presets")
 def cloud_presets() -> dict:
-    """三族云端模型的声明：设置页那三节与弹窗的参数都吃这一份，不各写一遍。"""
+    """三族云端模型的声明：弹窗的参数与服务商卡片都吃这一份，不各写一遍。"""
     return {"provider": cloud_spec.PROVIDER, "provider_label": cloud_spec.PROVIDER_LABEL,
             "base_url": cloud_spec.BASE_URL, "items": cloud_spec.describe_all()}
 
 
 @router.get("/cloud/status")
 def cloud_status() -> dict:
-    """弹窗与设置页共用的那一眼：能不能用、差哪一步、账号、花费闸、待取回。"""
+    """弹窗那一眼：能不能用、差哪一步、账号、花费闸、待取回。"""
     return {**_cloud_settings(), "availability": cloud_engine.availability(),
             "accounts": cloud_accounts.list_accounts(),
             "presets": cloud_spec.describe_all(),
@@ -409,7 +407,7 @@ def cloud_get_settings() -> dict:
 
 @router.put("/cloud/settings")
 def cloud_put_settings(payload: CloudSettingsInput) -> dict:
-    """云端开关与花费上限。走这里而不是全局设置接口：不动 ConfigOut 那份契约。"""
+    """云端花费上限。走这里而不是全局设置接口：不动 ConfigOut 那份契约。"""
     cfg = load_config()
     patch = payload.model_dump(exclude_none=True)
     if patch:

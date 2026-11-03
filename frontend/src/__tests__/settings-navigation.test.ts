@@ -93,7 +93,7 @@ it("指路的话不许指向已经不存在的那一页", () => {
   expect(modal).not.toContain('settings-cloud');
   const files = [
     '../components/SettingsModal.svelte', '../components/CloneModal.svelte',
-    '../components/CloudServices.svelte', '../lib/clone.ts',
+    '../lib/clone.ts',
     '../../../backend/app/cloud/engine.py', '../../../backend/app/cloud/accounts.py',
     '../../../backend/app/cloud/client.py', '../../../backend/app/clone_jobs.py',
   ];
@@ -105,4 +105,23 @@ it("指路的话不许指向已经不存在的那一页", () => {
     }
   }
   expect(stale).toEqual([]);
+});
+
+it("云端那张卡撤干净了：设置页不许再长出第二个云端入口", () => {
+  // 那张卡原来带一个默认关着的总开关。卡撤了，开关跟着撤（填了 Key 就是开了）——
+  // 界面没有开关的闸门等于死路，所以这个词连同字段名一起钉在这里，别让下一次偷偷加回来。
+  const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8').replace(/\r\n/g, '\n');
+  const files = [
+    '../components/SettingsModal.svelte', '../components/ModelSettings.svelte',
+    '../components/CloneModal.svelte', '../lib/clone.ts',
+    '../../../backend/app/cloud/engine.py', '../../../backend/app/routes/clone.py',
+  ];
+  const hits: string[] = [];
+  for (const rel of files) {
+    const text = read(rel);
+    for (const word of ['CloudServices', 'RunningHub 云端生成', '云端生成总开关', 'cloud_enabled']) {
+      if (text.includes(word)) hits.push(`${rel} → ${word}`);
+    }
+  }
+  expect(hits).toEqual([]);
 });

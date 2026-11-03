@@ -4,6 +4,7 @@
   import type { ModelConfig, ModelDraft, ProviderModel, ProviderPreset, ReverseSettings } from "../lib/reverse-prompts";
 import { H3_MODES, SEEDANCE_MODES, MODE_LABELS, videoPromptApi, videoPromptSettings, refreshVideoPromptSettings } from "../lib/video-prompts";
 import type { VideoPromptSettings } from "../lib/video-prompts";
+  import { cloudApi, takeCloudKeyEdit } from "../lib/clone";
   const CUSTOM = "custom";
   const blank = (): ModelDraft => ({ name: "", base_url: "", model: "", timeout: 120, provider: CUSTOM });
   let draft = $state<ModelDraft>(blank());
@@ -24,7 +25,7 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
   const providerModels = $derived(preset?.models ?? []);
   /**
    * RunningHub 这类服务商有两处不一样，界面跟着分叉：
-   * - credential_scope=cloud：Key 的家在「RunningHub 云端生成」那条账号里，这一条不另存一份；
+   * - credential_scope=cloud：Key 的家在云端账号表（gen_accounts）那一行里，这条配置不另存一份；
    * - models_dynamic：模型清单由服务商自己报，代码里不抄一份会过期的表。
    */
   const sharedKey = $derived(preset?.credential_scope === "cloud");
@@ -55,6 +56,46 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
   /** 第二把 Key（工作流·消费级）只有那一家有；界面同样只认「有没有」。 */
   const workflowCapable = $derived(!!preset?.workflow_key);
   const workflowReady = $derived(!!preset?.shared_has_workflow_key);
+  /** 参考页那个「已配置 1/2」角标：M = 这家有几把 Key，N = 已经填了几把。 */
+  const keySlots = $derived(workflowCapable ? 2 : 1);
+  const keyCount = $derived((keyReady ? 1 : 0) + (workflowReady ? 1 : 0));
+  const keyCountLabel = $derived(keyCount ? `已配置 ${keyCount}/${keySlots}` : "还没配置");
+  /**
+   * 标题行右边那颗「测试连接」测的是云端那把 Key（顺带把余额带回来），所以走云端接口。
+   * 只有点它才发请求：拿真 Key 打服务商不是「打开设置」该替你做的事。
+   */
+  let testingCloud = $state(false);
+  let cloudTestText = $state("");
+  async function testCloudKey() {
+    testingCloud = true;
+    cloudTestText = "";
+    try {
+      const status = await cloudApi.status();
+      const row = (status.accounts ?? []).find((item) => item.is_shared) ?? (status.accounts ?? [])[0];
+      if (!row) cloudTestText = "还没有可测的云端账号：先把 Key 粘在下面那一格并保存。";
+      else {
+        const out = await cloudApi.testAccount(row.id);
+        cloudTestText = out.message || (out.ok ? "连通正常。" : "连不上，检查这把 Key。");
+      }
+    } catch (e) {
+      cloudTestText = errorMessage(e);
+    } finally {
+      testingCloud = false;
+    }
+  }
+  /** 「设为默认站点」在我们这儿就是「这条模型是图片反推的默认模型」，点了直接存住。 */
+  const canSetDefault = $derived(!!editingId && !!preferences);
+  const isDefaultModel = $derived(!!editingId && preferences?.default_model_id === editingId);
+  async function setDefaultModel() {
+    // 先抓两份局部副本：$state 的属性在闭包里窄不掉，TS 不认「上面判过空」
+    const current = preferences, id = editingId;
+    if (!current || !id) return;
+    await run(async () => {
+      preferences = await reverseApi.saveSettings({ ...current, default_model_id: id });
+      await refreshReverseConfig();
+      notice = "已把这条模型设为图片反推的默认模型。";
+    });
+  }
   let workflowKeyInput = $state("");
   let clearWorkflowKey = $state(false);
   const configsFor = (id: string) => $modelConfigs.filter(c => c.provider === id);
@@ -120,7 +161,7 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
       fetchingModels = false;
     }
   }
-  /** 云端那张卡上的「填 Key / 改 Key」落到这里：切到共用 Key 那一家，光标停在 Key 那一格。 */
+  /** 一键同款 API 那屏的「设置 RunningHub 的 API Key」落到这里：切到共用 Key 那一家，光标停在 Key 那一格。 */
   async function editSharedKey() {
     if (!cloudPreset) return;
     // 已经有这一家的配置就改那一条：另起一张空表单会多出一条 RunningHub，之后没人说得清哪条是活的
@@ -130,9 +171,8 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
     keyInputEl?.scrollIntoView({ block: "center", behavior: "smooth" });
   }
   onMount(() => {
-    void run(loadAll);
-    window.addEventListener("edit-cloud-key", editSharedKey);
-    return () => window.removeEventListener("edit-cloud-key", editSharedKey);
+    // 从一键同款那一屏过来时，等服务商清单读回来再跳：cloudPreset 还空着的时候跳等于没跳。
+    void run(loadAll).then(() => { if (takeCloudKeyEdit()) void editSharedKey(); });
   });
   async function run(action: () => Promise<void>) {
     busy = true; error = ""; notice = "";
@@ -179,8 +219,6 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
     await run(async () => {
       const saved = await reverseApi.saveModel(payload(), editingId);
       choose(saved); await refreshReverseConfig(); await refreshProviderPresets();
-      // 共用 Key 那一家在这里改完了，云端那张卡要跟着改口，别让人以为还得再去填一遍
-      if (sharedKey) window.dispatchEvent(new Event("cloud-credentials-changed"));
       if (preferences) preferences.default_model_id = $reverseSettings?.default_model_id ?? null;
       notice = "模型配置已保存";
     });
@@ -208,7 +246,38 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
         </div>
       {/if}
       <fieldset disabled={busy} class="space-y-3">
-        <legend>{preset ? preset.name : "自定义（手动填写）"}</legend>
+        <!-- legend 只留给读屏；界面上的标题行是下面这一行（照苏醒贴的那张参考页）。 -->
+        <legend class="api-legend">当前服务商：{preset ? preset.name : "自定义（手动填写）"}</legend>
+        <div class="api-provider-head">
+          <span class="api-avatar" aria-hidden="true">{preset ? avatar(preset.name) : "＋"}</span>
+          <span class="api-provider-name">{preset ? preset.name : "自定义（手动填写）"}</span>
+          <span class="api-provider-badge" class:api-provider-set={keyCount > 0} role="status">{keyCountLabel}</span>
+          <span class="api-provider-actions">
+            {#if sharedKey}
+              <button class="setting-button setting-button-ghost" disabled={busy || testingCloud}
+                onclick={() => void testCloudKey()}>{testingCloud ? "测试中…" : "测试连接"}</button>
+            {/if}
+            {#if canSetDefault}
+              <button class="setting-button setting-button-ghost" disabled={busy || isDefaultModel}
+                onclick={() => void setDefaultModel()}>{isDefaultModel ? "已是默认模型" : "设为默认模型"}</button>
+            {/if}
+            {#if preset?.console_url}
+              <a class="setting-button setting-button-ghost api-console" href={preset.console_url}
+                target="_blank" rel="noreferrer">获取 API Key ↗</a>
+            {/if}
+          </span>
+        </div>
+        {#if sharedKey}
+          <details class="api-help">
+            <summary>新手使用教程：这两把 Key 各管什么</summary>
+            <ul>
+              <li>模型 API 密钥（企业级-共享）：图片反推与出图、出片、出声音都走它，花的是钱包余额。</li>
+              <li>工作流 API 密钥（消费级-会员）：跑云端工作流用它，花的是账户积分（RH币）。这条链路还没接上，先存住就行。</li>
+              <li>两把都在控制台各自生成，分别粘在下面对应的格子里；保存后不回显，改一把不动另一把。</li>
+            </ul>
+          </details>
+        {/if}
+        {#if cloudTestText}<p class="settings-hint" role="status">{cloudTestText}</p>{/if}
         <div class="api-filter">
           <div class="api-tabs" role="group" aria-label="按能力筛选服务商">
             {#each CAPABILITIES as tab (tab.id)}
@@ -246,9 +315,6 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
         {#if !visiblePresets.length}
           <p class="settings-hint" role="status">这一类目前没有接进来的服务商，切回「全部」看其余几家。</p>
         {/if}
-        {#if preset?.console_url}
-          <p class="settings-hint"><a class="api-console" href={preset.console_url} target="_blank" rel="noreferrer">去 {preset.name} 控制台拿 Key ↗</a></p>
-        {/if}
         {#if isPreset && dynamicModels}
           <label>反推模型 ID
             <input aria-label="反推模型 ID" bind:value={draft.model} placeholder="点下面清单挑一个，或者直接手填" />
@@ -279,36 +345,33 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
           <p class="settings-hint break-all">请求地址：{draft.base_url ? endpoint : "填写 Base URL 后显示"}</p>
           <label>模型 ID<input aria-label="模型 ID" bind:value={draft.model} placeholder="服务商提供的模型名称" /></label>
         {/if}
-        {#if sharedKey}
-          <label>API Key {keyReady ? "（已配置；留空保留）" : "（一把 Key 通用，粘进来就存住）"}
-            <input aria-label="API Key" type="password" autocomplete="new-password" bind:this={keyInputEl} bind:value={keyInput} disabled={clearKey} />
-          </label>
-          {#if keyReady}<label class="flex gap-2"><input type="checkbox" aria-label="清除已保存密钥" bind:checked={clearKey} />清掉这把 Key（反推与一键同款同时失效）</label>{/if}
-          <p class="settings-hint">
-            RunningHub 一把 Key 走天下：这一把同时管「反推」和下面那张「RunningHub 云端生成」，
-            只存一份，在任一处改都一起生效。花费上限那两道闸管的是 RH币出图出片出声音；反推按 token 计价，不走那两道闸。
-          </p>
-        {:else}
-          <label>API Key {keyReady ? "（已配置；留空保留）" : "（本地无认证服务可留空）"}
-            <input aria-label="API Key" type="password" autocomplete="new-password" bind:this={keyInputEl} bind:value={keyInput} disabled={clearKey} />
-          </label>
-          {#if keyReady}<label class="flex gap-2"><input type="checkbox" aria-label="清除已保存密钥" bind:checked={clearKey} />清除已保存密钥</label>{/if}
-          <p class="settings-hint">Windows 按当前用户加密保存密钥；其他系统仅在当前运行期间保存。</p>
-        {/if}
         {#if workflowCapable}
-          <div class="api-second-key">
-            <label>工作流 API Key {workflowReady ? "（已配置；留空保留）" : "（消费级-会员，跑云端工作流用）"}
-              <input aria-label="工作流 API Key" type="password" autocomplete="new-password" bind:value={workflowKeyInput} disabled={clearWorkflowKey} />
-            </label>
+          <div class="api-key-section">
+            <p class="api-key-title">工作流 API 密钥（消费级-会员）</p>
+            <p class="api-key-desc">调用云端工作流 / AI 应用，扣 RH币（账户积分）。</p>
+            <input aria-label="工作流 API Key" type="password" autocomplete="new-password" bind:value={workflowKeyInput} disabled={clearWorkflowKey} />
             {#if workflowReady}
-              <label class="flex gap-2"><input type="checkbox" aria-label="清除工作流密钥" bind:checked={clearWorkflowKey} />清掉这把（只影响云端工作流，上面那把模型 Key 不动）</label>
+              <label class="flex gap-2"><input type="checkbox" aria-label="清除工作流密钥" bind:checked={clearWorkflowKey} />清掉这把（只影响云端工作流，模型那把不动）</label>
+            {:else}
+              <p class="settings-hint">这把还没有也不要紧：模型那一把照常用。工作流这条链路还没接上，先存住，接上就直接能用。</p>
             {/if}
-            <p class="settings-hint">
-              这是第二把 Key，和上面那把不是一回事：模型 API 扣钱包余额，云端工作流扣 RH币。
-              工作流这条链路还没接上——先存住，接上就直接能用。跟上面一起点「保存模型」就落盘。
-            </p>
           </div>
         {/if}
+        <div class="api-key-section">
+          <p class="api-key-title">{sharedKey ? "模型 API 密钥（企业级-共享）" : "API Key"}</p>
+          <p class="api-key-desc">
+            {#if sharedKey}
+              RunningHub 一把 Key 走天下：图片反推与出图、出片、出声音共用这一把，只存一份。都扣钱包余额（反推按 token，媒体按张）。
+            {:else}
+              本地无认证服务可以留空。Windows 按当前用户加密保存密钥；其他系统仅在当前运行期间保存。
+            {/if}
+            {keyReady ? "已配置，这一格留空就是保留原来那把。" : ""}
+          </p>
+          <input aria-label="API Key" type="password" autocomplete="new-password" bind:this={keyInputEl} bind:value={keyInput} disabled={clearKey} />
+          {#if keyReady}
+            <label class="flex gap-2"><input type="checkbox" aria-label="清除已保存密钥" bind:checked={clearKey} />{sharedKey ? "清掉这把 Key（反推与一键同款同时失效）" : "清除已保存密钥"}</label>
+          {/if}
+        </div>
         {#if isPreset}
           <details class="space-y-2">
             <summary class="settings-hint model-summary">高级设置</summary>
@@ -451,8 +514,19 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
   .api-card-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .api-card-state { font-size: 11.5px; color: #fbbf24; }
   .api-card-set { color: #4ade80; }
-  .api-second-key { display: grid; gap: 6px; padding-top: 10px; border-top: 1px dashed #2a2a30; }
-  .api-console { color: #93c5fd; }
+  .api-key-section { display: grid; gap: 6px; padding-top: 12px; border-top: 1px solid rgb(255 255 255 / 7%); }
+  .api-key-title { margin: 0; font-size: 13px; font-weight: 600; color: #e4e4e7; }
+  .api-key-desc { margin: 0; font-size: 12px; line-height: 1.6; color: #8b8b94; }
+  .api-legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .api-provider-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+  .api-provider-name { font-size: 14px; font-weight: 600; color: #fafafa; }
+  .api-provider-badge { padding: 2px 8px; border-radius: 999px; font-size: 11.5px; color: #fbbf24; background: rgb(251 191 36 / 12%); }
+  .api-provider-set { color: #4ade80; background: rgb(74 222 128 / 12%); }
+  .api-provider-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+  .api-help { margin-bottom: 4px; font-size: 12px; color: #a1a1aa; }
+  .api-help summary { cursor: pointer; color: #93c5fd; }
+  .api-help ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; line-height: 1.6; }
+  .api-console { color: #93c5fd; text-decoration: none; }
   fieldset { margin-top: 18px; }
   fieldset:first-child { margin-top: 0; }
   legend { margin-bottom: 10px; font-size: 14px; font-weight: 500; color: #e6e6ea; }

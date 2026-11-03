@@ -38,7 +38,7 @@ DEFAULT_SUFFIX = {"image": ".png", "audio": ".mp3", "video": ".mp4"}
 
 
 class CloudUnavailable(Exception):
-    """开关没开、账号没配、余额闸拦下——都是「还没到花钱那一步」的拒绝。"""
+    """账号没配、余额闸拦下——都是「还没到花钱那一步」的拒绝。"""
 
 
 def generated_dir(capability: str) -> Path:
@@ -52,10 +52,12 @@ def generated_dir(capability: str) -> Path:
 
 
 def availability() -> dict:
-    """弹窗与设置页共用的那句实话：现在能不能点云端这一行，不能的话差哪一步。"""
-    cfg = load_config()
-    if not getattr(cfg, "cloud_enabled", False):
-        return {"available": False, "reason": "云端生成没启用，去设置 → 模型与反推里打开"}
+    """弹窗那句实话：现在能不能点云端这一行，不能的话差哪一步。
+
+    这里没有「云端总开关」可查。设置页那张云端卡已经撤了（Key 的家在「模型服务API」
+    那张厂商卡片里），再留一个默认关着的开关，等于把人挡在「现在还不能生成」前面
+    却不给开关。真要拦花钱，靠的是 budget_check 与弹窗里那条预估价。
+    """
     account = accounts.usable_account()
     if account is None:
         for row in accounts.list_accounts():

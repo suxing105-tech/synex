@@ -51,10 +51,10 @@ const baseRoutes = () => ({
   '/api/images/7/reverse-prompts': { items: [] },
   '/api/images/7': { id: 7, filename: 'source.png', positive_prompt: '' },
   // 开弹窗现在会读一次云端可用性：不预演它，每条用例都会甩一个「未预演的接口」异常。
-  // 默认按「云端没启用」回，要用云端的用例在自己的路由表里覆盖这一条。
+  // 默认按「还没填云端 Key」回，要用云端的用例在自己的路由表里覆盖这一条。
   '/api/clone/cloud/status': {
-    cloud_enabled: false, cloud_max_single_coins: 0, cloud_max_daily_coins: 0,
-    availability: { available: false, reason: '云端生成没启用' },
+    cloud_max_single_coins: 0, cloud_max_daily_coins: 0,
+    availability: { available: false, reason: '还没有可用的云端账号' },
     accounts: [], presets: [], pending: [], seeded: true,
     spend: { today_coins: 0, month: '2026-11', counts: {}, month_coins: 0, recent: [] },
   },
@@ -2203,7 +2203,7 @@ const CLOUD_IMG = {
 };
 
 const cloudOn = (over: Record<string, unknown> = {}) => ({
-  cloud_enabled: true, cloud_max_single_coins: 0, cloud_max_daily_coins: 0,
+  cloud_max_single_coins: 0, cloud_max_daily_coins: 0,
   availability: { available: true, reason: '' },
   accounts: [], presets: [], pending: [], seeded: true,
   spend: { today_coins: 0, month: '2026-11', counts: {}, month_coins: 0, recent: [] },

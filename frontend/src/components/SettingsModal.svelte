@@ -8,7 +8,6 @@
   import ShortcutSettings from "./ShortcutSettings.svelte";
   import ModelSettings from "./ModelSettings.svelte";
   import CloneTemplates from "./CloneTemplates.svelte";
-  import CloudServices from "./CloudServices.svelte";
   import UpdatePanel from "./UpdatePanel.svelte";
   import SettingsRow from "./SettingsRow.svelte";
   import wechatContact from "../assets/about/wechat-contact.png";
@@ -448,7 +447,6 @@
               <h3 id="settings-models-title">模型与反推</h3>
               <p class="section-description">配置图片与视频反推用的模型、指令与偏好，以及一键同款的云端 API Key。</p>
               <ModelSettings />
-              <CloudServices />
             </section>
           {/if}
 

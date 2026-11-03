@@ -128,10 +128,10 @@ def _cloud_rows_on(monkeypatch):
 
 @pytest.fixture
 def hub(monkeypatch, init_db, tmp_path):
-    """干净的库 + 云端开关打开 + 假服务商 + 轮询不真等。"""
+    """干净的库 + 没设花费上限 + 假服务商 + 轮询不真等。"""
     from app.config import config_path
 
-    config_path().write_text(json.dumps({"cloud_enabled": True}), encoding="utf-8")
+    config_path().write_text(json.dumps({}), encoding="utf-8")
     server = FakeHub()
     server.png = make_png(tmp_path / "产物.png", width=6, height=6).read_bytes()
     transport = httpx.MockTransport(server.handler)
@@ -376,8 +376,7 @@ async def test_cloud_runs_without_comfyui(hub, account, source_image):
     """ComfyUI 没开着也能出图——这正是接云端最要紧的那个场景。"""
     from app.config import config_path
 
-    config_path().write_text(json.dumps({"cloud_enabled": True, "comfyui_enabled": False}),
-                             encoding="utf-8")
+    config_path().write_text(json.dumps({"comfyui_enabled": False}), encoding="utf-8")
     state = await run("image", references=ref_args(cloud_template("image"), 1, source_image),
                       controls=None)
     assert state["state"] == "done", state
@@ -418,16 +417,12 @@ async def test_daily_limit_stops_the_next_one(hub, account, source_image):
 
 
 @pytest.mark.parametrize("mutate,phrase", [
-    ("off", "云端生成没启用"),
     ("no_account", "还没有可用"),
     ("no_key", "还没有填 API Key"),
 ])
 async def test_unavailable_says_which_step_is_missing(hub, mutate, phrase, account, source_image):
     """弹窗里那条置灰必须说清差哪一步，不能只说「不可用」。"""
-    if mutate == "off":
-        from app.config import config_path
-        config_path().write_text(json.dumps({"cloud_enabled": False}), encoding="utf-8")
-    elif mutate == "no_account":
+    if mutate == "no_account":
         for row in cloud_accounts.list_accounts():
             cloud_accounts.delete_account(int(row["id"]))
     else:
@@ -440,6 +435,18 @@ async def test_unavailable_says_which_step_is_missing(hub, mutate, phrase, accou
                                controls={}, source_image_id=None)
     assert phrase in str(boom.value)
     assert hub.submits() == []
+
+
+async def test_a_leftover_master_switch_cannot_gate_anything(hub, account):
+    """老 config.json 里残留的 cloud_enabled 不许还能拦住云端。
+
+    这个字段跟着设置页那张卡一起删了，load_config 把它当未知字段丢掉。留这一条是给
+    下一次看的：别再往可用性判断里塞默认关着的开关——界面没有开关的闸门就是死路。
+    """
+    from app.config import config_path
+
+    config_path().write_text(json.dumps({"cloud_enabled": False}), encoding="utf-8")
+    assert cloud_engine.availability()["available"] is True
 
 
 # ---------- 云端说「不行」的时候 ----------
@@ -574,7 +581,7 @@ def client(init_db):
 
 def test_http_status_reports_everything_the_settings_page_needs(client, hub, account):
     body = client.get("/api/clone/cloud/status").json()
-    assert body["cloud_enabled"] is True and body["seeded"] is True
+    assert body["seeded"] is True and "cloud_enabled" not in body
     assert [p["capability"] for p in body["presets"]] == ["image", "video", "audio"]
     assert body["accounts"][0]["has_api_key"] is True
     assert SECRET not in json.dumps(body, ensure_ascii=False)
@@ -583,13 +590,15 @@ def test_http_status_reports_everything_the_settings_page_needs(client, hub, acc
 
 
 def test_http_settings_round_trip(client, hub):
-    assert client.get("/api/clone/cloud/settings").json()["cloud_enabled"] is True
+    assert client.get("/api/clone/cloud/settings").json() == {
+        "cloud_max_single_coins": 0.0, "cloud_max_daily_coins": 0.0}
     out = client.put("/api/clone/cloud/settings",
-                     json={"cloud_enabled": False, "cloud_max_single_coins": 30,
-                           "cloud_max_daily_coins": 500}).json()
-    assert out == {"cloud_enabled": False, "cloud_max_single_coins": 30.0,
-                   "cloud_max_daily_coins": 500.0}
+                     json={"cloud_max_single_coins": 30, "cloud_max_daily_coins": 500}).json()
+    assert out == {"cloud_max_single_coins": 30.0, "cloud_max_daily_coins": 500.0}
     assert client.put("/api/clone/cloud/settings", json={"cloud_max_single_coins": -1}).status_code == 422
+    # 总开关已从契约里撤走：多传这一个字段既不报错，也不起作用
+    assert "cloud_enabled" not in client.put("/api/clone/cloud/settings",
+                                             json={"cloud_enabled": False}).json()
 
 
 def test_http_accounts_never_echo_the_key(client, hub):

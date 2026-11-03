@@ -6,6 +6,7 @@ import ReversePromptPanel from "../components/ReversePromptPanel.svelte";
 import ModelSettings from "../components/ModelSettings.svelte";
 import { reverseApi, reverseJobs, modelConfigs, reverseSettings, generateReverse } from "../lib/reverse-prompts";
 import { copyText } from "../lib/ws";
+import { cloudApi, requestCloudKeyEdit } from "../lib/clone";
 vi.mock("../lib/ws", () => ({ copyText: vi.fn().mockResolvedValue(true) }));
 
 const model = { id: 1, name: "测试视觉", base_url: "https://example.com/v1", model: "vision", timeout: 120, provider: null, has_api_key: true, key_persistence: "encrypted" as const };
@@ -227,7 +228,7 @@ describe("reverse prompts", () => {
     await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
     await pickProvider(panel, "runninghub");
     expect(await panel.findByText(/一把 Key 走天下/)).toBeTruthy();
-    expect(panel.getByText(/只存一份，在任一处改都一起生效/)).toBeTruthy();
+    expect(panel.getByText(/只存一份/)).toBeTruthy();
     expect(list).toHaveBeenCalledWith("runninghub");
     // 清单是服务商报的：点一下就填进模型 ID，不再假装我们有一份标准答案
     await fireEvent.click(await panel.findByRole("button", { name: "y/qwen2.5-vl" }));
@@ -270,26 +271,26 @@ describe("reverse prompts", () => {
     await fireEvent.click(panel.getByText("保存模型"));
     await waitFor(() => expect(save.mock.calls[0][0].api_key).toBe(""));
   });
-  it("云端那张卡点「去填 Key」，这边直接切到 RunningHub 那一格并说清还差什么", async () => {
+  it("从一键同款那一屏点「设置 RunningHub 的 API Key」：直接落在 RunningHub 那一格", async () => {
+    // 设置页是按下这颗按钮之后才挂载的，所以来意要留在模块里，由挂载那一次取走
     vi.mocked(reverseApi.providers).mockResolvedValue([preset, cloudPreset]);
     vi.spyOn(reverseApi, "modelList").mockResolvedValue({ models: [], source: "none", reason: "先保存这把 API Key，才能向它要模型清单" });
+    requestCloudKeyEdit();
     const panel = render(ModelSettings);
     await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
-    await waitFor(() => expect(pressedCard(panel)).not.toBe("runninghub"));
-    window.dispatchEvent(new Event("edit-cloud-key"));
     await waitFor(() => expect(pressedCard(panel)).toBe("runninghub"));
     expect(await panel.findByText(/先保存这把 API Key/)).toBeTruthy();
   });
-  it("云端卡点「改 Key」时改的是已有那条 RunningHub 配置，不新建第二条", async () => {
+  it("带着来意进来时改的是已有那条 RunningHub 配置，不新建第二条", async () => {
     vi.mocked(reverseApi.providers).mockResolvedValue([preset, { ...cloudPreset, shared_has_key: true }]);
     const existing = { ...model, id: 7, provider: "runninghub", name: "RunningHub",
       base_url: "https://llm.runninghub.cn/v1", model: "y/qwen2.5-vl", has_api_key: true };
     vi.mocked(reverseApi.models).mockResolvedValue([existing]);
     modelConfigs.set([existing]);
     const save = vi.spyOn(reverseApi, "saveModel").mockResolvedValue(existing);
+    requestCloudKeyEdit();
     const panel = render(ModelSettings);
     await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
-    window.dispatchEvent(new Event("edit-cloud-key"));
     await waitFor(() => expect(pressedCard(panel)).toBe("runninghub"));
     // 模型 ID 沿用那条配置里已有的值，不是一份空表单
     expect((panel.getByLabelText("反推模型 ID") as HTMLInputElement).value).toBe("y/qwen2.5-vl");
@@ -348,6 +349,42 @@ describe("reverse prompts", () => {
     // 控制台外链只在这家确认过地址时才画
     const link = panel.container.querySelector("a.api-console") as HTMLAnchorElement;
     expect(link?.href).toBe("https://www.runninghub.cn/");
+  });
+  it("版式复刻：标题行报「已配置 1/2」，右边是「测试连接」与「获取 API Key」", async () => {
+    vi.mocked(reverseApi.providers).mockResolvedValue([
+      preset,
+      { ...cloudPreset, capabilities: ["text", "image", "video", "audio"], workflow_key: true,
+        console_url: "https://www.runninghub.cn", shared_has_key: true },
+    ]);
+    vi.spyOn(cloudApi, "status").mockResolvedValue({ accounts: [{ id: 9, is_shared: true }] } as never);
+    const test = vi.spyOn(cloudApi, "testAccount").mockResolvedValue({
+      ok: true, reason_code: "ok", message: "连通正常，余额 1200 RH币", remain_coins: 1200,
+    });
+    const panel = render(ModelSettings);
+    await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
+    await pickProvider(panel, "runninghub");
+    // 两把 Key 报几把：模型那把已配、工作流那把还空着
+    expect(panel.container.querySelector(".api-provider-badge")?.textContent).toBe("已配置 1/2");
+    expect(await panel.findByText(/调用云端工作流 \/ AI 应用/)).toBeTruthy();
+    await fireEvent.click(panel.getByRole("button", { name: "测试连接" }));
+    expect(await panel.findByText(/余额 1200 RH币/)).toBeTruthy();
+    // 测的是后端标 is_shared 的那一行账号，不是数组里排第一条
+    expect(test).toHaveBeenCalledWith(9);
+    expect(panel.container.querySelector("a.api-console")?.textContent).toContain("获取 API Key");
+  });
+  it("「设为默认模型」点了就存住，不用再去「图片反推」那栏再点一次保存", async () => {
+    // 挂载时会重新拉一次偏好，所以「当前默认不是这条」要在接口那一层成立
+    vi.spyOn(reverseApi, "settings").mockResolvedValue({ ...settings, default_model_id: 2 });
+    const save = vi.spyOn(reverseApi, "saveSettings").mockResolvedValue({ ...settings, default_model_id: 1 });
+    const panel = render(ModelSettings);
+    await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
+    await fireEvent.click(panel.getByRole("button", { name: "测试视觉" }));
+    const btn = panel.getByRole("button", { name: "设为默认模型" }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+    await fireEvent.click(btn);
+    await waitFor(() => expect(save).toHaveBeenCalled());
+    expect(save.mock.calls[0][0]).toMatchObject({ default_model_id: 1 });
+    expect(await panel.findByText(/已把这条模型设为图片反推的默认模型/)).toBeTruthy();
   });
   it("没有工作流那一说的厂商，不许多出一格 Key", async () => {
     vi.mocked(reverseApi.providers).mockResolvedValue([preset, { ...cloudPreset, workflow_key: false }]);

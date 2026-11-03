@@ -27,7 +27,7 @@
     ratioShape, referenceCells, referenceIssues, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, visibleRefCells, voiceAvatar, voiceSample, nativeLanguageOverride,
     firstFreeRefKey, mergedRefCells, openRefKinds, REF_DISPLAY_ORDER,
     CLONE_SETTINGS_TAB, CLOUD_SETTINGS_TAB,
-    cloudApi, coinsLabel, isCloudTemplate, mentionsTags, supportsRefFamily,
+    cloudApi, coinsLabel, isCloudTemplate, mentionsTags, requestCloudKeyEdit, supportsRefFamily,
     type CloudStatus,
     applyMention, caretCoordinates, mentionAddLabel, mentionChunks, mentionInsertText, mentionItems as buildMentionItems, mentionToken,
     audioModeLabel, audioModeTemplates, familyCells, isAudioTemplate, isVideoTemplate, promptGroupPlaceholder,
@@ -1480,7 +1480,7 @@
                         </button>
                       {:else}
                         <!-- 底部这颗跟着屏走：本机这屏是「加载 JSON」，API 这屏是去填 Key。 -->
-                        <button class="cm-wf cm-wf-add" role="menuitem" onclick={() => { closeWorkflowPop(); onOpenSettings?.(CLOUD_SETTINGS_TAB); }}>
+                        <button class="cm-wf cm-wf-add" role="menuitem" onclick={() => { closeWorkflowPop(); requestCloudKeyEdit(); onOpenSettings?.(CLOUD_SETTINGS_TAB); }}>
                           <span class="cm-wf-lead" aria-hidden="true"><Icon name="cloud" size={13} /></span>
                           <span class="cm-wf-name">设置 RunningHub 的 API Key</span>
                         </button>

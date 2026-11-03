@@ -161,6 +161,36 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
       fetchingModels = false;
     }
   }
+  /**
+   * 识别模型的下拉。清单是服务商自己报的，随时可能拉不到（真机就撞上过一次 APIKEY_USER_NOT_FOUND），
+   * 所以输入框永远允许自己打字，下拉只是帮忙挑，不是唯一入口。
+   */
+  let modelOpen = $state(false);
+  let modelBoxEl = $state<HTMLDivElement | null>(null);
+  const modelFiltered = $derived.by(() => {
+    const q = (draft.model ?? "").trim().toLowerCase();
+    // 已经选中清单里某一项时给全量：这时再按当前值过滤，点箭头只会看见自己那一行，等于没法挑
+    if (!q || modelList.some(m => m.id.toLowerCase() === q)) return modelList;
+    return modelList.filter(m => `${m.id} ${m.label}`.toLowerCase().includes(q));
+  });
+  async function toggleModelList() {
+    modelOpen = !modelOpen;
+    // 清单还空着时点箭头 = 顺手去拉一次，省得再找他自己找一颗「拉取清单」
+    if (modelOpen && !modelList.length && !fetchingModels) await fetchModels();
+  }
+  function pickModel(id: string) {
+    draft.model = id;
+    modelOpen = false;
+  }
+  function onModelKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape") modelOpen = false;
+  }
+  function onModelFocusOut(event: FocusEvent) {
+    // 焦点还留在这格里（包括点了清单里的选项）就不关，别和点击抢先后
+    const next = event.relatedTarget as Node | null;
+    if (!modelBoxEl || !next || modelBoxEl.contains(next)) return;
+    modelOpen = false;
+  }
   /** 一键同款 API 那屏的「设置 RunningHub 的 API Key」落到这里：切到共用 Key 那一家，光标停在 Key 那一格。 */
   async function editSharedKey() {
     if (!cloudPreset) return;
@@ -190,11 +220,11 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
       draft.timeout = p?.default_timeout ?? 120;
       // 清单要现拉的那几家，一开始没有推荐项：名字先只写服务商，别留一个「· 」在那儿
       draft.name = p ? (rec ? `${p.name} · ${rec.label}` : p.name) : "";
-      modelList = []; modelListNote = ""; modelListError = "";
+      modelList = []; modelListNote = ""; modelListError = ""; modelOpen = false;
       if (p?.models_dynamic && !quiet) void fetchModels();
     } else {
       draft.model = ""; draft.base_url = ""; draft.name = ""; draft.timeout = 120;
-      modelList = []; modelListNote = ""; modelListError = "";
+      modelList = []; modelListNote = ""; modelListError = ""; modelOpen = false;
     }
     keyInput = ""; clearKey = false; hasKey = false;
   }
@@ -204,7 +234,7 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
     keyInput = ""; clearKey = false; hasKey = !!config?.has_api_key;
     workflowKeyInput = ""; clearWorkflowKey = false;
     error = ""; notice = ""; testingText = ""; confirmDelete = false;
-    modelList = []; modelListNote = ""; modelListError = "";
+    modelList = []; modelListNote = ""; modelListError = ""; modelOpen = false;
   }
   function payload(): ModelDraft {
     return {
@@ -299,9 +329,10 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
               </span>
             </button>
           {/each}
-          <!-- 自定义那家到底能干什么我们不知道，所以挑了具体能力时不摆它：
-               挂一张「图像」卡进去，点进去却是猜，那是界面在替用户吹牛。 -->
-          {#if !onlyBuiltin && capability === "all"}
+          <!-- 这张卡在每个能力 tab 下都要在。之前只在「全部」里露面的结果是：
+               切到「文本」它直接消失，看起来像功能被删了。它也不替自己吹牛——
+               状态那行只说「自己的 Base URL」，能不能出图由填进去的地址负责。 -->
+          {#if !onlyBuiltin}
             <button class="api-card" data-provider="custom" aria-pressed={draft.provider === CUSTOM}
               disabled={busy} onclick={() => selectProvider(CUSTOM)}>
               <span class="api-avatar" aria-hidden="true">＋</span>
@@ -316,25 +347,45 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
           <p class="settings-hint" role="status">这一类目前没有接进来的服务商，切回「全部」看其余几家。</p>
         {/if}
         {#if isPreset && dynamicModels}
-          <label>反推模型 ID
-            <input aria-label="反推模型 ID" bind:value={draft.model} placeholder="点下面清单挑一个，或者直接手填" />
-          </label>
-          <div class="model-picks">
-            <button class="setting-button setting-button-ghost" disabled={busy || fetchingModels} onclick={() => void fetchModels()}>
-              {fetchingModels ? "正在拉取…" : "拉取模型清单"}
+          <!-- 标签单独一行，不把箭头一起包住：包了以后读屏和测试都会把那颗箭头认成「识别模型」。
+               也没直接用 <input list> + <datalist>：浏览器拿已经填进去的 ID 当过滤词，点箭头
+               只剩当前这一条，反而挑不了别家。自己画一个：能挑、能打字、清空就回到全量。 -->
+          <label for="api-model-id">识别模型</label>
+          <div class="api-model" bind:this={modelBoxEl}>
+            <input id="api-model-id" aria-label="识别模型" bind:value={draft.model} autocomplete="off"
+              placeholder={fetchingModels ? "正在读取模型清单…" : "挑一个，或者直接输入模型 ID"}
+              onkeydown={onModelKeydown} onfocusout={onModelFocusOut} />
+            <button class="api-model-arrow" type="button" aria-expanded={modelOpen}
+              aria-label={modelOpen ? "收起模型清单" : "展开模型清单"} disabled={busy || fetchingModels}
+              onclick={() => void toggleModelList()}>
+              <svg viewBox="0 0 12 8" aria-hidden="true"><path d="M1.5 1.5 6 6 10.5 1.5" /></svg>
             </button>
-            {#each modelList as item (item.id)}
-              <button class="setting-button" aria-pressed={draft.model === item.id} disabled={busy}
-                onclick={() => (draft.model = item.id)}>{item.label}</button>
-            {/each}
+            {#if modelOpen}
+              <div class="api-model-list" role="listbox" aria-label="模型清单">
+                {#each modelFiltered as item (item.id)}
+                  <button class="api-model-option" class:api-model-on={item.id === draft.model} role="option"
+                    aria-selected={item.id === draft.model} onclick={() => pickModel(item.id)}>
+                    {item.label}{item.recommended ? "（推荐）" : ""}
+                  </button>
+                {/each}
+                {#if !modelFiltered.length}
+                  <p class="api-model-empty">{modelListError || modelListNote || "按这个关键词没有匹配的模型，清空输入框看全部"}</p>
+                {/if}
+              </div>
+            {/if}
           </div>
-          <p class="settings-hint" role="status">
-            {modelListError || modelListNote || (modelList.length ? `服务商自己报了 ${modelList.length} 个模型` : "还没拉清单：点上面那颗，或者直接把模型 ID 填在框里")}
-          </p>
-          <p class="settings-hint">反推只能挑看得懂图的那一个。挑错了这边会报「模型不支持图片」。</p>
+          <!-- 清单正常时这一行什么都不写（原来那 29 个胶囊加两句说明整屏都是噪音）。
+               只有拉不到 / 空着的时候才说清为什么，并留一颗重试。 -->
+          {#if modelListError || modelListNote || !modelList.length}
+            <p class="settings-hint" role="status">
+              {modelListError || modelListNote || "模型清单还是空的：直接把模型 ID 打在框里也行。"}
+              <button class="setting-button setting-button-ghost" disabled={busy || fetchingModels}
+                onclick={() => void fetchModels()}>{fetchingModels ? "正在读取…" : "重新拉取清单"}</button>
+            </p>
+          {/if}
         {:else if isPreset}
-          <label>反推模型
-            <select aria-label="反推模型" bind:value={draft.model}>
+          <label>识别模型
+            <select aria-label="识别模型" bind:value={draft.model}>
               {#each providerModels as m}<option value={m.id}>{m.label}{m.recommended ? "（推荐）" : ""}</option>{/each}
             </select>
           </label>
@@ -496,8 +547,6 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
   /* 指令框里是长段文字：白字压黑底太刺眼，行距也偏挤，所以压灰一档、行距放到 1.9。 */
   .model-settings textarea { color: #c2c2ca; line-height: 1.9; letter-spacing: .01em; }
   .model-chips { display: flex; gap: 8px; flex-wrap: wrap; }
-  /* 现拉的清单长短不由我们决定：给它一个会滚的筐，别把整张卡顶长。 */
-  .model-picks { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; max-height: 132px; overflow: auto; }
   /* 服务商卡片区：一厂商一卡，状态写在卡上。清单长度不由我们决定，所以给它一个会滚的筐。 */
   .api-filter { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
   .api-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -539,4 +588,16 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
   .model-notice { margin-top: 14px; font-size: 13px; color: #a1a1aa; }
   .model-testing-text { margin-top: 12px; max-height: 160px; overflow: auto; font-size: 12px; white-space: pre-wrap; color: #a1a1aa; }
   @media (max-width: 860px) { .settings-model-body { padding: 16px; } }
+  /* 识别模型的下拉：箭头压在输入框右端，清单浮在下面。
+     这些规则放在最后——上面那条 input:not([type=checkbox]) 权重和 .api-model input 打平，
+     谁在后面谁说话。 */
+  .api-model { position: relative; margin-top: 6px; }
+  .api-model input { margin-top: 0; padding-right: 34px; }
+  .api-model-arrow { position: absolute; top: 0; right: 2px; width: 30px; height: 100%; padding: 0; display: grid; place-items: center; background: none; border: 0; border-radius: 6px; color: #a1a1aa; cursor: pointer; }
+  .api-model-arrow svg { width: 11px; height: 7px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
+  .api-model-arrow[aria-expanded="true"] svg { transform: rotate(180deg); }
+  .api-model-list { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; right: 0; max-height: 232px; overflow: auto; padding: 4px; display: grid; gap: 2px; background: #141417; border: 1px solid #3f3f46; border-radius: 8px; box-shadow: 0 12px 28px rgb(0 0 0 / 45%); }
+  .api-model-option { display: block; width: 100%; padding: 7px 9px; text-align: left; background: none; border: 0; border-radius: 5px; color: #d4d4d8; font-size: 12.5px; cursor: pointer; }
+  .api-model-option.api-model-on { color: #f87171; background: #1d1416; }
+  .api-model-empty { margin: 0; padding: 8px 9px; font-size: 12px; line-height: 1.6; color: #8b8b94; }
 </style>

@@ -39,6 +39,21 @@ describe("启动引导页（画廊成形 · 品牌段）", () => {
     expect(src).toMatch(/<div class="splash-mark"[^>]*><\/div>\s*\n\s*<span class="splash-rule"/);
   });
 
+  it("红段贴在线上、就绪闪光真的会走：mask 与 position 两个坑各钉一条", () => {
+    // ::after 是 absolute，父级不 position:relative 就贴到 .splash-stage 左上角，18% 还按 stage 宽算
+    const rule = src.match(/\.splash-rule \{[\s\S]*?\}/);
+    expect(rule, "找不到 .splash-rule 样式块").toBeTruthy();
+    expect(rule![0]).toMatch(/position:\s*relative/);
+    // 光带是 mask 子树里的元素：transform 停在 box 外时，只动 opacity 等于什么都没演
+    const flash = src.match(/\.is-leaving \.splash-mark::after \{[\s\S]*?\}/);
+    expect(flash, "找不到就绪闪光规则").toBeTruthy();
+    expect(flash![0]).not.toMatch(/transform:\s*translateX\(340%\)/);
+    const kf = src.match(/@keyframes splash-ready-flash \{[\s\S]*?\n  \}/);
+    expect(kf, "找不到就绪闪光 keyframes").toBeTruthy();
+    expect(kf![0]).toMatch(/translateX\(-180%\)/);
+    expect(kf![0]).toMatch(/translateX\(340%\)/);
+  });
+
   it("ready 先演淡出再卸载，不是硬切", async () => {
     vi.useFakeTimers();
     try {
@@ -68,6 +83,8 @@ describe("启动引导页（画廊成形 · 品牌段）", () => {
     expect(ui.getByRole("button", { name: "重试" })).toBeTruthy();
     expect(ui.getByRole("status").getAttribute("aria-busy")).toBe("false");
     expect(src).toMatch(/\.has-error,[\s\S]{0,240}animation:\s*none;/);
+    // 红只在「在往前推」时出现：错误态那截红要收掉，否则拉满的线读成 100%
+    expect(src).toMatch(/\.has-error \.splash-rule::after \{ background:\s*#5a5a5f; box-shadow:\s*none/);
   });
 
   it("全屏无卡片、支持减少动画偏好，主界面品牌只保留 LOGO", () => {

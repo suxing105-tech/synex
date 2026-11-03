@@ -28,6 +28,14 @@ describe("启动期 chrome", () => {
     expect(src.slice(boot, hint)).toContain("detail-skeleton");
   });
 
+  it("骨架换成真卡与启动页淡出走同一条曲线：交叉溶解才不暗场", () => {
+    const CURVE = "340ms cubic-bezier(.4, 0, .2, 1)";
+    const mat = read("src/components/Feed.svelte").match(/animation:\s*card-materialize\s+([^;]+);/);
+    expect(mat, "找不到 card-materialize 动画").toBeTruthy();
+    expect(mat![1]).toContain(CURVE);
+    expect(read("src/components/SplashOverlay.svelte")).toContain(`animation: splash-fade-out ${CURVE}`);
+  });
+
   describe("标题栏", () => {
     const appWindow = {
       isMaximized: vi.fn(async () => false),

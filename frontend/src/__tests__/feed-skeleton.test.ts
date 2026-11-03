@@ -45,6 +45,9 @@ describe("FeedSkeleton", () => {
   it("形状语言共用缩略图变量，圆角与底色不各写一份", () => {
     expect(skeletonSrc).toContain("var(--thumb-radius");
     expect(skeletonSrc).toContain("var(--thumb-media-bg");
+    // 但骨架本身要看得见：光靠 #1a1a1d 贴在 #0e0e10 上基本隐形
+    expect(skeletonSrc).toMatch(/background:\s*linear-gradient\([^)]*#ffffff0a[^)]*\),\s*\n?\s*var\(--thumb-media-bg/);
+    expect(skeletonSrc).toMatch(/\.sk-tile \{[\s\S]*?box-shadow: inset 0 0 0 1px/);
     // 微光只有一条：整块网格一个动画层
     expect(skeletonSrc.match(/sk-shine/g)!.length).toBeGreaterThan(0);
     expect(skeletonSrc).toContain("prefers-reduced-motion: reduce");

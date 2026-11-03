@@ -39,6 +39,22 @@ describe("首帧预挂载壳", () => {
     expect(overlayBlock![0]).toContain(base);
   });
 
+  it("壳只铺底色：字标与地标线都归启动页，交接那一帧不重演点亮", () => {
+    const shell = html.match(/<div id="boot-shell"[\s\S]*?<\/style>/);
+    expect(shell, "找不到 #boot-shell 块").toBeTruthy();
+    expect(shell![0], "壳里摆静止 logo 会先亮再消失，再被启动页重新点亮一次").not.toContain("logo.png");
+    expect(shell![0], "同理：静止地标线也一样会被启动页重演").not.toMatch(/boot-rule/);
+  });
+
+  it("启动页容器不做整层淡入：淡入等于把底下的真实界面透出来闪一下", () => {
+    const overlayBlock = overlay.match(/\.splash-overlay \{[\s\S]*?\}/);
+    expect(overlayBlock, "找不到 .splash-overlay 样式块").toBeTruthy();
+    expect(overlayBlock![0]).not.toMatch(/animation:/);
+    expect(overlay).not.toMatch(/@keyframes splash-fade-in/);
+    // 收场那条淡出是另一回事：它演的是「遮罩撤走」，底下已经是铺好的界面
+    expect(overlay).toMatch(/\.is-leaving \{[\s\S]{0,120}animation: splash-fade-out/);
+  });
+
   it("main.ts 在 mount(App) 之后同步移除壳", () => {
     expect(main).toMatch(/mount\(\s*App\s*,[\s\S]*?getElementById\("boot-shell"\)\?\.remove\(\)/);
   });

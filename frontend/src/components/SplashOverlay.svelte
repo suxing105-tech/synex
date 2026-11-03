@@ -87,7 +87,9 @@
        否则首帧预挂载壳交给这里的那一刻会闪一下颜色。 */
     background: radial-gradient(ellipse at 50% 44%, #1b1416 0%, #121012 42%, #0e0e10 78%);
     color: #fafafa;
-    animation: splash-fade-in 260ms ease-out both;
+    /* 这一层不能有淡入：index.html 的预挂载壳用的是同一份底色，mount() 之后同帧交接。
+       整层从 opacity:0 起播的那 260ms 里，底色本身也是半透明的，等于把底下的真实界面
+       透出来闪一下——底色对齐救不了它，因为糊在一起的是整层。 */
   }
   .is-leaving {
     pointer-events: none;
@@ -148,6 +150,9 @@
 
   /* 地标线：不报假百分比，只表示「有事在往前推」；左端 18% 是唯一的红 */
   .splash-rule {
+    /* ::after 是 absolute：父级不 position:relative，红段就贴到 .splash-stage 左上角去了，
+       而且 18% 会按 stage 宽度算——线在中间，红段在字标上面飘。 */
+    position: relative;
     display: block;
     width: 132px;
     height: 1px;
@@ -206,8 +211,10 @@
   .has-error .splash-rule { animation: none; }
   .has-error .splash-mark { background: #5a5a5f; }
   .has-error .splash-rule { transform: scaleX(1); }
+  /* 错误态里地标线拉满只是条分隔线：别再留那截红，红在这里表示「往前推」，
+     而此刻什么都没在往前推。 */
+  .has-error .splash-rule::after { background: #5a5a5f; box-shadow: none; }
 
-  @keyframes splash-fade-in { from { opacity: 0; } to { opacity: 1; } }
   @keyframes splash-fade-out { from { opacity: 1; transform: scale(1.014); } to { opacity: 0; transform: scale(1); } }
   @keyframes splash-mark-in { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: scale(1); } }
   @keyframes splash-sweep { from { transform: translateX(-180%); } to { transform: translateX(340%); } }
@@ -215,15 +222,17 @@
   @keyframes splash-caption-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes splash-glow { from { opacity: .7; transform: scale(1); } to { opacity: 1; transform: scale(1.05); } }
 
-  /* 就绪那一闪只演一次：::after 复用成白色脉冲，扫过即收 */
+  /* 就绪那一闪：字标里再走一道光，表示数据到了，紧接着整层淡出。
+     必须连 transform 一起动——光带在 mask 子树里，停在 box 外就是隐形动画（第一版就踩了）。 */
   .is-leaving .splash-mark::after {
-    transform: translateX(340%);
-    animation: splash-ready-flash 240ms ease-out both;
+    animation: splash-ready-flash 280ms cubic-bezier(.22, .61, .36, 1) both;
   }
-  @keyframes splash-ready-flash { 0% { opacity: 0; } 45% { opacity: .85; } 100% { opacity: 0; } }
+  @keyframes splash-ready-flash {
+    0% { opacity: .95; transform: translateX(-180%); }
+    100% { opacity: 0; transform: translateX(340%); }
+  }
 
   @media (prefers-reduced-motion: reduce) {
-    .splash-overlay,
     .splash-glow,
     .splash-mark,
     .splash-mark::after,

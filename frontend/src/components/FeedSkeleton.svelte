@@ -53,7 +53,13 @@
     display: block;
     width: 100%;
     border-radius: var(--thumb-radius, 10px);
-    background: var(--thumb-media-bg, #1a1a1d);
+    /* 底色仍然共用卡片那份变量，但骨架得读得出来：叠一层 4%/2% 白 + 1px 内描边。
+       只提亮度不改色相，中性底不会变成「像一张图」；#1a1a1d 贴在 #0e0e10 上几乎隐形，
+       而「格子会落在这里」正是这套成形动画要说的事。 */
+    background:
+      linear-gradient(180deg, #ffffff0a, #ffffff05),
+      var(--thumb-media-bg, #1a1a1d);
+    box-shadow: inset 0 0 0 1px #ffffff0f;
     animation: sk-in 280ms cubic-bezier(.22, .61, .36, 1) both;
     /* 入场按格错开，20 格封顶：再多也只是让后面的格子白等 */
     animation-delay: calc(min(var(--i), 20) * 16ms);
@@ -66,7 +72,7 @@
     left: 0;
     width: 45%;
     pointer-events: none;
-    background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .055) 45%, transparent);
+    background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .07) 45%, transparent);
     animation: sk-shine 1500ms ease-in-out infinite;
   }
   @keyframes sk-in { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }

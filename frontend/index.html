@@ -11,41 +11,19 @@
     <!--
       预挂载壳：WebView 先以窗口底色亮出来，Svelte 的 SplashOverlay 要等 bundle 解析
       完才存在，中间那段「只有标题栏的空窗口」就是它补的。样式必须内联（CSP
-      script-src 'self' 禁止内联脚本，所以移除动作交给 bundle 里的 main.ts 做），
-      底色与遮罩、窗口 backgroundColor 三处必须同色，否则交接瞬间会闪一下。
+      script-src 'self' 禁止内联脚本，所以移除动作交给 bundle 里的 main.ts 做）。
+      壳只铺底色，不摆 logo：它没能力接上启动页的编排，摆一个静止字标的结果是交接那一帧
+      「字标先亮 → 消失 → 重新点亮演一遍」。底色与遮罩、窗口 backgroundColor 三处同色，
+      交接就是无缝的，字标交给 SplashOverlay 一次演完。
     -->
-    <div id="boot-shell" aria-hidden="true">
-      <img src="/logo.png" alt="" width="96" height="96" />
-      <span class="boot-rule"></span>
-    </div>
+    <div id="boot-shell" aria-hidden="true"></div>
     <style>
       #boot-shell {
         position: fixed;
         inset: 0;
         z-index: 80;
-        display: grid;
-        place-items: center;
-        align-content: center;
-        gap: 38px;
         overflow: hidden;
         background: radial-gradient(ellipse at 50% 44%, #1b1416 0%, #121012 42%, #0e0e10 78%);
-      }
-      #boot-shell img { object-fit: contain; }
-      #boot-shell .boot-rule {
-        display: block;
-        width: 132px;
-        height: 1px;
-        background: #ffffff14;
-        position: relative;
-      }
-      #boot-shell .boot-rule::after {
-        content: "";
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 18%;
-        height: 1px;
-        background: #f24e4e;
       }
     </style>
     <script type="module" src="/src/main.ts"></script>

@@ -2,14 +2,14 @@
   // 启动引导页（展示层）：阶段与异常由 App 的 splash gate 决定，这里只管演什么。
   //
   // 三段编排：
-  //   boot  —— 字标被一道斜向光扫点亮，地标线由中心展开，文案「正在唤醒本地引擎」
+  //   boot  —— 字标被一道斜向光扫点亮，地标那枚「缩略图滑块」自己装配起来，文案「正在唤醒本地引擎」
   //   index —— 文案切到「正在整理图库」；此时主界面已经铺好骨架（见 appBooting）
   //   ready —— 不再硬切：留 340ms 淡出 + 轻微回缩，骨架→真卡的替换发生在淡出之下
   //
   // 为什么字标能玩光影：/logo.png 是纯 #f24e4e + 透明通道的字标（531×531，背景
   // alpha=0），直接当 CSS mask 用，光带只会在字形里走，不需要另画一份矢量。
   //
-  // 动画只用 transform / opacity，全屏合成层控制在两个以内；不碰 filter: blur()，
+  // 动画只用 transform / opacity / clip-path，全屏合成层控制在两个以内；不碰 filter: blur()，
   // 4K 窗口上整屏模糊是白送的掉帧。
   import type { SplashPhase } from "../lib/splash-gate.svelte";
 
@@ -62,7 +62,11 @@
     <div class="splash-noise" aria-hidden="true"></div>
     <div class="splash-stage">
       <div class="splash-mark" role="img" aria-label="闪寻空间"></div>
-      <span class="splash-rule" aria-hidden="true"></span>
+      <span class="splash-rule" aria-hidden="true">
+        <i class="rule-track"></i>
+        <i class="rule-fill"></i>
+        <i class="rule-thumb"></i>
+      </span>
       {#if error}
         <div class="splash-err" role="alert">启动未完成：{error}</div>
         <p class="splash-hint">请关闭应用后重新打开。如果仍无法启动，请联系支持并提供此错误信息。</p>
@@ -148,29 +152,50 @@
     animation: splash-sweep 620ms cubic-bezier(.22, .61, .36, 1) 120ms both;
   }
 
-  /* 地标线：不报假百分比，只表示「有事在往前推」；左端 18% 是唯一的红 */
+  /* 地标：把主界面右上角那枚「缩略图滑块」原样搬来当品牌符号——同 4px 细轨、同 14px
+     圆头、同 2px #18181b 内环、同静止色 #323237，不另拍一套几何（拍两套就一定对不上，
+     那是「精致」最先输掉的地方）。
+     滑块头停在 18% 不动：这条规矩是「不报假百分比」，所以启动期间没有任何滑动；
+     它只在首屏数据真落地的那一刻滑到右端收场，那是真事件，不是假进度。 */
   .splash-rule {
-    /* ::after 是 absolute：父级不 position:relative，红段就贴到 .splash-stage 左上角去了，
-       而且 18% 会按 stage 宽度算——线在中间，红段在字标上面飘。 */
-    position: relative;
+    position: relative; /* 三层都是 absolute，父级不定位在 stage 上就会各飘各的 */
     display: block;
-    width: 132px;
-    height: 1px;
-    margin-top: 38px;
-    background: #ffffff14;
-    transform: scaleX(0);
-    transform-origin: 50% 50%;
-    animation: splash-rule-grow 800ms cubic-bezier(.22, .61, .36, 1) 320ms both;
+    width: 168px;
+    height: 14px; /* 按控制件的满高占位，14px 圆头不会被后面的文案顶到 */
+    margin-top: 34px;
   }
-  .splash-rule::after {
-    content: "";
+  .rule-track,
+  .rule-fill {
     position: absolute;
     left: 0;
-    top: 0;
-    width: 18%;
-    height: 1px;
+    top: 5px; /* (14 - 4) / 2：细轨在 14px 的控制框里垂直居中 */
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+  }
+  .rule-track {
+    background: #323237;
+    animation: splash-rule-in 240ms ease-out 80ms both;
+  }
+  .rule-fill {
     background: #f24e4e;
-    box-shadow: 0 0 6px #f24e4e59;
+    /* 展开用 clip-path 不用 scaleX：scaleX 会把 2px 圆角横向拉成钝头，看着像融化的糖 */
+    clip-path: inset(0 100% 0 0);
+    animation: splash-rule-fill 320ms cubic-bezier(.22, .61, .36, 1) 200ms both;
+  }
+  .rule-thumb {
+    position: absolute;
+    left: 23px; /* 停在 18%：中心 30px，减去 7px 半径 */
+    top: 0;
+    width: 14px;
+    height: 14px;
+    box-sizing: border-box;
+    border: 2px solid #18181b;
+    border-radius: 50%;
+    background: #f24e4e;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .5), 0 0 0 1px rgba(242, 78, 78, .4);
+    transform: scale(0);
+    animation: splash-thumb-in 260ms cubic-bezier(.34, 1.4, .64, 1) 400ms both;
   }
 
   .splash-caption {
@@ -208,17 +233,29 @@
   .has-error .splash-glow,
   .has-error .splash-mark,
   .has-error .splash-mark::after,
-  .has-error .splash-rule { animation: none; }
+  .has-error .rule-track,
+  .has-error .rule-fill,
+  .has-error .rule-thumb { animation: none; }
   .has-error .splash-mark { background: #5a5a5f; }
-  .has-error .splash-rule { transform: scaleX(1); }
-  /* 错误态里地标线拉满只是条分隔线：别再留那截红，红在这里表示「往前推」，
-     而此刻什么都没在往前推。 */
-  .has-error .splash-rule::after { background: #5a5a5f; box-shadow: none; }
+  /* 动画停了得把终态补回来：三层都是「动画负责从隐藏走到可见」，
+     只下 animation:none 会退回 clip-path:100% 与 scale(0)，地标整条消失。
+     红也一并收掉——错误态什么都没在往前推。 */
+  .has-error .rule-fill {
+    background: #5a5a5f;
+    clip-path: inset(0 calc(100% - 30px) 0 0);
+  }
+  .has-error .rule-thumb {
+    background: #5a5a5f;
+    transform: scale(1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .5);
+  }
 
   @keyframes splash-fade-out { from { opacity: 1; transform: scale(1.014); } to { opacity: 0; transform: scale(1); } }
   @keyframes splash-mark-in { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: scale(1); } }
   @keyframes splash-sweep { from { transform: translateX(-180%); } to { transform: translateX(340%); } }
-  @keyframes splash-rule-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  @keyframes splash-rule-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes splash-rule-fill { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 calc(100% - 30px) 0 0); } }
+  @keyframes splash-thumb-in { from { opacity: 0; transform: scale(.5); } to { opacity: 1; transform: scale(1); } }
   @keyframes splash-caption-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes splash-glow { from { opacity: .7; transform: scale(1); } to { opacity: 1; transform: scale(1.05); } }
 
@@ -231,6 +268,22 @@
     0% { opacity: .95; transform: translateX(-180%); }
     100% { opacity: 0; transform: translateX(340%); }
   }
+  /* 启动期不动，就绪这一拍才走：滑块头从中途滑到最右、红轨铺满，读作「收齐了」。
+     时长跟 splash-fade-out 同为 340ms 里的一段，收场只有一个动作，不产生第二种节奏。 */
+  .is-leaving .rule-thumb {
+    animation: splash-thumb-run 300ms cubic-bezier(.4, 0, .2, 1) both;
+  }
+  .is-leaving .rule-fill {
+    animation: splash-rule-done 300ms cubic-bezier(.4, 0, .2, 1) both;
+  }
+  @keyframes splash-thumb-run {
+    from { transform: translateX(0) scale(1); }
+    to { transform: translateX(131px) scale(1); }
+  }
+  @keyframes splash-rule-done {
+    from { clip-path: inset(0 calc(100% - 30px) 0 0); }
+    to { clip-path: inset(0 0 0 0); }
+  }
 
   @media (prefers-reduced-motion: reduce) {
     .splash-glow,
@@ -241,7 +294,12 @@
     .is-leaving { animation: none; }
     .splash-mark { opacity: 1; transform: none; }
     .splash-mark::after { display: none; }
-    .splash-rule { transform: scaleX(1); }
+    .rule-track,
+    .rule-fill,
+    .rule-thumb { animation: none; }
+    .rule-track { opacity: 1; }
+    .rule-fill { clip-path: inset(0 calc(100% - 30px) 0 0); }
+    .rule-thumb { opacity: 1; transform: scale(1); }
     .splash-caption { opacity: 1; transform: none; }
     .is-leaving { transition: opacity 120ms linear; opacity: 0; }
   }

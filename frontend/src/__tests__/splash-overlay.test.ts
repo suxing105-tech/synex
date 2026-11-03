@@ -39,11 +39,33 @@ describe("启动引导页（画廊成形 · 品牌段）", () => {
     expect(src).toMatch(/<div class="splash-mark"[^>]*><\/div>\s*\n\s*<span class="splash-rule"/);
   });
 
-  it("红段贴在线上、就绪闪光真的会走：mask 与 position 两个坑各钉一条", () => {
-    // ::after 是 absolute，父级不 position:relative 就贴到 .splash-stage 左上角，18% 还按 stage 宽算
+  it("地标就是主界面那枚缩略图滑块：几何与色值共用一份，不另拍一套", () => {
+    const feed = readFileSync(resolve("src/components/Feed.svelte"), "utf8");
     const rule = src.match(/\.splash-rule \{[\s\S]*?\}/);
     expect(rule, "找不到 .splash-rule 样式块").toBeTruthy();
     expect(rule![0]).toMatch(/position:\s*relative/);
+    expect(rule![0]).toMatch(/height:\s*14px/);
+    // 细轨 4px / 静止色 / 圆头 14px + 2px 底色内环：四条都跟 Feed 那枚滑块同值
+    expect(feed).toMatch(/\.columns-slider \{[\s\S]*?height: 4px;[\s\S]*?rgb\(50 50 55\)/);
+    expect(feed).toMatch(/::-webkit-slider-thumb \{[\s\S]*?width: 14px;[\s\S]*?border: 2px solid rgb\(24 24 27\)/);
+    const track = src.match(/\.rule-track \{[\s\S]*?\}/);
+    expect(track![0]).toContain("#323237");
+    expect(src).toMatch(/height:\s*4px;\n\s*border-radius:\s*2px;/);
+    const thumb = src.match(/\.rule-thumb \{[\s\S]*?\}/);
+    expect(thumb![0]).toContain("width: 14px");
+    expect(thumb![0]).toContain("border: 2px solid #18181b");
+  });
+
+  it("启动期滑块头不滑动，只有就绪那一拍滑到右端：不许假进度", () => {
+    const thumb = src.match(/\.rule-thumb \{[\s\S]*?\}/);
+    expect(thumb![0]).not.toMatch(/animation: splash-thumb-run/);
+    expect(src).toMatch(/\.is-leaving \.rule-thumb \{[\s\S]*?animation: splash-thumb-run/);
+    // 展开走 clip-path：scaleX 会把 2px 圆角横向拉成钝头
+    expect(src).toMatch(/\.rule-fill \{[\s\S]*?clip-path: inset\(0 100% 0 0\);/);
+    expect(src).toMatch(/@keyframes splash-rule-fill \{ from \{ clip-path: inset\(0 100% 0 0\);/);
+  });
+
+  it("就绪闪光与滑块收场真的会走：mask 与 position 两个坑各钉一条", () => {
     // 光带是 mask 子树里的元素：transform 停在 box 外时，只动 opacity 等于什么都没演
     const flash = src.match(/\.is-leaving \.splash-mark::after \{[\s\S]*?\}/);
     expect(flash, "找不到就绪闪光规则").toBeTruthy();
@@ -82,9 +104,19 @@ describe("启动引导页（画廊成形 · 品牌段）", () => {
     expect(ui.getByText(/请关闭应用后重新打开/)).toBeTruthy();
     expect(ui.getByRole("button", { name: "重试" })).toBeTruthy();
     expect(ui.getByRole("status").getAttribute("aria-busy")).toBe("false");
-    expect(src).toMatch(/\.has-error,[\s\S]{0,240}animation:\s*none;/);
-    // 红只在「在往前推」时出现：错误态那截红要收掉，否则拉满的线读成 100%
-    expect(src).toMatch(/\.has-error \.splash-rule::after \{ background:\s*#5a5a5f; box-shadow:\s*none/);
+    expect(src).toMatch(/\.has-error,[\s\S]{0,320}animation:\s*none;/);
+    // 地标三层都是「动画负责从隐藏走到可见」，所以停动画必须把终态补回来，
+    // 否则地标整条消失；红也要收掉——错误态什么都没在往前推
+    // 选择器列表里那行 .has-error .rule-thumb { animation: none; } 也算一次命中，
+    // 所以只认真正带声明的那一块：要求块里出现 background
+    const errFill = src.match(/\.has-error \.rule-fill \{[^}]*background[^}]*\}/);
+    expect(errFill, "找不到错误态红轨规则").toBeTruthy();
+    expect(errFill![0]).toContain("clip-path: inset(0 calc(100% - 30px) 0 0)");
+    expect(errFill![0]).toMatch(/background:\s*#5a5a5f/);
+    const errThumb = src.match(/\.has-error \.rule-thumb \{[^}]*background[^}]*\}/);
+    expect(errThumb, "找不到错误态滑块头规则").toBeTruthy();
+    expect(errThumb![0]).toMatch(/transform:\s*scale\(1\)/);
+    expect(errThumb![0]).not.toMatch(/242, 78, 78/);
   });
 
   it("全屏无卡片、支持减少动画偏好，主界面品牌只保留 LOGO", () => {

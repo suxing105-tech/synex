@@ -1,4 +1,4 @@
-// Tauri sidecar 生命周期 composable（M0-f 第三轮：sidecar 状态抽出）
+// Tauri sidecar 生命周期 + 启动页收场时序（M0-f 第三轮抽出；「画廊成形」轮加收场条件）
 //
 // 把 App.svelte 里 backendReady / backendError / initStarted / sidecar*Unsub
 // / backendBootTimeout + doInit / markBackendReady / markBackendFailed + onMount
@@ -7,25 +7,51 @@
 // 用法：
 //   const gate = createSplashGate();
 //   await gate.start(doInit);    // 浏览器路径：立刻调 doInit；Tauri 路径：订阅事件
+//   gate.markIndexReady();       // doInit 的 finally 里调：首屏数据已落地
 //   gate.dispose();              // onDestroy 调
 //
-//   <SplashOverlay ready={gate.ready} error={gate.error} />
+//   <SplashOverlay phase={gate.phase} error={gate.error} />
 //
 // 设计要点：
-// - .svelte.ts 文件让 $state rune 在 composable 里工作（App.svelte 模板用
-//   gate.ready / gate.error 时自动响应变化）。
-// - 不传 deps：gate 直接读 ./tauri 的 isTauri / onSidecarReady / onSidecarDied，
-//   不暴露注入点（保持 API 简单）。如果未来要测试 Tauri 行为，再加 deps。
+// - 收场是双条件：sidecar 就绪 **且** 首屏数据落地，再加一条最短呈现下限。
+//   只等 READY 会在 folders/feed 还没回来时就把遮罩撤掉，用户看到的是「空壳侧栏 +
+//   空网格 → 内容突然弹出」，这是启动观感里最伤的一条。
+// - 最短呈现 minPresentationMs（默认 900）：真机 1~2s 就 READY，编排会被切成一闪
+//   而过，动画读不出意图。计时起点是 start()（遮罩真正出现），不是后端就绪。
+// - 数据上限 indexTimeoutMs（默认 6000）：首屏数据卡住时宁可放行看到空壳，也不能
+//   把用户锁在门外。放行只是「不再等」，不是报错。
+// - 计时只允许待在这个文件里。App.svelte 里一旦出现 900 / 6000 这类字面量，就说
+//   明时序又漏回业务层了（app-splash.test.ts 钉住这条）。
+// - browser 路径默认 fast：启动页根本不出现，三个条件初值全 true，与本轮之前的行为
+//   一致。dev 想看动画用 ?splash=preview —— preview 走同一条代码路径，只是把
+//   READY 与首屏数据换成两个定时器模拟，所以回放出来的节奏就是真机的节奏。
+// - .svelte.ts 文件让 $state / $derived rune 在 composable 里工作（App.svelte 模板
+//   读 gate.phase 时自动响应变化）。
 // - timeoutMs 默认 30000ms（30s）；测试时可以传小值加速。
-// - browser 路径与 Tauri 路径不对称：browser 调 start 时立刻 doInit，
-//   Tauri 等 sidecar-ready 才动。start() 返回 boolean 告诉调用方是哪种模式，
-//   让 App.svelte 在 browser 模式下继续 setup comfyui polling + window listeners。
 
 import { isTauri, onSidecarReady, onSidecarDied, getSidecarStatus } from "./tauri";
+
+/** 启动页当前该演哪一段。 */
+export type SplashPhase = "boot" | "index" | "ready" | "error";
+
+/** 编排最短呈现时长（ms）：短于此也不提前收场，否则动画读不出意图。 */
+export const SPLASH_MIN_PRESENTATION_MS = 900;
+/** 等首屏数据的上限（ms）：超时放行，不报错、不死等。 */
+export const SPLASH_INDEX_TIMEOUT_MS = 6000;
 
 export interface SplashGateOptions {
   /** 启动后端就绪超时时间（ms）。默认 30000。 */
   timeoutMs?: number;
+  /** 等首屏数据的上限（ms）。默认 6000。 */
+  indexTimeoutMs?: number;
+  /** 遮罩最短呈现时长（ms）。默认 900。 */
+  minPresentationMs?: number;
+  /** dev 回放：强制演完整编排（浏览器模式下也显示启动页）。默认 false。 */
+  preview?: boolean;
+  /** preview 下模拟「READY 到达」的时刻（ms）。默认 min(最短呈现, 回放时长 30%)。 */
+  previewBackendMs?: number;
+  /** preview 下模拟「首屏数据落地」的时刻（ms）。默认 2000。 */
+  previewRevealMs?: number;
 }
 
 export interface SplashGate {
@@ -33,82 +59,157 @@ export interface SplashGate {
   readonly ready: boolean;
   /** 错误原因。null 表示无错误。 */
   readonly error: string | null;
+  /** 启动页应该演的段落，驱动 SplashOverlay 的文案与阶段。 */
+  readonly phase: SplashPhase;
   /**
-   * 启动门。浏览器模式下立刻调 doInit 并返回 true；
-   * Tauri 模式下订阅 sidecar-ready / sidecar-died + setTimeout 后返回 false
-   * （doInit 在 sidecar-ready 事件触发时才调）。
+   * 启动门。浏览器非 preview 模式下立刻调 doInit 并返回 true；
+   * Tauri 模式与 preview 模式订阅/计时后返回 false。
    */
   start(doInit: () => Promise<void>): Promise<boolean>;
-  /** 释放 sidecar 订阅 + 超时定时器。onDestroy 调用。 */
+  /** 首屏数据落地（由 doInit 的 finally 调用）。重复调用幂等。 */
+  markIndexReady(): void;
+  /** 释放 sidecar 订阅 + 全部计时器。onDestroy 调用。 */
   dispose(): void;
 }
 
 export function createSplashGate(opts: SplashGateOptions = {}): SplashGate {
   const timeoutMs = opts.timeoutMs ?? 30000;
+  const indexTimeoutMs = opts.indexTimeoutMs ?? SPLASH_INDEX_TIMEOUT_MS;
+  const minPresentationMs = opts.minPresentationMs ?? SPLASH_MIN_PRESENTATION_MS;
+  const preview = opts.preview === true;
+  const previewRevealMs = opts.previewRevealMs ?? 2000;
+  const previewBackendMs = opts.previewBackendMs ?? Math.min(minPresentationMs, Math.round(previewRevealMs * 0.3));
 
-  // 浏览器（!isTauri()）默认 ready=true，splash 不显示；Tauri 默认 false。
-  let ready = $state(!isTauri());
+  // 浏览器且没开 preview：启动页根本不出现，三个条件直接给 true 走快速通道。
+  const fast = !isTauri() && !preview;
+
+  let backendReady = $state(fast);
+  let indexReady = $state(fast);
+  let floorReady = $state(fast);
+  let indexForced = $state(false);
   let error = $state<string | null>(null);
+
+  // indexForced：等首屏数据超过上限时的放行开关——放行只是「不再等」，不是报错。
+  const indexSatisfied = $derived(indexReady || indexForced);
+  const ready = $derived(!error && backendReady && indexSatisfied && floorReady);
+  const phase = $derived<SplashPhase>(
+    error ? "error" : ready ? "ready" : backendReady ? "index" : "boot",
+  );
+
   let readyUnsub: (() => void) | null = null;
   let diedUnsub: (() => void) | null = null;
   let bootTimeout: ReturnType<typeof setTimeout> | null = null;
+  let floorTimeout: ReturnType<typeof setTimeout> | null = null;
+  let indexTimeout: ReturnType<typeof setTimeout> | null = null;
+  let previewBackendTimeout: ReturnType<typeof setTimeout> | null = null;
+  let previewInitTimeout: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
   let initialized = false;
   let eventVersion = 0;
 
-  function clearBootTimeout() {
-    if (bootTimeout) {
-      clearTimeout(bootTimeout);
-      bootTimeout = null;
-    }
+  function drop(handle: "boot" | "floor" | "index" | "previewBackend" | "previewInit") {
+    if (handle === "boot" && bootTimeout) { clearTimeout(bootTimeout); bootTimeout = null; }
+    if (handle === "floor" && floorTimeout) { clearTimeout(floorTimeout); floorTimeout = null; }
+    if (handle === "index" && indexTimeout) { clearTimeout(indexTimeout); indexTimeout = null; }
+    if (handle === "previewBackend" && previewBackendTimeout) { clearTimeout(previewBackendTimeout); previewBackendTimeout = null; }
+    if (handle === "previewInit" && previewInitTimeout) { clearTimeout(previewInitTimeout); previewInitTimeout = null; }
   }
 
-  function markReady(doInit: () => Promise<void>) {
-    if (disposed) return;
-    ready = true;
+  /** 最短呈现计时：从遮罩真正出现的那一刻算，不是从后端就绪算。 */
+  function startFloor() {
+    if (floorReady || floorTimeout) return;
+    floorTimeout = setTimeout(() => {
+      floorTimeout = null;
+      floorReady = true;
+    }, minPresentationMs);
+  }
+
+  /** 首屏数据的兜底：到点还没落地就放行，宁可看到空壳也不锁人。 */
+  function armIndexWatch() {
+    if (indexReady || indexForced || indexTimeout) return;
+    indexTimeout = setTimeout(() => {
+      indexTimeout = null;
+      indexForced = true;
+    }, indexTimeoutMs);
+  }
+
+  /** 只记「后端起来了」，不负责 init —— preview 演阶段切换时要单独用它。 */
+  function noteBackendReady() {
+    backendReady = true;
     error = null;
-    clearBootTimeout();
-    if (!initialized) {
-      initialized = true;
-      void doInit();
-    }
+    drop("boot");
+    armIndexWatch();
+  }
+
+  function runInitOnce(doInit: () => Promise<void>) {
+    if (initialized) return;
+    initialized = true;
+    void doInit();
+  }
+
+  function markBackendReady(doInit: () => Promise<void>) {
+    if (disposed) return;
+    noteBackendReady();
+    runInitOnce(doInit);
   }
 
   function markFailed(reason: string) {
     if (disposed) return;
-    ready = false;
     error = reason;
-    clearBootTimeout();
+    drop("boot");
+    drop("index");
+    drop("previewBackend");
+    drop("previewInit");
   }
 
   async function start(doInit: () => Promise<void>): Promise<boolean> {
-    if (!isTauri()) {
+    if (fast) {
       // 浏览器 dev / 静态托管：直接 init（vite proxy / FastAPI 已在 8765）
       await doInit();
       return true;
     }
+    startFloor();
+    if (!isTauri()) {
+      // dev 回放：把真机的两个时间点换成定时器，其余（阶段、收场条件、兜底）全走同一条路。
+      previewBackendTimeout = setTimeout(() => {
+        previewBackendTimeout = null;
+        if (!disposed) noteBackendReady();
+      }, previewBackendMs);
+      previewInitTimeout = setTimeout(() => {
+        previewInitTimeout = null;
+        if (!disposed) runInitOnce(doInit);
+      }, previewRevealMs);
+      return false;
+    }
     // Tauri 路径：等 Rust 端 sidecar-ready，否则一直显示 splash。
     // 30s 超时切错误卡（一般 1~2s 就能 ready；30s 留给冷启动 / 防卡死）。
-    readyUnsub = await onSidecarReady(() => { eventVersion++; markReady(doInit); });
+    readyUnsub = await onSidecarReady(() => { eventVersion++; markBackendReady(doInit); });
     diedUnsub = await onSidecarDied((p) => {
       eventVersion++;
       markFailed(p?.reason || "sidecar died");
     });
     bootTimeout = setTimeout(() => {
-      if (!ready) markFailed(error || `后端进程启动超时（${Math.round(timeoutMs / 1000)}s）`);
+      if (!backendReady) markFailed(error || `后端进程启动超时（${Math.round(timeoutMs / 1000)}s）`);
     }, timeoutMs);
     // 先订阅再读取快照：READY 可能早于 WebView 挂载；新事件优先于旧快照。
     const version = eventVersion;
     try {
       const status = await getSidecarStatus();
       if (!disposed && version === eventVersion) {
-        if (status?.ready) markReady(doInit);
+        if (status?.ready) markBackendReady(doInit);
         else if (status?.last_error) markFailed(status.last_error);
       }
     } catch (e) {
       markFailed(`无法读取后端状态：${String(e)}`);
     }
     return false;
+  }
+
+  function markIndexReady() {
+    if (disposed) return;
+    drop("index");
+    indexReady = true;
+    indexForced = false;
   }
 
   function dispose() {
@@ -121,7 +222,11 @@ export function createSplashGate(opts: SplashGateOptions = {}): SplashGate {
       diedUnsub();
       diedUnsub = null;
     }
-    clearBootTimeout();
+    drop("boot");
+    drop("floor");
+    drop("index");
+    drop("previewBackend");
+    drop("previewInit");
   }
 
   return {
@@ -131,7 +236,11 @@ export function createSplashGate(opts: SplashGateOptions = {}): SplashGate {
     get error() {
       return error;
     },
+    get phase() {
+      return phase;
+    },
     start,
+    markIndexReady,
     dispose,
   };
 }

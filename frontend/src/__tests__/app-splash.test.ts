@@ -50,11 +50,27 @@ describe("App.svelte Tauri splash 防黑屏（M0-f）", () => {
       ).toBe(true);
     });
 
-    it("声明 const gate = createSplashGate()", () => {
+    it("声明 const gate = createSplashGate(...)（可带 preview 选项）", () => {
       expect(
-        /\bconst\s+gate\s*=\s*createSplashGate\s*\(\s*\)/.test(scriptSrc),
-        "App.svelte 必须有 `const gate = createSplashGate()` 持有 splash 状态"
+        /\bconst\s+gate\s*=\s*createSplashGate\s*\(\s*(?:\{[^}]*\})?\s*\)/.test(scriptSrc),
+        "App.svelte 必须有 `const gate = createSplashGate(...)` 持有 splash 状态"
       ).toBe(true);
+    });
+
+    it("doInit 正常路径与 finally 都要 gate.markIndexReady()", () => {
+      // 首屏数据落地是收场的第二个条件；finally 那条兜住早退与异常，否则只能等 6s 上限
+      const calls = scriptSrc.match(/\bgate\.markIndexReady\s*\(\s*\)/g) ?? [];
+      expect(calls.length, "doInit 应至少调用两次 markIndexReady（正常路径 + finally 兜底）").toBeGreaterThanOrEqual(2);
+      expect(/finally\s*\{[\s\S]{0,200}gate\.markIndexReady\s*\(\s*\)/.test(scriptSrc), "必须有 finally 里的 markIndexReady 兜底").toBe(true);
+    });
+
+    it("收场计时不外泄：App.svelte 不得出现 setTimeout 与 900/6000 字面量", () => {
+      expect(/\bsetTimeout\s*\(/.test(scriptSrc), "启动计时只能在 splash-gate 里").toBe(false);
+      expect(/\b(?:900|6000)\b/.test(scriptSrc), "最短呈现/数据上限的数值属于 gate，不要抄进 App").toBe(false);
+    });
+
+    it("appBooting store 由 gate.ready 驱动，骨架不各说各话", () => {
+      expect(/\bappBooting\.set\(\s*!gate\.ready\s*\)/.test(scriptSrc), "App 必须把 gate.ready 镜像到 appBooting").toBe(true);
     });
 
     it("声明 doInit()：原 onMount 内 init 业务逻辑仍在 App.svelte", () => {

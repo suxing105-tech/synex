@@ -606,3 +606,19 @@ export const comfyuiEnabled = writable<boolean>(true);
  * 模糊之后不会消失，只会变成一条灰糊糊的竖杠，看着像渲染坏了。虚化要糊的是画面，不是 UI 骨架。
  */
 export const overlayMuted = writable<boolean>(false);
+
+// ---------- 启动期骨架 ----------
+
+
+/**
+ * 启动编排没收场前置真：中间网格铺骨架缩略图、侧栏铺骨架行、详情栏铺骨架块、
+ * 标题栏透明并让位给启动页。
+ *
+ * 为什么是 store 不是 prop：要读它的四个组件（Feed / FolderTree / DetailPanel /
+ * DesktopTitlebar）在 App 的树里深浅不一，逐个传 boot 参数等于把一次性状态焊死在
+ * 组件接口上。收场时机由 splash gate 决定，App 用一个 effect 把它镜像到这里。
+ *
+ * 「画廊成形」之所以能对齐：骨架网格是长在真正的 Feed 容器里的，用的就是 Feed 自己
+ * 的列数与 gap，不是遮罩层里另画一张再去猜像素。
+ */
+export const appBooting = writable<boolean>(true);

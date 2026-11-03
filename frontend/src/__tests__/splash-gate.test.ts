@@ -135,10 +135,14 @@ describe("createSplashGate composable（M0-f sidecar 生命周期）", () => {
       const gate = createSplashGate();
       const init = vi.fn().mockResolvedValue(undefined);
       await gate.start(init);
-      expect(gate.ready).toBe(true);
+      // 后端起来了，但首屏数据还没落地：仍在 index 段，不提前收场
+      expect(gate.phase).toBe("index");
+      expect(gate.ready).toBe(false);
       readyTrigger?.({ payload: {} });
       expect(init).toHaveBeenCalledTimes(1);
+      gate.markIndexReady();
       vi.advanceTimersByTime(31000);
+      expect(gate.ready).toBe(true);
       expect(gate.error).toBeNull();
       gate.dispose();
     });
@@ -193,9 +197,14 @@ describe("createSplashGate composable（M0-f sidecar 生命周期）", () => {
       // markReady 调 doInit 是 fire-and-forget（void doInit()），等几个 microtask
       await Promise.resolve();
       await Promise.resolve();
-      expect(gate.ready).toBe(true);
       expect(gate.error).toBe(null);
       expect(doInit).toHaveBeenCalledTimes(1);
+      // 收场是双条件：这里只满足「后端就绪」，所以还不该收
+      expect(gate.ready).toBe(false);
+      gate.markIndexReady();
+      expect(gate.ready).toBe(false); // 最短呈现未到
+      vi.advanceTimersByTime(900);
+      expect(gate.ready).toBe(true);
       gate.dispose();
     });
 
@@ -247,6 +256,112 @@ describe("createSplashGate composable（M0-f sidecar 生命周期）", () => {
       await gate.start(doInit);
       gate.dispose();
       expect(() => gate.dispose()).not.toThrow();
+    });
+
+  describe("收场双条件与计时（画廊成形轮新增）", () => {
+
+    it("后端就绪但首屏数据未回：停在 index 段不收场", async () => {
+      const gate = createSplashGate();
+      await gate.start(vi.fn().mockResolvedValue(undefined));
+      readyTrigger!({ payload: { port: 8765 } });
+      vi.advanceTimersByTime(5000);
+      expect(gate.phase).toBe("index");
+      expect(gate.ready).toBe(false);
+      expect(gate.error).toBe(null);
+      gate.dispose();
+    });
+
+    it("首屏数据先回来也不提前收场，最短呈现到点才 ready", async () => {
+      const gate = createSplashGate({ minPresentationMs: 900 });
+      await gate.start(vi.fn().mockResolvedValue(undefined));
+      readyTrigger!({ payload: {} });
+      gate.markIndexReady();
+      vi.advanceTimersByTime(899);
+      expect(gate.ready).toBe(false);
+      vi.advanceTimersByTime(1);
+      expect(gate.ready).toBe(true);
+      expect(gate.phase).toBe("ready");
+      gate.dispose();
+    });
+
+    it("首屏数据永不落地：到上限放行，不报错", async () => {
+      const gate = createSplashGate({ indexTimeoutMs: 6000, minPresentationMs: 900 });
+      await gate.start(vi.fn().mockResolvedValue(undefined));
+      readyTrigger!({ payload: {} });
+      vi.advanceTimersByTime(5999);
+      expect(gate.ready).toBe(false);
+      vi.advanceTimersByTime(1);
+      expect(gate.ready).toBe(true);
+      expect(gate.error).toBe(null);
+      gate.dispose();
+    });
+
+    it("markIndexReady 幂等，dispose 后调用不抛错", async () => {
+      const gate = createSplashGate();
+      await gate.start(vi.fn().mockResolvedValue(undefined));
+      readyTrigger!({ payload: {} });
+      gate.markIndexReady();
+      expect(() => gate.markIndexReady()).not.toThrow();
+      gate.dispose();
+      expect(() => gate.markIndexReady()).not.toThrow();
+    });
+
+    it("就绪后再收到 sidecar-died：错误优先，phase 转 error", async () => {
+      const gate = createSplashGate();
+      await gate.start(vi.fn().mockResolvedValue(undefined));
+      readyTrigger!({ payload: {} });
+      gate.markIndexReady();
+      vi.advanceTimersByTime(1000);
+      expect(gate.ready).toBe(true);
+      diedTrigger!({ payload: { reason: "后台已退出" } });
+      expect(gate.ready).toBe(false);
+      expect(gate.phase).toBe("error");
+      expect(gate.error).toBe("后台已退出");
+      gate.dispose();
+    });
+  });
+  });
+
+  describe("preview 回放（浏览器 + ?splash=preview）", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      delete (globalThis as any).__TAURI__;
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+      if (originalTauri !== undefined) {
+        (globalThis as any).__TAURI__ = originalTauri;
+      } else {
+        delete (globalThis as any).__TAURI__;
+      }
+    });
+
+    it("不带 preview 的浏览器路径不显示启动页（行为不变）", async () => {
+      const gate = createSplashGate();
+      const doInit = vi.fn().mockResolvedValue(undefined);
+      await gate.start(doInit);
+      expect(gate.phase).toBe("ready");
+      expect(doInit).toHaveBeenCalledTimes(1);
+    });
+
+    it("preview 演完整编排：boot → index → doInit 延后 → 数据落地才 ready", async () => {
+      const gate = createSplashGate({ preview: true, minPresentationMs: 900, previewRevealMs: 2000 });
+      const doInit = vi.fn().mockResolvedValue(undefined);
+      expect(gate.phase).toBe("boot");
+      await gate.start(doInit);
+      expect(gate.phase).toBe("boot");
+      // previewBackendMs = min(900, 2000*0.3) = 600：模拟真机 READY 在编排中途到达
+      vi.advanceTimersByTime(600);
+      expect(gate.phase).toBe("index");
+      expect(doInit).not.toHaveBeenCalled();
+      // 到 reveal 点才真去拿数据，动画才有机会演完
+      vi.advanceTimersByTime(1400);
+      expect(doInit).toHaveBeenCalledTimes(1);
+      expect(gate.ready).toBe(false);
+      gate.markIndexReady();
+      expect(gate.ready).toBe(true);
+      gate.dispose();
     });
   });
 });

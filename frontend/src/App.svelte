@@ -2,7 +2,7 @@
   import { startUpdates } from "./lib/updates";
   import { onMount, onDestroy } from "svelte";
   import { connectEvents, disconnectEvents } from "./lib/ws";
-  import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, comfyuiEnabled, mediaItems, tag, folderId, query, selectedDetail, overlayMuted } from "./lib/stores";
+  import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, comfyuiEnabled, mediaItems, tag, folderId, query, selectedDetail, overlayMuted, appBooting } from "./lib/stores";
   import { createSplashGate } from "./lib/splash-gate.svelte";
   import FolderTree from "./components/FolderTree.svelte";
   import DesktopTitlebar from "./components/DesktopTitlebar.svelte";
@@ -128,26 +128,41 @@
   // M0-f 第三轮：把 sidecar 生命周期抽出到 lib/splash-gate.svelte.ts。
   // gate 拥有 backendReady / backendError / sidecar 订阅 / 30s 超时，
   // App.svelte 只剩 init 业务逻辑（doInit）+ browser-only 副作用。
-  const gate = createSplashGate();
+  // dev 回放：浏览器里加 ?splash=preview 就演一遍完整启动编排（实现见 splash-gate 注释）。
+  const splashPreview = import.meta.env.DEV && /(?:^|[?&])splash=preview(?:&|$)/.test(location.search);
+  const gate = createSplashGate({ preview: splashPreview });
+
+  // 收场那一刻撤掉骨架：四个组件读这一个 store，不逐个传 boot prop。
+  $effect(() => {
+    appBooting.set(!gate.ready);
+  });
 
   let stopUpdates: (() => void) | undefined;
   let initStarted = false;
   async function doInit() {
-    if (initStarted) return;
-    initStarted = true;
-    stopUpdates = startUpdates();
     try {
-      await Promise.all([refreshFolders(), refreshStats(), refreshFeed()]);
-      const cfg = await settingsApi.get();
-      if (!cfg.watch_dirs || cfg.watch_dirs.length === 0) {
-        onboardingOpen = true;
+      if (initStarted) return;
+      initStarted = true;
+      stopUpdates = startUpdates();
+      try {
+        await Promise.all([refreshFolders(), refreshStats(), refreshFeed()]);
+        const cfg = await settingsApi.get();
+        if (!cfg.watch_dirs || cfg.watch_dirs.length === 0) {
+          onboardingOpen = true;
+        }
+      } catch (e) {
+        console.error("init failed", e);
       }
-    } catch (e) {
-      console.error("init failed", e);
+      // 首屏数据到此为止：启动页等的就是这一刻。后面的 comfyui 探测最坏要等 3s
+      // 超时，不能把它算进收场条件里，否则启动页白白多压 3 秒。
+      gate.markIndexReady();
+      connectEvents();
+      await refreshComfyuiStatus();
+      comfyuiTimer = setInterval(refreshComfyuiStatus, 10000);
+    } finally {
+      // 早退和异常路径也要放行（幂等）。少了这一句，收场只能靠 gate 的 6s 上限兜底。
+      gate.markIndexReady();
     }
-    connectEvents();
-    await refreshComfyuiStatus();
-    comfyuiTimer = setInterval(refreshComfyuiStatus, 10000);
   }
 
   onMount(async () => {

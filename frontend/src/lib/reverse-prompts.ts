@@ -13,6 +13,13 @@ export interface ProviderPreset {
   credential_scope?: string; models_dynamic?: boolean;
   /** 只有共用 Key 那几家带：那把 Key 存了没有。是布尔，永远不是 Key 本身。 */
   shared_has_key?: boolean;
+  /** 这家真接了哪几路（text=反推，image/video/audio=云端收费模型）。卡片区按它过滤，不靠前端猜。 */
+  capabilities?: string[];
+  /** 有第二把 Key（工作流·消费级-会员）的那家为 true；回前端的同样只有「有没有」。 */
+  workflow_key?: boolean;
+  shared_has_workflow_key?: boolean;
+  /** 厂商控制台外链。没确认过的家留空，界面就不画那颗按钮。 */
+  console_url?: string;
 }
 export interface ProviderModelList { models: ProviderModel[]; source: string; reason: string }
 export interface ModelConfig {
@@ -22,6 +29,8 @@ export interface ModelConfig {
 export type ModelDraft = {
   name?: string; base_url?: string; model: string; timeout?: number;
   provider?: string | null; api_key?: string; config_id?: number;
+  /** RunningHub 的第二把（工作流·消费级）。只有那一家能带，落进云端账号另一列。 */
+  workflow_api_key?: string;
 };
 export interface ReverseSettings { default_model_id: number | null; instruction: string; default_instruction: string }
 export interface ReverseRecord {

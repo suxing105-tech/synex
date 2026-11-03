@@ -96,6 +96,13 @@ def cloud_key(quiet: bool = True) -> str:
     return accounts.shared_key(quiet=quiet)
 
 
+def cloud_workflow_key(quiet: bool = True) -> str:
+    """云端工作流那把 Key（消费级-会员）。反推自己不读它，只是界面要知道它存了没有。"""
+    from .cloud import accounts
+
+    return accounts.shared_workflow_key(quiet=quiet)
+
+
 def public_config(row):
     result = {k: row[k] for k in ("id", "name", "base_url", "model", "timeout", "provider")}
     if shares_cloud_key(row["provider"]):
@@ -121,6 +128,7 @@ def save_config(values: dict, config_id: int | None = None):
     old = get_config(config_id) if config_id is not None else None
     values = dict(values)
     key = values.pop("api_key", None)
+    workflow_key = values.pop("workflow_api_key", None)
     # provider: 预设 id / custom / None（视作手动自定义）。
     # PATCH 没带这个键时保留原值：以前按 None 处理，等于「只改个模型」也把服务商抹成自定义——
     # 对共用 Key 的那几家，抹掉就等于悄悄断了 Key（配置看着还在，反推说没密钥）。
@@ -151,6 +159,9 @@ def save_config(values: dict, config_id: int | None = None):
     if preset and not merged.get("name"):
         merged["name"] = f"{preset['name']} · {providers.model_label(preset, merged['model'])}"
     shared = shares_cloud_key(provider)
+    # 工作流那把只有 RunningHub 有，而且必须先拒掉再写：先写模型 Key 再报错，就留下半套改动
+    if workflow_key is not None and not shared:
+        raise HTTPException(422, "这一家服务商没有「工作流 API Key」这一说，别往它身上存第二把。")
     credential = None if shared else (old["credential"] if old else None)
     if key is not None and not shared:
         credential = crypt(key.encode()) if key and sys.platform == "win32" else None
@@ -159,6 +170,11 @@ def save_config(values: dict, config_id: int | None = None):
         from .cloud import accounts
 
         accounts.put_shared_key(key or "")
+    if workflow_key is not None:
+        # 第二把落进同一行账号的另一列：清它不碰模型那把，反之也一样
+        from .cloud import accounts as _cloud_accounts
+
+        _cloud_accounts.put_shared_workflow_key(workflow_key or "")
     with db.transaction() as conn:
         args = [merged[k] for k in ("name", "base_url", "model", "timeout", "provider")] + [credential]
         if old:

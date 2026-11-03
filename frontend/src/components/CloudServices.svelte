@@ -80,14 +80,14 @@
   }
   onMount(() => {
     void reload();
-    // 上面那张卡（服务商选 RunningHub 那一格）改了这把 Key，这里跟着改口，别各说各话。
+    // 上面那张卡（「模型服务API」里 RunningHub 那张卡片）改了这把 Key，这里跟着改口，别各说各话。
     const onKeyChange = () => void reload(true);
     window.addEventListener("cloud-credentials-changed", onKeyChange);
     return () => window.removeEventListener("cloud-credentials-changed", onKeyChange);
   });
 
   /**
-   * Key 的输入口在上面那张卡——服务商选 RunningHub 那一格。RunningHub 本来就是一把 Key 走天下，
+   * Key 的输入口在上面那张卡——「模型服务API」里 RunningHub 那张卡片。RunningHub 本来就是一把 Key 走天下，
    * 这里再摆一个输入框等于给同一把 Key 安第二个家，迟早一边新一边旧。
    */
   function gotoKey() {
@@ -113,7 +113,7 @@
   async function testConnection() {
     const current = account;
     if (!current) {
-      error = "先在上面「反推模型」填这把 API Key，才能测连通。";
+      error = "先在上方「模型服务API」填这把 API Key，才能测连通。";
       return;
     }
     testing = true;
@@ -171,8 +171,8 @@
     const out: string[] = [];
     if (!status.cloud_enabled) out.push("云端生成总开关是关的");
     const first = account;
-    if (!first) out.push("还没填 RunningHub 的 API Key：在上面「反推模型」把服务商选成 RunningHub，粘 Key 保存");
-    else if (!first.has_api_key) out.push("这把 API Key 还没填：在上面「反推模型」里填，或点「去填 Key」");
+    if (!first) out.push("还没填 RunningHub 的 API Key：在上面「模型服务API」点开 RunningHub 那张卡片，粘 Key 保存");
+    else if (!first.has_api_key) out.push("这把 API Key 还没填：在上面「模型服务API」里填，或点「去填 Key」");
     else if (!first.enabled) out.push("这个账号被停用了");
     return out;
   });
@@ -215,7 +215,7 @@
 
         <p class="cloud-key" class:cloud-key-set={account?.has_api_key} role="status">
           API Key：{account?.has_api_key ? "已配置" : "还没填"}
-          <span class="settings-hint">与上面的「反推模型」共用同一把，只存一份。</span>
+          <span class="settings-hint">与上面的「模型服务API」共用同一把，只存一份。</span>
           <button class="setting-button setting-button-ghost" disabled={busy} onclick={gotoKey}>
             {account?.has_api_key ? "改 Key" : "去填 Key"}
           </button>

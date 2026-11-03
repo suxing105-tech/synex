@@ -469,7 +469,8 @@ describe("视频反推面板", () => {
     const panel = render(ModelSettings);
     await waitFor(() => expect(panel.getByLabelText("视频反推默认模型")).toBeTruthy());
     expect([...panel.container.querySelectorAll(".settings-group-label")].map((n) => n.textContent)).toEqual([
-      "反推模型", "图片反推", "视频反推（Seedance 2.0 / MiniMax H3）",
+      // 第一节现在叫「模型服务API」：那里是选厂商填 Key 的地方，反推只是它的一路用途
+      "模型服务API", "图片反推", "视频反推（Seedance 2.0 / MiniMax H3）",
     ]);
     const footers = panel.container.querySelectorAll(".settings-card-footer");
     expect(footers).toHaveLength(3);

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, afterEach, describe, it, expect, vi } from "vitest";
 import { get } from "svelte/store";
 import { render, fireEvent, waitFor, cleanup } from "@testing-library/svelte";
@@ -15,6 +16,14 @@ const cloudPreset = {
   default_timeout: 120, note: "一把 Key 走天下：这里的 Key 与云端生成共用同一把", credential_scope: "cloud", models_dynamic: true,
 };
 const settings = { default_model_id: 1, instruction: "描述画面", default_instruction: "默认描述" };
+/** 服务商选择页把下拉换成卡片网格了：点卡按 data-provider 拿，选中看 aria-pressed。 */
+const pickProvider = async (panel: { container: HTMLElement }, id: string) => {
+  const card = panel.container.querySelector(`[data-provider="${id}"]`) as HTMLButtonElement;
+  expect(card, `没有这张服务商卡：${id}`).toBeTruthy();
+  await fireEvent.click(card);
+};
+const pressedCard = (panel: { container: HTMLElement }) =>
+  panel.container.querySelector(".api-card[aria-pressed='true']")?.getAttribute("data-provider") ?? "";
 const record = { id: 10, image_id: 1, prompt_zh: "红色花朵", prompt_en: "red flower", raw_text: "", status: "complete" as const, source: "generated" as const, parent_id: null, model_name: "测试视觉", model: "vision", instruction: "", fingerprint: "abc", created_at: "2026-09-17T01:00:00Z" };
 
 beforeEach(() => {
@@ -149,12 +158,43 @@ describe("reverse prompts", () => {
     await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
     await fireEvent.click(panel.getByText("测试视觉"));
     expect(panel.getByText("测试视觉").getAttribute("aria-pressed")).toBe("true");
-    expect(panel.getByText("＋ 添加模型").getAttribute("aria-pressed")).toBe("false");
     expect((panel.getByLabelText("API Key") as HTMLInputElement).value).toBe("");
     await fireEvent.click(panel.getByText("保存模型"));
     await waitFor(() => expect(save).toHaveBeenCalled());
     expect(save.mock.calls[0][0]).not.toHaveProperty("api_key");
   });
+  it("新建配置只有一个入口：厂商卡片就是入口，不再另摆一颗「＋ 添加模型」", async () => {
+    // 点厂商卡片＝新建或打开那一份配置，「自定义（手动填写）」那张卡＝手动填 Base URL 的那一份。
+    // 再留一颗「＋ 添加模型」是同一件事的第三个入口，被指「多余内容太多」，删掉并钉住。
+    const panel = render(ModelSettings);
+    await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
+    expect(panel.queryByText("＋ 添加模型")).toBeNull();
+    expect(panel.queryAllByRole("button", { name: /自定义（手动填写）/ })).toHaveLength(1);
+  });
+
+  it("选中的厂商卡片文字不许被全局按钮配色涂黑：选中态自己声明浅色", async () => {
+    // 全局 .fill-interactions button[aria-pressed="true"] 是红底近黑字（给小胶囊用的）。
+    // 卡片只覆盖了背景，文字会跟着被涂成 #0e0e10，压在自己的深红底上完全读不出来。
+    const source = readFileSync("src/components/ModelSettings.svelte", "utf8").replace(/\r\n/g, "\n");
+    const rule = source.match(/\.api-card\[aria-pressed="true"\]\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(rule).toContain("background");
+    expect(rule).toMatch(/color:\s*#[def]/);
+  });
+
+  it("打开设置先落在已经配好 Key 的那家，但不自己拿真 Key 去拉清单", async () => {
+    // 清单里排第一的是 OpenAI，而这里只有 RunningHub 配过 Key：默认摊开一张没配的 OpenAI
+    // 表单，等于每个人进来都要重新找自己那家。
+    // 同时「打开设置」不许替用户发外部请求——清单要现拉，但只该由他点那一下触发。
+    vi.mocked(reverseApi.providers).mockResolvedValue([preset, { ...cloudPreset, shared_has_key: true }]);
+    const list = vi.spyOn(reverseApi, "modelList").mockResolvedValue({ models: [], source: "preset", reason: "" });
+    const panel = render(ModelSettings);
+    await waitFor(() => expect(pressedCard(panel)).toBe("runninghub"));
+    expect(list).not.toHaveBeenCalled();
+    // 清单留给人自己点：点这张已经选中的卡，才去拉
+    await pickProvider(panel, "runninghub");
+    await waitFor(() => expect(list).toHaveBeenCalled());
+  });
+
   it("clears keys explicitly and previews endpoint without duplication", async () => {
     const save = vi.spyOn(reverseApi, "saveModel").mockResolvedValue({ ...model, has_api_key: false });
     const panel = render(ModelSettings);
@@ -185,7 +225,7 @@ describe("reverse prompts", () => {
     });
     const panel = render(ModelSettings);
     await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
-    await fireEvent.change(panel.getByLabelText("服务商"), { target: { value: "runninghub" } });
+    await pickProvider(panel, "runninghub");
     expect(await panel.findByText(/一把 Key 走天下/)).toBeTruthy();
     expect(panel.getByText(/只存一份，在任一处改都一起生效/)).toBeTruthy();
     expect(list).toHaveBeenCalledWith("runninghub");
@@ -202,7 +242,7 @@ describe("reverse prompts", () => {
     });
     const panel = render(ModelSettings);
     await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
-    await fireEvent.change(panel.getByLabelText("服务商"), { target: { value: "runninghub" } });
+    await pickProvider(panel, "runninghub");
     await fireEvent.input(panel.getByLabelText("反推模型 ID"), { target: { value: "y/qwen2.5-vl" } });
     await fireEvent.input(panel.getByLabelText("API Key"), { target: { value: "RH-SECRET-VALUE" } });
     await fireEvent.click(panel.getByText("保存模型"));
@@ -235,9 +275,9 @@ describe("reverse prompts", () => {
     vi.spyOn(reverseApi, "modelList").mockResolvedValue({ models: [], source: "none", reason: "先保存这把 API Key，才能向它要模型清单" });
     const panel = render(ModelSettings);
     await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
-    await waitFor(() => expect((panel.getByLabelText("服务商") as HTMLSelectElement).value).toBe("qwen"));
+    await waitFor(() => expect(pressedCard(panel)).not.toBe("runninghub"));
     window.dispatchEvent(new Event("edit-cloud-key"));
-    await waitFor(() => expect((panel.getByLabelText("服务商") as HTMLSelectElement).value).toBe("runninghub"));
+    await waitFor(() => expect(pressedCard(panel)).toBe("runninghub"));
     expect(await panel.findByText(/先保存这把 API Key/)).toBeTruthy();
   });
   it("云端卡点「改 Key」时改的是已有那条 RunningHub 配置，不新建第二条", async () => {
@@ -250,7 +290,7 @@ describe("reverse prompts", () => {
     const panel = render(ModelSettings);
     await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
     window.dispatchEvent(new Event("edit-cloud-key"));
-    await waitFor(() => expect((panel.getByLabelText("服务商") as HTMLSelectElement).value).toBe("runninghub"));
+    await waitFor(() => expect(pressedCard(panel)).toBe("runninghub"));
     // 模型 ID 沿用那条配置里已有的值，不是一份空表单
     expect((panel.getByLabelText("反推模型 ID") as HTMLInputElement).value).toBe("y/qwen2.5-vl");
     await fireEvent.input(panel.getByLabelText("API Key"), { target: { value: "RH-NEW-KEY" } });
@@ -259,11 +299,68 @@ describe("reverse prompts", () => {
     expect(save.mock.calls[0][1]).toBe(7);
     expect(save.mock.calls[0][0]).toMatchObject({ provider: "runninghub", model: "y/qwen2.5-vl", api_key: "RH-NEW-KEY" });
   });
+  it("能力过滤只列真接进来的那几家：图像/视频/音频目前只有 RunningHub", async () => {
+    vi.mocked(reverseApi.providers).mockResolvedValue([
+      preset,
+      { ...cloudPreset, capabilities: ["text", "image", "video", "audio"] },
+    ]);
+    const panel = render(ModelSettings);
+    await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
+    const cards = () => Array.from(panel.container.querySelectorAll(".api-card"))
+      .map(c => c.getAttribute("data-provider"));
+    expect(cards()).toContain("qwen");
+    await fireEvent.click(panel.getByRole("button", { name: "图像" }));
+    expect(cards()).toEqual(["runninghub"]);
+    await fireEvent.click(panel.getByRole("button", { name: "音频" }));
+    expect(cards()).toEqual(["runninghub"]);
+    await fireEvent.click(panel.getByRole("button", { name: "全部" }));
+    expect(cards()).toContain("qwen");
+    // 想按自己的 Base URL 连一家没在列表里的：勾掉「只显示内置厂商」才看得到那张卡
+    const only = panel.getByLabelText("只显示内置厂商") as HTMLInputElement;
+    await fireEvent.click(only);
+    expect(cards()).not.toContain("custom");
+    await fireEvent.click(only);
+    expect(cards()).toContain("custom");
+  });
+  it("两把 Key 各一格：模型那把与工作流那把一起走「保存」，各说各的扣费", async () => {
+    vi.mocked(reverseApi.providers).mockResolvedValue([
+      preset,
+      { ...cloudPreset, capabilities: ["text", "image", "video", "audio"], workflow_key: true,
+        console_url: "https://www.runninghub.cn" },
+    ]);
+    const save = vi.spyOn(reverseApi, "saveModel").mockResolvedValue({
+      ...model, provider: "runninghub", name: "RunningHub", has_api_key: true,
+    });
+    const panel = render(ModelSettings);
+    await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
+    await pickProvider(panel, "runninghub");
+    // 没有 workflow_key 的别家不该出现第二格
+    expect(panel.getByLabelText("工作流 API Key")).toBeTruthy();
+    expect(await panel.findByText(/扣钱包余额/)).toBeTruthy();
+    expect(await panel.findByText(/扣 RH币/)).toBeTruthy();
+    await fireEvent.input(panel.getByLabelText("反推模型 ID"), { target: { value: "some/vl" } });
+    await fireEvent.input(panel.getByLabelText("API Key"), { target: { value: "RH-MODEL-KEY" } });
+    await fireEvent.input(panel.getByLabelText("工作流 API Key"), { target: { value: "RH-WF-KEY" } });
+    await fireEvent.click(panel.getByText("保存模型"));
+    await waitFor(() => expect(save).toHaveBeenCalled());
+    expect(save.mock.calls[0][0]).toMatchObject({ api_key: "RH-MODEL-KEY", workflow_api_key: "RH-WF-KEY" });
+    expect(panel.container.textContent).not.toContain("RH-WF-KEY");
+    // 控制台外链只在这家确认过地址时才画
+    const link = panel.container.querySelector("a.api-console") as HTMLAnchorElement;
+    expect(link?.href).toBe("https://www.runninghub.cn/");
+  });
+  it("没有工作流那一说的厂商，不许多出一格 Key", async () => {
+    vi.mocked(reverseApi.providers).mockResolvedValue([preset, { ...cloudPreset, workflow_key: false }]);
+    const panel = render(ModelSettings);
+    await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
+    await pickProvider(panel, "qwen");
+    expect(panel.queryByLabelText("工作流 API Key")).toBeNull();
+  });
   it("switching to custom exposes manual fields and hides preset model dropdown", async () => {
     const panel = render(ModelSettings);
     await waitFor(() => expect(panel.getByLabelText("默认模型")).toBeTruthy());
     await waitFor(() => expect((panel.getByLabelText("反推模型") as HTMLSelectElement).value).toBe("qwen2.5-vl-72b-instruct"));
-    await fireEvent.change(panel.getByLabelText("服务商"), { target: { value: "custom" } });
+    await pickProvider(panel, "custom");
     expect(panel.getByLabelText("配置名称")).toBeTruthy();
     expect(panel.getByLabelText("Base URL")).toBeTruthy();
     expect(panel.getByLabelText("模型 ID")).toBeTruthy();

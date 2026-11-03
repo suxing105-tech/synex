@@ -41,6 +41,8 @@ class ModelInput(BaseModel):
     timeout: int | None = Field(default=None, ge=10, le=600)
     provider: str | None = Field(default=None, max_length=100)
     api_key: SecretStr | None = None
+    # RunningHub 的第二把（工作流·消费级）。只有那一家有，且落到云端账号那行，不落 model_configs。
+    workflow_api_key: SecretStr | None = None
 
 
 class ModelPatch(BaseModel):
@@ -51,6 +53,7 @@ class ModelPatch(BaseModel):
     timeout: int | None = Field(default=None, ge=10, le=600)
     provider: str | None = Field(default=None, max_length=100)
     api_key: SecretStr | None = None
+    workflow_api_key: SecretStr | None = None
 
 
 class ModelTest(ModelInput):
@@ -64,6 +67,11 @@ def config_values(payload):
         if any(ord(c) < 32 or ord(c) > 126 for c in key):
             raise HTTPException(422, "API Key 包含无效字符")
         values["api_key"] = key
+    if payload.workflow_api_key is not None:
+        key = payload.workflow_api_key.get_secret_value().strip()
+        if any(ord(c) < 32 or ord(c) > 126 for c in key):
+            raise HTTPException(422, "工作流 API Key 包含无效字符")
+        values["workflow_api_key"] = key
     return values
 
 
@@ -100,6 +108,8 @@ def list_provider_presets():
     for item in presets:
         if item.get("credential_scope") == "cloud":
             item["shared_has_key"] = bool(service.cloud_key())
+            # 第二把（工作流）是可选的，界面要能分开说「模型那把有了、工作流那把还缺」
+            item["shared_has_workflow_key"] = bool(service.cloud_workflow_key())
     return presets
 
 

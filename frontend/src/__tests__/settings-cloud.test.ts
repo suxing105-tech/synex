@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
 import { tick } from "svelte";
@@ -11,7 +12,7 @@ import CloudServices from "../components/CloudServices.svelte";
  * 所以每条都直接盯 DOM 与真实请求参数。
  *
  * Key 的输入口不在这里了：RunningHub 一把 Key 走天下，反推与一键同款共用同一把，
- * 输入口只留在上面那张「反推模型」里。这张卡只报状态 + 把「改 Key」这颗按钮送过去——
+ * 输入口只留在上面那张「模型服务API」里。这张卡只报状态 + 把「改 Key」这颗按钮送过去——
  * 下面这几条钉的就是「这里既没有第二个输入框，也不许偷偷写 Key」。
  */
 
@@ -280,4 +281,13 @@ it("差两步就列两条：开关关着 + Key 没填，一句都不许省", asy
   const list = screen.container.querySelector(".cloud-blockers")?.textContent ?? "";
   expect(list).toContain("云端生成总开关是关的");
   expect(list).toContain("这把 API Key 还没填");
+});
+
+it("卡片里的指路话不引用旧标题：那一节已经改名「模型服务API」，旧名一条都不许留", () => {
+  // 「反推模型」那节上一轮重做成了「模型服务API」的厂商卡片页，不再有服务商下拉。
+  // 组件测试的断言只看子串，抓不到「把人支到一个屏幕上已经不存在的标题」，所以直接扫源码。
+  const source = readFileSync("src/components/CloudServices.svelte", "utf8").replace(/\r\n/g, "\n");
+  expect(source).not.toContain("反推模型");
+  expect(source).not.toContain("服务商选成");
+  expect(source.match(/模型服务API/g)?.length).toBeGreaterThanOrEqual(4);
 });

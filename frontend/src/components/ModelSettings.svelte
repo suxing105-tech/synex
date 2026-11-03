@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { modelConfigs, reverseSettings, refreshReverseConfig, refreshProviderPresets, providerPresets, reverseApi, errorMessage } from "../lib/reverse-prompts";
-  import type { ModelConfig, ModelDraft, ProviderModel, ReverseSettings } from "../lib/reverse-prompts";
+  import type { ModelConfig, ModelDraft, ProviderModel, ProviderPreset, ReverseSettings } from "../lib/reverse-prompts";
 import { H3_MODES, SEEDANCE_MODES, MODE_LABELS, videoPromptApi, videoPromptSettings, refreshVideoPromptSettings } from "../lib/video-prompts";
 import type { VideoPromptSettings } from "../lib/video-prompts";
   const CUSTOM = "custom";
@@ -37,6 +37,42 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
   let modelListError = $state("");
   let fetchingModels = $state(false);
   let keyInputEl = $state<HTMLInputElement | null>(null);
+  /**
+   * 服务商选择页。三件事：
+   * - 按能力过滤：没接的路数后端不报，这里就不会画出一张点进去没用的卡；
+   * - 只显示内置厂商：把「自定义」收起来，新手不必面对一屏看不懂的入口；
+   * - 点卡片 = 选这家：已有配置就改那一条，没有才开空表单，别攒出第二份。
+   */
+  const CAPABILITIES = [
+    { id: "all", label: "全部" }, { id: "text", label: "文本" }, { id: "image", label: "图像" },
+    { id: "video", label: "视频" }, { id: "audio", label: "音频" },
+  ];
+  let capability = $state("all");
+  let onlyBuiltin = $state(false);
+  const visiblePresets = $derived(
+    providers.filter(p => capability === "all" || (p.capabilities ?? ["text"]).includes(capability)),
+  );
+  /** 第二把 Key（工作流·消费级）只有那一家有；界面同样只认「有没有」。 */
+  const workflowCapable = $derived(!!preset?.workflow_key);
+  const workflowReady = $derived(!!preset?.shared_has_workflow_key);
+  let workflowKeyInput = $state("");
+  let clearWorkflowKey = $state(false);
+  const configsFor = (id: string) => $modelConfigs.filter(c => c.provider === id);
+  const presetReady = (item: ProviderPreset) => item.credential_scope === "cloud"
+    ? !!(item.shared_has_key || item.shared_has_workflow_key || configsFor(item.id).some(c => c.has_api_key))
+    : configsFor(item.id).some(c => c.has_api_key);
+  const avatar = (name: string) => (name.trim().slice(0, 2) || "?").toUpperCase();
+  function selectProvider(id: string) {
+    const existing = configsFor(id)[0];
+    workflowKeyInput = ""; clearWorkflowKey = false;
+    if (existing) {
+      choose(existing);
+      if (providers.find(p => p.id === id)?.models_dynamic) void fetchModels();
+    } else {
+      choose();
+      applyProvider(id);
+    }
+  }
   const endpoint = $derived((draft.base_url || "").trim().replace(/\/+$/, "").replace(/\/chat\/completions$/, "") + "/chat/completions");
   const canSave = $derived(!!draft.model?.trim() && (isPreset ? true : !!(draft.name?.trim() && draft.base_url?.trim())));
   // 两份偏好在两张卡片里各自渲染，所以任一半读失败都单独标记，卡片给「重新加载」而不是卡在「正在读取…」。
@@ -46,7 +82,13 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
     await refreshReverseConfig();
     preferences = $reverseSettings ? { ...$reverseSettings } : null;
     if (!editingId && draft.provider === CUSTOM && $providerPresets.length) {
-      applyProvider($providerPresets[0].id);
+      // 落点落在已经配好 Key 的那一家，而不是清单里排第一的 OpenAI：默认摊开一张没配的表单，
+      // 等于每次进来都要重新找自己那家。这里不调 selectProvider——它会顺手去拉模型清单，
+      // 那是拿真 Key 发的外部请求，不该由「打开设置」这个动作替你发。
+      const ready = $providerPresets.find((item) => presetReady(item));
+      const existing = ready ? configsFor(ready.id)[0] : undefined;
+      if (existing) choose(existing);
+      else applyProvider((ready ?? $providerPresets[0]).id, true);
     }
   }
   async function loadVideoPart() {
@@ -81,16 +123,8 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
   /** 云端那张卡上的「填 Key / 改 Key」落到这里：切到共用 Key 那一家，光标停在 Key 那一格。 */
   async function editSharedKey() {
     if (!cloudPreset) return;
-    // 已经有这一家的配置就改那一条。一把 Key 只认一个家，模型配置跟着只认一条；
-    // 在这里另起一张空表单，点保存就多出一条 RunningHub，之后没人说得清哪条是活的。
-    const existing = $modelConfigs.find(c => c.provider === cloudPreset.id);
-    if (existing) {
-      choose(existing);
-      void fetchModels();
-    } else {
-      choose();
-      applyProvider(cloudPreset.id);
-    }
+    // 已经有这一家的配置就改那一条：另起一张空表单会多出一条 RunningHub，之后没人说得清哪条是活的
+    selectProvider(cloudPreset.id);
     await tick();
     keyInputEl?.focus();
     keyInputEl?.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -104,7 +138,9 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
     busy = true; error = ""; notice = "";
     try { await action(); } catch (e) { error = errorMessage(e); } finally { busy = false; }
   }
-  function applyProvider(id: string) {
+  /** quiet：这家是我们自己替用户选中的落点，不是他点的。现拉清单要拿真 Key 发外部请求，
+      这种请求只由他手上这一下触发，不由「打开设置」替他触发。 */
+  function applyProvider(id: string, quiet = false) {
     draft.provider = id;
     if (id !== CUSTOM) {
       const p = $providerPresets.find(x => x.id === id);
@@ -115,7 +151,7 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
       // 清单要现拉的那几家，一开始没有推荐项：名字先只写服务商，别留一个「· 」在那儿
       draft.name = p ? (rec ? `${p.name} · ${rec.label}` : p.name) : "";
       modelList = []; modelListNote = ""; modelListError = "";
-      if (p?.models_dynamic) void fetchModels();
+      if (p?.models_dynamic && !quiet) void fetchModels();
     } else {
       draft.model = ""; draft.base_url = ""; draft.name = ""; draft.timeout = 120;
       modelList = []; modelListNote = ""; modelListError = "";
@@ -126,6 +162,7 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
     editingId = config?.id;
     draft = config ? { name: config.name, base_url: config.base_url, model: config.model, timeout: config.timeout, provider: config.provider ?? CUSTOM } : blank();
     keyInput = ""; clearKey = false; hasKey = !!config?.has_api_key;
+    workflowKeyInput = ""; clearWorkflowKey = false;
     error = ""; notice = ""; testingText = ""; confirmDelete = false;
     modelList = []; modelListNote = ""; modelListError = "";
   }
@@ -134,6 +171,8 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
       ...draft,
       provider: draft.provider ?? CUSTOM,
       ...(clearKey ? { api_key: "" } : keyInput ? { api_key: keyInput } : {}),
+      ...(clearWorkflowKey ? { workflow_api_key: "" }
+        : workflowKeyInput.trim() ? { workflow_api_key: workflowKeyInput.trim() } : {}),
     };
   }
   async function saveModel() {
@@ -156,23 +195,60 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
   }
 </script>
 <section class="fill-interactions model-settings" aria-label="模型与反推">
-  <h4 class="settings-group-label">反推模型</h4>
+  <h4 class="settings-group-label">模型服务API</h4>
   <div class="settings-card">
     <div class="settings-model-body">
-      <div class="model-chips">
-        {#each $modelConfigs as model}
-          <button class="setting-button" aria-pressed={editingId === model.id} disabled={busy} onclick={() => choose(model)}>{model.name}</button>
-        {/each}
-        <button class="setting-button" aria-pressed={editingId === undefined} disabled={busy} onclick={() => choose()}>＋ 添加模型</button>
-      </div>
+      {#if $modelConfigs.length}
+        <!-- 只有库里真有多份配置时才摆这一排：新建的入口是下面的厂商卡片，
+             再留一颗「＋ 添加模型」等于给「自定义（手动填写）」那张卡安第二个入口。 -->
+        <div class="model-chips">
+          {#each $modelConfigs as model}
+            <button class="setting-button" aria-pressed={editingId === model.id} disabled={busy} onclick={() => choose(model)}>{model.name}</button>
+          {/each}
+        </div>
+      {/if}
       <fieldset disabled={busy} class="space-y-3">
-        <legend>{editingId ? "编辑模型配置" : "添加模型配置"}</legend>
-        <label>服务商
-          <select aria-label="服务商" value={draft.provider} onchange={(e) => applyProvider((e.currentTarget as HTMLSelectElement).value)}>
-            {#each providers as p}<option value={p.id}>{p.name}</option>{/each}
-            <option value={CUSTOM}>自定义（手动填写）</option>
-          </select>
-        </label>
+        <legend>{preset ? preset.name : "自定义（手动填写）"}</legend>
+        <div class="api-filter">
+          <div class="api-tabs" role="group" aria-label="按能力筛选服务商">
+            {#each CAPABILITIES as tab (tab.id)}
+              <button class="setting-button" aria-pressed={capability === tab.id} disabled={busy}
+                onclick={() => (capability = tab.id)}>{tab.label}</button>
+            {/each}
+          </div>
+          <label class="api-filter-builtin"><input type="checkbox" aria-label="只显示内置厂商" bind:checked={onlyBuiltin} />只显示内置厂商</label>
+        </div>
+        <!-- 一厂商一卡：点谁就只填谁。下拉里挑一家再往下找 Key，是把一件事拆成两个地方。 -->
+        <div class="api-grid">
+          {#each visiblePresets as item (item.id)}
+            <button class="api-card" data-provider={item.id} aria-pressed={draft.provider === item.id}
+              disabled={busy} onclick={() => selectProvider(item.id)}>
+              <span class="api-avatar" aria-hidden="true">{avatar(item.name)}</span>
+              <span class="api-card-body">
+                <span class="api-card-name">{item.name}</span>
+                <span class="api-card-state" class:api-card-set={presetReady(item)}>{presetReady(item) ? "已配置" : "未配置"}</span>
+              </span>
+            </button>
+          {/each}
+          <!-- 自定义那家到底能干什么我们不知道，所以挑了具体能力时不摆它：
+               挂一张「图像」卡进去，点进去却是猜，那是界面在替用户吹牛。 -->
+          {#if !onlyBuiltin && capability === "all"}
+            <button class="api-card" data-provider="custom" aria-pressed={draft.provider === CUSTOM}
+              disabled={busy} onclick={() => selectProvider(CUSTOM)}>
+              <span class="api-avatar" aria-hidden="true">＋</span>
+              <span class="api-card-body">
+                <span class="api-card-name">自定义（手动填写）</span>
+                <span class="api-card-state">自己的 Base URL</span>
+              </span>
+            </button>
+          {/if}
+        </div>
+        {#if !visiblePresets.length}
+          <p class="settings-hint" role="status">这一类目前没有接进来的服务商，切回「全部」看其余几家。</p>
+        {/if}
+        {#if preset?.console_url}
+          <p class="settings-hint"><a class="api-console" href={preset.console_url} target="_blank" rel="noreferrer">去 {preset.name} 控制台拿 Key ↗</a></p>
+        {/if}
         {#if isPreset && dynamicModels}
           <label>反推模型 ID
             <input aria-label="反推模型 ID" bind:value={draft.model} placeholder="点下面清单挑一个，或者直接手填" />
@@ -218,6 +294,20 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
           </label>
           {#if keyReady}<label class="flex gap-2"><input type="checkbox" aria-label="清除已保存密钥" bind:checked={clearKey} />清除已保存密钥</label>{/if}
           <p class="settings-hint">Windows 按当前用户加密保存密钥；其他系统仅在当前运行期间保存。</p>
+        {/if}
+        {#if workflowCapable}
+          <div class="api-second-key">
+            <label>工作流 API Key {workflowReady ? "（已配置；留空保留）" : "（消费级-会员，跑云端工作流用）"}
+              <input aria-label="工作流 API Key" type="password" autocomplete="new-password" bind:value={workflowKeyInput} disabled={clearWorkflowKey} />
+            </label>
+            {#if workflowReady}
+              <label class="flex gap-2"><input type="checkbox" aria-label="清除工作流密钥" bind:checked={clearWorkflowKey} />清掉这把（只影响云端工作流，上面那把模型 Key 不动）</label>
+            {/if}
+            <p class="settings-hint">
+              这是第二把 Key，和上面那把不是一回事：模型 API 扣钱包余额，云端工作流扣 RH币。
+              工作流这条链路还没接上——先存住，接上就直接能用。跟上面一起点「保存模型」就落盘。
+            </p>
+          </div>
         {/if}
         {#if isPreset}
           <details class="space-y-2">
@@ -345,6 +435,24 @@ import type { VideoPromptSettings } from "../lib/video-prompts";
   .model-chips { display: flex; gap: 8px; flex-wrap: wrap; }
   /* 现拉的清单长短不由我们决定：给它一个会滚的筐，别把整张卡顶长。 */
   .model-picks { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; max-height: 132px; overflow: auto; }
+  /* 服务商卡片区：一厂商一卡，状态写在卡上。清单长度不由我们决定，所以给它一个会滚的筐。 */
+  .api-filter { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .api-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .api-filter-builtin { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #a1a1aa; }
+  .api-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 8px; max-height: 272px; overflow: auto; }
+  .api-card { display: flex; align-items: center; gap: 10px; padding: 10px 12px; text-align: left; border: 1px solid #2a2a30; border-radius: 10px; background: #17171b; color: #e6e6ea; cursor: pointer; }
+  .api-card:hover:not(:disabled) { border-color: #3f3f46; }
+  /* 必须自己写 color：全局 .fill-interactions button[aria-pressed="true"] 会把选中按钮的字涂成
+     近黑（那是给红底胶囊用的），它只覆盖背景不覆盖文字，选中那张卡的名字就会糊在深红底上。 */
+  .api-card[aria-pressed="true"] { border-color: #ef4444; background: #1d1416; color: #fafafa; }
+  .api-card:disabled { opacity: .55; cursor: default; }
+  .api-avatar { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: #26262c; font-size: 11px; font-weight: 600; color: #d4d4d8; flex: none; }
+  .api-card-body { display: grid; gap: 2px; min-width: 0; }
+  .api-card-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .api-card-state { font-size: 11.5px; color: #fbbf24; }
+  .api-card-set { color: #4ade80; }
+  .api-second-key { display: grid; gap: 6px; padding-top: 10px; border-top: 1px dashed #2a2a30; }
+  .api-console { color: #93c5fd; }
   fieldset { margin-top: 18px; }
   fieldset:first-child { margin-top: 0; }
   legend { margin-bottom: 10px; font-size: 14px; font-weight: 500; color: #e6e6ea; }

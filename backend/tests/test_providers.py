@@ -140,6 +140,31 @@ def test_runninghub_only_claims_the_capabilities_we_actually_wired(client):
     assert all(presets[pid]["workflow_key"] is False for pid in others)
 
 
+def test_one_save_button_can_hand_over_both_keys(client):
+    """一个「保存」交两把 Key：各落各的列，清一把不许动另一把。"""
+    created = client.post("/api/model-configs",
+                          json=runninghub_draft(api_key="RH-MODEL-2", workflow_api_key="RH-WF-2")).json()
+
+    def flags():
+        item = next(p for p in client.get("/api/model-providers").json() if p["id"] == "runninghub")
+        return item["shared_has_key"], item["shared_has_workflow_key"]
+
+    assert flags() == (True, True)
+    client.patch(f"/api/model-configs/{created['id']}", json={"workflow_api_key": ""})
+    assert flags() == (True, False)          # 模型那把一根毛都没动
+    assert "RH-WF-2" not in client.get("/api/model-providers").text
+    assert "RH-MODEL-2" not in client.get("/api/model-providers").text
+
+
+def test_a_vendor_without_workflows_rejects_the_second_key(client):
+    """别家没有「工作流 Key」这一说：往它身上塞第二把就当场 422，不悄悄收下再让谁都不读。"""
+    bad = {"provider": "qwen", "model": "qwen2.5-vl-72b-instruct",
+           "api_key": "sk-plain", "workflow_api_key": "wf-nope"}
+    response = client.post("/api/model-configs", json=bad)
+    assert response.status_code == 422
+    assert "工作流" in response.json()["detail"]
+
+
 def test_shared_key_presence_travels_with_the_preset(client):
     """界面要知道那把共用的 Key 存了没有，只能靠这条清单带回这个布尔——而且是布尔，不是 Key。"""
     def flag():

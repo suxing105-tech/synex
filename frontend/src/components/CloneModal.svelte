@@ -87,6 +87,8 @@
   let probing = $state(false);
   let popOpen = $state(false);
   let wfOpen = $state(false);
+  /** 弹层顶部那一排的两个屏：本机的配方在「切换工作流」，云端的收费 API 在「API」。 */
+  let wfTab = $state<"local" | "cloud">("local");
   /**
    * 音色试听：正在放的那一个选项值，"" = 没在放。
    *
@@ -159,14 +161,6 @@
       ? cloudStatus.availability?.reason || "云端现在还不能用"
       : "",
   );
-  /** 当前这一族里的本机条目与云端条目：底部那颗按钮在两者之间来回切。 */
-  const familyRows = $derived.by(() => {
-    const mine = templates.filter((item) => templateMediaKind(item) === mediaKind);
-    return {
-      local: mine.filter((item) => !isCloudTemplate(item)),
-      cloud: mine.filter((item) => isCloudTemplate(item)),
-    };
-  });
   /** 被点那一族这条 API 根本不吃：明说没放进去，别让人以为素材凭空消失了。 */
   const cardFamilyNote = $derived(
     isCloud && cells.length > 0 && !supportsRefFamily(template, cardKind)
@@ -206,7 +200,7 @@
       const bits = [row.label, WF_OUTPUT_WORDS[row.kind], "云端收费模型 · 出一次扣 RH币"];
       if (item.cloud?.verified === false) bits.push("端点还没实测过，第一次先拿最便宜的试");
       if (cloudReason) bits.push(`现在点不动：${cloudReason}`);
-      bits.push("行末的 X 只是把它从清单里去掉，设置 → 云端生成里能恢复回来");
+      bits.push("行末的 X 只是把它从清单里去掉，设置 → 模型与反推里能恢复回来");
       return bits.join(" · ");
     }
     return `${row.label} · ${WF_OUTPUT_WORDS[row.kind]} · ${item.node_count} 个节点 · ${item.control_count} 个参数`;
@@ -227,26 +221,23 @@
     return isCloudTemplate(rowTemplate(row)) && rowTemplate(row)?.cloud?.verified === false;
   }
   /**
-   * 底部那颗按钮的文案与去处：一族里有本机的就切到云端，已经在云端了就切回本机，
-   * 两边都没有才把人送进设置——在清单里看得见云端却要跑去设置才能用，是白多一步。
+   * 这一屏摆哪几行：本机的配方与云端的 API 分两屏，不再混在一份清单里。
+   * 混着摆的时候六行里其实只有两条路，眼睛得先替人做一遍分类。
    */
-  const apiButtonLabel = $derived(
-    isCloud
-      ? (familyRows.local.length ? "改用本机工作流" : "云端设置与花费")
-      : (familyRows.cloud.length === 1 ? "改用云端 API" : "设置云端 API"),
-  );
-  function chooseApi() {
-    closeWorkflowPop();
-    if (isCloud) {
-      const back = familyRows.local.find((item) => item.is_active) ?? familyRows.local[0];
-      if (back) { pickTemplate(back.id); return; }
-      onOpenSettings?.(CLOUD_SETTINGS_TAB);
-      return;
-    }
-    // 一族不止一条 API 时不替用户挑：那是在替他决定花谁的钱，让他去设置里看全貌。
-    const want = familyRows.cloud.length === 1 ? familyRows.cloud[0] : null;
-    if (!want) { onOpenSettings?.(CLOUD_SETTINGS_TAB); return; }
-    pickTemplate(want.id);
+  const popRows = $derived(wfRows.filter((row) => rowIsCloud(row) === (wfTab === "cloud")));
+  /** 「API」那颗后面的条数：不用点进去也知道这条路铺了几条 API。 */
+  const cloudRowCount = $derived(wfRows.filter((row) => rowIsCloud(row)).length);
+  /**
+   * 打开弹层：当前挂的是云端就开在「API」屏，是本机的就开在「切换工作流」屏。
+   * 每次打开重读一次云端状态（Key 可能刚在设置里填过），读失败不置灰——
+   * 读不到不等于云端坏了，真点下去再报错。
+   */
+  function toggleWorkflowPop() {
+    wfOpen = !wfOpen;
+    if (!wfOpen) return;
+    popOpen = false;
+    wfTab = isCloud ? "cloud" : "local";
+    void loadCloudStatus();
   }
   /** 没有参考位那条工作流该说一句什么：说清声音/画面从哪儿来，别留一块莫名其妙的空白。 */
   const noRefNote = $derived(
@@ -1435,7 +1426,7 @@
                        名字长到挤不下时，让位的是这颗胶囊（名字截断 + 收箭头），不是右边的取消和生成。 -->
                   <button class="cm-pill" class:is-busy={busy} aria-label="同款工作流" aria-haspopup="menu" aria-expanded={wfOpen}
                     disabled={busy} title={busy ? `生成中，等这张图画完再换工作流：${wfFullTitle}` : wfFullTitle}
-                    onclick={() => { popOpen = false; wfOpen = !wfOpen; if (wfOpen) void loadCloudStatus(); }}>
+                    onclick={toggleWorkflowPop}>
                     <Icon name="layers" size={13} />
                     <span class="cm-pill-text">{wfName}</span>
                     <span class="cm-chevron" class:is-open={wfOpen} aria-hidden="true"><Icon name="chevron-down" size={12} /></span>
@@ -1443,8 +1434,16 @@
                   {#if wfOpen}
                     <div class="cm-pop-scrim" role="presentation" onclick={closeWorkflowPop}></div>
                     <div class="cm-pop cm-pop-wf" role="menu" aria-label="同款工作流">
-                      <p class="cm-pop-title">切换工作流</p>
-                      {#each wfRows as row (row.key)}
+                      <!-- 两屏各摆各的（苏醒要的）：本机的配方在这一屏，云端的收费 API 在那一屏。
+                           用 aria-pressed 的按钮而不是 tablist：这层容器是 role="menu"，塞 tablist 是错的 ARIA。 -->
+                      <div class="cm-pop-tabs">
+                        <button class="cm-pop-tab" aria-pressed={wfTab === "local"} onclick={() => wfTab = "local"}>切换工作流</button>
+                        <button class="cm-pop-tab" aria-pressed={wfTab === "cloud"} onclick={() => wfTab = "cloud"}>
+                          API
+                          {#if cloudRowCount}<span class="cm-pop-tab-count">{cloudRowCount}</span>{/if}
+                        </button>
+                      </div>
+                      {#each popRows as row (row.key)}
                         {@const isOn = row.memberIds.includes(templateId ?? -1)}
                         <div class="cm-wf-row">
                           <button class="cm-wf" role="menuitemradio" aria-checked={isOn} disabled={busy || rowBlocked(row)}
@@ -1469,18 +1468,23 @@
                           {/if}
                         </div>
                       {/each}
+                      {#if wfTab === "cloud" && !popRows.length}
+                        <p class="cm-pop-empty">云端这一屏还空着：去设置 → 模型与反推填 RunningHub 的 API Key。</p>
+                      {/if}
                       <div class="cm-pop-sep"></div>
-                      <button class="cm-wf cm-wf-add" role="menuitem" disabled={workflowLoading} onclick={() => wfInput?.click()}>
-                        <!-- 占位与上面的族徽同宽，「加载本地工作流 JSON」才跟上面的名字左对齐 -->
-                        <span class="cm-wf-lead" aria-hidden="true"><Icon name="plus" size={13} /></span>
-                        <span class="cm-wf-name">{workflowLoading ? "正在读取…" : "加载本地工作流 JSON"}</span>
-                      </button>
-                      <button class="cm-wf cm-wf-add" role="menuitem" onclick={() => chooseApi()}>
-                        <!-- 与本机的 JSON 同一款式：本机的配方与云端的 API 是同一件事的两条路，
-                             分家摆会让人以为云端不归「切换工作流」管。 -->
-                        <span class="cm-wf-lead" aria-hidden="true"><Icon name="cloud" size={13} /></span>
-                        <span class="cm-wf-name">{apiButtonLabel}</span>
-                      </button>
+                      {#if wfTab === "local"}
+                        <button class="cm-wf cm-wf-add" role="menuitem" disabled={workflowLoading} onclick={() => wfInput?.click()}>
+                          <!-- 占位与上面的族徽同宽，「加载本地工作流 JSON」才跟上面的名字左对齐 -->
+                          <span class="cm-wf-lead" aria-hidden="true"><Icon name="plus" size={13} /></span>
+                          <span class="cm-wf-name">{workflowLoading ? "正在读取…" : "加载本地工作流 JSON"}</span>
+                        </button>
+                      {:else}
+                        <!-- 底部这颗跟着屏走：本机这屏是「加载 JSON」，API 这屏是去填 Key。 -->
+                        <button class="cm-wf cm-wf-add" role="menuitem" onclick={() => { closeWorkflowPop(); onOpenSettings?.(CLOUD_SETTINGS_TAB); }}>
+                          <span class="cm-wf-lead" aria-hidden="true"><Icon name="cloud" size={13} /></span>
+                          <span class="cm-wf-name">设置 RunningHub 的 API Key</span>
+                        </button>
+                      {/if}
                     </div>
                   {/if}
                 </div>
@@ -1718,6 +1722,16 @@
   .cm-pop-title { margin: 2px 0 0; font-size: 12.5px; color: #a1a1aa; }
   /* 这颗胶囊靠着右列的右边缘，弹层左对齐会被顶出弹窗（窄窗口实测错位）。贴着胶囊右边往左长才稳。 */
   .cm-pop-wf { left: auto; right: 0; width: 268px; gap: 3px; }
+  /* 弹层顶部那两屏：像同一颗胶囊里的两段，选中那段提亮，不额外占一行标题 */
+  .cm-pop-tabs { display: flex; gap: 4px; padding: 2px; margin-bottom: 2px; background: rgb(255 255 255 / 4%); border-radius: 10px; }
+  .cm-pop-tab {
+    flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+    padding: 5px 0; font-size: 12px; color: #a1a1aa; background: transparent; border-radius: 8px;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .cm-pop-tab[aria-pressed="true"] { color: #fafafa; background: rgb(255 255 255 / 9%); }
+  .cm-pop-tab-count { font-size: 10.5px; color: #f87171; background: rgb(242 78 78 / 16%); border-radius: 999px; padding: 0 6px; }
+  .cm-pop-empty { margin: 2px 0; padding: 0 4px; font-size: 11.5px; color: #a1a1aa; }
   .cm-pop-sep { height: 1px; margin: 5px 0; background: rgb(255 255 255 / 8%); }
   .cm-wf { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; font-size: 12.5px; color: #d4d4d8; text-align: left; background: transparent; border-radius: 10px; cursor: pointer; }
   .cm-wf:hover:not(:disabled) { background: rgb(255 255 255 / 7%); color: #fafafa; }

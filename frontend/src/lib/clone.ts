@@ -1359,8 +1359,11 @@ export interface CloneSources {
 }
 
 export const CLONE_SETTINGS_TAB = "一键同款";
-/** 设置页那张「云端生成」的目录名。弹窗里「选择 API…」和错误态都靠它跳过去。 */
-export const CLOUD_SETTINGS_TAB = "云端生成";
+/**
+ * 云端 API Key 所在那一组的名字。它不再是独立一页（第一版是「云端生成」一页三节），
+ * 走这条路只要一把 Key，就摆进「模型与反推」——弹窗里「设置 RunningHub 的 API Key」跳的是这儿。
+ */
+export const CLOUD_SETTINGS_TAB = "模型与反推";
 
 // ---------- 接口 ----------
 

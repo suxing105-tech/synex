@@ -4,7 +4,7 @@ import { tick } from "svelte";
 import CloudServices from "../components/CloudServices.svelte";
 
 /**
- * 设置 → 云端生成（RunningHub 收费模型 API）。
+ * 设置 → 模型与反推里的「RunningHub 云端生成」（收费模型 API）。
  *
  * 这张卡最要紧的不是好不好看，是两件不可逆的事：API Key 会不会被回显出去（回显＝落盘＝会泄露），
  * 以及花费闸与「待取回」会不会说谎（钱已经花出去了，产物还挂在会过期的链接上）。
@@ -117,7 +117,7 @@ afterEach(() => { cleanup(); http.mockReset(); });
 it("Key 只回显「已配置」：后端就算误发明文，DOM 里也不许出现一个字符", async () => {
   routes();
   const screen = render(CloudServices, {});
-  await screen.findByText("三条 API");
+  await screen.findByText(/三条 API 挂在/);
   expect(screen.getByText(/已配置/)).toBeTruthy();
   expect(screen.container.textContent).not.toContain(SECRET_KEY);
   // 输入框永远从空开始，而且不是明文
@@ -130,9 +130,9 @@ it("Key 只回显「已配置」：后端就算误发明文，DOM 里也不许�
 it("保存 Key 时明文只出现在请求体里：PATCH 已有账号 / POST 新账号，URL 与界面都不带它", async () => {
   routes();
   let screen = render(CloudServices, {});
-  await screen.findByText("三条 API");
+  await screen.findByText(/三条 API 挂在/);
   await fireEvent.input(keyBox(screen), { target: { value: SECRET_KEY } });
-  await fireEvent.click(screen.getByRole("button", { name: "保存账号与 Key" }));
+  await fireEvent.click(screen.getByRole("button", { name: "保存 Key" }));
   await waitFor(() => expect(call("/api/clone/cloud/accounts/1", "PATCH")).toBeTruthy());
   expect(bodyOf(call("/api/clone/cloud/accounts/1", "PATCH")).api_key).toBe(SECRET_KEY);
   // 保存完立刻清空：key 不进 status、不进任何长生命周期状态，否则切个标签页就留在内存里
@@ -142,31 +142,38 @@ it("保存 Key 时明文只出现在请求体里：PATCH 已有账号 / POST 新
 
   routes({ accounts: [] });
   screen = render(CloudServices, {});
-  await screen.findByText("三条 API");
+  await screen.findByText(/三条 API 挂在/);
   await fireEvent.input(keyBox(screen), { target: { value: SECRET_KEY } });
-  await fireEvent.click(screen.getByRole("button", { name: "保存账号" }));
+  await fireEvent.click(screen.getByRole("button", { name: "保存 Key" }));
   await waitFor(() => expect(call("/api/clone/cloud/accounts", "POST")).toBeTruthy());
-  expect(bodyOf(call("/api/clone/cloud/accounts", "POST")).api_key).toBe(SECRET_KEY);
+  // 库里还没有账号时顺手建一把，名字固定 RunningHub：这些字段 UI 不再问人
+  expect(bodyOf(call("/api/clone/cloud/accounts", "POST"))).toEqual({ api_key: SECRET_KEY, name: "RunningHub" });
   expect(http.mock.calls.every(([path]) => !String(path).includes(SECRET_KEY))).toBe(true);
   expect(screen.container.textContent).not.toContain(SECRET_KEY);
 });
 
-it("presets 里 verified:false 的那条挂「待实测」，别让人以为端点是稳的", async () => {
+it("三条 API 收成一行清单；没实测过的那条写在折叠说明里，别让人以为端点是稳的", async () => {
   routes();
   const screen = render(CloudServices, {});
-  await screen.findByText("三条 API");
-  const tags = Array.from(screen.container.querySelectorAll(".cloud-tag"));
-  expect(tags.map((tag) => tag.textContent)).toEqual(["待实测"]);
-  expect(screen.getByText("音频API").closest("li")?.textContent).toContain("待实测");
-  expect(screen.getByText("音频API").closest("li")?.textContent).toContain("提交字段未实测");
-  expect(screen.getByText("图片API").closest("li")?.textContent).not.toContain("待实测");
-  expect(screen.getByText("视频API").closest("li")?.textContent).not.toContain("待实测");
+  const line = await screen.findByText(/三条 API 挂在/);
+  expect(line.textContent).toContain("图片API（Seedream v5 lite）");
+  expect(line.textContent).toContain("视频API（Seedance 2.0）");
+  expect(line.textContent).toContain("音频API（voice-clone + speech-2.8-hd）");
+  const notes = screen.container.querySelector(".cloud-notes");
+  expect(notes?.querySelector("summary")?.textContent).toContain("3 条里有 1 条");
+  expect(notes?.querySelectorAll("li")).toHaveLength(1);
+  expect(notes?.textContent).toContain("音频API：提交字段未实测");
+  expect(notes?.textContent).not.toContain("图片API");
+  // 恢复快捷方式只同步模板，不动 Key
+  await fireEvent.click(screen.getByRole("button", { name: "恢复这三条" }));
+  await waitFor(() => expect(call("/api/clone/cloud/templates/sync", "POST")).toBeTruthy());
+  expect(JSON.parse(String(call("/api/clone/cloud/templates/sync", "POST")?.[1]?.body ?? "{}"))).toEqual({});
 });
 
-it("总开关一拨就 PUT /settings 落库；花费上限仍走「保存云端设置」", async () => {
+it("总开关一拨就 PUT /settings 落库；花费上限仍走自己那颗「保存花费上限」", async () => {
   routes({ cloud_enabled: false, availability: { available: false, reason: "云端生成总开关是关的" } });
   const screen = render(CloudServices, {});
-  await screen.findByText("三条 API");
+  await screen.findByText(/三条 API 挂在/);
   const sw = screen.getByLabelText("启用云端生成") as HTMLInputElement;
   expect(sw.checked).toBe(false);
   expect(screen.container.textContent).toContain("云端生成总开关是关的");
@@ -176,7 +183,7 @@ it("总开关一拨就 PUT /settings 落库；花费上限仍走「保存云端�
   // 开关自己只发这一个字段：不顺手把两个上限按界面上的当前值盖回去
   await waitFor(() => expect(call("/api/clone/cloud/settings", "PUT")).toBeTruthy());
   expect(bodyOf(call("/api/clone/cloud/settings", "PUT"))).toEqual({ cloud_enabled: true });
-  await fireEvent.click(screen.getByRole("button", { name: "保存云端设置" }));
+  await fireEvent.click(screen.getByRole("button", { name: "保存花费上限" }));
   await waitFor(() => expect(settingsCalls().length).toBe(2));
   expect(bodyOf(settingsCalls()[1])).toEqual({
     cloud_enabled: true, cloud_max_single_coins: 0, cloud_max_daily_coins: 0,
@@ -205,26 +212,29 @@ it("availability.available=false 时把后端那句 reason 原样显示，不只
     accounts: [{ ...ACCOUNT, has_api_key: false }],
   });
   const screen = render(CloudServices, {});
-  await screen.findByText("三条 API");
+  await screen.findByText(/三条 API 挂在/);
   expect(screen.container.querySelector(".cloud-state")?.textContent).toContain(reason);
   expect(screen.container.querySelector(".cloud-state")?.className).not.toContain("cloud-ready");
-  expect(screen.container.querySelector(".cloud-blockers")?.textContent).toContain("这个账号还没填 API Key");
+  // reason 原样显示之外，还差哪一步列哪一步：这里缺的就是 Key
+  expect(screen.container.querySelector(".cloud-blockers")?.textContent).toContain("这把 API Key 还没填");
 });
 
-it("Key 已配置时不改 Key 也改得动账号名与代理：PATCH 里根本没有 api_key 这个字段", async () => {
+it("Key 已配置时不粘新的就点不动：留空一次手滑不许把存住的那把清掉", async () => {
   routes();
   const screen = render(CloudServices, {});
-  await screen.findByText("三条 API");
-  await fireEvent.input(screen.getByLabelText("云端账号名称"), { target: { value: "公司那把" } });
-  const proxy = screen.getByLabelText("云端请求代理方式") as HTMLSelectElement;
-  await fireEvent.change(proxy, { target: { value: "direct" } });
-  const save = screen.getByRole("button", { name: "保存账号" }) as HTMLButtonElement;
-  // 以前这颗没重贴 Key 就是点不动的，于是「改个代理方式」会静默丢掉——只能重贴一次 Key
-  expect(save.disabled).toBe(false);
+  await screen.findByText(/三条 API 挂在/);
+  const save = screen.getByRole("button", { name: "保存 Key" }) as HTMLButtonElement;
+  // 界面从不回显 Key，输入框永远从空开始，所以「保存」在留空时必须点不动——
+  // 发 api_key:"" 等于清掉这把 Key，那是另一颗按钮（清掉这把 Key）干的事。
+  expect(save.disabled).toBe(true);
   await fireEvent.click(save);
+  await tick();
+  expect(http.mock.calls.filter(([path]) => String(path).startsWith("/api/clone/cloud/accounts"))).toHaveLength(0);
+  await fireEvent.input(keyBox(screen), { target: { value: SECRET_KEY } });
+  await tick();
+  expect((screen.getByRole("button", { name: "保存 Key" }) as HTMLButtonElement).disabled).toBe(false);
+  await fireEvent.click(screen.getByRole("button", { name: "保存 Key" }));
   await waitFor(() => expect(call("/api/clone/cloud/accounts/1", "PATCH")).toBeTruthy());
-  const body = bodyOf(call("/api/clone/cloud/accounts/1", "PATCH"));
-  expect(body).toEqual({ name: "公司那把", proxy_mode: "direct" });
-  // 空 Key 连字段都不发：发 "" 是「清掉这把 Key」，那是另一颗按钮干的事
-  expect(Object.prototype.hasOwnProperty.call(body, "api_key")).toBe(false);
+  // 这张卡只管 Key：账号名、服务商、代理方式都不再是这张卡的问题
+  expect(bodyOf(call("/api/clone/cloud/accounts/1", "PATCH"))).toEqual({ api_key: SECRET_KEY });
 });

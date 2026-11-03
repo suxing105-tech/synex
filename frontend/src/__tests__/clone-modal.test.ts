@@ -2230,7 +2230,7 @@ it('用户在设置页把云端那条设成「当前」之后，弹窗就开在�
   expect(screen.getByRole('button', { name: '同款工作流' }).textContent).toContain('图片API');
 });
 
-it('清单里云端那一行独立显示：挂「云端」与「待实测」，不能用时灰掉并说出差哪一步', async () => {
+it('云端那一行只在 API 那一屏：本机屏干净，API 屏挂「云端」「待实测」，不能用时灰掉并说出差哪一步', async () => {
   routes({
     ...baseRoutes(),
     '/api/clone/cloud/status': cloudOn({ availability: { available: false, reason: '还没填 RunningHub 的 API Key' } }),
@@ -2238,31 +2238,51 @@ it('清单里云端那一行独立显示：挂「云端」与「待实测」，�
   });
   const screen = await ready();
   await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
+  await tick();
+  // 两屏各摆各的（苏醒要的）：本机这一屏不该出现要扣 RH币的那一行
+  expect(screen.getByRole('button', { name: '切换工作流' }).getAttribute('aria-pressed')).toBe('true');
+  expect(screen.queryByRole('menuitemradio', { name: /图片API/ })).toBeNull();
+  await fireEvent.click(screen.getByRole('button', { name: /^API/ }));
   const row = (await screen.findByRole('menuitemradio', { name: /图片API/ })) as HTMLButtonElement;
   expect(row.textContent).toContain('云端');
   expect(row.textContent).toContain('待实测');
   expect(row.disabled).toBe(true);
   expect(row.getAttribute('title')).toContain('还没填 RunningHub 的 API Key');
+  // 本机那一行也不跟着跑到 API 屏上
+  expect(screen.queryByRole('menuitemradio', { name: /Qwen 多图编辑/ })).toBeNull();
 });
 
-it('底部那颗在两条之间来回切：本机 ↔ 云端 API，不把人支去设置页', async () => {
-  routes({ ...baseRoutes(), '/api/clone/cloud/status': cloudOn(), '/api/clone/templates': { items: [TPL, CLOUD_IMG] } });
+it('两屏切着换工作流：API 屏点云端那条就换过去，回本机屏点回原来那条', async () => {
+  routes({
+    ...baseRoutes(), '/api/clone/cloud/status': cloudOn(),
+    '/api/clone/templates': { items: [TPL, CLOUD_IMG] },
+    '/api/clone/cloud/estimate': { coins: 3, mode: 'image' },
+  });
   const screen = await ready();
   await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
-  await fireEvent.click(await screen.findByRole('menuitem', { name: /改用云端 API/ }));
+  await fireEvent.click(await screen.findByRole('button', { name: /^API/ }));
+  await fireEvent.click(await screen.findByRole('menuitemradio', { name: /图片API/ }));
   await vi.waitFor(() => expect(screen.getByRole('heading', { name: '图片API' })).toBeTruthy());
+  // 现在挂在云端：再开弹层该直接开在 API 屏，不用人再点一次
   await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
-  await fireEvent.click(await screen.findByRole('menuitem', { name: /改用本机工作流/ }));
+  await tick();
+  expect(screen.getByRole('button', { name: /^API/ }).getAttribute('aria-pressed')).toBe('true');
+  await fireEvent.click(screen.getByRole('button', { name: '切换工作流' }));
+  await fireEvent.click(await screen.findByRole('menuitemradio', { name: /Qwen 多图编辑/ }));
   await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Qwen 多图编辑' })).toBeTruthy());
 });
 
-it('这一族一条 API 都没配时那颗改口去设置：清单里点不出没配过的东西', async () => {
+it('API 那一屏一条都没装时给空态，底部那颗改口去设置：清单里点不出没配过的东西', async () => {
   routes({ ...baseRoutes(), '/api/clone/cloud/status': cloudOn() });
   const onOpenSettings = vi.fn();
   const screen = await ready({ onOpenSettings });
   await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
-  await fireEvent.click(await screen.findByRole('menuitem', { name: /设置云端 API/ }));
-  expect(onOpenSettings).toHaveBeenCalledWith('云端生成');
+  await fireEvent.click(await screen.findByRole('button', { name: /^API/ }));
+  expect(await screen.findByText(/云端这一屏还空着/)).toBeTruthy();
+  // 底部那颗跟着屏走：API 屏不该给「加载本地工作流 JSON」
+  expect(screen.queryByRole('menuitem', { name: /加载本地工作流 JSON/ })).toBeNull();
+  await fireEvent.click(screen.getByRole('menuitem', { name: /设置 RunningHub 的 API Key/ }));
+  expect(onOpenSettings).toHaveBeenCalledWith('模型与反推');
 });
 
 it('音频卡点开一条只吃图的云端 API：不把音频硬塞进「图1」，并说清为什么没放', async () => {

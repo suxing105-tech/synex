@@ -94,7 +94,7 @@ def key_for(row: dict, *, quiet: bool = False) -> str:
         return value
     if quiet:
         return ""
-    raise ValueError("这条云端账号还没有填 API Key，去设置 → 云端生成里填。")
+    raise ValueError("这条云端账号还没有填 API Key，去设置 → 模型与反推里填。")
 
 
 def usable_account() -> dict | None:

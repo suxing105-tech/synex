@@ -55,13 +55,13 @@ def availability() -> dict:
     """弹窗与设置页共用的那句实话：现在能不能点云端这一行，不能的话差哪一步。"""
     cfg = load_config()
     if not getattr(cfg, "cloud_enabled", False):
-        return {"available": False, "reason": "云端生成没启用，去设置 → 云端生成里打开"}
+        return {"available": False, "reason": "云端生成没启用，去设置 → 模型与反推里打开"}
     account = accounts.usable_account()
     if account is None:
         for row in accounts.list_accounts():
             if row["enabled"] and not row["has_api_key"]:
                 return {"available": False, "reason": "这条云端账号还没有填 API Key"}
-        return {"available": False, "reason": "还没有可用的云端账号，去设置 → 云端生成里配"}
+        return {"available": False, "reason": "还没有可用的云端账号，去设置 → 模型与反推里填 Key"}
     return {"available": True, "reason": "", "account_name": account["name"]}
 
 

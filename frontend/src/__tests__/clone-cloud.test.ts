@@ -194,8 +194,8 @@ describe("钱与入口的措辞", () => {
     expect(coinsLabel(undefined)).toBe("未实测");
   });
 
-  it("设置页那张卡的目录名钉死：弹窗跳转与错误态都靠这个字符串", () => {
-    expect(CLOUD_SETTINGS_TAB).toBe("云端生成");
+  it("云端那张卡不是一整页，是「模型与反推」里的一张卡：弹窗跳转靠这个字符串", () => {
+    expect(CLOUD_SETTINGS_TAB).toBe("模型与反推");
   });
 
   it("参考位键名走 slotKey，云端与本机同一套键（生成时后端按它接线）", () => {

@@ -34,10 +34,9 @@
       { id: "shortcuts", label: "快捷键", keywords: "按键 键盘 组合键 沉浸 全屏 搜索 侧栏 灯箱 对比 所有素材" },
     ] },
     { label: "AI 与集成", items: [
-      { id: "models", label: "模型与反推", keywords: "api key 服务商 视觉模型 反推 指令 seedance h3 视频提示词 超时 密钥 默认模型" },
+      { id: "models", label: "模型与反推", keywords: "api key 服务商 视觉模型 反推 指令 seedance h3 视频提示词 超时 密钥 默认模型 云端 runninghub minimax 收费 扣费 花费 余额 出图 出片 配音 图片api 视频api 音频api 取回" },
       { id: "comfyui", label: "ComfyUI", keywords: "工作流 服务地址 端口 连接 探测 节点" },
       { id: "clone", label: "一键同款", keywords: "工作流 模板 提示词 参考图 生成 一键同款 同款 ComfyUI 出图" },
-      { id: "cloud", label: "云端生成", keywords: "api key 密钥 云端 runninghub seedance minimax 收费 扣费 花费 余额 出图 出片 配音 图片api 视频api 音频api 取回" },
     ] },
     { label: "应用", items: [
       { id: "media", label: "媒体组件", keywords: "ffmpeg ffprobe 封面 波形 内置 检测 版本" },
@@ -447,8 +446,9 @@
           {#if shown("models")}
             <section id="settings-models" class="settings-section" aria-labelledby="settings-models-title">
               <h3 id="settings-models-title">模型与反推</h3>
-              <p class="section-description">配置图片与视频反推用的模型、指令与偏好。</p>
+              <p class="section-description">配置图片与视频反推用的模型、指令与偏好，以及一键同款的云端 API Key。</p>
               <ModelSettings />
+              <CloudServices />
             </section>
           {/if}
 
@@ -511,14 +511,6 @@
               <h3 id="settings-clone-title">一键同款</h3>
               <p class="section-description">换一份工作流，图片卡上的「一键同款」立刻跟着换；出图统一存进图库的「一键同款」文件夹。</p>
               <CloneTemplates />
-            </section>
-          {/if}
-
-          {#if shown("cloud")}
-            <section id="settings-cloud" class="settings-section" aria-labelledby="settings-cloud-title">
-              <h3 id="settings-cloud-title">云端生成</h3>
-              <p class="section-description">一键同款的第二条通道：不调本机 ComfyUI，直接调云端收费模型出图、出片、出声音。填一把 API Key 就能用，每出一张都要花 RH币。</p>
-              <CloudServices />
             </section>
           {/if}
 

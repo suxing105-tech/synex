@@ -1,21 +1,25 @@
 <script lang="ts">
   /**
-   * 设置 → 云端生成：把「一键同款」的第二条执行通道接上（RunningHub 的收费模型 API）。
+   * 设置 → 模型与反推 里的「RunningHub 云端生成」。
    *
-   * 为什么是一张卡三节而不是三张卡：三族共用同一个账号、同一把 Key、同一个代理，
-   * 拆成三张卡就要填三遍同样的东西，还会让人以为可以三族各用一家服务商。
+   * 为什么从独立一页缩成这一张卡（第一版是一整页、三节、外加一张账号表）：
+   * 走这条路只要一把 Key。账号名、服务商、代理方式填对了没人会再看第二眼，
+   * 把它们摆出来就等于把「填一把 Key 就能用」变成「先理解一套账号模型」。
+   * 多账号仍然留在后端与库里（API 支持），UI 只管第一把 Key；代理固定跟随系统
+   * ——云端是公网请求，跟随系统是对的，真被本机代理挡住时改库里那个字段就够，
+   * 不值得为它占一行设置。
    *
-   * API Key 在这里只写不读：后端任何接口都只回 has_api_key 这个布尔，
-   * 所以「不回显」不是靠这个组件小心，是靠数据根本没有。输入框永远从空开始，
-   * 保存后也只说「已保存」，不把 key 放回任何状态里。
+   * API Key 只写不读：后端任何接口都只回 has_api_key 这个布尔。不回显不是靠这个
+   * 组件小心，是数据里根本没有。输入框永远从空开始，保存后也不把 key 放进任何
+   * 长生命周期状态。
    */
   import { onMount } from "svelte";
   import SettingsRow from "./SettingsRow.svelte";
   import {
-    cloudApi, cloneError, coinsLabel,
-    type CloudAccount, type CloudPendingTask, type CloudPresetItem, type CloudStatus, type CloudTestResult,
+    cloudApi, cloneError, coinsLabel, WF_KIND_WORDS,
+    type CloudPendingTask, type CloudStatus, type CloudTestResult,
+    type MediaKind,
   } from "../lib/clone";
-  import { WF_KIND_WORDS, type MediaKind } from "../lib/clone";
 
   let status = $state<CloudStatus | null>(null);
   let loading = $state(true);
@@ -27,8 +31,6 @@
   // Key 只在这一个局部状态里待着，保存成功后立刻清空——不进 status，不进任何长生命周期状态。
   let keyInput = $state("");
   let revealKey = $state(false);
-  let nameInput = $state("");
-  let proxyMode = $state("system");
   let maxSingle = $state(0);
   let maxDaily = $state(0);
   let enabled = $state(true);
@@ -36,18 +38,21 @@
   let testResult = $state<CloudTestResult | null>(null);
   let refetching = $state<number | null>(null);
 
-  const account = $derived<CloudAccount | null>((status?.accounts ?? [])[0] ?? null);
-  const presets = $derived(status?.presets ?? []);
+  const account = $derived<CloudStatus["accounts"][number] | null>((status?.accounts ?? [])[0] ?? null);
   const pending = $derived(status?.pending ?? []);
   const spend = $derived(status?.spend ?? null);
+  const presets = $derived(status?.presets ?? []);
+  const unverified = $derived(presets.filter((item) => !item.verified));
+  /** 三条 API 只报一行：它们真正的家在「一键同款」的切换清单里，这里只需说清挂着哪几条。 */
+  const presetLine = $derived(presets.map((item) => `${item.name}（${item.model_label}）`).join(" · "));
   /**
-   * 只在真有一把 Key 落在那里时谈「重启还在不在」：还没有账号时渲染器压根不知道
+   * 只在真有一把 Key 落在那里时谈「重启还在不在」：还没有 Key 时渲染器压根不知道
    * 这台机器有没有系统级加密，照默认分支说「重启要重填」就是编的。
    */
   const keyPersistence = $derived(!account?.has_api_key
     ? ""
     : account.key_persistence === "encrypted"
-      ? "Key 按当前 Windows 用户加密存在库里，重启不用重填。"
+      ? "Key 按当前 Windows 用户加密存在本机，重启应用不用重填。"
       : "这台机器上没有系统级加密：Key 只存在本次运行里，重启应用要重填一次。");
 
   function fillFromStatus(next: CloudStatus) {
@@ -55,11 +60,6 @@
     enabled = next.cloud_enabled;
     maxSingle = next.cloud_max_single_coins;
     maxDaily = next.cloud_max_daily_coins;
-    const first = (next.accounts ?? [])[0];
-    if (first) {
-      nameInput = first.name;
-      proxyMode = first.proxy_mode;
-    }
     loading = false;
   }
 
@@ -76,7 +76,7 @@
   }
   onMount(() => { void reload(); });
 
-  /** 一串动作统一收在这里： busy 一处管，错误一律说人话，成功话由调用方给。 */
+  /** 一串动作统一收在这里：busy 一处管，错误一律说人话，成功话由调用方给。 */
   async function run(fn: () => Promise<void>, okMessage = "") {
     busy = true;
     error = "";
@@ -91,21 +91,21 @@
     }
   }
 
-  /** 存账号。有就 PATCH、没有就 POST；Key 为空串时不发这个字段（发了就是清掉）。 */
-  async function saveAccount() {
+  /** 存这把 Key。库里还没有账号就顺手建一个（名字固定 RunningHub，UI 不再问这个）。 */
+  async function saveKey() {
+    const key = keyInput.trim();
+    if (!key) return;
     await run(async () => {
-      const patch: { name?: string; api_key?: string; proxy_mode?: string; enabled?: boolean } = {
-        name: nameInput.trim() || "RunningHub",
-        proxy_mode: proxyMode,
-      };
-      if (keyInput.trim()) patch.api_key = keyInput.trim();
       const current = (status?.accounts ?? [])[0];
-      const saved = await cloudApi.saveAccount(patch, current?.id ?? null);
+      await cloudApi.saveAccount(
+        current ? { api_key: key } : { api_key: key, name: "RunningHub" },
+        current?.id ?? null,
+      );
       keyInput = "";
       revealKey = false;
       testResult = null;
       await reload(true);
-      notice = current ? "云端账号已更新。" : `已添加 ${saved.provider_label} 账号。填好 Key 记得点「测试连通」。`;
+      notice = "Key 已存住。点「测一下连通与余额」跑一次，才知道这把 Key 有效、账户里还剩多少 RH币。";
     });
   }
 
@@ -117,14 +117,15 @@
       keyInput = "";
       testResult = null;
       await reload(true);
-      notice = "已清掉这把 API Key。三条 API 快捷方式还在，填回来就能继续用。";
-    }, "");
+      notice = "已清掉这把 API Key。三条 API 还挂在切换清单里，填回来就能继续用。";
+    });
   }
 
+  /** 这是这张卡唯一会往外发请求的一颗按钮，只有你点它才发。 */
   async function testConnection() {
     const current = (status?.accounts ?? [])[0];
     if (!current) {
-      error = "先保存账号，才能测连通。";
+      error = "先保存 Key，才能测连通。";
       return;
     }
     testing = true;
@@ -140,13 +141,13 @@
 
   /**
    * 总开关一拨就写回库里。一个布尔不该「点了像没生效，还要再点一次保存」——
-   * 花费闸那两头数字要留着批量填，所以它们仍然走「保存云端设置」。
+   * 花费闸那两头数字要留着一起填，所以它们仍走自己那颗保存按钮。
    */
   function saveEnabled() {
     void run(async () => {
       await cloudApi.saveSettings({ cloud_enabled: enabled });
       await reload(true);
-    }, enabled ? "云端生成已启用。" : "云端生成已停用：三条 API 快捷方式还在，随时能开回来。");
+    }, enabled ? "云端生成已启用。" : "云端生成已停用：三条 API 还挂在切换清单里，随时能开回来。");
   }
 
   function saveLimits() {
@@ -157,7 +158,7 @@
         cloud_max_daily_coins: Number(maxDaily) || 0,
       });
       await reload(true);
-    }, "云端开关与花费上限已保存。");
+    }, "花费上限已保存。");
   }
 
   function refetchTask(task: CloudPendingTask) {
@@ -173,17 +174,17 @@
     void run(async () => {
       await cloudApi.syncTemplates();
       await reload(true);
-    }, "三条 API 快捷方式已恢复。账号与 Key 一个都没动。");
+    }, "三条 API 已恢复到「一键同款」的切换清单里。Key 一个都没动。");
   }
 
-  /** 这一族配了没有：设置页要说「差哪一步」，不能只报一句笼统的「不可用」。 */
+  /** 差哪一步就说哪一步：只报一句「不可用」等于把人赶去自己猜。 */
   const blockers = $derived.by(() => {
     if (!status) return [];
     const out: string[] = [];
     if (!status.cloud_enabled) out.push("云端生成总开关是关的");
     const first = (status.accounts ?? [])[0];
-    if (!first) out.push("还没有添加云端账号");
-    else if (!first.has_api_key) out.push("这个账号还没填 API Key");
+    if (!first) out.push("还没填 RunningHub 的 API Key");
+    else if (!first.has_api_key) out.push("这把 API Key 还没填");
     else if (!first.enabled) out.push("这个账号被停用了");
     return out;
   });
@@ -191,9 +192,9 @@
 
 <div class="settings-card cloud-card">
   <SettingsRow
-    title="云端生成"
+    title="RunningHub 云端生成"
     top
-    description="一键同款的第二条通道：不放本机 ComfyUI，直接调 RunningHub 的收费模型 API。画质与模型由平台维护，代价是每出一张都花 RH币。"
+    description="一键同款的第二条路：不放本机 ComfyUI，直接调 RunningHub 的收费模型出图、出片、出声音。填一把 Key 就能用，代价是每出一张都花 RH币。"
   >
     {#snippet control()}
       <label class="settings-switch">
@@ -221,49 +222,24 @@
           </ul>
         {/if}
 
-        <!-- ── 第一节：账号与 Key ── -->
-        <p class="cloud-section">账号与 API Key</p>
-        <label class="cloud-field">服务商
-          <input aria-label="服务商" value={status?.accounts?.[0]?.provider_label || "RunningHub"} disabled />
-        </label>
-        <label class="cloud-field">账号名称
-          <input aria-label="云端账号名称" bind:value={nameInput} placeholder="RunningHub" maxlength="40" />
-        </label>
-        <label class="cloud-field">API Key {account?.has_api_key ? "（已配置；留空表示不改）" : "（在 RunningHub 控制台生成）"}
+        <label class="cloud-field">API Key {account?.has_api_key ? "（已配置；粘一把新的就覆盖）" : "（在 RunningHub 控制台生成，粘进来就存住）"}
           <input
             aria-label="云端 API Key"
             type={revealKey ? "text" : "password"}
             autocomplete="new-password"
             bind:value={keyInput}
             disabled={busy}
+            placeholder={account?.has_api_key ? "已配置，留空表示不动它" : "粘贴 RunningHub 的 API Key"}
           />
         </label>
         <div class="cloud-inline">
           <label class="cloud-check"><input type="checkbox" aria-label="显示 API Key" bind:checked={revealKey} />显示出来核对一眼</label>
-          <!-- 已经有账号了就不该逼 person 重贴一次 Key 才能改名字或代理：
-               Key 留空 = 不动它，这条 saveAccount 里本来就是这么发的。 -->
-          <button class="setting-button"
-            disabled={busy || (!account && !keyInput.trim())} onclick={() => void saveAccount()}>
-            {account && keyInput.trim() ? "保存账号与 Key" : "保存账号"}
-          </button>
+          <button class="setting-button bg-accent text-bg" disabled={busy || !keyInput.trim()} onclick={() => void saveKey()}>保存 Key</button>
           {#if account?.has_api_key}
             <button class="setting-button" disabled={busy} onclick={() => void clearKey()}>清掉这把 Key</button>
           {/if}
-        </div>
-        <p class="settings-hint">{keyPersistence}</p>
-        <label class="cloud-field">代理方式
-          <!-- 不用 bind:value：happy-dom 里 querySelector(":checked") 认不出选中的 option，
-               测试驱动不了这颗下拉；改成 value + onchange，跟同款页/提示词面板一个写法 -->
-          <select aria-label="云端请求代理方式" value={proxyMode} disabled={busy}
-            onchange={(e) => proxyMode = (e.currentTarget as HTMLSelectElement).value}>
-            <option value="system">跟随系统代理</option>
-            <option value="direct">直连（不走系统代理）</option>
-          </select>
-        </label>
-        <p class="settings-hint">云端是公网请求，跟随系统代理是对的；只有你确定本机代理会挡这类请求时才选直连。</p>
-        <div class="cloud-inline">
-          <button class="setting-button" disabled={busy || testing || !account} onclick={() => void testConnection()}>
-            {testing ? "测试中…" : "测试连通与余额"}
+          <button class="setting-button" disabled={busy || testing || !account?.has_api_key} onclick={() => void testConnection()}>
+            {testing ? "测中…" : "测一下连通与余额"}
           </button>
           {#if testResult}
             <span class="cloud-test" class:cloud-ok={testResult.ok} class:cloud-bad={!testResult.ok} role="status">
@@ -271,33 +247,9 @@
             </span>
           {/if}
         </div>
+        {#if keyPersistence}<p class="settings-hint">{keyPersistence}</p>{/if}
+        <p class="settings-hint">这里从不把 Key 读回来显示：任何接口都只回「有没有配过」，所以复制不走它。</p>
 
-        <!-- ── 第二节：三条模型 ── -->
-        <p class="cloud-section">三条 API</p>
-        <ul class="cloud-models">
-          {#each presets as item (item.key)}
-              <li>
-              <span class="cloud-model-kind cloud-model-kind-{item.capability}">{WF_KIND_WORDS[item.capability as MediaKind] ?? item.capability_word}</span>
-              <span class="cloud-model-name">{item.name}</span>
-              <span class="cloud-model-label">{item.model_label}</span>
-              {#if !item.verified}<span class="cloud-tag">待实测</span>{/if}
-              <p class="settings-hint">{item.blurb}</p>
-              {#if item.notes?.length}
-                <details class="cloud-notes">
-                  <summary>还没核实的地方（{item.notes.length} 条）</summary>
-                  <ul>{#each item.notes as note (note)}<li>{note}</li>{/each}</ul>
-                </details>
-              {/if}
-            </li>
-          {/each}
-        </ul>
-        <div class="cloud-inline">
-          <button class="setting-button" disabled={busy} onclick={syncShortcuts}>恢复这三条快捷方式</button>
-          <span class="settings-hint">删掉了想再要回来。账号与 Key 不动。</span>
-        </div>
-
-        <!-- ── 第三节：花钱的闸与流水 ── -->
-        <p class="cloud-section">花费上限与流水</p>
         <div class="cloud-limits">
           <label class="cloud-field">单次上限（RH币，0 = 不限）
             <input aria-label="单次花费上限" type="number" min="0" max="1000000" step="1" bind:value={maxSingle} disabled={busy} />
@@ -305,14 +257,27 @@
           <label class="cloud-field">当日上限（RH币，0 = 不限）
             <input aria-label="当日花费上限" type="number" min="0" max="1000000" step="1" bind:value={maxDaily} disabled={busy} />
           </label>
+          <button class="setting-button cloud-limits-save" disabled={busy} onclick={saveLimits}>保存花费上限</button>
         </div>
-        <div class="cloud-inline">
-          <button class="setting-button bg-accent text-bg" disabled={busy} onclick={saveLimits}>保存云端设置</button>
-          <span class="settings-hint">
-            今天已花 {coinsLabel(spend?.today_coins)} · {spend?.month ?? "本月"} 共 {coinsLabel(spend?.month_coins)}
-          </span>
-        </div>
-        <p class="settings-hint">上限是闸，不是预算：超过就拦在提交之前，钱不会花出去。花费按余额差值记账，没实测出差值的条目算 0——宁可少报，不编数。</p>
+        <p class="settings-hint">
+          上限是闸，不是预算：超过就拦在提交之前，钱不会花出去。花费按余额差值记账 ·
+          今天已花 {coinsLabel(spend?.today_coins)} · {spend?.month ?? "本月"} 共 {coinsLabel(spend?.month_coins)}
+        </p>
+
+        <p class="settings-hint">
+          三条 API 挂在「一键同款」的切换清单里：{presetLine || "一条都没装，点下面恢复"}。
+          <button class="setting-button" disabled={busy} onclick={syncShortcuts}>恢复这三条</button>
+        </p>
+        {#if unverified.length}
+          <details class="cloud-notes">
+            <summary>{presets.length} 条里有 {unverified.length} 条端点还没在真账号上实测过</summary>
+            <ul>
+              {#each unverified as item (item.key)}
+                <li>{item.name}：{item.notes?.join("；") || "字段未实测"}</li>
+              {/each}
+            </ul>
+          </details>
+        {/if}
 
         {#if pending.length}
           <p class="cloud-section">待取回的产物</p>
@@ -347,34 +312,23 @@
     border-top: 1px solid rgb(255 255 255 / 7%);
   }
   .cloud-field { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: #a1a1aa; }
-  .cloud-field input, .cloud-field select { width: 100%; max-width: 420px; }
+  .cloud-field input { width: 100%; max-width: 420px; }
   .cloud-inline { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
   .cloud-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #a1a1aa; }
   .cloud-test { font-size: 12.5px; }
   .cloud-ok { color: #4ade80; }
   .cloud-bad { color: #f87171; }
-  .cloud-models, .cloud-pending { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
-  .cloud-models li, .cloud-pending li {
+  .cloud-pending { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+  .cloud-pending li {
     display: grid; gap: 2px; padding: 8px 10px; font-size: 12.5px; color: #d4d4d8;
     background: rgb(255 255 255 / 3%); border-radius: 10px;
   }
   .cloud-pending li { grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
-  .cloud-model-kind {
-    justify-self: start; padding: 1px 8px; font-size: 10.5px; color: #93c5fd;
-    background: rgb(59 130 246 / 14%); border-radius: 999px;
-  }
-  .cloud-model-kind-video { color: #fbbf24; background: rgb(245 158 11 / 16%); }
-  .cloud-model-kind-audio { color: #c4b5fd; background: rgb(139 92 246 / 16%); }
-  .cloud-model-name { font-weight: 600; color: #fafafa; }
-  .cloud-model-label { color: #a1a1aa; }
-  .cloud-tag {
-    justify-self: start; padding: 1px 7px; font-size: 10.5px; color: #fbbf24;
-    background: rgb(251 191 36 / 14%); border-radius: 999px;
-  }
   .cloud-notes { font-size: 12px; color: #a1a1aa; }
   .cloud-notes ul { margin: 4px 0 0; padding-left: 16px; display: grid; gap: 2px; }
-  .cloud-limits { display: flex; flex-wrap: wrap; gap: 12px; }
-  .cloud-limits .cloud-field { flex: 1 1 180px; max-width: 220px; }
+  .cloud-limits { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+  .cloud-limits .cloud-field { flex: 1 1 150px; max-width: 200px; }
+  .cloud-limits-save { flex: none; }
   .cloud-pending-main { font-weight: 600; color: #fafafa; }
   .cloud-error { margin: 0; font-size: 12.5px; color: #f87171; }
   .cloud-notice { margin: 0; font-size: 12.5px; color: #4ade80; }

@@ -52,7 +52,15 @@ it('打包窗口授予必要控制权限，所有全屏弹层为标题栏让出�
   const permissions = JSON.parse(read('src-tauri/capabilities/default.json')).permissions;
   for (const action of ['minimize', 'toggle-maximize', 'close', 'start-dragging']) expect(permissions).toContain(`core:window:allow-${action}`);
   expect(read('src/App.svelte')).toContain('.desktop-shell :global(.fixed.inset-0)');
-  expect(read('src/components/SplashOverlay.svelte')).toContain('inset: var(--desktop-titlebar-height, 0px) 0 0');
+  // 启动页是唯一的例外，而且是刻意的：它必须和 index.html 的预挂载壳同几何（铺满整窗），
+  // 否则首帧交接地标会跳 14px。它不让出顶部，而是让标题栏浮在它上面保住拖动与按钮。
+  const splash = read('src/components/SplashOverlay.svelte');
+  const titlebar = read('src/components/DesktopTitlebar.svelte');
+  expect(splash).toMatch(/\.splash-overlay\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?inset:\s*0;/);
+  expect(splash).not.toContain('inset: var(--desktop-titlebar-height');
+  const barZ = Number(titlebar.match(/\.desktop-titlebar\s*\{[^}]*z-index:\s*(\d+)/)?.[1]);
+  const splashZ = Number(splash.match(/\.splash-overlay\s*\{[\s\S]*?z-index:\s*(\d+)/)?.[1]);
+  expect(barZ, '标题栏必须压在启动页之上，否则启动期间关不掉窗口').toBeGreaterThan(splashZ);
   expect(read('src/components/TextWorkspace.svelte')).toContain('inset:var(--desktop-titlebar-height, 0px) 0 0');
 });
 

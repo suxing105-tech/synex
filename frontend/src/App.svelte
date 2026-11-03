@@ -370,7 +370,7 @@
 <SettingsModal bind:open={settingsOpen} bind:tab={settingsTab} onOpenOnboarding={() => { settingsOpen = false; onboardingOpen = true; }} />
 <Toast />
 
-<SplashOverlay ready={gate.ready} error={gate.error} />
+<SplashOverlay phase={gate.phase} error={gate.error} />
 </div>
 
 <style>

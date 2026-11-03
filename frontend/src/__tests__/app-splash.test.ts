@@ -100,11 +100,16 @@ describe("App.svelte Tauri splash 防黑屏（M0-f）", () => {
   });
 
   describe("模板用 <SplashOverlay gate.ready / gate.error>", () => {
-    it("App.svelte 模板用 <SplashOverlay ready={gate.ready} error={gate.error} />", () => {
+    it("App.svelte 模板把阶段而不是布尔交给启动页", () => {
+      // 启动页要知道自己该演哪一段（boot / index / error），只给 ready 就演不出编排
       expect(
-        /<SplashOverlay\s+ready=\{gate\.ready\}\s+error=\{gate\.error\}\s*\/>/.test(templateSrc),
-        "App.svelte 模板必须用 <SplashOverlay ready={gate.ready} error={gate.error} />（gate 暴露 ready/error getter）"
+        /<SplashOverlay\s+phase=\{gate\.phase\}\s+error=\{gate\.error\}\s*\/>/.test(templateSrc),
+        "App.svelte 模板必须用 <SplashOverlay phase={gate.phase} error={gate.error} />"
       ).toBe(true);
+      expect(
+        /<SplashOverlay[^>]*ready=/.test(templateSrc),
+        "不应再把 ready 布尔传给启动页：收场淡出由组件自己按 phase 演"
+      ).toBe(false);
     });
   });
 

@@ -10,7 +10,9 @@ describe("桌面品牌与深色窗口", () => {
   it("深色桌面窗口使用可定高标题栏，并保留窗口缩放能力", () => {
     const main = config.app.windows.find((w: { label: string }) => w.label === "main");
     expect(main.theme).toBe("Dark");
-    expect(main.backgroundColor).toBe("#18181b");
+    // 窗口底色必须等于 app 底色与启动页底色（含 index.html 预挂载壳），
+    // 三处不同色就在「窗口亮起 → 启动页画出来」那一帧闪一下。见 boot-shell.test.ts。
+    expect(main.backgroundColor).toBe("#0e0e10");
     expect(main.decorations).toBe(false);
     expect(main.resizable).toBe(true);
   });

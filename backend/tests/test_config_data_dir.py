@@ -40,3 +40,21 @@ def test_suxing_data_dir_beats_gallery_alias(monkeypatch, tmp_path):
     import app.config as cfg
     importlib.reload(cfg)
     assert cfg.data_dir() == tmp_path / "new"
+
+
+def test_a_pool_pointing_at_the_local_dev_db_is_refused():
+    """会话级守卫必须真的会咬人：把库开回 cwd/data 要当场炸，不是默默写进真库。"""
+    import pytest
+
+    from app.db import ConnectionPool
+
+    with pytest.raises(AssertionError, match="不许打开本机开发库"):
+        ConnectionPool(Path.cwd() / "data" / "db.sqlite")
+
+
+def test_the_session_defaults_the_data_dir_off_the_checkout():
+    """不声明临时目录的用例也应该落在临时库里，而不是仓库里那份。"""
+    from app import config
+
+    root = config.data_dir().resolve()
+    assert root != (Path.cwd() / "data").resolve()

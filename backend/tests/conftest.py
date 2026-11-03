@@ -9,6 +9,72 @@ from pathlib import Path
 
 import pytest
 
+_SESSION_ROOT: Path | None = None
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _data_dir_off_the_real_one(tmp_path_factory):
+    """整个测试会话的默认数据目录搬进临时目录，并且当场拦住有人把库开回本机那份。
+
+    为什么要有这条：`init_pool()` 只建不换（``_POOL is None`` 才建），所以**第一个**
+    没声明 `tmp_data_dir` 就调到 `get_pool()` 的用例，会把池子永久钉在
+    ``Path.cwd()/data/db.sqlite`` 上——那正是开发时在跑的那份库，之后整会话的用例
+    写的都是它。「一键同款」接云端那天，11 条测试账号就是这么进的本机库。
+    默认目录换掉是防，下面那层 __init__ 守卫是当场报错，不让人默默写进真库再查。
+    """
+    global _SESSION_ROOT
+    import importlib
+    import os
+
+    root = tmp_path_factory.mktemp("seekx-session")
+    _SESSION_ROOT = root
+    previous = os.environ.get("SUXING_GALLERY_DATA_DIR")
+    os.environ["SUXING_GALLERY_DATA_DIR"] = str(root)
+
+    from app import config as config_module
+
+    importlib.reload(config_module)
+
+    yield
+    if previous is None:
+        os.environ.pop("SUXING_GALLERY_DATA_DIR", None)
+    else:
+        os.environ["SUXING_GALLERY_DATA_DIR"] = previous
+
+
+@pytest.fixture(autouse=True)
+def _no_real_dev_db_in_tests():
+    """每条用例都不许把 SQLite 开在本机 ``cwd/data`` 上——进来贴守卫，收尾查一遍。
+
+    守卫必须在每条用例里重新贴：``tmp_data_dir`` 会 ``reload(app.db)``，
+    那会换掉类对象，会话级贴的那一层就此失效（第一版就是这么漏的）。
+    """
+    import importlib
+    import sys
+
+    db_module = sys.modules.get("app.db") or importlib.import_module("app.db")
+    forbidden = (Path.cwd() / "data").resolve()
+    pool_class = db_module.ConnectionPool
+    original_init = pool_class.__init__
+
+    def guarded_init(self, path, *args, **kwargs):
+        resolved = Path(path).resolve()
+        if resolved.parent == forbidden:
+            raise AssertionError(
+                "测试不许打开本机开发库 " + str(resolved)
+                + "：要隔离数据库就声明 init_db / tmp_data_dir。"
+            )
+        return original_init(self, path, *args, **kwargs)
+
+    pool_class.__init__ = guarded_init
+    try:
+        yield
+    finally:
+        pool_class.__init__ = original_init
+        pool = getattr(db_module, "_POOL", None)
+        if pool is not None and Path(pool.path).resolve().parent == forbidden:
+            pytest.fail("有用例把连接池开到了本机开发库 " + str(pool.path))
+
 
 @pytest.fixture(autouse=True)
 def _no_bundled_clone_templates(monkeypatch):

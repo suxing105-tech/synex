@@ -35,7 +35,14 @@
   let testResult = $state<CloudTestResult | null>(null);
   let refetching = $state<number | null>(null);
 
-  const account = $derived<CloudStatus["accounts"][number] | null>((status?.accounts ?? [])[0] ?? null);
+  /**
+   * 「这把 Key」指哪一行，照后端标的那一条说（is_shared = 引擎真正会用的那行）。
+   * 库里可以多账号，界面只认一把：按下标取第一条，一旦前面排着空账号，
+   * 卡片就会说「已配置」、测的是 A、出图用的是 B——这种分叉查起来最费劲。
+   */
+  const account = $derived<CloudStatus["accounts"][number] | null>(
+    (status?.accounts ?? []).find((item) => item.is_shared) ?? (status?.accounts ?? [])[0] ?? null,
+  );
   const pending = $derived(status?.pending ?? []);
   const spend = $derived(status?.spend ?? null);
   const presets = $derived(status?.presets ?? []);
@@ -104,9 +111,9 @@
 
   /** 这是这张卡唯一会往外发请求的一颗按钮，只有你点它才发。 */
   async function testConnection() {
-    const current = (status?.accounts ?? [])[0];
+    const current = account;
     if (!current) {
-      error = "先保存 Key，才能测连通。";
+      error = "先在上面「反推模型」填这把 API Key，才能测连通。";
       return;
     }
     testing = true;
@@ -163,7 +170,7 @@
     if (!status) return [];
     const out: string[] = [];
     if (!status.cloud_enabled) out.push("云端生成总开关是关的");
-    const first = (status.accounts ?? [])[0];
+    const first = account;
     if (!first) out.push("还没填 RunningHub 的 API Key：在上面「反推模型」把服务商选成 RunningHub，粘 Key 保存");
     else if (!first.has_api_key) out.push("这把 API Key 还没填：在上面「反推模型」里填，或点「去填 Key」");
     else if (!first.enabled) out.push("这个账号被停用了");

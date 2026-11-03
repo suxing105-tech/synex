@@ -130,6 +130,26 @@ it("Key 只报状态不回显：这张卡没有输入框，后端误发明文时
   expect(inputs.some((input) => input.type === "password")).toBe(false);
 });
 
+it("库里排在前面的空账号不算「这把 Key」：卡片和「测一下」都跟着后端标的那一行", async () => {
+  // 两行账号：下标第一条没有 Key（历史遗留 / 测试留下的空壳），后端把 is_shared 标在真正会用的第二行
+  routes({
+    accounts: [
+      { ...ACCOUNT, id: 1, name: "空的", has_api_key: false, is_shared: false },
+      { ...ACCOUNT, id: 9, name: "真用的", has_api_key: true, is_shared: true },
+    ],
+  }, {
+    "/api/clone/cloud/accounts/9/test": () => ({ ok: true, reason_code: "ok", message: "连通正常，余额 1081 RH币", remain_coins: 1081 }),
+  });
+  const screen = render(CloudServices, {});
+  await screen.findByText(/三条 API 挂在/);
+  expect(keyLine(screen)).toContain("已配置");
+  await fireEvent.click(screen.getByRole("button", { name: "测一下连通与余额" }));
+  await screen.findByText(/余额 1081/);
+  // 测的就是出图会用的那一把：打到 9，不是数组下标那条 1
+  expect(call("/api/clone/cloud/accounts/9/test", "POST")).toBeTruthy();
+  expect(call("/api/clone/cloud/accounts/1/test", "POST")).toBeUndefined();
+});
+
 it("「改 Key」只把人送去上面那张卡，自己不写接口：一把 Key 不许有两个入口", async () => {
   routes();
   const seen: string[] = [];

@@ -59,6 +59,21 @@ def test_session_store_is_scoped_and_erasable():
 # ---------- accounts ----------
 
 
+def test_list_accounts_marks_the_row_the_engine_actually_uses():
+    """清单里必须自己说清哪一行是真在用的那把 Key。
+
+    库里可以多账号，界面只认一把。不标出来，界面只能按下标猜第一条——
+    排在前面的空账号会把「卡片显示的那把」和「出图用的那把」分成两行。
+    """
+    accounts.save_account({"name": "空的"})                        # 排在最前，没 Key
+    used = accounts.save_account({"name": "真用的", "api_key": SECRET})
+    accounts.save_account({"name": "第二把", "api_key": SECRET})    # 后面再有一把也不许抢
+    rows = accounts.list_accounts()
+    assert [r["name"] for r in rows if r["is_shared"]] == ["真用的"]
+    assert [r["id"] for r in rows if r["is_shared"]] == [used["id"]]
+    assert accounts.shared_row()["id"] == used["id"]
+
+
 def test_public_never_carries_the_key():
     row = accounts.save_account({"name": "我的 RunningHub", "api_key": SECRET})
     assert row["has_api_key"] is True

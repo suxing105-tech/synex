@@ -69,8 +69,16 @@ def public(row: dict) -> dict:
 
 
 def list_accounts() -> list[dict]:
+    """账号清单顺带标出「引擎真正会用的那一行」。
+
+    多账号仍在库里（后端一直支持），界面只认一把。以前界面按下标取第一条、
+    引擎按「开着且填了 Key 的第一条」——库里排在前面的空账号会把两边分开，
+    表现是「卡片说已配置、测的是 A、出图用的是 B」。标出来，两边就没法各猜。
+    """
     rows = _conn().execute("SELECT * FROM gen_accounts ORDER BY id").fetchall()
-    return [public(dict(r)) for r in rows]
+    shared_id = (shared_row() or {}).get("id")
+    return [{**public(dict(r)),
+             "is_shared": shared_id is not None and int(r["id"]) == int(shared_id)} for r in rows]
 
 
 def get_row(account_id: int) -> dict:

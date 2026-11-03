@@ -1476,6 +1476,8 @@ export interface CloudAccount {
   has_api_key: boolean;
   /** "encrypted" = 落盘时走系统加密；其它值 = 只活在本进程，重启要重填 */
   key_persistence: string;
+  /** 后端标的那一行 = 一键同款真正会用的那把 Key。界面跟着它说话，不按下标猜。 */
+  is_shared?: boolean;
 }
 
 export interface CloudAvailability {

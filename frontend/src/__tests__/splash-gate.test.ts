@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { createSplashGate } from "../lib/splash-gate.svelte";
+import {
+  createSplashGate,
+  SPLASH_INDEX_TIMEOUT_MS,
+  SPLASH_MIN_PRESENTATION_MS,
+} from "../lib/splash-gate.svelte";
 
 // 回归测试：splash-gate.svelte.ts composable（M0-f 第三轮：sidecar 生命周期
 // 抽到 createSplashGate）。
@@ -261,7 +265,8 @@ describe("createSplashGate composable（M0-f sidecar 生命周期）", () => {
   describe("收场双条件与计时（画廊成形轮新增）", () => {
 
     it("后端就绪但首屏数据未回：停在 index 段不收场", async () => {
-      const gate = createSplashGate();
+      // 上限写死在这里，不靠默认值——默认值是会被调的（这轮就从 6000 调到了 4000）
+      const gate = createSplashGate({ indexTimeoutMs: 9000 });
       await gate.start(vi.fn().mockResolvedValue(undefined));
       readyTrigger!({ payload: { port: 8765 } });
       vi.advanceTimersByTime(5000);
@@ -362,6 +367,35 @@ describe("createSplashGate composable（M0-f sidecar 生命周期）", () => {
       gate.markIndexReady();
       expect(gate.ready).toBe(true);
       gate.dispose();
+    });
+  });
+
+  describe("默认计时（本轮把「慢」本身当 bug）", () => {
+    it("最短呈现 480ms、数据上限 4000ms：都不许再回到 900 / 6000", () => {
+      // 遮罩上的每一毫秒都是人造延迟：真机 700ms 就绪，就不该被动画按着看满一秒。
+      expect(SPLASH_MIN_PRESENTATION_MS).toBe(480);
+      expect(SPLASH_INDEX_TIMEOUT_MS).toBe(4000);
+      expect(SPLASH_MIN_PRESENTATION_MS).toBeLessThanOrEqual(600);
+      expect(SPLASH_INDEX_TIMEOUT_MS).toBeLessThanOrEqual(4500);
+    });
+
+    it("preview 默认 1500ms 放行：dev 回放演的就是真机的节奏", async () => {
+      vi.useFakeTimers();
+      delete (globalThis as any).__TAURI__; // preview 只在非 Tauri 路径上回放
+      const gate = createSplashGate({ preview: true });
+      const doInit = vi.fn().mockResolvedValue(undefined);
+      await gate.start(doInit);
+      // previewBackendMs = min(480, 1500*0.3) = 450：READY 先到，文案切「正在整理图库」
+      vi.advanceTimersByTime(450);
+      expect(gate.phase).toBe("index");
+      expect(doInit).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1050);
+      expect(doInit).toHaveBeenCalledTimes(1);
+      gate.markIndexReady();
+      // 480ms 下限早过了，这一刻就该收场，不再多压一秒
+      expect(gate.ready).toBe(true);
+      gate.dispose();
+      vi.useRealTimers();
     });
   });
 });

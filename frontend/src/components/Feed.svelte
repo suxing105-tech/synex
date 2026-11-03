@@ -1537,7 +1537,7 @@ import { hoverPlay } from "../lib/hover-play";
      0->1，同曲线时两者之和恒等于 1，就是干净的交叉溶解；不同曲线会在中间暗一下。 */
   .masonry-grid.is-materializing :global(.media-card),
   .masonry-grid.is-materializing :global(.text-card) {
-    animation: card-materialize 340ms cubic-bezier(.4, 0, .2, 1) both;
+    animation: card-materialize 220ms cubic-bezier(.4, 0, .2, 1) both;
   }
   @keyframes card-materialize { from { opacity: 0; transform: scale(.99); } to { opacity: 1; transform: none; } }
   @media (prefers-reduced-motion: reduce) {

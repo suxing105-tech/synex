@@ -146,6 +146,10 @@
       stopUpdates = startUpdates();
       try {
         await Promise.all([refreshFolders(), refreshStats(), refreshFeed()]);
+        // 首屏数据到此为止：启动页等的就是这一刻，立刻放行。
+        // 后面的 comfyui 探测最坏要等 3s 超时，不能算进收场条件，否则启动页白白多压 3 秒。
+        gate.markIndexReady();
+        // 设置只管「要不要弹引导」，压在遮罩下面只会让遮罩多等一次往返；放到收场之后读。
         const cfg = await settingsApi.get();
         if (!cfg.watch_dirs || cfg.watch_dirs.length === 0) {
           onboardingOpen = true;
@@ -153,9 +157,6 @@
       } catch (e) {
         console.error("init failed", e);
       }
-      // 首屏数据到此为止：启动页等的就是这一刻。后面的 comfyui 探测最坏要等 3s
-      // 超时，不能把它算进收场条件里，否则启动页白白多压 3 秒。
-      gate.markIndexReady();
       connectEvents();
       await refreshComfyuiStatus();
       comfyuiTimer = setInterval(refreshComfyuiStatus, 10000);

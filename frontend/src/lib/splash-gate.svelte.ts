@@ -34,17 +34,27 @@ import { isTauri, onSidecarReady, onSidecarDied, getSidecarStatus } from "./taur
 /** 启动页当前该演哪一段。 */
 export type SplashPhase = "boot" | "index" | "ready" | "error";
 
-/** 编排最短呈现时长（ms）：短于此也不提前收场，否则动画读不出意图。 */
-export const SPLASH_MIN_PRESENTATION_MS = 900;
-/** 等首屏数据的上限（ms）：超时放行，不报错、不死等。 */
-export const SPLASH_INDEX_TIMEOUT_MS = 6000;
+/**
+ * 遮罩最短呈现时长（ms）。这个数字本身就是要付出去的等待。
+ *
+ * 上一版 900：真机 700ms 就全部就绪，却硬要看满 900ms 编排再 340ms 淡出——
+ * 用户感觉到的「卡」几乎全在这段人造延迟里。现在编排 340ms 内装配完成，
+ * 扫描头又一直在动（多短都读得出「在干活」），所以只留 480ms：
+ * 够字标和地标立住，不至于为动画放慢入场。
+ */
+export const SPLASH_MIN_PRESENTATION_MS = 480;
+/**
+ * 等首屏数据的上限（ms）：超时放行，不报错、不死等。
+ * 6000 → 4000：数据真慢的时候，回到界面看骨架加载，比被压在遮罩后面数秒好受。
+ */
+export const SPLASH_INDEX_TIMEOUT_MS = 4000;
 
 export interface SplashGateOptions {
   /** 启动后端就绪超时时间（ms）。默认 30000。 */
   timeoutMs?: number;
-  /** 等首屏数据的上限（ms）。默认 6000。 */
+  /** 等首屏数据的上限（ms）。默认 4000。 */
   indexTimeoutMs?: number;
-  /** 遮罩最短呈现时长（ms）。默认 900。 */
+  /** 遮罩最短呈现时长（ms）。默认 480。 */
   minPresentationMs?: number;
   /** dev 回放：强制演完整编排（浏览器模式下也显示启动页）。默认 false。 */
   preview?: boolean;
@@ -77,7 +87,7 @@ export function createSplashGate(opts: SplashGateOptions = {}): SplashGate {
   const indexTimeoutMs = opts.indexTimeoutMs ?? SPLASH_INDEX_TIMEOUT_MS;
   const minPresentationMs = opts.minPresentationMs ?? SPLASH_MIN_PRESENTATION_MS;
   const preview = opts.preview === true;
-  const previewRevealMs = opts.previewRevealMs ?? 2000;
+  const previewRevealMs = opts.previewRevealMs ?? 1500;
   const previewBackendMs = opts.previewBackendMs ?? Math.min(minPresentationMs, Math.round(previewRevealMs * 0.3));
 
   // 浏览器且没开 preview：启动页根本不出现，三个条件直接给 true 走快速通道。

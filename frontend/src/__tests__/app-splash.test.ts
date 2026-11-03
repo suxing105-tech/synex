@@ -64,9 +64,20 @@ describe("App.svelte Tauri splash 防黑屏（M0-f）", () => {
       expect(/finally\s*\{[\s\S]{0,200}gate\.markIndexReady\s*\(\s*\)/.test(scriptSrc), "必须有 finally 里的 markIndexReady 兜底").toBe(true);
     });
 
-    it("收场计时不外泄：App.svelte 不得出现 setTimeout 与 900/6000 字面量", () => {
+    it("收场计时不外泄：App.svelte 不得出现 setTimeout 与启动时长字面量", () => {
       expect(/\bsetTimeout\s*\(/.test(scriptSrc), "启动计时只能在 splash-gate 里").toBe(false);
-      expect(/\b(?:900|6000)\b/.test(scriptSrc), "最短呈现/数据上限的数值属于 gate，不要抄进 App").toBe(false);
+      // 480 = 最短呈现，4000 = 数据上限，1500 = preview 回放点：都属于 gate
+      expect(/\b(?:480|1500|4000|900|6000)\b/.test(scriptSrc), "启动时长的数值属于 gate，不要抄进 App").toBe(false);
+    });
+
+    it("设置读取排在放行之后：别让一次往返压在遮罩下面", () => {
+      // settingsApi.get() 只决定要不要弹引导窗，把它排在 markIndexReady 之前，
+      // 等于每次启动都让遮罩多等一个 RTT——这轮的整件事就是把这个砍掉。
+      const readyAt = scriptSrc.indexOf("gate.markIndexReady();");
+      const settingsAt = scriptSrc.indexOf("settingsApi.get()");
+      expect(readyAt).toBeGreaterThan(-1);
+      expect(settingsAt).toBeGreaterThan(-1);
+      expect(settingsAt, "设置要在收场之后读").toBeGreaterThan(readyAt);
     });
 
     it("appBooting store 由 gate.ready 驱动，骨架不各说各话", () => {

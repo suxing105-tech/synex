@@ -29,7 +29,7 @@ describe("启动期 chrome", () => {
   });
 
   it("骨架换成真卡与启动页淡出走同一条曲线：交叉溶解才不暗场", () => {
-    const CURVE = "340ms cubic-bezier(.4, 0, .2, 1)";
+    const CURVE = "220ms cubic-bezier(.4, 0, .2, 1)";
     const mat = read("src/components/Feed.svelte").match(/animation:\s*card-materialize\s+([^;]+);/);
     expect(mat, "找不到 card-materialize 动画").toBeTruthy();
     expect(mat![1]).toContain(CURVE);

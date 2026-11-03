@@ -13,7 +13,7 @@ import { ICON_PATHS } from "../lib/icons";
 vi.mock('../lib/native-drop', () => ({ subscribeFileDrop: vi.fn(() => () => {}) }));
 vi.mock("../lib/api", () => ({ itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) }, foldersApi: { importDirectories: vi.fn(), create: vi.fn().mockResolvedValue({ id: 7 }), rename: vi.fn(), reorder: vi.fn(), move: vi.fn(), remove: vi.fn(), archive: vi.fn().mockResolvedValue({ ok: true, archived: true, hidden_media: 0, hidden_texts: 0 }), restore: vi.fn(), archived: vi.fn(async () => []), tree: vi.fn() } }));
 vi.mock("../lib/stores", () => ({
-  folders: writable([]), folderId: writable(null), scope: writable("all"),
+  appBooting: writable(false), folders: writable([]), folderId: writable(null), scope: writable("all"),
   query: writable(""), tag: writable(null),
   textMode: writable(false), switchContent: vi.fn(),
   stats: writable({ total_images: 0, total_videos: 0, total_audio: 0, total_texts: 0, folders: 0 }), refreshFolders: vi.fn(), refreshFeed: vi.fn(), refreshStats: vi.fn(),

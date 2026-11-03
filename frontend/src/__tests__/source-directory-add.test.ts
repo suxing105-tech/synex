@@ -19,7 +19,7 @@ vi.mock("../lib/api", () => ({
   scanApi: { importDirectory: vi.fn(async (path: string) => ({ ok: true, path })) },
 }));
 vi.mock("../lib/stores", () => ({
-  folders: writable([]), folderId: writable(null), scope: writable("all"),
+  appBooting: writable(false), folders: writable([]), folderId: writable(null), scope: writable("all"),
   query: writable(""), tag: writable(null),
   textMode: writable(false), switchContent: vi.fn(),
   stats: writable({ total_images: 0, total_videos: 0, total_audio: 0, total_texts: 0, folders: 0 }),

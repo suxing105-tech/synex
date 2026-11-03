@@ -14,7 +14,7 @@ scanApi: { importDirectory: vi.fn(), validateDirectory: vi.fn(), progress: vi.fn
 vi.mock("../lib/tauri", () => ({ isTauri: vi.fn(), selectImportDirectory: vi.fn(), getSidecarStatus: vi.fn() }));
 vi.mock("../lib/stores", async () => {
   const { writable } = await import("svelte/store");
-  return { scanProgress: writable({ running: false, total: 0, indexed: 0, scanned: 0, current_path: "", error: null }),
+  return { appBooting: writable(false), scanProgress: writable({ running: false, total: 0, indexed: 0, scanned: 0, current_path: "", error: null }),
     refreshFolders: vi.fn(), refreshStats: vi.fn(), refreshFeed: vi.fn() };
 });
 

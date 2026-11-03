@@ -4,7 +4,7 @@
   import { subscribeFileDrop } from '../lib/native-drop';
   import { pushToast } from "../lib/toast";
   import { backendUrl } from "../lib/backend-url";
-  import { associateTextPaths, folders, folderId, stats, query, tag, scope, switchContent } from "../lib/stores";
+  import { associateTextPaths, folders, folderId, stats, query, tag, scope, switchContent, appBooting } from "../lib/stores";
   import { isTextFilePath } from "../lib/text-reading";
   import { countBreakdown, countFor, formatCount, scopeCaption } from "../lib/counts";
   import type { FolderCounts, Scope } from "../lib/types";
@@ -401,7 +401,8 @@
       <span class="caret-spacer"></span>
       <span class="icon"><Icon name={row.icon} size={13} /></span>
       <span class="label">{row.label}</span>
-      <span class="count" class:zero={row.count === 0} title={row.detail}>{formatCount(row.count)}</span>
+      <!-- 启动期计数还没回来，显示 0 是假话：压成等待条，尺寸位置都不动 -->
+      <span class="count" class:zero={row.count === 0} class:pending={$appBooting} title={row.detail}>{formatCount(row.count)}</span>
     </div>
   {/each}
 
@@ -423,7 +424,11 @@
       <Icon name="plus" size={13} />
     </button>
   </div>
-  {#if systemFolders.length === 0 && !addingSource}
+  {#if $appBooting}
+    <div class="tree-skeleton" role="status" aria-label="目录正在载入">
+      {#each { length: 3 } as _, i (i)}<span class="ts-row" style="--i: {i};"></span>{/each}
+    </div>
+  {:else if systemFolders.length === 0 && !addingSource}
     <div class="text-[12px] text-muted px-3 pb-2 leading-relaxed">还没有来源目录。点这里右边的 + 选一个文件夹，图库只读取并监听它，原文件留在原地。</div>
   {/if}
   {#each systemFolders as f (f.id)}
@@ -452,7 +457,7 @@
   <p class="folder-hint">单击展开 · 双击改名 · 长按拖动移动</p>
 
   {#if newFolderFor?.parent === null}{@render newFolderInput(0)}{/if}
-  {#if userFolders.length === 0 && !newFolderFor}
+  {#if !$appBooting && userFolders.length === 0 && !newFolderFor}
     <div class="text-[12px] text-muted px-3 py-2">还没有文件夹</div>
   {/if}
 
@@ -728,6 +733,25 @@
     color: #f24e4e;
   }
   /* 三个分组标题（系统 / 来源目录 / 我的文件夹）= 侧栏骨架，比素材行更抢眼 */
+  /* 启动期骨架：三条错开的等待条 + 计数等待态 */
+  .tree-skeleton { display: flex; flex-direction: column; gap: 7px; padding: 5px 12px 10px; }
+  .ts-row {
+    display: block; height: 12px; border-radius: 4px; background: #1f1f23;
+    animation: ts-in 260ms ease-out both;
+    animation-delay: calc(var(--i) * 45ms);
+  }
+  .ts-row:nth-child(2) { width: 76%; }
+  .ts-row:nth-child(3) { width: 54%; }
+  @keyframes ts-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  /* 计数还没回来时不要显示一个假的 0：压成等待条，位置和尺寸都不动 */
+  .count.pending {
+    color: transparent; background: #27272a; border-radius: 3px;
+    box-shadow: 2px 0 0 #27272a, -2px 0 0 #27272a;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ts-row { animation: none; opacity: 1; transform: none; }
+  }
+
   .folder-group-bar {
     display: flex;
     align-items: center;

@@ -4,7 +4,7 @@ import { writable } from 'svelte/store';
 import TextWorkspace from '../components/TextWorkspace.svelte';
 import { textsApi } from '../lib/texts';
 
-vi.mock('../lib/stores', () => ({ textMode: writable(true), folderId: writable(null), scope: writable('text'),
+vi.mock('../lib/stores', () => ({ appBooting: writable(false), textMode: writable(true), folderId: writable(null), scope: writable('text'),
   folders: writable([]), refreshFolders: vi.fn(), refreshFeed: vi.fn(),
   selectedId: writable(null), feedItems: writable([]), switchContent: vi.fn(), query: writable(''),
   pendingTextOpen: writable(null) }));

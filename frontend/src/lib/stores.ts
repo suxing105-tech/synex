@@ -620,5 +620,8 @@ export const overlayMuted = writable<boolean>(false);
  *
  * 「画廊成形」之所以能对齐：骨架网格是长在真正的 Feed 容器里的，用的就是 Feed 自己
  * 的列数与 gap，不是遮罩层里另画一张再去猜像素。
+ *
+ * 默认 false：默认值必须是「不处于启动期」。默认 true 等于「不接 gate 就当我在启动」，
+ * 静态托管、单测、任何没走启动流程的入口都会永久停在骨架屏上，比少一次骨架难查得多。
  */
-export const appBooting = writable<boolean>(true);
+export const appBooting = writable<boolean>(false);

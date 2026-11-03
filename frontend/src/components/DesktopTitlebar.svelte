@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { pushToast } from '../lib/toast';
+  import { appBooting } from '../lib/stores';
 
   let { maximized = $bindable(false) }: { maximized?: boolean } = $props();
   const appWindow = () => (window as any).__TAURI__.window.getCurrentWindow();
@@ -26,7 +27,7 @@
   });
 </script>
 
-<header class="desktop-titlebar" class:compact={maximized} aria-label="窗口标题栏">
+<header class="desktop-titlebar" class:compact={maximized} class:is-booting={$appBooting} aria-label="窗口标题栏">
   <div class="titlebar-drag" data-tauri-drag-region>
     <img src="/logo.png" alt="" width="22" height="22" draggable="false" />
     <span>闪寻空间</span>
@@ -52,6 +53,11 @@
   .titlebar-drag img, .titlebar-drag span { pointer-events: none; }
   .titlebar-drag img { object-fit: contain; }
   .titlebar-drag span { font-size: 14px; font-weight: 500; }
+  /* 启动期让位给启动页：整条透明、品牌隐去（用 opacity 不删节点，无障碍名与文本还在），
+     但拖动区与三个窗口按钮照常可点——启动页铺满整窗全靠这一条兜住可操作性。 */
+  .is-booting { background: transparent; border-bottom-color: transparent; }
+  .is-booting .titlebar-drag img, .is-booting .titlebar-drag span { opacity: 0; }
+
   .compact .titlebar-drag { gap: 8px; padding-inline: 12px; }
   .compact .titlebar-drag img { width: 16px; height: 16px; }
   .compact .titlebar-drag span { font-size: 12px; }

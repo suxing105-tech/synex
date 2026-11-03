@@ -6,6 +6,7 @@
   import FolderPickerModal from "./FolderPickerModal.svelte";
   import { moveStats, moveSummary } from "../lib/move-result";
   import GallerySearch from "./GallerySearch.svelte";
+  import FeedSkeleton from "./FeedSkeleton.svelte";
   import TypeChips from "./TypeChips.svelte";
   import { copyOriginalImage } from "../lib/image-clipboard";
   import { basenameOnly, footerHeightFor, footerMetaText, footerTierFor, isAcceptedMediaFile, THUMB_GAP, isPsdFilename, mediaKindOfFilename, thumbnailAspectRatio, thumbnailHeightToWidthRatio, thumbnailObjectFit } from "../lib/media-format";
@@ -24,6 +25,7 @@
     applySelection, clearSelection, removeIdsFromSelection,
     comfyuiStatus, scope, kindFilter, mediaItems, playAudio, playingAudio, stopAudio, audioProgress,
     selectedText, selectTextItem, openTextReader, associateTextPaths,
+    appBooting,
   } from "../lib/stores";
   
   import { imagesApi, comfyuiApi, videosApi, audioApi } from "../lib/api";
@@ -927,6 +929,27 @@ import { hoverPlay } from "../lib/hover-play";
   }
 
 
+  // 载入中且一格都没有时铺骨架（启动期无条件铺：这时候 feedLoading 可能还没来得及翻）。
+  // 注意不能只看 feedLoading —— dev 的 ?splash=preview 会把 init 推迟，那段时间
+  // feedLoading 是 false、items 是空，不判 appBooting 就会闪一下「空文件夹」。
+  let gridSkeleton = $derived($appBooting || ($feedLoading && $feedItems.length === 0));
+
+  // 骨架换成真卡的那一次要材质化（淡入 + 1% 回缩），否则遮罩淡出后看到的是硬切。
+  // 只在「刚刚还是骨架」这一帧挂类，翻页追加和切目录都不该重复演。
+  let materializing = $state(false);
+  let wasSkeleton = false;
+  $effect(() => {
+    if (gridSkeleton) {
+      wasSkeleton = true;
+      return;
+    }
+    if (!wasSkeleton) return;
+    wasSkeleton = false;
+    materializing = true;
+    const timer = setTimeout(() => { materializing = false; }, 420);
+    return () => clearTimeout(timer);
+  });
+
   // 列数随容器宽度 + 缩放基线变
   // 列数直接来自 slider（4-12）；不靠容器宽度推算，避免临界点跳动
   let columnCount = $derived(Math.max(1, $targetColumns));
@@ -1072,8 +1095,8 @@ import { hoverPlay } from "../lib/hover-play";
   {/if}
 
   {#if importing}<div class="import-progress" role="status">正在保存 {importingProgress.done}/{importingProgress.total}</div>{/if}
-  {#if $feedLoading && $feedItems.length === 0}
-    <div class="text-center text-muted py-12">加载中…</div>
+  {#if gridSkeleton}
+    <FeedSkeleton />
   {:else if $feedItems.length === 0}
     <div class="empty-feed" aria-label={isTextScope ? "还没有文本" : "空文件夹"}>
       {#if isTextScope}
@@ -1103,6 +1126,7 @@ import { hoverPlay } from "../lib/hover-play";
     >
       <div
         class="masonry-grid"
+        class:is-materializing={materializing}
         style="grid-template-columns: repeat({columnCount}, minmax(0, 1fr)); gap: {COL_GAP}px;"
       >
         {#each columns as col}
@@ -1508,6 +1532,17 @@ import { hoverPlay } from "../lib/hover-play";
     /* 选中描边与投影向外扩 1px + 阴影，不给这点余量就会被左右边缘裁掉 */
     padding: 2px;
   }
+  /* 骨架 -> 真卡：420ms 的窗口里刚挂载的卡片淡入。类会自动摘掉，不影响后续翻页。 */
+  .masonry-grid.is-materializing :global(.media-card),
+  .masonry-grid.is-materializing :global(.text-card) {
+    animation: card-materialize 220ms ease-out both;
+  }
+  @keyframes card-materialize { from { opacity: 0; transform: scale(.99); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .masonry-grid.is-materializing :global(.media-card),
+    .masonry-grid.is-materializing :global(.text-card) { animation: none; }
+  }
+
   .masonry-grid {
     display: grid;
     /* align-items: start 防止 grid 拉伸列高 */

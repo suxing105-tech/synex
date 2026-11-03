@@ -16,7 +16,7 @@ foldersApi: {
 vi.mock("../lib/stores", async () => {
   const { writable } = await import("svelte/store");
   return {
-    folders: writable([]), folderId: writable(null), scope: writable("image"),
+    appBooting: writable(false), folders: writable([]), folderId: writable(null), scope: writable("image"),
     query: writable(""), tag: writable(null), textMode: writable(false),
     switchContent: vi.fn(),
     stats: writable({ total_images: 12, total_videos: 5, total_audio: 3, total_texts: 40, folders: 0 }),

@@ -28,6 +28,7 @@
     playAudio,
     playingAudio,
     stopAudio,
+    appBooting,
   } from "../lib/stores";
   import { audioApi, imagesApi } from "../lib/api";
   import { copyText, formatSize, formatDate, allParamsText } from "../lib/ws";
@@ -369,6 +370,14 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
 {#if $selectedText}
   <!-- 文本选中走独立分支：texts.id 与 images.id 会撞车，详情不能复用图片那套字段 -->
   <TextDetailPanel />
+{:else if $appBooting}
+  <!-- 启动期别急着教用户「选一张图」：这时候中间栏自己也还没东西 -->
+  <div class="detail-skeleton" role="status" aria-label="详情正在载入">
+    <span class="ds-head"></span>
+    <span class="ds-line" style="--i: 0;"></span>
+    <span class="ds-line" style="--i: 1;"></span>
+    <span class="ds-block" style="--i: 2;"></span>
+  </div>
 {:else if !$selectedDetail}
   <div class="h-full flex items-center justify-center text-center text-muted p-8">
     <div>
@@ -745,6 +754,21 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
 <style>
   /* 面板里的缩略图只借共用形状（圆角、无常态描边），hover 仍旧只改底色：
      详情面板的交互件统一「底色变化」是用户定过的规则，不吃主网格那圈描边。 */
+  /* 启动期详情骨架：一个头块 + 两条文字 + 一块方形占位 */
+  .detail-skeleton { display: flex; flex-direction: column; gap: 10px; padding: 16px; }
+  .detail-skeleton span {
+    display: block; border-radius: 6px; background: #1f1f23;
+    animation: ds-in 260ms ease-out both;
+    animation-delay: calc(var(--i, 0) * 55ms);
+  }
+  .ds-head { width: 55%; height: 14px; }
+  .ds-line { width: 82%; height: 10px; }
+  .ds-block { width: 100%; height: 132px; margin-top: 6px; }
+  @keyframes ds-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .detail-skeleton span { animation: none; opacity: 1; transform: none; }
+  }
+
   .detail-thumb {
     border: 0;
     padding: 0;

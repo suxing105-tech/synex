@@ -164,6 +164,12 @@ class ConnectionPool:
             initialize_clone_templates(self._main)
             from .clone_sources import initialize as initialize_clone_sources
             initialize_clone_sources(self._main)
+            # 云端生成那两张表：gen_accounts 存服务商与 DPAPI 保护的 key，
+            # gen_tasks 是云端任务的账本（远端任务号 / 花费 / 待取回）。
+            from .cloud.accounts import initialize as initialize_gen_accounts
+            initialize_gen_accounts(self._main)
+            from .cloud.tasks import initialize as initialize_gen_tasks
+            initialize_gen_tasks(self._main)
             migrate_system_folders(self._main)
             migrate_media_kind(self._main)
             migrate_drop_favorite(self._main, self.path)
@@ -188,6 +194,13 @@ class ConnectionPool:
                 seed_bundled_templates(self._main)
             except Exception as exc:  # noqa: BLE001 - 内置模板缺失不该让图库打不开
                 logger.warning("内置一键同款工作流装载失败：%s", exc)
+            # 「图片API / 视频API / 音频API」三条快捷方式：只在第一次装库时种。
+            # 用户删掉说明他不想看见，每次启动又长回来等于告诉他这一行不归他管。
+            try:
+                from .cloud.templates import seed_once
+                seed_once(self._main)   # 传连接：在 initialize 里碰 pool.main() 会死锁
+            except Exception as exc:  # noqa: BLE001 - 云端快捷方式缺失不该让图库打不开
+                logger.warning("云端 API 快捷方式没装上（设置页可恢复）：%s", exc)
             self._initialized = True
             self._ready_event.set()
 

@@ -50,6 +50,14 @@ const baseRoutes = () => ({
   '/api/clone/jobs/current': EMPTY_CLONE_JOB,
   '/api/images/7/reverse-prompts': { items: [] },
   '/api/images/7': { id: 7, filename: 'source.png', positive_prompt: '' },
+  // 开弹窗现在会读一次云端可用性：不预演它，每条用例都会甩一个「未预演的接口」异常。
+  // 默认按「云端没启用」回，要用云端的用例在自己的路由表里覆盖这一条。
+  '/api/clone/cloud/status': {
+    cloud_enabled: false, cloud_max_single_coins: 0, cloud_max_daily_coins: 0,
+    availability: { available: false, reason: '云端生成没启用' },
+    accounts: [], presets: [], pending: [], seeded: true,
+    spend: { today_coins: 0, month: '2026-11', counts: {}, month_coins: 0, recent: [] },
+  },
 });
 
 /** 打开弹窗并等模板落地：模板没读回来之前，提示词框、参考位、生成按钮整块都不渲染。 */
@@ -2176,4 +2184,150 @@ it('换到另一条工作流：语种按那条自己的默认音色重算，不�
   await openPop(screen);
   expect(pressed(screen, 'Chinese')).toBe('true');
   expect(pressed(screen, 'English')).toBe('false');
+});
+
+/* ── 云端那三条 API ───────────────────────────────────────────────────
+   这一族是要扣 RH币的，所以规矩和本机工作流不一样：没人认领时不许当默认、不许悄悄折起来、
+   没实测过的必须写明、价格取不到就宁可不写。用例钉的是这些规矩，不是样式。 */
+
+const CLOUD_IMG = {
+  id: 91, name: '图片API', is_active: false, media_kind: 'image',
+  engine: 'cloud', is_cloud: true, provider: 'runninghub', model: 'image',
+  created_at: '', updated_at: '', node_count: 0, prompt_count: 1, reference_count: 1, control_count: 0,
+  default_prompt: '',
+  slots: [{ kind: 'prompt', node: 'model', input: 'prompt', label: '完整提示词' }],
+  reference_cells: [
+    { key: 'model.imageUrls#1', kind: 'image', ordinal: 1, label: '图1', name: '', slot_label: '参考图', tag: '图1' },
+  ],
+  cloud: { model_label: 'Seedream v5', provider_label: 'RunningHub', verified: false, notes: [], ref_limits: { image: 4 } },
+};
+
+const cloudOn = (over: Record<string, unknown> = {}) => ({
+  cloud_enabled: true, cloud_max_single_coins: 0, cloud_max_daily_coins: 0,
+  availability: { available: true, reason: '' },
+  accounts: [], presets: [], pending: [], seeded: true,
+  spend: { today_coins: 0, month: '2026-11', counts: {}, month_coins: 0, recent: [] },
+  ...over,
+});
+
+it('云端那条要扣钱：没有「当前」时开弹窗仍走本机那条，不替用户把钱花了', async () => {
+  // 库里云端那条排在前面也白搭——默认走它等于「用户什么也没点就产生了费用」
+  routes({ ...baseRoutes(), '/api/clone/cloud/status': cloudOn(), '/api/clone/templates': { items: [CLOUD_IMG, TPL] } });
+  const screen = await ready();
+  expect(screen.getByRole('heading', { name: 'Qwen 多图编辑' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '同款工作流' }).textContent).toContain('Qwen 多图编辑');
+});
+
+it('用户在设置页把云端那条设成「当前」之后，弹窗就开在它上面', async () => {
+  // 「不拿云端当默认」不等于「不许用户选云端」：is_active 是他自己点的，照它开。
+  const cloudActive = { ...CLOUD_IMG, is_active: true };
+  routes({
+    ...baseRoutes(), '/api/clone/cloud/status': cloudOn(),
+    '/api/clone/templates': { items: [cloudActive, TPL] },
+    '/api/clone/cloud/estimate': { coins: 3, mode: 'image' },
+  });
+  const screen = await ready();
+  expect(screen.getByRole('button', { name: '同款工作流' }).textContent).toContain('图片API');
+});
+
+it('清单里云端那一行独立显示：挂「云端」与「待实测」，不能用时灰掉并说出差哪一步', async () => {
+  routes({
+    ...baseRoutes(),
+    '/api/clone/cloud/status': cloudOn({ availability: { available: false, reason: '还没填 RunningHub 的 API Key' } }),
+    '/api/clone/templates': { items: [TPL, CLOUD_IMG] },
+  });
+  const screen = await ready();
+  await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
+  const row = (await screen.findByRole('menuitemradio', { name: /图片API/ })) as HTMLButtonElement;
+  expect(row.textContent).toContain('云端');
+  expect(row.textContent).toContain('待实测');
+  expect(row.disabled).toBe(true);
+  expect(row.getAttribute('title')).toContain('还没填 RunningHub 的 API Key');
+});
+
+it('底部那颗在两条之间来回切：本机 ↔ 云端 API，不把人支去设置页', async () => {
+  routes({ ...baseRoutes(), '/api/clone/cloud/status': cloudOn(), '/api/clone/templates': { items: [TPL, CLOUD_IMG] } });
+  const screen = await ready();
+  await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
+  await fireEvent.click(await screen.findByRole('menuitem', { name: /改用云端 API/ }));
+  await vi.waitFor(() => expect(screen.getByRole('heading', { name: '图片API' })).toBeTruthy());
+  await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
+  await fireEvent.click(await screen.findByRole('menuitem', { name: /改用本机工作流/ }));
+  await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Qwen 多图编辑' })).toBeTruthy());
+});
+
+it('这一族一条 API 都没配时那颗改口去设置：清单里点不出没配过的东西', async () => {
+  routes({ ...baseRoutes(), '/api/clone/cloud/status': cloudOn() });
+  const onOpenSettings = vi.fn();
+  const screen = await ready({ onOpenSettings });
+  await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
+  await fireEvent.click(await screen.findByRole('menuitem', { name: /设置云端 API/ }));
+  expect(onOpenSettings).toHaveBeenCalledWith('云端生成');
+});
+
+it('音频卡点开一条只吃图的云端 API：不把音频硬塞进「图1」，并说清为什么没放', async () => {
+  routes({ ...baseRoutes(), '/api/clone/cloud/status': cloudOn(), '/api/clone/templates': { items: [CLOUD_IMG] } });
+  const screen = await ready({ image: AUDIO_CARD });
+  expect(screen.getByText(/不吃音频参考/)).toBeTruthy();
+  // 没放进去 = 那一格根本没有素材，不该出现「替换图1」
+  expect(screen.queryByRole('button', { name: '替换图1' })).toBeNull();
+});
+
+it('云端跑挂了但产物还取得回来：给一颗「取回结果」，点它只重查任务、不重新生成', async () => {
+  routes({
+    ...baseRoutes(),
+    '/api/clone/cloud/status': cloudOn(),
+    '/api/clone/generate': {
+      active: true, job_id: 'j1', state: 'error', running: false, message: '生成失败',
+      error: '云端那边等到超时了', engine: 'cloud', media_kind: 'image',
+      recoverable: true, task_row_id: 77, task_id: 'task-77', image_ids: [], outputs: [],
+    },
+    '/api/clone/cloud/tasks/77/refetch': {
+      task_id: 77, image_ids: [88], count: 1, cost_coins: 12,
+      outputs: [{ id: 88, kind: 'image', filename: 'a.png', thumbnail_url: '/api/images/88/file?max=256' }],
+    },
+  });
+  const screen = await ready();
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '把这套视觉搬过来' } });
+  await fireEvent.click(screen.getByRole('button', { name: '生成' }));
+  await fireEvent.click(await screen.findByRole('button', { name: '取回结果' }));
+  await vi.waitFor(() => expect(screen.getByText('本次产出')).toBeTruthy());
+  expect(http.mock.calls.some(([path]) => String(path) === '/api/clone/cloud/tasks/77/refetch')).toBe(true);
+  // 取回绝不重新提交：那是在同一件事上扣第二次钱
+  expect(http.mock.calls.filter(([path]) => String(path) === '/api/clone/generate')).toHaveLength(1);
+});
+
+it('云端这一条的价只报官方预估给的数，取不到就说没取到', async () => {
+  routes({
+    ...baseRoutes(), '/api/clone/cloud/status': cloudOn(),
+    '/api/clone/templates': { items: [CLOUD_IMG] },
+    '/api/clone/cloud/estimate': { coins: 12, mode: 'image' },
+  });
+  const screen = await ready();
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '出一张竖版' } });
+  expect(screen.queryByText(/云端出一次预计/)).toBeNull();  // 问价在防抖里，不该抢跑
+  await new Promise((resolve) => setTimeout(resolve, 560));
+  expect((await screen.findByText(/云端出一次预计/)).textContent).toContain('12 RH币');
+});
+
+it('官方预估没回数时宁可不说价：只说没取到，不出现任何金额', async () => {
+  routes({
+    ...baseRoutes(), '/api/clone/cloud/status': cloudOn(),
+    '/api/clone/templates': { items: [CLOUD_IMG] },
+    '/api/clone/cloud/estimate': { coins: null, mode: 'image' },
+  });
+  const screen = await ready();
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '出一张竖版' } });
+  await new Promise((resolve) => setTimeout(resolve, 560));
+  const line = await screen.findByText(/价格没取到/);
+  expect(line.textContent).not.toMatch(/RH币/);
+});
+
+it('本机工作流不问云端价：一次 /cloud/estimate 都不发', async () => {
+  routes(baseRoutes());
+  const screen = await ready();
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '本机这条不用问价' } });
+  await new Promise((resolve) => setTimeout(resolve, 560));
+  expect(http.mock.calls.some(([path]) => String(path) === '/api/clone/cloud/estimate')).toBe(false);
+  expect(screen.queryByText(/云端出一次预计/)).toBeNull();
 });

@@ -33,6 +33,12 @@ class Config:
     scan_workers: int = 4
     comfyui_url: str = "http://127.0.0.1:8188"  # 本机 ComfyUI 地址
     comfyui_enabled: bool = True  # 是否启用 ComfyUI 集成
+    # 云端生成（RunningHub 的收费模型 API）。默认关：这条路是要花钱的，
+    # 花钱的入口不能因为「装了新版本」就自己冒出来，得用户自己去设置里开。
+    cloud_enabled: bool = False
+    # 花钱闸门，0 = 不限。单次上限拦「这一条太贵」，当日上限拦「今天上头了」。
+    cloud_max_single_coins: float = 0.0
+    cloud_max_daily_coins: float = 0.0
 
     @classmethod
     def load(cls, path: Path) -> "Config":
@@ -85,6 +91,17 @@ def inbox_dir() -> Path:
     - 文件保留在收件箱（用户可从 DetailPanel「打开位置」到 OS 文件管理器查看）。
     """
     p = data_dir() / "inbox"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def cloud_output_root() -> Path:
+    """云端产物的落盘根：<数据目录>/generated/。
+
+    故意不放进 watch_dirs：自己监听自己 = 同一个文件被 watchdog 与直接索引抢两次。
+    inbox 早给过结论——落盘后直接调 Indexer._process_path_sync 认领就够了。
+    """
+    p = data_dir() / "generated"
     p.mkdir(parents=True, exist_ok=True)
     return p
 

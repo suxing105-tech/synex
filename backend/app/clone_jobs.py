@@ -3,9 +3,11 @@
 为什么串行：本地只有一块 GPU，两个任务一起排队只会互相拖慢，还要用户分辨"哪张是
 哪次生成的"。所以第二个请求直接 409 挡回去，比假装支持并发诚实。
 
-状态只存在内存里 + 走 WS：生成结果本身就是历史（图片进图库），再建一张任务表除了
-同步负担没有收益。应用重启会丢掉"正在生成"的视图，ComfyUI 那边跑完的图仍留在它的
-output 目录里，不会静默丢。
+本机那条路的进度只活在内存 + WS：出图本身就是历史，再建一张进度表除了同步负担没有收益。
+云端不一样，必须落库（gen_tasks）：一条片子在云端跑十分钟，产物挂在会过期的签名链接上，
+进程一重启就没人认领了——钱花了、链接过期了、东西没了，这是最容易白花钱的一处。
+所以云端任务多了三件事：重启后还能说「有件事在跑」、链接过期后能重新取回、
+以及「这一条到底花了多少」（余额前后差值，不是自己乘的单价）。
 """
 from __future__ import annotations
 
@@ -19,6 +21,9 @@ from pathlib import Path
 from typing import Any
 
 from . import clone_sources, clone_templates, repository, workflow_edit
+from .cloud import engine as cloud_engine
+from .cloud import tasks as cloud_tasks
+from .cloud.client import RunningHubError
 from .comfyui_client import ComfyUIError, ComfyUIClient
 from .config import load_config
 from .db import get_pool
@@ -65,7 +70,9 @@ def public_state() -> dict:
     if not _job:
         return {"active": False, "running": False, "state": "", "message": "", "error": "",
                 "image_ids": [], "outputs": [], "template_id": None, "source_image_id": None,
-                "media_kind": "", "elapsed": 0.0}
+                "media_kind": "", "elapsed": 0.0, "engine": "comfyui", "provider": "",
+                "model": "", "estimated_cost": None, "cost_coins": None, "task_id": "",
+                "task_row_id": None, "recoverable": False}
     job = _job
     state = str(job.get("state") or "")
     return {
@@ -83,6 +90,19 @@ def public_state() -> dict:
         "template_id": job.get("template_id"),
         "source_image_id": job.get("source_image_id"),
         "elapsed": round(time.time() - float(job.get("started_at") or time.time()), 1),
+        # 下面这几样是云端加的。前端 applyCloneProgress 对缺字段必须容错——
+        # 老前端配新后端、新前端配老后端都得照常画，不能因为少一个字段就白屏。
+        "engine": job.get("engine") or "comfyui",
+        "provider": job.get("provider") or "",
+        "model": job.get("model") or "",
+        "estimated_cost": job.get("estimated_cost"),
+        "cost_coins": job.get("cost_coins"),
+        "task_id": job.get("task_id") or "",
+        # 本地那行 gen_tasks 的 id，和上面那个「云端任务号」不是一回事：
+        # 「取回结果」要拿它调 /cloud/tasks/{id}/refetch。给错了对不上账。
+        "task_row_id": int(job.get("cloud_task_id") or 0) or None,
+        # recoverable = 云端那边可能还在跑 / 产物还能取回来，弹窗据此决定要不要给「取回结果」。
+        "recoverable": bool(job.get("recoverable")),
     }
 
 
@@ -196,17 +216,46 @@ async def start(
         if _job and _job.get("state") in RUNNING_STATES:
             raise CloneBusy("已经有一键同款正在生成，等这一批出来再点。")
         cfg = load_config()
-        if not cfg.comfyui_enabled:
-            raise CloneUnavailable("ComfyUI 集成没打开，去设置 → ComfyUI 里启用。")
-        probe_client = ComfyUIClient(cfg.comfyui_url)
-        try:
-            running = await probe_client.probe()
-        finally:
-            await probe_client.aclose()
-        if not running:
-            raise CloneUnavailable(f"连不上 ComfyUI（{cfg.comfyui_url}），先把它启动起来。")
+        engine = clone_templates.engine_of(template)
+        cloud_task_id = 0
+        estimated: float | None = None
+        params_snapshot: dict[str, Any] = {}
+        job_id = uuid.uuid4().hex[:12]
+        if engine == "cloud":
+            # 云端这条路不碰 ComfyUI：ComfyUI 没开着也能出图，这正是要紧的场景。
+            status = cloud_engine.availability()
+            if not status["available"]:
+                raise CloneUnavailable(status["reason"])
+            quote = await cloud_engine.estimate(template, mode=mode, prompt=prompt,
+                                                controls=dict(controls or {}))
+            estimated = (quote or {}).get("coins")
+            blocked = cloud_engine.budget_check(estimated)
+            if blocked:
+                raise CloneUnavailable(blocked)
+            params_snapshot = {
+                "template_id": template_id, "mode": mode, "prompt": prompt,
+                "references": [dict(ref) for ref in references],
+                "slot_prompts": {str(k): str(v) for k, v in (slot_prompts or {}).items()},
+                "controls": dict(controls or {}),
+                "source_image_id": source_image_id,
+            }
+            cloud_task_id = cloud_tasks.start(
+                job_id=job_id, spec_key=str(template.get("model") or ""),
+                capability=str(template.get("media_kind") or "image"),
+                model=str(template.get("model") or ""), params=params_snapshot,
+                estimated_coins=estimated)
+        else:
+            if not cfg.comfyui_enabled:
+                raise CloneUnavailable("ComfyUI 集成没打开，去设置 → ComfyUI 里启用。")
+            probe_client = ComfyUIClient(cfg.comfyui_url)
+            try:
+                running = await probe_client.probe()
+            finally:
+                await probe_client.aclose()
+            if not running:
+                raise CloneUnavailable(f"连不上 ComfyUI（{cfg.comfyui_url}），先把它启动起来。")
         job = {
-            "job_id": uuid.uuid4().hex[:12],
+            "job_id": job_id,
             "state": "uploading",
             "message": "准备中…",
             "error": "",
@@ -227,6 +276,16 @@ async def start(
             "started_at": time.time(),
             "cancelled": False,
             "prompt_id": "",
+            # 云端专用：跑在哪、哪条模型、账本里哪一行、预估与实际花费、远端任务号。
+            "engine": engine,
+            "provider": str(template.get("provider") or ""),
+            "model": str(template.get("model") or ""),
+            "cloud_task_id": cloud_task_id,
+            "params_snapshot": params_snapshot,
+            "estimated_cost": estimated,
+            "cost_coins": None,
+            "task_id": "",
+            "recoverable": False,
         }
         _job = job
         await _publish()
@@ -240,6 +299,14 @@ async def cancel() -> dict:
     if not job or job.get("state") not in RUNNING_STATES:
         return public_state()
     job["cancelled"] = True
+    if str(job.get("engine") or "") == "cloud":
+        # 云端这边没有「中断了就把钱退回来」这回事：请求已经进了人家的队列。
+        # 所以点停止只是不再等，后台仍会轮询到底，把已经付过钱的产物收进图库——
+        # 让它静默丢在一条会过期的链接上，才是真的把钱扔了。
+        # recoverable 必须给 True：这一条已经付过钱了，只是不再盯着它跑。
+        # 前端 cloneStatusLabel 就靠这个字段决定要不要说「云端仍在跑，点取回结果」。
+        await _set(job, state="cancelled", message="已停止等待", error="", recoverable=True)
+        return public_state()
     cfg = load_config()
     client = ComfyUIClient(cfg.comfyui_url)
     try:
@@ -257,6 +324,14 @@ async def cancel() -> dict:
 
 
 async def _run(job: dict, url: str) -> None:
+    """按模板自带的 engine 分派。跑在哪是这条配方的属性，不是用户新学的一个开关。"""
+    if str(job.get("engine") or "comfyui") == "cloud":
+        await _run_cloud(job)
+        return
+    await _run_comfyui(job, url)
+
+
+async def _run_comfyui(job: dict, url: str) -> None:
     client = ComfyUIClient(url)
     try:
         template = clone_templates.get_template(int(job["template_id"]))
@@ -331,6 +406,161 @@ async def _run(job: dict, url: str) -> None:
         await _set(job, state="error", message="生成失败", error=f"未预期的错误：{exc}")
     finally:
         await client.aclose()
+
+
+# ---------- 云端那条路 ----------
+
+
+async def _cloud_set(job: dict, **changes: Any) -> None:
+    """云端引擎的状态回调：顺手把远端任务号搬进 job，弹窗才说得出「云端生成中」。"""
+    if "task_id" in changes:
+        job["task_id"] = str(changes.pop("task_id") or "")
+    await _set(job, **changes)
+
+
+def _register_cloud_files(job_like: dict, files: list) -> tuple[list[int], list[dict]]:
+    """把云端下回来的文件收进图库，并登记来源。收尾与本机那条路一字不差地共用。"""
+    ids: list[int] = []
+    produced: list[dict] = []
+    for raw in files or []:
+        path = Path(raw)
+        image_id = _register_output(path)
+        if not image_id:
+            continue
+        ids.append(image_id)
+        cloud_engine.mount_output(path, image_id)
+        produced.append(_output_summary(image_id, path.name))
+    if ids:
+        _record_sources(job_like or {}, ids)
+    return ids, produced
+
+
+def _cost_suffix(cost: float | None) -> str:
+    if not cost:
+        return ""
+    return f" · 花 {cost:g} RH币"
+
+
+async def _run_cloud(job: dict) -> None:
+    """上传参考 → 提交 → 轮询 → 下载落盘 → 收进图库 → 记来源与花费。
+
+    这里不碰 ComfyUI，也不猜产物在哪：云端的产物是响应里的链接，链接会过期，
+    所以「下载」与「入库」必须挨着做完，中间不能等用户点按钮。
+    """
+    task_row = int(job.get("cloud_task_id") or 0)
+    try:
+        result = await cloud_engine.generate(job, set_state=lambda **kw: _cloud_set(job, **kw))
+        job["task_id"] = str(result.get("remote_task_id") or "") or job.get("task_id", "")
+        files = list(result.get("files") or [])
+        cost = result.get("cost_coins")
+        job["cost_coins"] = cost
+        if task_row:
+            cloud_tasks.update(task_row, remote_task_id=str(result.get("remote_task_id") or ""),
+                               coins_before=result.get("coins_before"),
+                               coins_after=result.get("coins_after"), cost_coins=cost,
+                               params={**(job.get("params_snapshot") or {})})
+        ids, produced = await asyncio.to_thread(_register_cloud_files, job, files)
+        kind = str(job.get("media_kind") or "")
+        counter = "条" if kind in ("video", "audio") else "张"
+        if ids:
+            base = f"已生成 {len(ids)} {counter}{_cost_suffix(cost)}"
+            if job.get("cancelled"):
+                # 用户按过「停止等待」：钱已经花了，云端那边还是跑完了，东西收回来了。
+                # 这句必须说清楚，否则他会以为自己取消了、这些东西是凭空冒出来的。
+                base = "刚才停止过等待，云端那边还是跑完了 · 已收进图库 " + \
+                       f"{len(ids)} {counter}" + _cost_suffix(cost)
+            if task_row:
+                cloud_tasks.finish(task_row, "done", image_ids=ids)
+            await _set(job, state="done", message=base, image_ids=ids, outputs=produced,
+                       recoverable=False)
+            return
+        if task_row:
+            cloud_tasks.finish(task_row, "failed", error="云端跑完了，但产物没能收进图库")
+        await _set(job, state="error", message="生成失败",
+                   error="云端跑完了但没交回产物，可能是这家服务商那边的问题。",
+                   recoverable=bool(job.get("task_id")))
+    except asyncio.CancelledError:
+        if task_row:
+            cloud_tasks.update(task_row, state="lost", error="应用退出或任务被打断")
+        await _set(job, state="cancelled", message="已取消生成")
+        raise
+    except (RunningHubError, cloud_engine.CloudUnavailable, ValueError, KeyError) as exc:
+        _fail_cloud_task(job, str(exc))
+        log.warning("cloud clone job failed: %s", exc)
+        await _set(job, state="error", message="生成失败", error=str(exc),
+                   recoverable=bool(job.get("task_id")))
+    except Exception as exc:  # noqa: BLE001
+        _fail_cloud_task(job, f"未预期的错误：{exc}")
+        log.exception("cloud clone job crashed")
+        await _set(job, state="error", message="生成失败", error=f"未预期的错误：{exc}",
+                   recoverable=bool(job.get("task_id")))
+
+
+def _fail_cloud_task(job: dict, error: str) -> None:
+    """失败也要留在账本上：有远端任务号的，标成「待取回」而不是抹掉。
+
+    超时是最常见的一种「失败」——云端还在跑，钱已经扣，产物几分钟后就挂在链接上。
+    标成 lost 而不是 failed，「取回结果」那颗按钮才有东西可点。
+    """
+    task_row = int(job.get("cloud_task_id") or 0)
+    if not task_row:
+        return
+    recoverable = bool(job.get("task_id"))
+    if recoverable:
+        cloud_tasks.update(task_row, state="lost", error=error,
+                           remote_task_id=str(job.get("task_id") or ""))
+    else:
+        cloud_tasks.finish(task_row, "failed", error=error)
+
+
+async def refetch(task_id: int) -> dict:
+    """重新取回一条云端任务的产物：只重新查一次任务，不重新生成、不二次扣费。"""
+    task = cloud_tasks.get(int(task_id))
+    if task is None:
+        raise ValueError("找不到这条云端任务，可能已经被清掉了。")
+    files = await cloud_engine.refetch(task)
+    params = task.get("params") if isinstance(task.get("params"), dict) else {}
+    ids, produced = await asyncio.to_thread(_register_cloud_files, params, files)
+    if not ids:
+        cloud_tasks.update(int(task_id), state="lost", error="产物下载下来了但没能收进图库")
+        raise ValueError("产物取回来了但没能收进图库，去设置 → 云端生成里看这条任务。")
+    cloud_tasks.finish(int(task_id), "done", image_ids=ids)
+    return {"task_id": int(task_id), "image_ids": ids, "outputs": produced,
+            "count": len(ids), "cost_coins": task.get("cost_coins")}
+
+
+async def resume_cloud_tasks() -> dict:
+    """启动时清点云端：能取回的立刻取回，还在跑的标成「待取回」。
+
+    为什么非做不可：一条片子在云端跑十分钟，这期间关掉应用是很正常的事。
+    不清点就是「钱花了、产物挂在会过期的链接上、谁都不知道」。
+    """
+    recovered = 0
+    waiting = 0
+    for row in cloud_tasks.open_tasks():
+        if not str(row.get("remote_task_id") or ""):
+            cloud_tasks.finish(int(row["id"]), "failed", error="还没提交到云端就中断了")
+            continue
+        if (_job and _job.get("state") in RUNNING_STATES
+                and str(_job.get("cloud_task_id") or "") == str(row["id"])):
+            waiting += 1
+            continue
+        try:
+            files = await cloud_engine.refetch(row)
+        except Exception as exc:  # noqa: BLE001 - 还没跑完 / 链接过期 / 网络不通，都留给用户手点
+            log.info("cloud task %s not fetchable yet: %s", row.get("id"), exc)
+            cloud_tasks.update(int(row["id"]), state="lost", error=str(exc))
+            waiting += 1
+            continue
+        params = row.get("params") if isinstance(row.get("params"), dict) else {}
+        ids, _produced = await asyncio.to_thread(_register_cloud_files, params, files)
+        if ids:
+            cloud_tasks.finish(int(row["id"]), "done", image_ids=ids)
+            recovered += len(ids)
+        else:
+            cloud_tasks.update(int(row["id"]), state="lost", error="产物没能收进图库")
+            waiting += 1
+    return {"recovered": recovered, "waiting": waiting}
 
 
 async def _object_info(client: ComfyUIClient, nodes: dict) -> dict | None:

@@ -46,6 +46,22 @@ export interface CloneSlot {
   unit?: string | null;
   /** number 专用：后端算好的档位（时长的 5/8/10/12/15），没有就退回通用表 */
   presets?: number[];
+  /** 后端给的这句参数说明（云端的「Fast 便宜快」这类），面板上原样显示 */
+  hint?: string;
+}
+
+/** 云端模型那张声明卡要说的话：模型叫什么、能干什么、哪几条还没实测。 */
+export interface CloudInfo {
+  model_label?: string;
+  blurb?: string;
+  provider_label?: string;
+  /** false = 这个模型不认 @ 标签（TTS 念提示词，插 <Audio 1> 会被读出来） */
+  mentions?: boolean;
+  /** 各族最多挂几份：Seedance 是图 9 / 视频 3 / 音频 3 */
+  ref_limits?: Record<string, number>;
+  /** false = 端点或字段还没实测过，界面上要挂「待实测」 */
+  verified?: boolean;
+  notes?: string[];
 }
 
 export interface CloneTemplate {
@@ -70,9 +86,31 @@ export interface CloneTemplate {
   reference_cells?: RefCellWire[];
   /** 工作流里已连线的参考视频音轨数：算 <Audio j> 序号要先扣掉它们 */
   soundtracks?: number;
+  /** 这一条跑在本机 ComfyUI 还是云端收费模型 API。老数据没带 = comfyui。 */
+  engine?: "comfyui" | "cloud";
+  /** 后端算好的「这条要点付费 API」：画花钱的标记、置灰、说明全看它，别在前端再猜一遍 */
+  is_cloud?: boolean;
+  provider?: string;
+  /** 云端那条用的是哪个模型（image / video / audio 三个 spec 键之一） */
+  model?: string;
+  /** 云端模型的声明：模型名、说明、未实测项。本机条目没有。 */
+  cloud?: CloudInfo | null;
   image_reference_count?: number;
   audio_reference_count?: number;
   video_reference_count?: number;
+}
+
+/**
+ * 这条配方是云端收费模型还是本机 ComfyUI。
+ *
+ * 只认 is_cloud 会漏（老后端没这个字段），只认 engine 也会漏（inspect 出来的临时模板两个都没）：
+ * 两个都看，缺省一律当本机——把没标记的东西当成本机，最坏是少画一个花钱标记；
+ * 反过来会把本机工作流说成要扣费，那是会把人吓跑的。
+ */
+export function isCloudTemplate(template: CloneTemplate | null | undefined): boolean {
+  if (!template) return false;
+  if (typeof template.is_cloud === "boolean") return template.is_cloud;
+  return template.engine === "cloud";
 }
 
 export function isVideoTemplate(template: CloneTemplate | null | undefined): boolean {
@@ -128,7 +166,10 @@ export function workflowMenuRows(
   currentId?: number | null,
 ): WorkflowMenuRow[] {
   const list = (templates ?? []).filter((item) => item.id != null);
-  const audio = list.filter((item) => templateMediaKind(item) === "audio");
+  // 折叠只针对本机那三条「闪寻音频」：它们同一件事的三种模式，模式按钮已经在弹窗顶上。
+  // 云端那条「音频API」不是模式，是另一条会扣费的通道——一起折进去就等于把它藏了，
+  // 用户在这份清单里根本看不见云端（2026-11-03 定的云端接入不能这样静默失效）。
+  const audio = list.filter((item) => templateMediaKind(item) === "audio" && !isCloudTemplate(item));
   const collapse = audio.length > 1;
   const target =
     audio.find((item) => item.is_active) ??
@@ -138,7 +179,7 @@ export function workflowMenuRows(
   let emittedAudio = false;
   for (const item of list) {
     const kind = templateMediaKind(item);
-    if (kind !== "audio") {
+    if (kind !== "audio" || isCloudTemplate(item)) {
       rows.push({
         key: String(item.id),
         kind,
@@ -276,6 +317,20 @@ export interface CloneJob {
   template_id: number | null;
   source_image_id: number | null;
   elapsed: number;
+  /** 这一条跑在哪一侧。老后端没带 = comfyui。 */
+  engine?: "comfyui" | "cloud";
+  provider?: string;
+  model?: string;
+  /** 点生成之前官方给的回价（RH币）。拿不到就是 null，宁可不说也不编。 */
+  estimated_cost?: number | null;
+  /** 跑完之后按余额差值算出来的实付。没实测出来是 null，不是 0。 */
+  cost_coins?: number | null;
+  /** 云端任务号：贴给服务商客服对账用的，本机是空串。 */
+  task_id?: string;
+  /** 这条任务在本库里的行 id。「取回结果」那颗按钮要拿它去调接口，和上面那个不是一回事。 */
+  task_row_id?: number | null;
+  /** 云端那边可能还在跑 / 产物还能取回来：错误态据此决定给不给「取回结果」。 */
+  recoverable?: boolean;
 }
 
 export interface CloneOutput {
@@ -288,7 +343,22 @@ export interface CloneOutput {
 export const EMPTY_CLONE_JOB: CloneJob = {
   active: false, job_id: "", state: "", running: false, message: "", error: "",
   image_ids: [], outputs: [], media_kind: "", template_id: null, source_image_id: null, elapsed: 0,
+  engine: "comfyui", provider: "", model: "", estimated_cost: null, cost_coins: null,
+  task_id: "", task_row_id: null, recoverable: false,
 };
+
+/** RH币金额：只收真数字，空串 / null / "abc" 一律当「不知道」（null），不当 0。 */
+function asCoins(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+/** 行 id：认不出的值一律当「没有这条任务」，不能拿 0 或 NaN 去调接口。 */
+function asRowId(value: unknown): number | null {
+  const num = Number(value);
+  return Number.isInteger(num) && num > 0 ? num : null;
+}
 
 const CLONE_STATES: CloneState[] = ["uploading", "queued", "running", "downloading", "done", "error", "cancelled"];
 const RUNNING_STATES: CloneState[] = ["uploading", "queued", "running", "downloading"];
@@ -325,6 +395,16 @@ export function applyCloneProgress(payload: unknown): CloneJob {
     template_id: raw.template_id === null || raw.template_id === undefined ? null : Number(raw.template_id),
     source_image_id: raw.source_image_id === null || raw.source_image_id === undefined ? null : Number(raw.source_image_id),
     elapsed: Number(raw.elapsed ?? 0) || 0,
+    // 云端那几样是新加的：老后端一条都不发，缺字段必须照本机口径填好而不是留 undefined，
+    // 否则模板里 job.cost_coins.toFixed() 这种写法会把整个弹窗炸掉。
+    engine: raw.engine === "cloud" ? "cloud" : "comfyui",
+    provider: String(raw.provider ?? ""),
+    model: String(raw.model ?? ""),
+    estimated_cost: asCoins(raw.estimated_cost),
+    cost_coins: asCoins(raw.cost_coins),
+    task_id: String(raw.task_id ?? ""),
+    task_row_id: asRowId(raw.task_row_id),
+    recoverable: Boolean(raw.recoverable),
   };
   cloneJob.set(job);
   return job;
@@ -340,6 +420,25 @@ const STATE_LABELS: Record<CloneState, string> = {
   cancelled: "已取消",
 };
 
+/**
+ * 云端那一侧的话术。
+ *
+ * 复用本机那张表会说假话：云端那条从头到尾没碰过 ComfyUI，「提交到 ComfyUI…」
+ * 挂在一条 Seedance 任务上是把用户往错的地方找。产物也不是本机那种「从输出目录认领」，
+ * 是把云端给的链接下载下来再登记，所以那一句也得换。
+ */
+const CLOUD_STATE_LABELS: Partial<Record<CloneState, string>> = {
+  queued: "提交到云端…",
+  downloading: "取回产物并登记…",
+  cancelled: "已停止等待",
+};
+
+/** 按这一条跑在哪一侧取话术；云端没写的那几条（running / done / error）沿用通用说法。 */
+export function stateLabel(job: Pick<CloneJob, "state" | "engine">): string {
+  const state = job.state as CloneState;
+  return (job.engine === "cloud" ? CLOUD_STATE_LABELS[state] : undefined) ?? STATE_LABELS[state] ?? "";
+}
+
 /** 生成时长说人话：一条片子跑了三分十二秒，只显示「3分」或「192秒」都看不出快慢。 */
 export function formatElapsed(seconds: number): string {
   const total = Math.max(0, Math.round(Number(seconds) || 0));
@@ -351,11 +450,20 @@ export function formatElapsed(seconds: number): string {
 
 export function cloneStatusLabel(job: CloneJob): string {
   if (!job.state) return "";
-  const label = STATE_LABELS[job.state];
+  const label = stateLabel(job);
   const count = job.outputs.length || job.image_ids.length;
   // 声音也说「条」：一段配音说「一张」比说「一条」更别扭。
   const counter = job.media_kind === "video" || job.media_kind === "audio" ? "条" : "张";
-  if (job.state === "done" && count) return `${label} ${count} ${counter}`;
+  if (job.state === "done" && count) {
+    // 云端这一句必须带上实付：钱是这次生成唯一会走出去的东西，藏起来等于没说
+    // 0 也要报：真没收钱的跑一次却什么花费都不写，和「没测出来」是两回事
+    return `${label} ${count} ${counter}${job.cost_coins === null ? "" : ` · 花 ${coinsLabel(job.cost_coins)}`}`;
+  }
+  // 云端取消 ≠ 取消成功：钱已经花了，云端照跑，产物还能取回。这句必须说，
+  // 否则用户以为按了取消就不用付钱，回头看见账单才发现不是。
+  if (job.state === "cancelled" && job.engine === "cloud" && job.recoverable) {
+    return "已停止等待，云端仍在跑：跑完后点「取回结果」把产物拿回来";
+  }
   if (job.running) {
     // 「生成中 · 3分12秒」：视频要等十分钟级，不给个走动的秒数，用户只会以为卡死了。
     return `${job.message || label} · ${formatElapsed(job.elapsed)}`;
@@ -644,7 +752,9 @@ export function referenceCells(template: CloneTemplate | null | undefined): RefC
         slotLabel: cell.slot_label || cell.label || cell.key,
         kind,
         ordinal,
-        tag: cell.tag || refTag(kind, ordinal || 1, template?.soundtracks ?? 0),
+        // 本机：后端没带标签就按老规则补一个 <Picture n>，行为和历史一字不差。
+        // 云端：空串是模型自己报的「我不认标签」（TTS 把 <Audio 1> 念出来就是事故），照空串留着。
+        tag: cell.tag || (isCloudTemplate(template) ? "" : refTag(kind, ordinal || 1, template?.soundtracks ?? 0)),
       };
     });
   }
@@ -820,6 +930,14 @@ export function referenceCounter(template: CloneTemplate | null | undefined): st
   if (isImageOnlyRefs(template)) return "张";
   if (isAudioOnlyRefs(template)) return "段";
   return "份";
+}
+
+/** 这一族根本没有参考位（图片 API 不收音频）：弹窗据此把整行置灰，而不是报「第 1 格还空着」。 */
+export function supportsRefFamily(
+  template: CloneTemplate | null | undefined,
+  kind: RefKind,
+): boolean {
+  return referenceCells(template).some((cell) => (cell.kind ?? "image") === kind);
 }
 
 /**
@@ -1182,12 +1300,33 @@ export function formatControlValue(slot: CloneSlot, value: string | number | nul
   return `${value}${numberUnit(slot)}`;
 }
 
-/** 底部 pill 上的汇总，例：「9:16 / 2.2MP」。 */
+/**
+ * 云端那条 pill 报哪几样：比例、画质、时长。
+ *
+ * pill 是说「这一次会出个什么东西」，不是把所有参数复述一遍。云端一条模型有七八个参数
+ * （档位 / 生成声音 / 取回尾帧 / 随机种子…），全列上去那颗胶囊会比工作流名字还长。
+ * 顺序按这里定的来，不按槽位顺序——Seedance 的「档位」排在最前面，读起来像型号清单。
+ */
+const CLOUD_PILL_INPUTS = ["ratio", "quality", "resolution", "duration"];
+
+/** 底部 pill 上的汇总，例：「9:16 / 2.2MP」；云端是「9:16 / 2K」。 */
 export function controlSummary(
   template: CloneTemplate | null | undefined,
   controls: Record<string, string | number>,
 ): string {
-  return controlSlots(template)
+  const slots = controlSlots(template);
+  if (isCloudTemplate(template)) {
+    // megapixels 是本机工作流的控件名，云端没有这个参数，不该在这颗 pill 上冒出来
+    const picked = CLOUD_PILL_INPUTS
+      .map((name) => slots.find((slot) => slot.input === name))
+      .filter((slot): slot is CloneSlot => Boolean(slot))
+      .slice(0, 3);
+    return picked
+      .map((slot) => formatControlValue(slot, controls[slotKey(slot)]))
+      .filter(Boolean)
+      .join(" / ");
+  }
+  return slots
     .map((slot) => formatControlValue(slot, controls[slotKey(slot)]))
     .filter(Boolean)
     .join(" / ");
@@ -1220,6 +1359,8 @@ export interface CloneSources {
 }
 
 export const CLONE_SETTINGS_TAB = "一键同款";
+/** 设置页那张「云端生成」的目录名。弹窗里「选择 API…」和错误态都靠它跳过去。 */
+export const CLOUD_SETTINGS_TAB = "云端生成";
 
 // ---------- 接口 ----------
 
@@ -1291,6 +1432,147 @@ export const cloneApi = {
   },
 };
 
+// ---------- 云端生成（RunningHub 收费模型 API）----------
+
+/** 一条云端模型的声明。设置页三节、弹窗的参数面板、置灰判断都吃这一份，不各写一遍。 */
+export interface CloudPresetItem {
+  key: string;
+  capability: MediaKind;
+  capability_word: string;
+  action_word: string;
+  /** 这条快捷方式在清单里叫什么（图片API / 视频API / 音频API） */
+  name: string;
+  model_label: string;
+  blurb: string;
+  provider: string;
+  provider_label: string;
+  modes?: CloneMode[];
+  ref_limits?: Partial<Record<RefKind, number>>;
+  tags?: Partial<Record<RefKind, string>>;
+  mentions?: boolean;
+  slots?: CloneSlot[];
+  controls?: Record<string, string | number>;
+  /** false = 端点或字段还没实测过。界面上必须挂「待实测」，别让人以为是稳的。 */
+  verified?: boolean;
+  notes?: string[];
+}
+
+/**
+ * 一家云端账号。**没有 api_key 这个字段**：后端只回 has_api_key。
+ * 前端拿到什么就只可能显示什么——「读不回显」不是靠前端小心，是靠这里根本没有那个值。
+ */
+export interface CloudAccount {
+  id: number;
+  provider: string;
+  provider_label: string;
+  name: string;
+  base_url: string;
+  proxy_mode: string;
+  proxy_label: string;
+  enabled: boolean;
+  has_api_key: boolean;
+  /** "encrypted" = 落盘时走系统加密；其它值 = 只活在本进程，重启要重填 */
+  key_persistence: string;
+}
+
+export interface CloudAvailability {
+  available: boolean;
+  reason: string;
+}
+
+export interface CloudSpend {
+  today_coins: number;
+  month: string;
+  counts: Partial<Record<MediaKind, number>>;
+  month_coins: number;
+  recent: {
+    id: number; capability: string; model: string; state: string; state_label: string;
+    cost_coins: number | null; estimated_coins: number | null; remote_task_id: string;
+    error: string; created_at: string;
+  }[];
+}
+
+/** 钱已经花了、产物还没落到图库的那些任务。「取回结果」那颗按钮就挂在这一列上。 */
+export interface CloudPendingTask {
+  id: number;
+  job_id: string;
+  capability: string;
+  model: string;
+  state: string;
+  state_label: string;
+  remote_task_id: string;
+  cost_coins: number | null;
+  error: string;
+  created_at: string;
+}
+
+export interface CloudSettings {
+  cloud_enabled: boolean;
+  cloud_max_single_coins: number;
+  cloud_max_daily_coins: number;
+}
+
+export interface CloudStatus extends CloudSettings {
+  availability: CloudAvailability;
+  accounts: CloudAccount[];
+  presets: CloudPresetItem[];
+  spend: CloudSpend;
+  pending: CloudPendingTask[];
+  seeded: boolean;
+}
+
+export interface CloudTestResult {
+  ok: boolean;
+  reason_code: string;
+  message: string;
+  remain_coins?: number | null;
+}
+
+export const cloudApi = {
+  /** 设置页与弹窗共用的一眼：能不能用、差哪一步、账号、花费闸、待取回。 */
+  status(): Promise<CloudStatus> {
+    return api.http<CloudStatus>("/api/clone/cloud/status");
+  },
+  presets(): Promise<{ provider: string; provider_label: string; base_url: string; items: CloudPresetItem[] }> {
+    return api.http("/api/clone/cloud/presets");
+  },
+  saveSettings(patch: Partial<CloudSettings>): Promise<CloudSettings> {
+    return api.http<CloudSettings>("/api/clone/cloud/settings", { method: "PUT", body: JSON.stringify(patch) });
+  },
+  /** api_key 只写不读：不出现 = 不动，空串 = 清掉。回包里永远没有 key 本身。 */
+  saveAccount(payload: {
+    name?: string; api_key?: string; base_url?: string; proxy_mode?: string; enabled?: boolean;
+  }, id?: number | null): Promise<CloudAccount> {
+    const path = id ? `/api/clone/cloud/accounts/${id}` : "/api/clone/cloud/accounts";
+    return api.http<CloudAccount>(path, { method: id ? "PATCH" : "POST", body: JSON.stringify(payload) });
+  },
+  removeAccount(id: number): Promise<{ ok: boolean; deleted: number }> {
+    return api.http(`/api/clone/cloud/accounts/${id}`, { method: "DELETE" });
+  },
+  testAccount(id: number): Promise<CloudTestResult> {
+    return api.http<CloudTestResult>(`/api/clone/cloud/accounts/${id}/test`, { method: "POST" });
+  },
+  /** 官方价格预估。拿不到后端回 coins: null——宁可不说价，也不显示一个自己乘出来的假数。 */
+  estimate(payload: { template_id: number; prompt?: string; controls?: Record<string, string | number> }):
+    Promise<{ coins: number | null; raw?: unknown; mode: string }> {
+    return api.http("/api/clone/cloud/estimate", { method: "POST", body: JSON.stringify(payload) });
+  },
+  refetch(taskId: number): Promise<{ task_id: number; image_ids: number[]; outputs: CloneOutput[]; count: number; cost_coins: number | null }> {
+    return api.http(`/api/clone/cloud/tasks/${taskId}/refetch`, { method: "POST" });
+  },
+  /** 删掉了那三条 API 快捷方式想再要回来。账号与 Key 一个都不动。 */
+  syncTemplates(): Promise<{ ok: boolean; created: number; updated: number }> {
+    return api.http("/api/clone/cloud/templates/sync", { method: "POST" });
+  },
+};
+
+/** RH币说法统一：小数只留两位，整数不带小数点，null 说「没测出来」而不说 0。 */
+export function coinsLabel(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return "未实测";
+  const num = Number(value);
+  return `${Number.isInteger(num) ? num : num.toFixed(2)} RH币`;
+}
+
 /** 后端错误统一是 {detail:"中文"}；没有 detail 时退回 message，绝不显示 undefined。 */
 export function cloneError(error: unknown): string {
   const withDetail = error as { detail?: string; message?: string };
@@ -1350,9 +1632,27 @@ export interface MentionItem {
  * "<Picture 1>: "（comfy/text_encoders/minimax.py），提示词里只有写成同样的
  * 尖括号标签，模型才知道「Picture 1」指的是第 1 张参考图，写 @图片1 就是一行普通文字。
  */
-export function mentionInsertText(cell: RefCell, mediaKind: MediaKind | undefined): string {
+export function mentionInsertText(
+  cell: RefCell,
+  mediaKind: MediaKind | undefined,
+  cloud = false,
+): string {
+  // 云端插什么标签是模型 spec 说的事（Seedream 认「图1」这种自然语言，Seedance 认 @Image 1，
+  // TTS 什么都不认），前端不猜：后端给什么插什么，给空串就是「这一族别插标签」。
+  if (cloud) return cell.tag ?? "";
   if (mediaKind !== "video") return `@${cell.label}`;
   return cell.tag || refTag((cell.kind ?? "image") as RefKind, cell.ordinal ?? 1);
+}
+
+/**
+ * 这条配方认不认 @ 引用标签。
+ *
+ * 不认的话弹窗连那层菜单都不该弹——插进去一段模型看不懂的尖括号，
+ * 对 TTS 更是直接把标签念进台词里。本机的老规则：一律认（@图片N 是提示词自己的记号）。
+ */
+export function mentionsTags(template: CloneTemplate | null | undefined): boolean {
+  if (!isCloudTemplate(template)) return true;
+  return template?.cloud?.mentions !== false;
 }
 
 /**
@@ -1385,8 +1685,14 @@ export function mentionItems(
   refs: Record<string, ImageSummary | null>,
   query = "",
   mediaKind: MediaKind | undefined = "image",
+  cloud = false,
 ): MentionItem[] {
   if (!cells.length) return [];
+  // 不认标签的模型（云端 TTS）：整个 @ 菜单没有能插的东西，直接不给弹
+  if (cloud) {
+    const usable = cells.filter((cell) => refs[cell.key] && mentionInsertText(cell, mediaKind, true));
+    if (!usable.length) return [];
+  }
   const filled: MentionItem[] = cells
     .filter((cell) => refs[cell.key])
     .map((cell) => {
@@ -1394,7 +1700,7 @@ export function mentionItems(
       return {
         key: cell.key,
         label: cell.label,
-        insert: mentionInsertText(cell, mediaKind),
+        insert: mentionInsertText(cell, mediaKind, cloud),
         kind: (cell.kind ?? "image") as RefKind,
         filename: picked?.filename ?? "",
         thumb: picked?.thumbnail_url || picked?.original_url || "",

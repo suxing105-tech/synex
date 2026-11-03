@@ -6,6 +6,7 @@ clone_progress 事件。ComfyUI 的地址与开关沿用已有的 comfyui_url / 
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -13,8 +14,14 @@ from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from .. import clone_bundled, clone_jobs, clone_sources, clone_templates
+from ..cloud import accounts as cloud_accounts
+from ..cloud import client as cloud_client
+from ..cloud import engine as cloud_engine
+from ..cloud import spec as cloud_spec
+from ..cloud import tasks as cloud_tasks
+from ..cloud import templates as cloud_template_rows
 from ..comfyui_client import ComfyUIClient
-from ..config import load_config
+from ..config import load_config, save_config
 
 router = APIRouter(prefix="/api/clone", tags=["clone"])
 log = logging.getLogger("suxing_gallery.clone")
@@ -323,3 +330,185 @@ def current_job() -> dict:
 @router.post("/jobs/current/cancel")
 async def cancel_job() -> dict:
     return await clone_jobs.cancel()
+
+# ---------- 云端生成（RunningHub 收费模型 API） ----------
+#
+# 这一段的口径与 ComfyUI 那段一致：外部请求只从 sidecar 出发，前端只认这套 REST。
+# 要紧的三条：key 只写不读（任何接口都读不回来）、花钱之前先看设置里的上限、
+# 产物一时取不回来的任务永远留着一条「取回结果」的路。
+
+
+class CloudAccountInput(BaseModel):
+    provider: str | None = None
+    name: str | None = Field(default=None, max_length=64)
+    base_url: str | None = None
+    proxy_mode: str | None = None
+    enabled: bool | None = None
+    # 只写不读：字段出现就覆盖，空串 = 清掉。任何接口都不会把它回出去。
+    api_key: str | None = None
+
+
+class CloudSettingsInput(BaseModel):
+    cloud_enabled: bool | None = None
+    cloud_max_single_coins: float | None = Field(default=None, ge=0, le=1000000)
+    cloud_max_daily_coins: float | None = Field(default=None, ge=0, le=1000000)
+
+
+class CloudEstimateInput(BaseModel):
+    template_id: int
+    prompt: str = Field(default="", max_length=50000)
+    controls: dict[str, Any] = Field(default_factory=dict)
+
+
+def _cloud_settings() -> dict:
+    cfg = load_config()
+    return {
+        "cloud_enabled": bool(cfg.cloud_enabled),
+        "cloud_max_single_coins": float(cfg.cloud_max_single_coins or 0),
+        "cloud_max_daily_coins": float(cfg.cloud_max_daily_coins or 0),
+    }
+
+
+def _cloud_mode(template: dict) -> str:
+    """价格预估按哪一档问：云端这时还没有参考图的 URL 可数。
+
+    预估只为说个大概。取这一族支持的最宽一档（参考最多的那种），因为参考越多越贵，
+    报低了比报高了更气人。真到生成时档位由参考素材数量决定，那是另一回事。
+    """
+    modes = clone_templates.modes_of(template)
+    for wanted in ("multi", "single", "text"):
+        if wanted in modes:
+            return wanted
+    return modes[0] if modes else "single"
+
+
+@router.get("/cloud/presets")
+def cloud_presets() -> dict:
+    """三族云端模型的声明：设置页那三节与弹窗的参数都吃这一份，不各写一遍。"""
+    return {"provider": cloud_spec.PROVIDER, "provider_label": cloud_spec.PROVIDER_LABEL,
+            "base_url": cloud_spec.BASE_URL, "items": cloud_spec.describe_all()}
+
+
+@router.get("/cloud/status")
+def cloud_status() -> dict:
+    """弹窗与设置页共用的那一眼：能不能用、差哪一步、账号、花费闸、待取回。"""
+    return {**_cloud_settings(), "availability": cloud_engine.availability(),
+            "accounts": cloud_accounts.list_accounts(),
+            "presets": cloud_spec.describe_all(),
+            "spend": cloud_spend_payload(),
+            "pending": cloud_engine.pending_tasks(),
+            "seeded": cloud_template_rows.is_seeded()}
+
+
+@router.get("/cloud/settings")
+def cloud_get_settings() -> dict:
+    return _cloud_settings()
+
+
+@router.put("/cloud/settings")
+def cloud_put_settings(payload: CloudSettingsInput) -> dict:
+    """云端开关与花费上限。走这里而不是全局设置接口：不动 ConfigOut 那份契约。"""
+    cfg = load_config()
+    patch = payload.model_dump(exclude_none=True)
+    if patch:
+        cfg.update(**patch)
+        save_config(cfg)
+    return _cloud_settings()
+
+
+@router.get("/cloud/accounts")
+def cloud_list_accounts() -> dict:
+    return {"items": cloud_accounts.list_accounts(),
+            "provider_label": cloud_spec.PROVIDER_LABEL}
+
+
+@router.post("/cloud/accounts", status_code=201)
+def cloud_create_account(payload: CloudAccountInput) -> dict:
+    try:
+        return cloud_accounts.save_account(payload.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.patch("/cloud/accounts/{account_id}")
+def cloud_patch_account(account_id: int, payload: CloudAccountInput) -> dict:
+    try:
+        return cloud_accounts.save_account(payload.model_dump(exclude_none=True), account_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.delete("/cloud/accounts/{account_id}")
+def cloud_delete_account(account_id: int) -> dict:
+    try:
+        return {"ok": True, "deleted": cloud_accounts.delete_account(account_id)}
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.post("/cloud/accounts/{account_id}/test")
+async def cloud_test_account(account_id: int) -> dict:
+    """测连通与鉴权：拿一次余额。失败也带 reason_code 回去，界面上要说清差哪一步。"""
+    try:
+        row = cloud_accounts.get_row(account_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return await cloud_engine.test_account(row)
+
+
+@router.post("/cloud/estimate")
+async def cloud_estimate(payload: CloudEstimateInput) -> dict:
+    """点「生成」之前先问一次价。拿不到就是拿不到，绝不显示自己乘出来的假数。"""
+    try:
+        template = clone_templates.get_template(payload.template_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    if clone_templates.engine_of(template) != "cloud":
+        raise HTTPException(400, "这条配方跑在本机，没有云端价格可估。")
+    mode = _cloud_mode(template)
+    quote = await cloud_engine.estimate(template, mode=mode, prompt=payload.prompt,
+                                        controls=payload.controls)
+    return {"coins": (quote or {}).get("coins"), "raw": (quote or {}).get("raw"), "mode": mode}
+
+
+@router.get("/cloud/spend")
+def cloud_spend_payload() -> dict:
+    """本月流水与今天用掉多少 RH币。没有实测余额差的条目算 0——宁可少报，不编数。"""
+    month = time.strftime("%Y-%m")
+    spend = cloud_tasks.spend_month(month)
+    return {"today_coins": cloud_tasks.spend_today_coins(),
+            "month": spend["month"], "counts": spend["counts"], "month_coins": spend["coins"],
+            "recent": [{k: row.get(k) for k in
+                        ("id", "capability", "model", "state", "state_label", "cost_coins",
+                         "estimated_coins", "remote_task_id", "error", "created_at")}
+                       for row in cloud_tasks.recent(20)]}
+
+
+@router.get("/cloud/pending")
+def cloud_pending() -> dict:
+    """还没拿到产物的云端任务。钱已经花了的那些，界面必须一直有个地方能点。"""
+    return {"items": cloud_engine.pending_tasks()}
+
+
+@router.post("/cloud/tasks/{task_id}/refetch")
+async def cloud_refetch(task_id: int) -> dict:
+    """重新取回产物：只重新查一次云端任务，不重新生成、不二次扣费。"""
+    try:
+        return await clone_jobs.refetch(task_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except (cloud_client.RunningHubError, cloud_engine.CloudUnavailable) as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
+@router.post("/cloud/templates/sync")
+def cloud_sync_templates() -> dict:
+    """恢复那三条云端 API 快捷方式（删掉了想再要回来）。账号与 Key 一个都不动。"""
+    try:
+        return {"ok": True, **cloud_template_rows.sync()}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc

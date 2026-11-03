@@ -148,9 +148,27 @@ async def lifespan(app: FastAPI):
     await asyncio.to_thread(indexer.reconcile_missing)
     reconcile_task = asyncio.create_task(reconcile_loop())
     video_meta_task = asyncio.create_task(backfill_video_metadata_task())
+
+    async def resume_cloud_once():
+        """启动时清点云端任务：能取回的立刻取回，还在跑的标成「待取回」。
+
+        一条片子在云端要跑十分钟，用户中途关掉应用是很正常的事，而产物挂在会过期的
+        签名链接上。不清点就是钱花了、东西没了、没人知道。
+        """
+        try:
+            from . import clone_jobs
+            result = await clone_jobs.resume_cloud_tasks()
+            if result.get("recovered") or result.get("waiting"):
+                log.info("cloud tasks resumed: %s", result)
+                await bus.publish({"type": "cloud_tasks", **result})
+        except Exception:  # noqa: BLE001 - 清点失败不该拖住启动
+            log.exception("云端任务清点失败")
+
+    cloud_task = asyncio.create_task(resume_cloud_once())
     try:
         yield
     finally:
+        cloud_task.cancel()
         reconcile_task.cancel()
         video_meta_task.cancel()
         from contextlib import suppress
@@ -158,6 +176,8 @@ async def lifespan(app: FastAPI):
             await reconcile_task
         with suppress(asyncio.CancelledError):
             await video_meta_task
+        with suppress(asyncio.CancelledError):
+            await cloud_task
         indexer.shutdown()
 
 

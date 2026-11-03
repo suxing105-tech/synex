@@ -20,6 +20,17 @@ def _no_bundled_clone_templates(monkeypatch):
     monkeypatch.setenv("SUXING_SEED_BUNDLED_TEMPLATES", "0")
 
 
+@pytest.fixture(autouse=True)
+def _no_cloud_template_rows(monkeypatch):
+    """新库默认不装「图片API / 视频API / 音频API」这三条快捷方式。
+
+    生产里默认是装的（开箱就能在切换清单里看见它们）。但模板表在绝大多数用例里的
+    前提是「只有本机会长出这几条」，而且云端那三条会让音频族的折叠计数变样。
+    测云端的用例自己把它打开（见 test_clone_cloud.py）。
+    """
+    monkeypatch.setenv("SUXING_SEED_CLOUD_TEMPLATES", "0")
+
+
 @pytest.fixture
 def tmp_data_dir(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("SUXING_GALLERY_DATA_DIR", str(tmp_path))

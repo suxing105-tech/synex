@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import base64
-import ctypes
 import hashlib
 import io
 import ipaddress
@@ -16,7 +15,7 @@ import httpx
 from fastapi import HTTPException
 from PIL import Image, ImageOps
 
-from . import db, providers
+from . import credentials, db, providers
 
 LEGACY_DEFAULT_INSTRUCTION = (
     "请根据图片撰写可用于重新生成相似画面的详细提示词，涵盖主体、动作、环境、构图、"
@@ -49,7 +48,8 @@ CREATE TABLE IF NOT EXISTS reverse_prompts (
 CREATE INDEX IF NOT EXISTS idx_reverse_image ON reverse_prompts(image_id, id DESC);
 """
 # Non-Windows credentials exist only in this process and are scoped to the database.
-_session_keys: dict[tuple[str, int], str] = {}
+# 字典本体也在 credentials.py 里，两个使用方共用（清空测试状态时只有一份要清）。
+_session_keys = credentials.SESSION_KEYS
 
 
 def initialize(conn):
@@ -68,31 +68,9 @@ def credential_scope(config_id):
     return (str(db.get_pool().path), config_id)
 
 
-def crypt(data: bytes, *, decrypt=False) -> bytes:
-    """DPAPI CurrentUser, no UI; ciphertext is never returned through the API."""
-    from ctypes import wintypes
-
-    class Blob(ctypes.Structure):
-        _fields_ = [("size", wintypes.DWORD), ("data", ctypes.POINTER(ctypes.c_ubyte))]
-
-    buffer = ctypes.create_string_buffer(data)
-    src = Blob(len(data), ctypes.cast(buffer, ctypes.POINTER(ctypes.c_ubyte)))
-    out = Blob()
-    dll = ctypes.WinDLL("crypt32", use_last_error=True)
-    fn = dll.CryptUnprotectData if decrypt else dll.CryptProtectData
-    fn.argtypes = [ctypes.POINTER(Blob), ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
-                   ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(Blob)]
-    fn.restype = wintypes.BOOL
-    if not fn(ctypes.byref(src), None, None, None, None, 1, ctypes.byref(out)):
-        raise HTTPException(500, "密钥加密或解密失败，请重新配置 API Key")
-    try:
-        return ctypes.string_at(out.data, out.size)
-    finally:
-        free = ctypes.WinDLL("kernel32", use_last_error=True).LocalFree
-        free.argtypes = [ctypes.c_void_p]
-        free.restype = ctypes.c_void_p
-        free(out.data)
-
+# DPAPI 加密本体在 credentials.py：视觉模型与云端生成账号共用一套，
+# 免得两边各写一遍、其中一边忘了只回 has_api_key。
+crypt = credentials.crypt
 
 def get_config(config_id: int):
     row = db.get_pool().main().execute("SELECT * FROM model_configs WHERE id=?", (config_id,)).fetchone()

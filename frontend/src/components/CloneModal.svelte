@@ -26,7 +26,9 @@
     primaryPromptGroup, promptGroupHint, promptPlaceholder, promptSlots, promptSourceLabel, secondaryPromptGroups,
     ratioShape, referenceCells, referenceIssues, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, visibleRefCells, voiceAvatar, voiceSample, nativeLanguageOverride,
     firstFreeRefKey, mergedRefCells, openRefKinds, REF_DISPLAY_ORDER,
-    CLONE_SETTINGS_TAB,
+    CLONE_SETTINGS_TAB, CLOUD_SETTINGS_TAB,
+    cloudApi, coinsLabel, isCloudTemplate, mentionsTags, supportsRefFamily,
+    type CloudStatus,
     applyMention, caretCoordinates, mentionAddLabel, mentionChunks, mentionInsertText, mentionItems as buildMentionItems, mentionToken,
     audioModeLabel, audioModeTemplates, familyCells, isAudioTemplate, isVideoTemplate, promptGroupPlaceholder,
     workflowMenuRows, workflowDisplayName, AUDIO_MODE_GROUP_LABEL,
@@ -125,6 +127,11 @@
   });
   const busy = $derived(Boolean(job && job.running));
   const done = $derived(Boolean(job && job.state === "done"));
+  /** 云端跑挂了但产物还取得回来：给一颗明确的出口，而不是留一句死错误。 */
+  const refetchable = $derived(Boolean(
+    job && job.recoverable && job.task_row_id
+    && (job.state === "error" || job.state === "cancelled"),
+  ));
   const workflowPrompt = $derived(template?.default_prompt ?? "");
   const cells = $derived(referenceCells(template));
 
@@ -140,6 +147,32 @@
   // 弹窗的行为跟工作流走，不跟卡片走：在图片卡上换成音频工作流，
   // @ 引用也不该突然开始插 H3 的尖括号标签。
   const mediaKind = $derived<MediaKind>(templateMediaKind(template));
+  /* ── 云端那三条 API ─────────────────────────────────────────────────
+     可用性只在开弹窗与打开工作流菜单时读一次：它管的是「这一行现在点不动，差点什么」，
+     不是要盯着的进度。读不到就当不知道（不置灰、不报原因）——提交那一关后端会拦，
+     误灰一条其实能用的 API 比放行更糟。 */
+  let cloudStatus = $state<CloudStatus | null>(null);
+  let refetching = $state(false);
+  const isCloud = $derived(isCloudTemplate(template));
+  const cloudReason = $derived(
+    cloudStatus && !cloudStatus.availability?.available
+      ? cloudStatus.availability?.reason || "云端现在还不能用"
+      : "",
+  );
+  /** 当前这一族里的本机条目与云端条目：底部那颗按钮在两者之间来回切。 */
+  const familyRows = $derived.by(() => {
+    const mine = templates.filter((item) => templateMediaKind(item) === mediaKind);
+    return {
+      local: mine.filter((item) => !isCloudTemplate(item)),
+      cloud: mine.filter((item) => isCloudTemplate(item)),
+    };
+  });
+  /** 被点那一族这条 API 根本不吃：明说没放进去，别让人以为素材凭空消失了。 */
+  const cardFamilyNote = $derived(
+    isCloud && cells.length > 0 && !supportsRefFamily(template, cardKind)
+      ? `这条云端 API 不吃${REF_KIND_NAMES[cardKind]}参考，${cardLabel}没放进去。要喂素材就点下面的参考位。`
+      : "",
+  );
   /** 一族一行。只有图片一族时，参考区与图片一键同款的版面一字不差。 */
   const imageCells = $derived(familyCells(cells, "image"));
   const audioCells = $derived(familyCells(cells, "audio"));
@@ -168,7 +201,52 @@
   function wfRowTitle(row: (typeof wfRows)[number]): string {
     const item = templates.find((t) => t.id === row.targetId);
     if (!item) return row.label;
+    if (isCloudTemplate(item)) {
+      // 云端没有「节点」这件事，报节点数是把本机的口径硬套过去。
+      const bits = [row.label, WF_OUTPUT_WORDS[row.kind], "云端收费模型 · 出一次扣 RH币"];
+      if (item.cloud?.verified === false) bits.push("端点还没实测过，第一次先拿最便宜的试");
+      if (cloudReason) bits.push(`现在点不动：${cloudReason}`);
+      bits.push("行末的 X 只是把它从清单里去掉，设置 → 云端生成里能恢复回来");
+      return bits.join(" · ");
+    }
     return `${row.label} · ${WF_OUTPUT_WORDS[row.kind]} · ${item.node_count} 个节点 · ${item.control_count} 个参数`;
+  }
+  /** 菜单这一行对应库里哪一条（折叠那行只可能是本机那三条音频）。 */
+  function rowTemplate(row: (typeof wfRows)[number]): CloneTemplate | null {
+    return templates.find((item) => item.id === row.targetId) ?? null;
+  }
+  function rowIsCloud(row: (typeof wfRows)[number]): boolean {
+    return isCloudTemplate(rowTemplate(row));
+  }
+  /** 账号没配 / Key 没填 / 总开关关着：这一行现在点下去只会拿到一句错误，所以先灰掉。 */
+  function rowBlocked(row: (typeof wfRows)[number]): boolean {
+    return rowIsCloud(row) && Boolean(cloudReason);
+  }
+  /** 「待实测」：端点或字段还没在真账号上跑通过，画面上就得说实话。 */
+  function rowUnverified(row: (typeof wfRows)[number]): boolean {
+    return isCloudTemplate(rowTemplate(row)) && rowTemplate(row)?.cloud?.verified === false;
+  }
+  /**
+   * 底部那颗按钮的文案与去处：一族里有本机的就切到云端，已经在云端了就切回本机，
+   * 两边都没有才把人送进设置——在清单里看得见云端却要跑去设置才能用，是白多一步。
+   */
+  const apiButtonLabel = $derived(
+    isCloud
+      ? (familyRows.local.length ? "改用本机工作流" : "云端设置与花费")
+      : (familyRows.cloud.length === 1 ? "改用云端 API" : "设置云端 API"),
+  );
+  function chooseApi() {
+    closeWorkflowPop();
+    if (isCloud) {
+      const back = familyRows.local.find((item) => item.is_active) ?? familyRows.local[0];
+      if (back) { pickTemplate(back.id); return; }
+      onOpenSettings?.(CLOUD_SETTINGS_TAB);
+      return;
+    }
+    // 一族不止一条 API 时不替用户挑：那是在替他决定花谁的钱，让他去设置里看全貌。
+    const want = familyRows.cloud.length === 1 ? familyRows.cloud[0] : null;
+    if (!want) { onOpenSettings?.(CLOUD_SETTINGS_TAB); return; }
+    pickTemplate(want.id);
   }
   /** 没有参考位那条工作流该说一句什么：说清声音/画面从哪儿来，别留一块莫名其妙的空白。 */
   const noRefNote = $derived(
@@ -218,7 +296,7 @@
     return kind === "audio" ? audioCells.length : kind === "video" ? videoCells.length : imageCells.length;
   }
   // 视频工作流插的是 H3 原生标签（<Picture 1>），图片工作流仍插 @图片1，一条老规矩都没动。
-  const mentionOptions = $derived(mentionOpen ? buildMentionItems(cells, refs, mentionQuery, mediaKind) : []);
+  const mentionOptions = $derived(mentionOpen ? buildMentionItems(cells, refs, mentionQuery, mediaKind, isCloud) : []);
   /**
    * 素材选择器：绑到某一格（替换、@ 菜单、图片一键同款那颗「+」）时只列那一族，标题写死那一族；
    * 点合并行里那颗不绑族的「+ 参考」时几族一起列，标题跟着当前挑的族走。
@@ -348,8 +426,9 @@
     promptTouched = true;
     const el = e.currentTarget as HTMLTextAreaElement;
     const token = mentionToken(el.value, el.selectionStart ?? el.value.length);
-    if (!token || !cells.length) { mentionOpen = false; return; }
-    const items = buildMentionItems(cells, refs, token.query, mediaKind);
+    // 云端也有不认 @ 标签的：MiniMax 配音把提示词整段念出来，插 <Audio 1> 就成了台词。
+    if (!token || !cells.length || !mentionsTags(template)) { mentionOpen = false; return; }
+    const items = buildMentionItems(cells, refs, token.query, mediaKind, isCloudTemplate(template));
     if (!items.length) { mentionOpen = false; return; }
     const caretBox = caretCoordinates(el, token.start);
     const menuWidth = 236;
@@ -437,7 +516,15 @@
     // 按卡片那一族选当前工作流：音频卡默认吃出声音的那条，不是「非视频就算图片」。
     const want: MediaKind = image?.kind === "video" ? "video" : image?.kind === "audio" ? "audio" : "image";
     const mine = items.filter((item) => templateMediaKind(item) === want);
-    return (mine.find((item) => item.is_active) ?? mine[0] ?? items.find((item) => item.is_active) ?? items[0])?.id ?? null;
+    // 「当前」是用户在设置页点过的那一条，本机云端都照它开：那是他自己选的，
+    // 不算我们替他花钱。种云端模板时后端不会把 is_active 标上去，所以刚装好不会走到这。
+    const active = mine.find((item) => item.is_active);
+    if (active) return active.id;
+    // 没有明确「当前」才自己挑：一族里只要有本机的就先本机——云端那条是要扣 RH币的，
+    // 不做没人认领的默认。
+    const local = mine.filter((item) => !isCloudTemplate(item));
+    const pool = local.length ? local : mine;
+    return (pool[0] ?? items.find((item) => item.is_active) ?? items[0])?.id ?? null;
   }
 
   async function loadTemplates() {
@@ -515,7 +602,10 @@
    */
   function bindTemplate(next: CloneTemplate | null) {
     // 从视频卡点开的，这张视频默认站在「视频1」；从图片卡点开的仍是「图片1」。
-    refs = defaultReferences(next, image, sources?.references ?? [], { kind: cardKind });
+    // 这一族这条 API 根本不吃时别硬塞：把音频塞进「图1」只会换来一句
+    // 「先转成 PNG 或 JPG」，那是最没用的报错。不放，并把它写在参考区下面。
+    const supported = !isCloudTemplate(next) || supportsRefFamily(next, cardKind);
+    refs = defaultReferences(next, supported ? image : null, sources?.references ?? [], { kind: cardKind });
     // 母语对齐只读这份局部值：bindTemplate 是被 $effect 调的，在这里读一次 controls
     // 再写回去，effect 就会自己追自己——Svelte 5 这个坑本轮踩过一次，别再踩第二遍。
     const values = defaultControlValues(next);
@@ -542,6 +632,11 @@
    * 三种出声方式靠顶上那排按钮换，点族名不该把用户从「音色描述」踢回默认那条。
    */
   function pickMenuRow(row: (typeof wfRows)[number]) {
+    if (rowBlocked(row)) {
+      error = cloudReason;
+      closeWorkflowPop();
+      return;
+    }
     if (row.collapsed && row.memberIds.includes(templateId ?? -1)) {
       closeWorkflowPop();
       return;
@@ -727,6 +822,7 @@
     reversePrompt = "";
     promptTouched = false;
     void loadTemplates();
+    void loadCloudStatus();
     void loadPrompt(id);
     void loadSources(id);
     void adoptRunningJob();
@@ -772,6 +868,18 @@
     }
   }
 
+  /**
+   * 读一次云端可用性。失败就留 null：宁可不置灰，也不要把一条其实能用的 API 灰掉——
+   * 真不能用时后端在提交那一关会给出同一句原因。
+   */
+  async function loadCloudStatus() {
+    try {
+      cloudStatus = await cloudApi.status();
+    } catch {
+      cloudStatus = null;
+    }
+  }
+
   async function refreshComfyui() {
     probing = true;
     try {
@@ -786,6 +894,73 @@
   /** 附框改一次要落到这一组的所有文字位上：一组就是一个框，不是一个输入键。 */
   function setPromptGroup(group: PromptGroup, value: string) {
     for (const key of group.keys) extraPrompts[key] = value;
+  }
+
+  /* ── 云端这一条预计花多少：只报官方「价格预估」端点给的数 ─────────────
+     绝不自己拿单价乘：价目表会漂，漂了就是骗人。拿不到（没账号、端点没实测、
+     服务商没回话）就只说没取到，连「大约」都不写。
+     提示词也进指纹：配音按字数计价，只按参数问出来的是个假价。 */
+  let cloudCost = $state<number | null | undefined>(undefined);
+  let cloudCostTimer: number | undefined;
+
+  $effect(() => {
+    window.clearTimeout(cloudCostTimer);
+    if (!open || !isCloud || !template || cloudReason) {
+      cloudCost = undefined;
+      return;
+    }
+    // 重问期间先把上一个价撤掉：改完画质还挂着旧价，比不显示更容易让人照着花钱
+    cloudCost = undefined;
+    const body = { template_id: template.id, prompt, controls };
+    cloudCostTimer = window.setTimeout(() => {
+      void cloudApi.estimate(body)
+        .then((res) => { cloudCost = typeof res?.coins === "number" ? res.coins : null; })
+        .catch(() => { cloudCost = null; });
+    }, 450);
+    return () => window.clearTimeout(cloudCostTimer);
+  });
+
+  const cloudCostLine = $derived.by(() => {
+    if (!isCloud || busy || cloudCost === undefined) return "";
+    return cloudCost === null
+      ? "这条云端 API 的价格没取到 · 跑完按余额差值记账"
+      : `云端出一次预计 ${coinsLabel(cloudCost)}`;
+  });
+
+  /**
+   * 云端「取回结果」：钱已经花了，产物还挂在会过期的链接上。
+   * 只重新查一次云端任务，绝不重新提交——重新提交就是二次扣费。
+   */
+  async function refetchResults() {
+    const row = job?.task_row_id;
+    if (!row) return;
+    refetching = true;
+    try {
+      const back = await cloudApi.refetch(row);
+      // 取回来的东西要马上出现在「本次产出」里：走一遍现成的 applyCloneProgress，
+      // 不另开一条状态通路（两条链路两个形状的老毛病，这个项目栽过一次）。
+      applyCloneProgress({
+        active: true,
+        job_id: job?.job_id ?? "",
+        state: "done",
+        message: `取回来了 · 已收进图库 ${back.count} 份`,
+        image_ids: back.image_ids,
+        outputs: back.outputs,
+        media_kind: job?.media_kind ?? "",
+        template_id: job?.template_id ?? null,
+        source_image_id: job?.source_image_id ?? null,
+        engine: "cloud",
+        cost_coins: back.cost_coins,
+        task_id: job?.task_id ?? "",
+        task_row_id: back.task_id,
+        recoverable: false,
+      });
+      error = "";
+    } catch (e) {
+      error = cloneError(e);
+    } finally {
+      refetching = false;
+    }
   }
 
   async function generate() {
@@ -1083,6 +1258,9 @@
                      不说明就是骗人：用户会以为当初只喂了这一份、就是这一份。 -->
                 <p class="cm-note">没找到{cardLabel}当初用的{refNoun}，先放了它自己当参考。要原来那几份，手动换一下。</p>
               {/if}
+              {#if cardFamilyNote}
+                <p class="cm-note">{cardFamilyNote}</p>
+              {/if}
             </section>
             {:else}
               <!-- 一条参考位都没有（音色描述、指定音色）：整块不摆。摆个空框、再摆一颗
@@ -1257,7 +1435,7 @@
                        名字长到挤不下时，让位的是这颗胶囊（名字截断 + 收箭头），不是右边的取消和生成。 -->
                   <button class="cm-pill" class:is-busy={busy} aria-label="同款工作流" aria-haspopup="menu" aria-expanded={wfOpen}
                     disabled={busy} title={busy ? `生成中，等这张图画完再换工作流：${wfFullTitle}` : wfFullTitle}
-                    onclick={() => { popOpen = false; wfOpen = !wfOpen; }}>
+                    onclick={() => { popOpen = false; wfOpen = !wfOpen; if (wfOpen) void loadCloudStatus(); }}>
                     <Icon name="layers" size={13} />
                     <span class="cm-pill-text">{wfName}</span>
                     <span class="cm-chevron" class:is-open={wfOpen} aria-hidden="true"><Icon name="chevron-down" size={12} /></span>
@@ -1269,7 +1447,7 @@
                       {#each wfRows as row (row.key)}
                         {@const isOn = row.memberIds.includes(templateId ?? -1)}
                         <div class="cm-wf-row">
-                          <button class="cm-wf" role="menuitemradio" aria-checked={isOn} disabled={busy}
+                          <button class="cm-wf" role="menuitemradio" aria-checked={isOn} disabled={busy || rowBlocked(row)}
                             title={row.collapsed ? `${AUDIO_MODE_GROUP_LABEL} · ${wfGroupTitle}` : wfRowTitle(row)}
                             onclick={() => pickMenuRow(row)}>
                             <!-- 图片和视频的工作流同列一份清单（用户要的「不分家」），但出片还是出图必须一眼分得清，
@@ -1278,6 +1456,8 @@
                             <span class="cm-wf-kind" class:cm-wf-kind-video={row.kind === "video"}
                               class:cm-wf-kind-audio={row.kind === "audio"}>{WF_KIND_WORDS[row.kind]}</span>
                             <span class="cm-wf-name">{row.label}</span>
+                            {#if rowIsCloud(row)}<span class="cm-wf-tag">云端</span>{/if}
+                            {#if rowUnverified(row)}<span class="cm-wf-tag">待实测</span>{/if}
                             {#if isOn}<span class="cm-wf-tag">当前</span>{/if}
                           </button>
                           {#if !row.collapsed}
@@ -1294,6 +1474,12 @@
                         <!-- 占位与上面的族徽同宽，「加载本地工作流 JSON」才跟上面的名字左对齐 -->
                         <span class="cm-wf-lead" aria-hidden="true"><Icon name="plus" size={13} /></span>
                         <span class="cm-wf-name">{workflowLoading ? "正在读取…" : "加载本地工作流 JSON"}</span>
+                      </button>
+                      <button class="cm-wf cm-wf-add" role="menuitem" onclick={() => chooseApi()}>
+                        <!-- 与本机的 JSON 同一款式：本机的配方与云端的 API 是同一件事的两条路，
+                             分家摆会让人以为云端不归「切换工作流」管。 -->
+                        <span class="cm-wf-lead" aria-hidden="true"><Icon name="cloud" size={13} /></span>
+                        <span class="cm-wf-name">{apiButtonLabel}</span>
                       </button>
                     </div>
                   {/if}
@@ -1321,6 +1507,18 @@
               <!-- 生成中不再单独显示这一行：那颗按钮本身就是进度（转圈 + 扫光 + 「生成中…」），下面再说一遍是噪声。
                    跑完之后才需要的信息（已取消 / 已生成 N 张）照旧留着。 -->
               <p class="cm-foot-note cm-status" role="status">{cloneStatusLabel(job)}</p>
+            {/if}
+
+            {#if cloudCostLine}
+              <!-- 只报官方预估端点给的数；拿不到就说没取到，绝不显示自己乘出来的价 -->
+              <p class="cm-foot-note cm-status" role="status">{cloudCostLine}</p>
+            {/if}
+            {#if refetchable}
+              <p class="cm-foot-note">
+                <button class="cm-btn" disabled={refetching} onclick={() => void refetchResults()}>
+                  {refetching ? "正在取回…" : "取回结果"}
+                </button>
+              </p>
             {/if}
 
             {#if outputChips.length}
@@ -1378,7 +1576,9 @@
     const cell = cells.find((item) => item.key === key);
     // 从 @ 菜单里点「再挂一份」进来的：素材挂上了，顺手把引用标签插回提示词。
     // 插的是 insert 文本而不是中文编号——H3 只认 <Picture 1>，@图片1 对它是一行普通字。
-    if (cell && mentionPickKey === key) void commitMention(mentionInsertText(cell, mediaKind));
+    if (cell && mentionPickKey === key) {
+      void commitMention(mentionInsertText(cell, mediaKind, isCloudTemplate(template)));
+    }
     mentionPickKey = null;
   }}
   onClose={() => (pickerSlot = null)}

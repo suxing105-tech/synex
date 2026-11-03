@@ -65,6 +65,17 @@ def initialize(conn) -> None:
         conn.execute("ALTER TABLE clone_templates ADD COLUMN bundled_key TEXT")
     if "bundled_sha" not in cols:
         conn.execute("ALTER TABLE clone_templates ADD COLUMN bundled_sha TEXT NOT NULL DEFAULT ''")
+    # 云端 API 那三条模板带的四列。「这条配方跑在本机还是云端」是模板的属性，
+    # 不是用户要新学的一个概念，所以不另开一张表；workflow 对云端没有意义，留空。
+    if "engine" not in cols:
+        conn.execute(
+            "ALTER TABLE clone_templates ADD COLUMN engine TEXT NOT NULL DEFAULT 'comfyui'")
+    if "provider" not in cols:
+        conn.execute("ALTER TABLE clone_templates ADD COLUMN provider TEXT")
+    if "model" not in cols:
+        conn.execute("ALTER TABLE clone_templates ADD COLUMN model TEXT")
+    if "params" not in cols:
+        conn.execute("ALTER TABLE clone_templates ADD COLUMN params TEXT NOT NULL DEFAULT '{}'")
 
 
 class DuplicateNameError(ValueError):
@@ -168,7 +179,8 @@ def _cell(slot: dict, kind: str, ordinal: int, key: str, name: str) -> dict:
     }
 
 
-def reference_cells(slots: list[dict], soundtracks: int = 0) -> list[dict]:
+def reference_cells(slots: list[dict], soundtracks: int = 0,
+                    tag_templates: dict | None = None) -> list[dict]:
     """参考格子的画面顺序与编号：图片 → 音频 → 视频，每族先排真槽位，再排 autogrow 扩位。
 
     弹窗按这里的顺序编号「图片1…N」，后端按同一个顺序校验「同一族要连着填」，
@@ -194,10 +206,11 @@ def reference_cells(slots: list[dict], soundtracks: int = 0) -> list[dict]:
                 claimed.add(target)
                 ordinal += 1
                 cells.append(_cell(slot, kind, ordinal, grow_key(slot, name), name))
-    return attach_tags(cells, soundtracks)
+    return attach_tags(cells, soundtracks, tag_templates)
 
 
-def attach_tags(cells: list[dict], soundtracks: int = 0) -> list[dict]:
+def attach_tags(cells: list[dict], soundtracks: int = 0,
+                tag_templates: dict | None = None) -> list[dict]:
     """给每一格补上它在 H3 上下文里的标签：<Picture i> / <Video k> / <Audio j>。
 
     序号是「每类各自 1 起」，但 H3 把参考摆进上下文时按 图片 → 视频 → 独立音频 排，
@@ -206,13 +219,14 @@ def attach_tags(cells: list[dict], soundtracks: int = 0) -> list[dict]:
     再 append({"type": "video"})）。所以独立音频要从「已连线音轨数」之后接着数，
     否则用户插进来的 <Audio 1> 指的是参考视频的音轨，指错人。
     """
+    templates = tag_templates or TAG_TEMPLATES
     offset = max(0, int(soundtracks or 0))
     for cell in cells:
         ordinal = int(cell.get("ordinal") or 1)
         kind = cell.get("kind")
         if kind == "audio":
             ordinal += offset
-        cell["tag"] = TAG_TEMPLATES.get(str(kind), "").format(n=ordinal)
+        cell["tag"] = templates.get(str(kind), "").format(n=ordinal)
     return cells
 
 
@@ -249,10 +263,17 @@ def reference_cell_labels(slots: list[dict]) -> dict[str, str]:
 
 
 def reference_cells_with_tags(template: dict) -> list[dict]:
-    """给前端用的参考格清单：带 kind / label / tag，顺序与后端校验一致。"""
+    """给前端用的参考格清单：带 kind / label / tag，顺序与后端校验一致。
+
+    云端模板的标签由模型声明给：Seedance 认的是 @Image 1，本机 H3 认的是 <Picture 1>。
+    标签写成另一家的语法，后果是参考素材明明传上去了、模型却不认，而且不报错。
+    """
+    spec = cloud_spec_of(template)
+    slots = template.get("slots") or []
     return reference_cells(
-        template.get("slots") or [],
-        wired_reference_soundtracks(template.get("nodes") or {}, template.get("slots") or []),
+        slots,
+        0 if spec else wired_reference_soundtracks(template.get("nodes") or {}, slots),
+        spec.tag_templates() if spec else None,
     )
 
 
@@ -642,6 +663,27 @@ def media_kind_of_template(template: dict | None) -> str:
     return kind if kind in MEDIA_KINDS else "image"
 
 
+CLOUD_ENGINE = "cloud"
+ENGINES = ("comfyui", CLOUD_ENGINE)
+
+
+def engine_of(template: dict | None) -> str:
+    """这条配方跑在哪：本机 ComfyUI 还是云端 API。库里没有这一列的老行一律算本机。"""
+    return CLOUD_ENGINE if str((template or {}).get("engine") or "") == CLOUD_ENGINE else "comfyui"
+
+
+def cloud_spec_of(template: dict | None):
+    """云端模板对应的模型声明；不是云端模板、或那条声明已经被删掉，回 None。
+
+    懒导入：cloud/spec.py 不反过来依赖本模块，两边谁先被 import 都不会打成环。
+    """
+    if engine_of(template) != CLOUD_ENGINE:
+        return None
+    from .cloud import spec as cloud_spec
+
+    return cloud_spec.spec_by_key((template or {}).get("model"))
+
+
 def is_video(template: dict) -> bool:
     return media_kind_of_template(template) == "video"
 
@@ -684,6 +726,10 @@ def check_mode(template: dict, mode: str) -> str:
 
 def modes_of(template: dict) -> list[str]:
     """这份模板能用哪些生成档位（读库里现成的模板，不依赖 ComfyUI 在线）。"""
+    spec = cloud_spec_of(template)
+    if spec is not None:
+        # 云端能出什么档由模型声明说，跟「参考链摘不摘得掉」无关——那边没有节点可摘。
+        return [m for m in workflow_edit.MODES if m in spec.modes]
     return fallback_modes(template.get("nodes") or {}, template.get("slots") or [])
 
 
@@ -1200,6 +1246,25 @@ def public(row: Any) -> dict:
     if kind not in MEDIA_KINDS:
         kind = "image"
     data["media_kind"] = kind
+    spec = cloud_spec_of(data)
+    data["engine"] = engine_of(data)
+    data["is_cloud"] = data["engine"] == CLOUD_ENGINE
+    data["provider"] = str(data.get("provider") or "")
+    data["model"] = str(data.get("model") or "")
+    try:
+        data["default_controls"] = json.loads(data.get("params") or "{}")
+    except ValueError:
+        data["default_controls"] = {}
+    if not isinstance(data["default_controls"], dict):
+        data["default_controls"] = {}
+    if spec is not None:
+        # 设置页与弹窗要说清这是哪条模型、有没有实测过；notes 是「待实测」那句话的内容。
+        data["cloud"] = {"model_label": spec.model_label, "blurb": spec.blurb,
+                         "verified": spec.verified, "notes": list(spec.notes),
+                         "provider_label": spec_provider_label(),
+                         # mentions=false 时弹窗要禁掉 @ 引用：TTS 会把 <Audio 1> 念出来
+                         "mentions": not spec.empty_tags,
+                         "ref_limits": dict(spec.refs)}
     # 内置与否只在设置页挂个徽标：用户删得掉，删了也不会下次启动又长回来
     data["is_builtin"] = bool(data.get("bundled_key"))
     data["bundled_key"] = str(data.get("bundled_key") or "")
@@ -1211,17 +1276,49 @@ def public(row: Any) -> dict:
     for ref_kind in REFERENCE_KINDS:
         data[f"{ref_kind}_reference_count"] = sum(1 for s in slots if s.get("kind") == ref_kind)
     data["control_count"] = sum(1 for s in slots if s.get("kind") in ("select", "number"))
-    data["modes"] = fallback_modes(nodes, slots)
+    data["modes"] = [m for m in workflow_edit.MODES if m in spec.modes] \
+        if spec else fallback_modes(nodes, slots)
     # 参考格清单由后端一处算准（顺序、编号、H3 标签），前端照着画。
     # 两边各算一遍的话，弹窗里那个「音频2」和实际接线的 ref_audio_1 早晚会分家。
-    data["soundtracks"] = wired_reference_soundtracks(nodes, slots)
-    data["reference_cells"] = reference_cells(slots, data["soundtracks"])
+    data["soundtracks"] = 0 if spec else wired_reference_soundtracks(nodes, slots)
+    data["reference_cells"] = reference_cells(slots, data["soundtracks"],
+                                              spec.tag_templates() if spec else None)
+    if spec is not None:
+        # 云端的参考位是声明里的上限（图 9 段 3 音 3），槽位行本身每族只有一格，
+        # 数槽位会得到「1 张参考」，弹窗照这个数就会把 2-9 格藏起来。
+        data["reference_count"] = len(data["reference_cells"])
+        for ref_kind in REFERENCE_KINDS:
+            data[f"{ref_kind}_reference_count"] = sum(
+                1 for cell in data["reference_cells"] if cell.get("kind") == ref_kind)
     return data
+
+
+def spec_provider_label() -> str:
+    from .cloud import spec as cloud_spec
+
+    return cloud_spec.PROVIDER_LABEL
 
 
 def list_templates() -> list[dict]:
     rows = _conn().execute("SELECT * FROM clone_templates ORDER BY is_active DESC, id").fetchall()
-    return [public(r) for r in rows]
+    return menu_order([public(r) for r in rows])
+
+
+def menu_order(items: list[dict]) -> list[dict]:
+    """「切换工作流」清单的顺序：本机那几条照旧（谁先导进来谁在前），云端那条插到同族最后一条本机之后。
+
+    不按来源分成两段：一族被切两半，人要扫两屏才找到那条 API。
+    同族一条本机都没有时，云端那条就落在清单末尾——它是这个族里唯一能用的东西。
+    """
+    local = [item for item in items if not item.get("is_cloud")]
+    cloud = [item for item in items if item.get("is_cloud")]
+    for row in cloud:
+        position = len(local)
+        for index, other in enumerate(local):
+            if media_kind_of_template(other) == media_kind_of_template(row):
+                position = index + 1
+        local.insert(position, row)
+    return local
 
 
 def get_row(template_id: int) -> dict:
@@ -1235,7 +1332,10 @@ def get_template(template_id: int) -> dict:
     """带节点表与解析后槽位的完整模板，生成流程用这个。"""
     row = get_row(template_id)
     row["slots"] = _load_slots(row.get("slots"))
-    row["nodes"] = parse_workflow(row.get("workflow") or "")
+    raw = str(row.get("workflow") or "")
+    # 云端模板没有工作流正文（那一列 NOT NULL，所以存空串）。空就当零个节点，
+    # 但正文写坏了仍然要吵——那种时候报错比假装没有节点有用。
+    row["nodes"] = parse_workflow(raw) if raw.strip() else {}
     return row
 
 

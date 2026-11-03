@@ -388,7 +388,7 @@ RunningHub 卖的是**云端 ComfyUI**：你在它平台上有自己的工作流
 | 能力 | 建议接 | 为什么是它 | 备份/第二档 |
 |---|---|---|---|
 | 图片 | **seedream-v5-lite 图生图 + 文生图**（同族两条，共用一份 spec） | 你已有 Seedance/即梦那套画面描述体系，同族模型的提示词习惯最接近；图生图能吃多参考，接得上一键同款的参考位 | `qwen-image/text-to-image-2512`——与本机「闪寻图片」那条 Qwen-image 同族，风格能续上；`z-image-turbo` 做快而便宜的草稿档 |
-| 视频 | **MiniMax H3 ref2va RH插件流（支持多参）** + **MiniMax-H3 图生视频（首尾帧）** | 你的 `$h3-prompt-writing` 技能写的就是 T2VA/I2VA/FL2VA/L2VA/Ref2VA 这几路，**RH 的模型名和你的提示词体系是同一套命名**，提示词资产几乎零翻译；ref2va 多参正是短剧分镜要的 | `seedance2.0/多模态视频`（Seedance 体系的另一头）；要高画质再上 `MiniMax-H3-Max`；`seedance2.5` 是 Token 计价，摸清计费前不默认露出 |
+| 视频 | **`seedance2.0/多模态视频`**（+ 同族 Fast 档） | 苏醒定：视频就用 Seedance 2.0。契约已核实，见 **§13.8**——图 9 / 视频 3 / 音频 3 的参考上限正好对上现有三族参考位，提示词体系也是你 `$seedance2.0` 那一套 | 以后要另试再考虑 `MiniMax-H3` 系列；`seedance2.5` 是 Token 计价，摸清计费前不默认露出 |
 | 语音 | **minimax/voice-clone** + **minimax/speech-2.8-hd** | 复刻出来的音色和正文合成是同一家才能配对，接上你现在 Qwen3-TTS 音色克隆那条的用法（参考音频 + 台词） | `Doubao-声音复刻-2.0`(+训练，多一步注册流程)；`千问3-语音合成-Instruct-Flash` 适合要按指令控语气的场合 |
 | 后处理 | **RH 视频超分 / RH 视频帧率增强**、`即梦智能超清`、`topazlabs 图像放大 High Fidelity V3` | 见 13.5，画质方案里性价比最高的一环 | `火山画质增强` 三档、`topazlabs 视频增强/降噪` |
 
@@ -415,3 +415,27 @@ RunningHub 卖的是**云端 ComfyUI**：你在它平台上有自己的工作流
 - 12.5（key 保密那整套）：**照用**，只是不再有 URL 打码那条。
 - 12.4 的机型按秒计费：不适用了。模型 API 走单次调用费/Token，用官方价格预估 + `remainCoins` 差值。`instanceType` 那套不要了。
 - 12.7（三族参考都放开）：**回到按模型 spec 判定**——某个模型只吃图就不给音频格子，置灰并说明原因。
+
+### 13.8 视频定为 Seedance 2.0（已核实的契约，2026-11-03）
+
+官方文档实抓（api-448183127 / api-448183128 / call-api 详情页）：
+
+    POST /openapi/v2/rhart-video/sparkvideo-2.0/multimodal-video          # 最高品质
+    POST /openapi/v2/rhart-video/sparkvideo-2.0-fast/multimodal-video     # 速度与性价比
+    POST /openapi/v2/query                                                 # 所有 v2 模型共用查询
+
+能力：文本 + **图片最多 9 张** + **视频最多 3 段** + **音频最多 3 段**，出 **4–15 秒**视频。请求体示例里的字段：`prompt`、`resolution`("720p")、`duration`("5")、`imageUrls[]`、`videoUrls[]`、`generateAudio`(bool)、`ratio`("adaptive")、`realPersonMode`(bool)、`conversionSlots`(["all"])、`returnLastFrame`(bool)、`seed`(-1)。查询响应：`taskId` / `status`(RUNNING) / `errorCode` / `errorMessage` / `results`。
+
+这五条结论直接进实现：
+
+1. **提示词里的引用标签是 `@Image 1` / `@Video 1` 这种写法**（官方示例原文：`"@Image 1 图中的两个人，坐在一起吃火锅，火锅场景是@Video 1"`）。而本机 H3 那条现在用的是 `<Picture 1>` / `<Audio 1>` / `<Video 1>`（`clone_templates.TAG_TEMPLATES`）。**标签模板必须进模型 spec**，不能沿用本机那套——标签和实际喂进去的第几份素材对不上，表现就是「参考给了但片子不按参考走」，而且不报错，最难查。这条是本节风险最高的一处。
+2. **三族参考全开**：图 9 / 视频 3 / 音频 3 与现有槽位（`GROW_MAX`、三族 autogrow）容量对得上，所以 §6 的限制对这条模型不存在，素材选择器、连着放规则、编号全部沿用本机口径。
+3. **参考素材走签名 URL**：示例里的 `imageUrls` 是 `https://www.runninghub.cn/view?filename=…&Rh-Comfy-Auth=<签名>`，签名里带 `signExpire`。**上传换 URL → 立刻提交，同一个任务里连着做，绝不缓存 URL 复用**（这是 13.2 那条「1 天有效期」的具体形态）。
+4. **分辨率上限是个真问题**：示例的 `resolution` 是 `720p`，Seedance 2.0 论文写原生输出 480p/720p。**要 2K 就得走超分**——所以 §13.5 那条从「建议」升级成「必须成对交付」：出片 + 超分是一条流水线上的两段，不是两个可选功能。你要的「更好的画质」得拆成两件事看：模型的画面质量上限（Seedance 2.0 高）和输出分辨率上限（720p 低）。枚举里到底有没有 1080p，S0 第一件事就核。
+5. **三个开关值得单独设计**：`generateAudio`（带声出片，你做短剧基本要常开，spec 默认 true）、`seed`（-1=随机，给了就能复现，弹窗留一个「固定种子」）、`returnLastFrame`（**取回这一条的最后一帧**——短剧连镜的关键：上一条的尾帧就是下一条的首帧，值得做成勾一下就把尾帧存进图库并自动填进下一条的首帧位）。`realPersonMode` 默认关，打开时要提示它会走真人内容合规。
+
+**S0 对这条模型要验的五件事**：① `imageUrls`/`videoUrls` 能不能省（能省的话**一条端点就覆盖 0/1/多 三种方式**，`mode_from_count` 那条规则原样搬到云端；不能省就要再接触点文生/图生端点）；② `resolution` 枚举里有没有 1080p/2K；③ `audioUrls` 的确切字段名（示例里只出现 image/video，但宣传写支持音频 3 段）；④ 单次费与价格预估端点回什么；⑤ 4–15 秒之外的 `duration` 值怎么报。
+
+**UI 侧一条**：`2.0` / `2.0-Fast` / `2.0-Mini` 不在「切换工作流」清单里铺三行，收成一条「视频API」，档位做成参数里一个下拉。同一族铺三行会让人每次都要先做「品质还是速度」的选择题，那不是弹窗该干的事。
+
+**顺带降级一件事**：§13.3 的 `role`（首帧/尾帧）首批**不做 UI**——Seedance 这条不吃首尾帧输入，`returnLastFrame` 是输出侧的另一件事。`role` 作为 spec 字段留着（成本就是一个标签），等真接首尾帧模型再实现，别为不存在的模型先写代码。

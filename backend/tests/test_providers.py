@@ -125,6 +125,21 @@ def test_runninghub_offers_one_key_for_both_uses(client):
     assert "一把 Key 走天下" in preset["note"]
 
 
+def test_runninghub_only_claims_the_capabilities_we_actually_wired(client):
+    """服务商选择页按能力过滤，所以没接的路数一家都不许报。
+
+    只有 RunningHub 真接了图像/视频/音频三条收费模型 API，别家只有文本（反推）。
+    虚报的代价是界面出现一张点进去什么都能选、试了才知道不行的卡。
+    """
+    presets = {p["id"]: p for p in client.get("/api/model-providers").json()}
+    assert presets["runninghub"]["capabilities"] == ["text", "image", "video", "audio"]
+    assert presets["runninghub"]["workflow_key"] is True
+    assert presets["runninghub"]["console_url"] == "https://www.runninghub.cn"
+    others = [pid for pid in presets if pid != "runninghub"]
+    assert others and all(presets[pid]["capabilities"] == ["text"] for pid in others)
+    assert all(presets[pid]["workflow_key"] is False for pid in others)
+
+
 def test_shared_key_presence_travels_with_the_preset(client):
     """界面要知道那把共用的 Key 存了没有，只能靠这条清单带回这个布尔——而且是布尔，不是 Key。"""
     def flag():

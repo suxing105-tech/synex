@@ -17,6 +17,7 @@ from app.cloud import accounts, spec as cloud_spec
 
 
 SECRET = "sk-testsentinel-4f2a91"
+WF_SECRET = "wf-testsentinel-9d1c07"
 
 
 @pytest.fixture(autouse=True)
@@ -57,6 +58,65 @@ def test_session_store_is_scoped_and_erasable():
 
 
 # ---------- accounts ----------
+
+
+def test_two_keys_on_one_account_never_touch_each_other():
+    """RunningHub 一行账号两把 Key：改一把不许动另一把。
+
+    官方把工作流（消费级-会员·扣 RH币）与模型 API（企业级-共享·扣钱包余额）分成两类，
+    混成一次写就会长出最难查的那种断线——用户只是补了把工作流 Key，出图突然说没密钥。
+    """
+    accounts.save_account({"api_key": SECRET, "workflow_api_key": WF_SECRET})
+    rows = accounts.list_accounts()
+    assert len(rows) == 1 and rows[0]["has_api_key"] and rows[0]["has_workflow_key"]
+    assert accounts.shared_key() == SECRET
+    assert accounts.shared_workflow_key() == WF_SECRET
+
+    accounts.put_shared_workflow_key("")          # 只清工作流那把
+    assert accounts.shared_workflow_key() == ""
+    assert accounts.shared_key() == SECRET        # 模型那把一根毛都没动
+    row = accounts.list_accounts()[0]
+    assert row["has_api_key"] is True and row["has_workflow_key"] is False
+
+
+def test_the_two_keys_get_their_own_session_scopes():
+    """非 Windows 上 Key 只活在内存里：两把必须占两个作用域，否则后填的顶掉前一把。"""
+    if sys.platform == "win32":
+        pytest.skip("Windows 走 DPAPI 落盘，作用域只在别的平台上是唯一存放点")
+    accounts.put_shared_key(SECRET)
+    accounts.put_shared_workflow_key(WF_SECRET)
+    assert accounts.shared_key() == SECRET
+    assert accounts.shared_workflow_key() == WF_SECRET
+
+
+def test_workflow_key_written_first_still_lands_on_one_row():
+    """一家服务商只有一行：先写哪把 Key 都得落进同一行，别顺手多建一家。"""
+    created = accounts.put_shared_workflow_key(WF_SECRET)
+    accounts.put_shared_key(SECRET)
+    rows = accounts.list_accounts()
+    assert len(rows) == 1 and rows[0]["id"] == created["id"]
+    assert accounts.shared_key() == SECRET and accounts.shared_workflow_key() == WF_SECRET
+
+
+def test_old_db_without_the_workflow_column_upgrades_in_place():
+    """老库只有 credential 那一列，不补列的话第一次读工作流 Key 就当场炸。"""
+    legacy = ("CREATE TABLE gen_accounts (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+              " provider TEXT NOT NULL, name TEXT NOT NULL,"
+              " base_url TEXT NOT NULL DEFAULT 'https://www.runninghub.cn',"
+              " proxy_mode TEXT NOT NULL DEFAULT 'system', enabled INTEGER NOT NULL DEFAULT 1,"
+              " credential BLOB,"
+              " created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),"
+              " updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))")
+    # initialize() 里的 executescript 会自己收尾事务，所以这段直接拿主连接，别套 transaction()
+    conn = accounts._conn()
+    conn.execute("DROP TABLE gen_accounts")
+    conn.execute(legacy)
+    accounts.initialize(conn)
+    assert "credential_workflow" in {str(r[1]) for r in conn.execute("PRAGMA table_info(gen_accounts)")}
+    row = accounts.save_account({"api_key": SECRET, "workflow_api_key": WF_SECRET})
+    assert row["has_api_key"] and row["has_workflow_key"]
+    assert accounts.shared_workflow_key() == WF_SECRET
+
 
 
 def test_list_accounts_marks_the_row_the_engine_actually_uses():

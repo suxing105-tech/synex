@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS gen_accounts (
     proxy_mode TEXT NOT NULL DEFAULT 'system',
     enabled INTEGER NOT NULL DEFAULT 1,
     credential BLOB,
+    credential_workflow BLOB,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
@@ -37,17 +38,37 @@ NOW_SQL = "strftime('%Y-%m-%dT%H:%M:%fZ','now')"
 PROXY_MODES = ("system", "direct")
 PROXY_LABELS = {"system": "跟随系统代理", "direct": "直连（不走代理）"}
 
+# RunningHub 有两把 Key，各花各的钱，别混：
+# - model    = 模型 API 密钥（企业级-共享）→ 三条收费模型 API + 反推 LLM，扣钱包余额；
+# - workflow = 工作流 API 密钥（消费级-会员）→ 跑云端 ComfyUI 工作流，扣 RH币。
+# 官方要求这两类各用各的 Key，所以一行账号存两列密文，不是一行一把。
+KEY_KINDS = {
+    "model": ("credential", "gen_account"),
+    "workflow": ("credential_workflow", "gen_account_wf"),
+}
+_MISSING = {
+    "model": "这条云端账号还没有填模型 API Key（企业级-共享），去设置 → 模型与反推里填。",
+    "workflow": "这条云端账号还没有填工作流 API Key（消费级-会员），去设置 → 模型与反推里填。",
+}
+# 老库补列：credential_workflow 是后加的，不补列的库会在第一次读 workflow 时炸
+_ADDED_COLUMNS = (("credential_workflow", "BLOB"),)
+
 
 def initialize(conn) -> None:
     conn.executescript(SCHEMA)
+    have = {str(r[1]) for r in conn.execute("PRAGMA table_info(gen_accounts)")}
+    for column, ddl in _ADDED_COLUMNS:
+        if column not in have:
+            conn.execute(f"ALTER TABLE gen_accounts ADD COLUMN {column} {ddl}")
 
 
 def _conn():
     return get_pool().main()
 
 
-def _scope(account_id: Any):
-    return (str(get_pool().path), ("gen_account", int(account_id)))
+def _scope(account_id: Any, kind: str = "model"):
+    # 两把 Key 各占一个作用域：共用一个的话，非 Windows 上后填的那把会悄悄顶掉前一把
+    return (str(get_pool().path), (KEY_KINDS[kind][1], int(account_id)))
 
 
 def public(row: dict) -> dict:
@@ -64,6 +85,9 @@ def public(row: dict) -> dict:
         "enabled": bool(row["enabled"]),
         # 只有布尔：没有任何接口能把 key 读出来，也就不存在「复制给别人」。
         "has_api_key": bool(row.get("credential")) or bool(credentials.session_get(_scope(account_id))),
+        # 工作流那把是可选的：没有它，三条收费模型 API 照跑
+        "has_workflow_key": bool(row.get("credential_workflow"))
+        or bool(credentials.session_get(_scope(account_id, "workflow"))),
         "key_persistence": credentials.key_persistence(),
     }
 
@@ -88,8 +112,8 @@ def get_row(account_id: int) -> dict:
     return dict(row)
 
 
-def key_for(row: dict, *, quiet: bool = False) -> str:
-    blob = row.get("credential")
+def key_for(row: dict, *, quiet: bool = False, kind: str = "model") -> str:
+    blob = row.get(KEY_KINDS[kind][0])
     if blob:
         try:
             return credentials.unprotect(bytes(blob))
@@ -97,12 +121,12 @@ def key_for(row: dict, *, quiet: bool = False) -> str:
             if quiet:
                 return ""
             raise
-    value = credentials.session_get(_scope(int(row["id"])))
+    value = credentials.session_get(_scope(int(row["id"]), kind))
     if value:
         return value
     if quiet:
         return ""
-    raise ValueError("这条云端账号还没有填 API Key，去设置 → 模型与反推里填。")
+    raise ValueError(_MISSING[kind])
 
 
 def shared_row() -> dict | None:
@@ -133,6 +157,21 @@ def put_shared_key(text: str) -> dict:
     if row is None:
         return save_account({"api_key": text, "name": cloud_spec.PROVIDER_LABEL})
     return save_account({"api_key": text}, int(row["id"]))
+
+
+def shared_workflow_key(quiet: bool = True) -> str:
+    """云端工作流那把 Key（消费级-会员，扣 RH币）。还没配就回空串，让界面说清差这一步。"""
+    row = shared_row()
+    return key_for(row, quiet=quiet, kind="workflow") if row else ""
+
+
+def put_shared_workflow_key(text: str) -> dict:
+    """工作流 Key 也落在同一行账号上：一家服务商一行，两把 Key 两列。"""
+    row = shared_row()
+    patch_ = {"workflow_api_key": text}
+    if row is None:
+        return save_account({**patch_, "name": cloud_spec.PROVIDER_LABEL})
+    return save_account(patch_, int(row["id"]))
 
 
 def usable_account() -> dict | None:
@@ -172,26 +211,36 @@ def save_account(patch: dict, account_id: int | None = None) -> dict:
         raise ValueError("代理方式只有跟随系统和直连两种。")
     enabled = bool((row or {}).get("enabled", 1)) if patch.get("enabled") is None else bool(patch["enabled"])
 
-    credential = (row or {}).get("credential")
-    key = patch.get("api_key")
-    text = str(key).strip() if key is not None else ""
-    if key is not None:
-        credential = credentials.protect(text) if text else None
+    # 两把 Key 各写各的：patch 里没出现 = 不动那一列；出现且是空串 = 只清那一把。
+    # 混成一次写的话，「改工作流 Key」会把模型 Key 一起清掉——那是最难查的一种断线。
+    written: dict[str, str] = {}
+    credentials_by_kind = {}
+    for kind, patch_key in (("model", "api_key"), ("workflow", "workflow_api_key")):
+        column = KEY_KINDS[kind][0]
+        incoming = patch.get(patch_key)
+        credentials_by_kind[kind] = (row or {}).get(column)
+        if incoming is not None:
+            text = str(incoming).strip()
+            credentials_by_kind[kind] = credentials.protect(text) if text else None
+            written[kind] = text
+    credential = credentials_by_kind["model"]
+    credential_wf = credentials_by_kind["workflow"]
     with transaction() as conn:
-        args = [provider, name, base_url, proxy_mode, 1 if enabled else 0, credential]
+        args = [provider, name, base_url, proxy_mode, 1 if enabled else 0, credential, credential_wf]
         if row:
             conn.execute(
                 f"UPDATE gen_accounts SET provider=?, name=?, base_url=?, proxy_mode=?,"
-                f" enabled=?, credential=?, updated_at={NOW_SQL} WHERE id=?", args + [account_id])
+                f" enabled=?, credential=?, credential_workflow=?, updated_at={NOW_SQL} WHERE id=?",
+                args + [account_id])
         else:
             account_id = conn.execute(
-                "INSERT INTO gen_accounts(provider,name,base_url,proxy_mode,enabled,credential)"
-                " VALUES(?,?,?,?,?,?)", args).lastrowid
-    if key is not None:
+                "INSERT INTO gen_accounts(provider,name,base_url,proxy_mode,enabled,credential,"
+                "credential_workflow) VALUES(?,?,?,?,?,?,?)", args).lastrowid
+    for kind, text in written.items():
         if text and credentials.key_persistence() != "encrypted":
-            credentials.session_put(_scope(int(account_id)), text)
+            credentials.session_put(_scope(int(account_id), kind), text)
         else:
-            credentials.session_pop(_scope(int(account_id)))
+            credentials.session_pop(_scope(int(account_id), kind))
     return public(get_row(int(account_id)))
 
 
@@ -199,6 +248,7 @@ def delete_account(account_id: int) -> int:
     get_row(account_id)
     with transaction() as conn:
         conn.execute("DELETE FROM gen_accounts WHERE id=?", (account_id,))
-    credentials.session_pop(_scope(account_id))
+    for kind in KEY_KINDS:
+        credentials.session_pop(_scope(account_id, kind))
     return account_id
 

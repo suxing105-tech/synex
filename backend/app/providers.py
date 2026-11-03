@@ -127,9 +127,15 @@ PRESETS: dict[str, dict] = {
         "credential_scope": "cloud",
         "default_timeout": 120,
         "format": "openai",
+        # 这一家除了文本（反推）还真接了图像/视频/音频三条收费模型 API，别的家没有 → 别虚报能力
+        "capabilities": ("text", "image", "video", "audio"),
+        # 第二把 Key（工作流 API 密钥·消费级-会员）：官方要求工作流与模型 API 各用一把
+        "workflow_key": True,
+        "console_url": "https://www.runninghub.cn",
         "note": "一把 Key 走天下：这里的 Key 与「RunningHub 云端生成」共用同一把，只存一份，"
                 "在任一处改都一起生效。反推按 token 计价（CNY / 1M tokens），"
-                "不吃云端生成那两道 RH币花费上限；官方要求两类接口都用企业级-共享 API Key。",
+                "不吃云端生成那两道 RH币花费上限；官方要求两类接口都用企业级-共享 API Key。"
+                "云端工作流不算在内——它要另配「工作流 API 密钥（消费级-会员）」，扣的是 RH币。",
     },
 }
 
@@ -152,6 +158,10 @@ def list_presets():
             # 这两个开关决定界面长什么样：清单是现拉的还是抄来的、Key 是自家存还是共用
             "models_dynamic": bool(preset.get("models_dynamic")),
             "credential_scope": preset.get("credential_scope", "local"),
+            # 服务商选择页按能力过滤：没接的路数不报（只有 RunningHub 真接了三条收费模型 API）
+            "capabilities": list(preset.get("capabilities") or ["text"]),
+            "workflow_key": bool(preset.get("workflow_key")),
+            "console_url": preset.get("console_url", ""),
         })
     return result
 

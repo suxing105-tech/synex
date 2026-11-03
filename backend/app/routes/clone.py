@@ -345,7 +345,9 @@ class CloudAccountInput(BaseModel):
     proxy_mode: str | None = None
     enabled: bool | None = None
     # 只写不读：字段出现就覆盖，空串 = 清掉。任何接口都不会把它回出去。
+    # 两把 Key 两个字段，各自独立：改一把绝不动另一把。
     api_key: str | None = None
+    workflow_api_key: str | None = None
 
 
 class CloudSettingsInput(BaseModel):

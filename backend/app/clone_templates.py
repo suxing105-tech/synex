@@ -1,4 +1,4 @@
-"""再次创作：同款工作流模板的存储与槽位检测。
+"""再次创作：工作流模板的存储与槽位检测。
 
 一条模板 = 一份 ComfyUI API 格式工作流 + 一组槽位绑定。用户随时会换一份 JSON 进来，
 所以这里的重点不是"存了什么"，而是"怎么从任意工作流里认出可注入的位置"：
@@ -1324,7 +1324,7 @@ def menu_order(items: list[dict]) -> list[dict]:
 def get_row(template_id: int) -> dict:
     row = _conn().execute("SELECT * FROM clone_templates WHERE id=?", (template_id,)).fetchone()
     if row is None:
-        raise KeyError(f"同款工作流 {template_id} 不存在，可能已经被删掉了。")
+        raise KeyError(f"工作流 {template_id} 不存在，可能已经被删掉了。")
     return dict(row)
 
 
@@ -1395,7 +1395,7 @@ def create_template(name: str, workflow_raw: Any, slots_raw: Any = None,
     kind = media_kind if media_kind in MEDIA_KINDS else detect_media_kind(nodes)
     conn = _conn()
     if conn.execute("SELECT 1 FROM clone_templates WHERE name=?", (name,)).fetchone():
-        raise DuplicateNameError(f"已经有叫「{name}」的同款工作流，换一个名字。")
+        raise DuplicateNameError(f"已经有叫「{name}」的工作流，换一个名字。")
     # 这一族还没有「当前」就让新来的当默认：只导入过图片工作流的人不该在视频卡上
     # 面对一个空弹窗；但已经有默认的族不会被一次导入悄悄换掉。
     is_first = conn.execute(
@@ -1427,7 +1427,7 @@ def update_template(template_id: int, patch: dict) -> dict:
         if len(candidate) > 40:
             raise ValueError("名字最长 40 个字。")
         if conn.execute("SELECT 1 FROM clone_templates WHERE name=? AND id<>?", (candidate, template_id)).fetchone():
-            raise DuplicateNameError(f"已经有叫「{candidate}」的同款工作流，换一个名字。")
+            raise DuplicateNameError(f"已经有叫「{candidate}」的工作流，换一个名字。")
         name = candidate
 
     replacing = patch.get("workflow") is not None

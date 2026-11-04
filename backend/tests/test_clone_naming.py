@@ -43,6 +43,22 @@ def test_生成忙时那句说的是新名字():
     assert OLD + "正在生成" not in src
 
 
+def test_工作流不再叫同款工作流():
+    """第二次改名（2026-11-04 苏醒）：那条报错、那个标题说的都是「工作流」。
+
+    「同款」是对结果的承诺，而这里给的是「这一族当前挂着的那份配方」——
+    名字里留着它，人就以为挂上它必然出同一张图。
+    """
+    hits = [
+        f"{path.name}:{i + 1} {line.strip()}"
+        for path, text in _py_sources()
+        for i, line in enumerate(text.splitlines())
+        if "同款工作流" in line
+    ]
+    assert hits == []
+    assert "已经有叫「{name}」的工作流" in (APP_DIR / "clone_templates.py").read_text(encoding="utf-8")
+
+
 @pytest.mark.parametrize("key", ["qwen3-tts-voice-clone", "qwen3-tts-custom-voice", "qwen3-tts-voice-design"])
 def test_随包工作流的历史名字仍然在(key):
     """老库里那条记录认的还是旧名，删掉就等于给用户多装一条重复的。"""

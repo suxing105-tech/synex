@@ -26,7 +26,7 @@ vi.mock('../lib/api', () => ({
     return path.includes('/api/clone/templates')
     ? {
       items: [{
-        id: 1, name: '同款工作流', is_active: true, default_prompt: '内置那句',
+        id: 1, name: '多图工作流', is_active: true, default_prompt: '内置那句',
         created_at: '', updated_at: '', node_count: 2, prompt_count: 1, reference_count: 1, control_count: 0,
         slots: [
           { kind: 'prompt', node: '582', input: 'prompt', label: '完整提示词' },
@@ -59,7 +59,7 @@ afterEach(() => { cleanup(); feedItems.set([]); multiSelectedIds.set(new Set());
 
 it('图片卡文件名右边常驻再次创作图标，点它只开弹窗、不碰选区', async () => {
   const screen = await openFeed([card({})]);
-  const btn = screen.getByRole('button', { name: '用同款工作流再生成一张' });
+  const btn = screen.getByRole('button', { name: '用当前工作流再生成一张' });
   // 常驻：不靠 hover 才出现，用户不用先找到那张图才能看见入口
   const cardEl = btn.closest('.media-card') as HTMLElement;
   expect(cardEl.classList.contains('is-cloneable')).toBe(true);
@@ -111,7 +111,7 @@ it('三类卡挂同一颗再次创作角标，量词按族：一张 / 一条 / �
     card({ id: 3, kind: 'audio', filename: 'a.mp3', original_url: '/api/audio/3/file', thumbnail_url: '/api/audio/3/waveform' }),
   ]);
   // 入口的几何、常驻规则、is-cloneable 让位规则全部照图片卡，不另立一套
-  for (const name of ['用同款工作流再生成一条', '用同款工作流再生成一段']) {
+  for (const name of ['用当前工作流再生成一条', '用当前工作流再生成一段']) {
     const btn = screen.getByRole('button', { name });
     expect(btn.closest('.media-card')?.classList.contains('is-cloneable')).toBe(true);
     expect(btn.closest('.media-card-footer')).toBeNull();
@@ -128,13 +128,13 @@ it('音频卡悬停后也只有「再次创作」这一颗角标，画面里不�
   const screen = await openFeed([
     card({ id: 3, kind: 'audio', filename: 'a.mp3', original_url: '/api/audio/3/file', thumbnail_url: '/api/audio/3/waveform' }),
   ]);
-  const cardEl = screen.getByRole('button', { name: '用同款工作流再生成一段' }).closest('.media-card') as HTMLElement;
+  const cardEl = screen.getByRole('button', { name: '用当前工作流再生成一段' }).closest('.media-card') as HTMLElement;
   await fireEvent.mouseEnter(cardEl);
   await tick();
   // 悬停曾经在画面左下角长一颗播放圆标，压在波形上；现在整张卡就是播放入口
   expect(screen.queryByRole('button', { name: '播放 a.mp3' })).toBeNull();
   expect(cardEl.querySelectorAll('.audio-play-btn')).toHaveLength(0);
-  const clone = screen.getByRole('button', { name: '用同款工作流再生成一段' }) as HTMLElement;
+  const clone = screen.getByRole('button', { name: '用当前工作流再生成一段' }) as HTMLElement;
   expect(clone.closest('.media-card-media')).toBeNull();
 });
 
@@ -142,7 +142,7 @@ it('窄列页脚不渲染时，音频卡也没有角标（与图片/视频同一
   const screen = await openFeed([
     card({ id: 3, kind: 'audio', filename: 'a.mp3', original_url: '/api/audio/3/file', thumbnail_url: '/api/audio/3/waveform' }),
   ], 300);
-  expect(screen.queryByRole('button', { name: /用同款工作流再生成/ })).toBeNull();
+  expect(screen.queryByRole('button', { name: /用当前工作流再生成/ })).toBeNull();
 });
 
 it('窄列下音频卡的右键菜单也能进再次创作', async () => {
@@ -161,7 +161,7 @@ type FeedScreen = Awaited<ReturnType<typeof openFeed>>;
 
 /** 角标点开弹窗。index 对应 feedItems 里的顺序。 */
 async function openCloneOn(screen: FeedScreen, index: number) {
-  await fireEvent.click(screen.getAllByRole('button', { name: '用同款工作流再生成一张' })[index]);
+  await fireEvent.click(screen.getAllByRole('button', { name: '用当前工作流再生成一张' })[index]);
   await tick();
 }
 
@@ -213,7 +213,7 @@ it('刷新后原图不在当前列表里时不硬凑对比：只选中产出图'
 it('列太窄整条页脚都不渲染时，图标跟着消失（不硬挤一个点不准的小按钮）', async () => {
   const screen = await openFeed([card({})], 300);
   expect(screen.container.querySelectorAll('.media-card-footer')).toHaveLength(0);
-  expect(screen.queryByRole('button', { name: '用同款工作流再生成一张' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '用当前工作流再生成一张' })).toBeNull();
 });
 
 it('窄列下右键菜单仍然能进再次创作', async () => {

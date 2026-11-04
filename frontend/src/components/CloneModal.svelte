@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * 再次创作弹窗：左边这张图，右边「同款工作流 + 参考位 + 提示词 + 比例/分辨率 + 生成」。
+   * 再次创作弹窗：左边这张图，右边「工作流 + 参考位 + 提示词 + 比例/分辨率 + 生成」。
    *
    * 三条约束都是从用户角度定的：
    * 1. 提示词默认带这张图自己的（ComfyUI 写回的 → 反推的 → 空）；工作流内置那条只给按钮，
@@ -46,7 +46,7 @@
     /** 被点的那张图；关掉弹窗时父组件会置空，所以允许 null */
     image: MediaFeedItem | null;
     onClose: () => void;
-    /** 打开设置页某个分区（没有同款工作流时要去导入） */
+    /** 打开设置页某个分区（没有工作流时要去导入） */
     onOpenSettings?: (tab: string) => void;
     /** 点本次产出的缩略图 → 跳到图库里那一份（图片进对比、视频进播放器，由父组件分派） */
     onOpenImage?: (id: number, kind?: string) => void;
@@ -71,7 +71,7 @@
   let refs = $state<Record<string, ImageSummary | null>>({});
   /**
    * 这张图当初喂的参考图。再次创作生成过的才有；读回来之后参考位照它重摆。
-   * 用两张参考做出来的画面，点开同款就该看到那两张，而不是让人重新选一遍。
+   * 用两张参考做出来的画面，点开再次创作就该看到那两张，而不是让人重新选一遍。
    */
   let sources = $state<CloneSources | null>(null);
   let controls = $state<Record<string, string | number>>({});
@@ -887,7 +887,7 @@
    * 两条都叫「x」，那用户在切换列表里根本分不出哪条是哪条。
    */
   function uniqueName(base: string): string {
-    const wanted = templateDisplayName(base) || "同款工作流";
+    const wanted = templateDisplayName(base) || "未命名工作流";
     const names = new Set(templates.map((item) => templateDisplayName(item.name)));
     if (!names.has(wanted)) return wanted;
     let n = 2;
@@ -1303,10 +1303,10 @@
 
         <div class="cm-right">
           {#if !templatesLoaded}
-            <p class="cm-note">正在读取同款工作流…</p>
+            <p class="cm-note">正在读取工作流…</p>
           {:else if !template}
             <div class="cm-empty">
-              <p>还没有同款工作流。导出一份 ComfyUI 的 API 格式工作流 JSON，{cardKind === "video" ? "之后每条片子点一下就能出同款。" : cardKind === "audio" ? "之后每段配音点一下就能换词重配。" : "之后每张图点一下就能出同款。"}</p>
+              <p>还没有工作流。导出一份 ComfyUI 的 API 格式工作流 JSON，{cardKind === "video" ? "之后每条片子点一下就能再出一条。" : cardKind === "audio" ? "之后每段配音点一下就能换词重配。" : "之后每张图点一下就能再出一张。"}</p>
               <button class="cm-btn cm-btn-accent" disabled={workflowLoading} onclick={() => wfInput?.click()}>
                 {workflowLoading ? "正在读取…" : "加载本地工作流 JSON"}
               </button>
@@ -1350,8 +1350,10 @@
                   {#if cells.length}
                     <!-- 左边这一摞是参考素材：几族混着放（图片 → 视频 → 音频），末尾一颗不绑族的「+ 参考」。
                          叠着摆是一摞斜压的照片：--step 是每张露出多少、--spread 是整摞被鼠标碰到时再多露多少，
-                         --z 反着给（第一张压在最上面），所以每张露出来的都是下沿那一条，编号小牌正好一直看得见。
-                         鼠标移到哪张哪张摊平抬起来，其余压暗（CSS 那一段）。
+                         --z 顺着给（后挂上来的压在前面那张上头，苏醒 2026-11-04 点名），所以每张露出来的都是
+                         上沿那一条，编号小牌跟着挪到照片左上角，叠着也读得出「图片1／图片2」；
+                         末尾那颗「+ 参考」压在全摞最上面——它是下一个要动的地方，该最抢眼。
+                         鼠标移到哪张哪张摊平抬起来（提到最前面，才不被后面那张盖回去），其余压暗（CSS 那一段）。
                          可访问名管的是整块参考区，「（单图编辑）」这半句挂在那儿，读屏和测试都还拿得到。
                          只有一族时格子来自 visibleRefCells（已填的 + 一颗空格子），版面与图片再次创作一字不差。 -->
                     <div
@@ -1369,7 +1371,7 @@
                         {@const picked = refs[item.cell.key]}
                         <div
                           class="cm-ref-cell"
-                          style="--z: {stackCount - i}"
+                          style="--z: {i + 1}"
                           role="group"
                           aria-label={item.cell.label}
                           onmouseenter={(e) => refZoomFor(e.currentTarget as HTMLElement, picked, item.cell.label)}
@@ -1407,7 +1409,7 @@
                         <!-- 这一颗不绑族：点进去几族一起挑，选到哪一族就落那一族的第一个空位。 -->
                         <button
                           class="cm-tile cm-tile-add cm-ref-add"
-                          style="--z: 1"
+                          style="--z: {stackCount + 1}"
                           aria-label="添加参考素材"
                           title={addAnyTitle}
                           ondragover={(e) => e.preventDefault()}
@@ -1559,7 +1561,7 @@
                        但生成期间不给换：中途换工作流会把参考位和参数冲成另一份的，
                        而正在跑的那张既看不见也撤不回。理由写在 title 里，别让人对着点不动的按钮猜。
                        名字长到挤不下时，让位的是这颗胶囊（名字截断 + 收箭头），不是右边的取消和生成。 -->
-                  <button class="cm-pill" class:is-busy={busy} aria-label="同款工作流" aria-haspopup="menu" aria-expanded={wfOpen}
+                  <button class="cm-pill" class:is-busy={busy} aria-label="工作流" aria-haspopup="menu" aria-expanded={wfOpen}
                     disabled={busy} title={busy ? `生成中，等这张图画完再换工作流：${wfFullTitle}` : wfFullTitle}
                     onclick={toggleWorkflowPop}>
                     <Icon name="layers" size={13} />
@@ -1568,7 +1570,7 @@
                   </button>
                   {#if wfOpen}
                     <div class="cm-pop-scrim" role="presentation" onclick={closeWorkflowPop}></div>
-                    <div class="cm-pop cm-pop-wf" class:is-api={wfTab === "cloud" && Boolean(apiActive)} role="menu" aria-label="同款工作流">
+                    <div class="cm-pop cm-pop-wf" class:is-api={wfTab === "cloud" && Boolean(apiActive)} role="menu" aria-label="工作流">
                       <!-- 两屏各摆各的（苏醒要的）：本机的配方在「本地工作流」，云端的收费模型在「云端API服务」。
                            用 aria-pressed 的按钮而不是 tablist：这层容器是 role="menu"，塞 tablist 是错的 ARIA。 -->
                       <div class="cm-pop-tabs">
@@ -1923,13 +1925,17 @@
      现在那一摞再高也只长在左栏，提示词框在右栏原地不动。 */
   .cm-input-row { display: flex; align-items: flex-start; gap: 14px; min-width: 0; }
   .cm-prompt-col { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-  /* 左栏是一摞叠放的照片，不是一排缩略图：每张只往下露出 --step 那么一条。
-     --step / --spread 由 JS 按张数算（见 refStep、refSpread），--z 由行内反着给——
-     第一张压在最上面，所以每张露出来的都是**下沿那一条**，而编号小牌本来就压在照片左下角，
-     叠着也读得出「图片1／图片2」。 */
+  /* 左栏是一摞叠放的照片，不是一排缩略图：每张只露出 --step 那么一条。
+     --step / --spread 由 JS 按张数算（见 refStep、refSpread），--z 由行内顺着给（2026-11-04 苏醒：
+     图片1 压在最底下，图片2 压住它，末尾那颗「+ 参考」压在全摞最上面）——所以每张露出来的是
+     **上沿那一条**，编号小牌跟着挪到照片左上角；最后那一格整张露着，它就是「下一个要动的地方」。 */
   .cm-ref-stack {
     --step-base: 46px; --spread: 6px; --step: var(--step-base);
-    position: relative; flex: none; width: 84px; display: flex; flex-direction: column;
+    /* z-index: 0 是给整摞关一个自己的层（苏醒 2026-11-04：叠放反过来之后，最下面那颗「+ 参考」压在全摞
+       最上面，正好长在该弹层展开的位置上——格子自己的 z 是 1..n，弹层那条只有 3，n 一大就把菜单糊住，
+       菜单左半截的字看不见了）。整摞压在 0 层之后，格子里的先后与悬停抬起照旧生效，只是再也出不去这层；
+       卡底条与它上面的弹层是 3 层，永远盖得住这一摞。 */
+    position: relative; z-index: 0; flex: none; width: 84px; display: flex; flex-direction: column;
   }
   /* 鼠标移到整摞上，它自己摊开一点（每张多露 --spread），移开又叠回去：不点开也知道这一摞有几张。 */
   .cm-ref-stack:hover, .cm-ref-stack:focus-within { --step: calc(var(--step-base) + var(--spread)); }
@@ -1943,7 +1949,7 @@
   .cm-ref-stack .cm-ref-cell:nth-child(odd) { transform: rotate(-1.6deg); }
   .cm-ref-stack .cm-ref-cell:nth-child(even) { transform: rotate(1.3deg); }
   /* 指到哪张，哪张从摞里抬出来摆正、朝右边（话那一侧）挪一点，其余压暗：眼睛只跟着手走。
-     6px 小于两栏之间 14px 的缝，抬起来也压不到提示词框；z-index 提到 60 才不被上面那张盖回去。 */
+     6px 小于两栏之间 14px 的缝，抬起来也压不到提示词框；z-index 提到 60 才不被后面那张盖回去。 */
   .cm-ref-stack .cm-ref-cell:hover, .cm-ref-stack .cm-ref-cell:focus-within {
     z-index: 60; transform: translate(6px, -3px) rotate(0deg) scale(1.06);
   }
@@ -1979,9 +1985,11 @@
   .cm-tile-x:hover { background: rgba(38, 38, 42, 0.95); }
   .cm-tile-x:hover { color: #f87171; }
   /* 编号压在照片上（图二那一排没有编号，我们得留：提示词里写的是 @图片1，得对得上是谁）。
-     压在图上而不是摆在格子下面：省掉整行高度，卡片贴得住内容。深底＋虚化，跟格子右上角那颗移除键同一套。 */
+     压在图上而不是摆在格子下面：省掉整行高度，卡片贴得住内容。深底＋虚化，跟格子右上角那颗移除键同一套。
+     靠左上角是跟着叠放方向走的（2026-11-04 苏醒：后挂的压在前挂的上头）：每张只有**上沿**露在外面，
+     编号留在下沿就等于全被后面那张盖掉——左上角跟右上角那颗移除键同一水平线，露多露少都读得清。 */
   .cm-ref-caption {
-    position: absolute; z-index: 2; left: 5px; bottom: 5px; max-width: calc(100% - 10px);
+    position: absolute; z-index: 2; left: 5px; top: 5px; max-width: calc(100% - 10px);
     padding: 1px 6px; border-radius: 7px; font-size: 10.5px; line-height: 15px; color: #e8e8ec;
     background: rgba(14, 14, 16, 0.72); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none;
@@ -1991,9 +1999,11 @@
      行末那颗不绑族的「+ 参考」不在 .cm-ref-cell 里，它的字照留（那颗没有编号可写）。
      按钮的可访问名来自 aria-label，藏掉这行字不影响读屏。 */
   .cm-ref-cell .cm-tile-add span { display: none; }
-  /* 末尾那颗「+ 参考」叠在同一摞的最下面：它是这一摞的最后一张，宽度就是照片那么宽，
-     露多少由 --step 管。它没有编号可写，所以「参考」那两个字留在自己身上。 */
-  .cm-tile.cm-ref-add { width: 84px; height: auto; min-height: 84px; }
+  /* 末尾那颗「+ 参考」是这一摞的最后一张，宽度就是照片那么宽，露多少由 --step 管。
+     它没有编号可写，所以「参考」那两个字留在自己身上。
+     z-index 必须自己吃 --z：不写的话它是 z-index:auto，正 z 的格子全压在它上头，
+     「加载参考在最上面」这条就落不了地（--z 由行内给到 stackCount + 1）。 */
+  .cm-tile.cm-ref-add { width: 84px; height: auto; min-height: 84px; z-index: var(--z, 1); }
   .cm-ref-stack .cm-ref-add { margin-top: calc(var(--step) - 84px); }
   /* 只有一张参考时（一张照片 + 一颗空格子，或一份跨族素材 + 那颗不绑族的「+ 参考」）：
      那颗「+」不再另占一整格，缩成压在照片右下角的小圆钮——苏醒给的那张参考图就是这个样子。
@@ -2053,7 +2063,10 @@
   .cm-tile { box-shadow: 0 6px 16px rgba(0, 0, 0, 0.34); transition: transform 140ms ease, box-shadow 160ms ease, border-color 160ms ease, opacity 160ms ease; }
   .cm-ref-cell:hover .cm-tile,
   .cm-ref-cell:focus-within .cm-tile { border-color: rgb(255 255 255 / 26%); box-shadow: 0 16px 34px rgba(0, 0, 0, 0.52); }
-  .cm-tile-add { border-style: dashed; border-color: rgb(255 255 255 / 12%); background: rgb(255 255 255 / 4%); }
+  /* 空格子的底走不透明的 #1a1a1e（和上面那条 .cm-tile-add 同一个色），不再用 4% 白半透：
+     叠放反过来之后，末尾那一格是压在最上面的，半透的话会把下面那张照片透上来——
+     一个空位看着像已经放了东西。（贴在深色卡上时两种底差不到 1 个 RGB，看不出区别。） */
+  .cm-tile-add { border-style: dashed; border-color: rgb(255 255 255 / 12%); }
   .cm-tile-add:hover { border-color: rgb(255 255 255 / 26%); }
 
   /* 悬停放大的那一张：只负责让人看清是哪份素材。不接点击（pointer-events:none，

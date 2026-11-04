@@ -1276,7 +1276,7 @@ import { hoverPlay } from "../lib/hover-play";
                       tabindex="-1"
                       class="media-clone-btn"
                       title="再次创作"
-                      aria-label={`用同款工作流再生成${it.kind === "image" ? "一张" : it.kind === "audio" ? "一段" : "一条"}`}
+                      aria-label={`用当前工作流再生成${it.kind === "image" ? "一张" : it.kind === "audio" ? "一段" : "一条"}`}
                       onclick={(e) => { e.stopPropagation(); e.preventDefault(); openClone(it); }}
                       onpointerdown={(e) => e.stopPropagation()}
                       onmousedown={(e) => e.stopPropagation()}

@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * 设置 → 再次创作：同款工作流模板的导入、确认与替换。
+   * 设置 → 再次创作：工作流模板的导入、确认与替换。
    *
    * 为什么导入要人确认一遍槽位：自动检测只能猜「哪个输入框是提示词、哪个节点收参考图、
    * 哪两个控件值得放进弹窗」。猜错的代价是生成出来的图不对，而用户在弹窗里根本看不出
@@ -116,7 +116,7 @@
     try {
       const result = await cloneApi.inspect(payload);
       pending = { inspect: result, ...payload };
-      pendingName = templateDisplayName(result.suggested_name) || "同款工作流";
+      pendingName = templateDisplayName(result.suggested_name) || "未命名工作流";
       // 检测出来的槽位默认全留；candidates（步数、采样器之类）默认不加，避免弹窗一上来全是旋钮。
       picked = {};
       for (const slot of result.slots) picked[slotKey(slot)] = true;
@@ -159,14 +159,14 @@
                         // 多图参考的扩位信息必须原样带回去：在这儿丢一次，弹窗就只剩一个参考位
                         ...(slot.grow ? { grow: slot.grow } : {}) }));
     if (!chosen.some((s) => s.kind === "prompt")) {
-      error = "至少留一个提示词槽，否则弹窗里没有可改的文案，同款就只是重复出一样的图。";
+      error = "至少留一个提示词槽，否则弹窗里没有可改的文案，再次创作就只是重复出一样的图。";
       return;
     }
     busy = true;
     error = "";
     try {
       const saved = await cloneApi.create({
-        name: pendingName.trim() || "同款工作流",
+        name: pendingName.trim() || "未命名工作流",
         workflow: pending.workflow,
         path: pending.path,
         slots: chosen,
@@ -243,12 +243,12 @@
 </script>
 
 <div class="settings-card">
-  <SettingsRow title="同款工作流" description="图片卡、视频卡与音频卡右下角的图标都是这个入口：每一族各自记住「当前」那一条——图片卡用出图的，视频卡用出片的，音频卡用出声音的。导一次 ComfyUI 的 API 格式工作流，之后随时替换。" top>
+  <SettingsRow title="工作流" description="图片卡、视频卡与音频卡右下角的图标都是这个入口：每一族各自记住「当前」那一条——图片卡用出图的，视频卡用出片的，音频卡用出声音的。导一次 ComfyUI 的 API 格式工作流，之后随时替换。" top>
     {#snippet control()}
       <button class="setting-button" disabled={busy} onclick={() => void reload()}>重新读取</button>
     {/snippet}
     {#if loading}
-      <div class="clone-load" role="status"><p>正在读取同款工作流…</p></div>
+      <div class="clone-load" role="status"><p>正在读取工作流…</p></div>
     {:else if failed}
       <div class="clone-load" role="status"><p>暂时读不到模板，可以重试。</p><button class="setting-button" onclick={() => void reload()}>重新加载</button></div>
     {:else if !templates.length}

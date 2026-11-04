@@ -58,6 +58,32 @@ it("三处入口说的是新名字，弹窗的可访问名跟着换", () => {
   expect(settings).toContain("export const CLONE_SETTINGS_TAB = \"" + NEW + "\";");
 });
 
+/**
+ * 第二次改名（2026-11-04 苏醒）：那颗胶囊与设置页那一屏叫「同款工作流」，可它给的是
+ * 「这一族当前挂着的那份工作流」，不是「和这张图一模一样的那份」——「同款」两字同样是多余的承诺。
+ * 统一说「工作流」。守两件事：那四个字不再出现在 src 里；两处可访问名就是「工作流」。
+ */
+it("第二次的改名：「同款工作流」不再出现，胶囊与设置页那屏都只说「工作流」", () => {
+  const HALF_OLD = "同款工作流";
+  const hits: string[] = [];
+  for (const file of sources("src")) {
+    readFileSync(file, "utf8").split("\n").forEach((line, i) => {
+      if (line.includes(HALF_OLD)) hits.push(file + ":" + (i + 1) + " " + line.trim());
+    });
+  }
+  expect(hits).toEqual([]);
+
+  const modal = readFileSync("src/components/CloneModal.svelte", "utf8");
+  expect(modal).toContain('aria-label="工作流" aria-haspopup="menu"');   // 那颗胶囊
+  expect(modal).toContain('role="menu" aria-label="工作流"');             // 它展开的那层菜单
+
+  const settings = readFileSync("src/components/CloneTemplates.svelte", "utf8");
+  expect(settings).toContain('<SettingsRow title="工作流"');              // 设置页那一屏的标题
+
+  const feed = readFileSync("src/components/Feed.svelte", "utf8");
+  expect(feed).toContain("用当前工作流再生成");                            // 角标的可访问名
+});
+
 it("设置页那屏的标题与分区名同步换了，但搜索仍收旧名字", () => {
   const settings = readFileSync("src/components/SettingsModal.svelte", "utf8");
   expect(settings).toContain("<h3 id=\"settings-clone-title\">" + NEW + "</h3>");

@@ -19,7 +19,7 @@ def _data_dir_off_the_real_one(tmp_path_factory):
     为什么要有这条：`init_pool()` 只建不换（``_POOL is None`` 才建），所以**第一个**
     没声明 `tmp_data_dir` 就调到 `get_pool()` 的用例，会把池子永久钉在
     ``Path.cwd()/data/db.sqlite`` 上——那正是开发时在跑的那份库，之后整会话的用例
-    写的都是它。「一键同款」接云端那天，11 条测试账号就是这么进的本机库。
+    写的都是它。「再次创作」接云端那天，11 条测试账号就是这么进的本机库。
     默认目录换掉是防，下面那层 __init__ 守卫是当场报错，不让人默默写进真库再查。
     """
     global _SESSION_ROOT
@@ -78,7 +78,7 @@ def _no_real_dev_db_in_tests():
 
 @pytest.fixture(autouse=True)
 def _no_bundled_clone_templates(monkeypatch):
-    """新库默认不装内置的「一键同款」工作流。
+    """新库默认不装内置的「再次创作」工作流。
 
     生产里默认是装的（安装包开箱就该有图片与视频各一份），但绝大多数老用例的前提
     是「模板表一开始是空的」。测内置本身的用例自己把它打开。

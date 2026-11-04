@@ -101,11 +101,11 @@ describe("音频卡", () => {
     expect(container.querySelector(".media-card-meta")?.textContent).toBe("0:42");
   });
 
-  it("悬停不长播放角标：整张卡就是播放控件，右下角只有「一键同款」", async () => {
+  it("悬停不长播放角标：整张卡就是播放控件，右下角只有「再次创作」", async () => {
     const { container } = renderFeed();
     await tick();
     const card = thumbOf(container, "氛围底噪.mp3").closest("button") as HTMLElement;
-    // 三类卡右下角共用同一颗一键同款，它挂在卡片上、不坐页脚那一格
+    // 三类卡右下角共用同一颗再次创作，它挂在卡片上、不坐页脚那一格
     const cloneBtn = container.querySelector<HTMLElement>(".media-clone-btn");
     expect(cloneBtn).toBeTruthy();
     expect(cloneBtn?.closest(".media-card-media")).toBeNull();
@@ -215,7 +215,7 @@ describe("音频卡", () => {
     // 底部进度轨常驻，播放前只是空的暗轨
     expect(container.querySelector(".audio-track")).toBeTruthy();
     expect(container.querySelector(".audio-progress")).toBeNull();
-    // 悬停什么都不长出来：画面里不许再有播放角标，右下角那一颗交给三类共用的「一键同款」
+    // 悬停什么都不长出来：画面里不许再有播放角标，右下角那一颗交给三类共用的「再次创作」
     await fireEvent.mouseEnter(card);
     await tick();
     expect(container.querySelector(".audio-play-btn")).toBeNull();

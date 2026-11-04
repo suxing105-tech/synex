@@ -1,4 +1,4 @@
-"""音频一键同款：Qwen3 音色克隆工作流的族别识别、产物收法与生成链路。
+"""音频再次创作：Qwen3 音色克隆工作流的族别识别、产物收法与生成链路。
 
 fixture 是从 F:/常用/闪寻音频.json 抄出来的同构体（裁掉多余分支后的那条音色克隆链）。
 生成链路走 httpx.MockTransport，绝不连真机 8188。
@@ -380,7 +380,7 @@ def three_branch_nodes() -> dict:
     nodes.update(qwen3_nodes())
     nodes.update(voice_design_nodes())
     nodes.update(custom_voice_nodes())
-    # 原文件里三条分支各有自己的输出节点，谁都没连谁——这才是一键同款要跑三遍的原因
+    # 原文件里三条分支各有自己的输出节点，谁都没连谁——这才是再次创作要跑三遍的原因
     nodes["39"] = {"class_type": "PreviewAudio", "inputs": {"audio": ["38", 0]}}
     nodes["40"] = {"class_type": "PreviewAudio", "inputs": {"audio": ["37", 0]}}
     return nodes

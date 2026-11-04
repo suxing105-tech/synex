@@ -1,4 +1,4 @@
-"""一键同款生成链路：用一个假 ComfyUI 跑完上传→注入→排队→轮询→取图→入库。
+"""再次创作生成链路：用一个假 ComfyUI 跑完上传→注入→排队→轮询→取图→入库。
 
 绝不连真机：所有请求都被 httpx.MockTransport 截住，config 里的地址也指到一个
 不可能的域名，万一哪天有人漏改一处，测试会连不上而不是在用户的 ComfyUI 里出图。
@@ -534,7 +534,7 @@ def test_grown_cells_are_optional_but_unknown_ones_are_rejected(fake, source_ima
 async def test_finished_run_records_its_references_in_cell_order(fake, source_image, init_db, tmp_path):
     """两张不同的参考图跑完之后，产出图要能原样读回那两张，顺序＝参考位顺序。
 
-    这条是「点产出图的一键同款，参考位该摆两张」的数据来源。以前出完就忘，
+    这条是「点产出图的再次创作，参考位该摆两张」的数据来源。以前出完就忘，
     弹窗再打开只会把被点的这张图当唯一参考，多图编辑的工作流被降级成单图。
     """
     second = int(Indexer()._process_path_sync(make_png(tmp_path / "背景图.png", width=7, height=7))["id"])

@@ -186,14 +186,14 @@ class ConnectionPool:
                 ensure_fts_triggers(self._main)
             except sqlite3.Error as exc:
                 logger.warning("搜索索引维护失败，搜索将退回模糊匹配：%s", exc)
-            # 内置的「一键同款」工作流：新库装上、老库认领同名的、用户改过的不覆盖。
+            # 内置的「再次创作」工作流：新库装上、老库认领同名的、用户改过的不覆盖。
             # 放在这里而不是启动接口里，命令行工具打开同一个库也能拿到同一份结果。
             # 建库不该被资源文件的问题拖住，所以坏了只吵日志。
             try:
                 from .clone_bundled import seed as seed_bundled_templates
                 seed_bundled_templates(self._main)
             except Exception as exc:  # noqa: BLE001 - 内置模板缺失不该让图库打不开
-                logger.warning("内置一键同款工作流装载失败：%s", exc)
+                logger.warning("内置再次创作工作流装载失败：%s", exc)
             # 「图片API / 视频API / 音频API」三条快捷方式：只在第一次装库时种。
             # 用户删掉说明他不想看见，每次启动又长回来等于告诉他这一行不归他管。
             try:
@@ -540,7 +540,7 @@ def migrate_image_path_identity(conn: sqlite3.Connection, db_path: Path | None =
     重复行怎么来的：改名接口一度把 path 写成反斜杠形式（v0.2.32 及以前）。path 上那个
     UNIQUE 只比字符串、不比这两个字符串指的是不是同一个文件，于是同一个文件留下两行，
     网格里就是两张一模一样的缩略图。这里把老写法改回全站那一种，重复的并成一行——
-    标签、所属文件夹、反推提示词、一键同款来源、视频提示词记录都跟到留下来的那一行上。
+    标签、所属文件夹、反推提示词、再次创作来源、视频提示词记录都跟到留下来的那一行上。
 
     合并只删「和另一行指向同一个文件」的索引行，图片文件本身一个都不动。
     动数据前强制备份一次（唯一回滚手段）；备份失败就跳过迁移。

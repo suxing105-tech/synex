@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * 一键同款弹窗：左边这张图，右边「同款工作流 + 参考位 + 提示词 + 比例/分辨率 + 生成」。
+   * 再次创作弹窗：左边这张图，右边「同款工作流 + 参考位 + 提示词 + 比例/分辨率 + 生成」。
    *
    * 三条约束都是从用户角度定的：
    * 1. 提示词默认带这张图自己的（ComfyUI 写回的 → 反推的 → 空）；工作流内置那条只给按钮，
@@ -69,7 +69,7 @@
   let promptTouched = false;
   let refs = $state<Record<string, ImageSummary | null>>({});
   /**
-   * 这张图当初喂的参考图。一键同款生成过的才有；读回来之后参考位照它重摆。
+   * 这张图当初喂的参考图。再次创作生成过的才有；读回来之后参考位照它重摆。
    * 用两张参考做出来的画面，点开同款就该看到那两张，而不是让人重新选一遍。
    */
   let sources = $state<CloneSources | null>(null);
@@ -201,7 +201,7 @@
       ? `这条云端 API 不吃${REF_KIND_NAMES[cardKind]}参考，${cardLabel}没放进去。要喂素材就点下面的参考位。`
       : "",
   );
-  /** 一族一行。只有图片一族时，参考区与图片一键同款的版面一字不差。 */
+  /** 一族一行。只有图片一族时，参考区与图片再次创作的版面一字不差。 */
   const imageCells = $derived(familyCells(cells, "image"));
   const audioCells = $derived(familyCells(cells, "audio"));
   const videoCells = $derived(familyCells(cells, "video"));
@@ -316,8 +316,8 @@
    * 加一份素材得先判断「这算哪一块」；合成一行之后它就是一个参考列表，末尾一颗「+ 参考」。
    * 排布按 REF_DISPLAY_ORDER（图片 → 视频 → 音频），跟 H3 把参考摆进上下文的顺序一个说法。
    *
-   * 只有一族（图片一键同款）时仍走原来的 visibleRefCells：已填的 + 一颗「+ 参考」，
-   * 版面、可访问名、悬浮说明与图片一键同款一字不差。
+   * 只有一族（图片再次创作）时仍走原来的 visibleRefCells：已填的 + 一颗「+ 参考」，
+   * 版面、可访问名、悬浮说明与图片再次创作一字不差。
    */
   const singleFamily = $derived(families.length <= 1);
   const onlyFamily = $derived<RefKind>(families[0] ?? "image");
@@ -335,7 +335,7 @@
   // 视频工作流插的是 H3 原生标签（<Picture 1>），图片工作流仍插 @图片1，一条老规矩都没动。
   const mentionOptions = $derived(mentionOpen ? buildMentionItems(cells, refs, mentionQuery, mediaKind, isCloud) : []);
   /**
-   * 素材选择器：绑到某一格（替换、@ 菜单、图片一键同款那颗「+」）时只列那一族，标题写死那一族；
+   * 素材选择器：绑到某一格（替换、@ 菜单、图片再次创作那颗「+」）时只列那一族，标题写死那一族；
    * 点合并行里那颗不绑族的「+ 参考」时几族一起列，标题跟着当前挑的族走。
    */
   const ADD_ANY = "*";
@@ -354,7 +354,7 @@
    */
   const rowAria = $derived(`${refNoun}（${modeLabel(mode, mediaKind)}）`);
 
-  /** 「添加图片1参考图」保持图片一键同款的原话；音频/视频不硬套「参考图」这三个字。 */
+  /** 「添加图片1参考图」保持图片再次创作的原话；音频/视频不硬套「参考图」这三个字。 */
   function addLabel(kind: RefKind, label: string): string {
     return kind === "image" ? `添加${label}参考图` : `添加${label}`;
   }
@@ -627,7 +627,7 @@
   /**
    * 提示词该摆哪句：这张产出自带的 → 反推出来的 → 当初生成时记下的。
    * 音频为什么需要第三条：flac 带不走提示词（PNG 有 tEXt、片子有元数据），
-   * 不记下来的话点「一键同款」就是一句空白的台词。
+   * 不记下来的话点「再次创作」就是一句空白的台词。
    * 用户已经在框里动过手，就一句都不再自动填。
    */
   function syncPrompt() {
@@ -864,7 +864,7 @@
    * 上一次开弹窗时那张卡是哪一族。弹窗常驻在 Feed 里（关掉它不销毁组件），templateId 会一路带下去：
    * 音频卡用完再点图片卡，图片卡就挂着出声音的那条工作流——参考区、参数、产物全错一族，
    * 点下去跑了十几秒才知道不对。跨族必须重挑；同族之间照旧带着用户挑的那条
-   * （连着几张卡共用一份配方才是「一键同款」的用法，不能每次开弹窗都跳回库里标的那条）。
+   * （连着几张卡共用一份配方才是「再次创作」的用法，不能每次开弹窗都跳回库里标的那条）。
    */
   let openedCardKind: RefKind | null = null;
 
@@ -1152,16 +1152,16 @@
 
 {#if open}
   <div class="cm-backdrop" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-    <div class="cm-panel" role="dialog" aria-modal="true" aria-label="一键同款" use:modalFocus onscroll={() => (refZoom = null)}>
+    <div class="cm-panel" role="dialog" aria-modal="true" aria-label="再次创作" use:modalFocus onscroll={() => (refZoom = null)}>
       <header class="cm-top">
         <div class="cm-top-text">
-          <span class="cm-kicker">一键同款</span>
+          <span class="cm-kicker">再次创作</span>
           {#if template}
             <!-- 切换与导入收在底部那颗「工作流」按钮里，顶栏只报当前在用哪一份。 -->
             <h3 class="cm-title" title={`${wfFullTitle} · ${template.node_count} 个节点`}>{wfName}</h3>
           {/if}
         </div>
-        <button class="cm-close" aria-label="关闭一键同款" onclick={onClose}><Icon name="x" size={16} /></button>
+        <button class="cm-close" aria-label="关闭再次创作" onclick={onClose}><Icon name="x" size={16} /></button>
       </header>
 
       {#if !$comfyuiStatus.enabled || !$comfyuiStatus.running}
@@ -1174,7 +1174,7 @@
       <div class="cm-body">
         <div class="cm-left">
           {#if image?.kind === "video" && image.playable !== false && image.play_url}
-            <!-- 视频卡的左边直接能播：一键同款要抄的常常是片子里的节奏、运镜和转场，
+            <!-- 视频卡的左边直接能播：再次创作要抄的常常是片子里的节奏、运镜和转场，
                  只给一张首帧等于让人凭记忆写提示词。放不出来的容器（playable=false）退回海报帧。 -->
             <!-- svelte-ignore a11y_media_has_caption -->
             <video
@@ -1259,7 +1259,7 @@
               {#if cells.length}
                 <!-- 参考区只有一行：几族素材混着排（图片 → 视频 → 音频），末尾一颗不绑族的「+ 参考」。
                      可访问名管的是整块参考区，「（单图编辑）」这半句挂在那儿，读屏和测试都还拿得到。
-                     只有一族时格子来自 visibleRefCells（已填的 + 一颗空格子），版面与图片一键同款一字不差。 -->
+                     只有一族时格子来自 visibleRefCells（已填的 + 一颗空格子），版面与图片再次创作一字不差。 -->
                 <div
                   class="cm-ref-row"
                   role="group"

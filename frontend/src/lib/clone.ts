@@ -1,5 +1,5 @@
 /**
- * 一键同款的数据层：同款工作流模板、槽位、生成任务状态。
+ * 再次创作的数据层：同款工作流模板、槽位、生成任务状态。
  *
  * 为什么单独一个文件：这套东西的契约全在后端（clone_templates / clone_jobs），
  * 前端只负责「把槽位画出来 + 把用户填的原样交回去」。塞进 stores.ts 会把两个不相干
@@ -80,7 +80,7 @@ export interface CloneTemplate {
   modes?: CloneMode[];
   reference_count: number;
   control_count: number;
-  /** 出片还是出图。老模板没带就当 image，行为和图片一键同款一字不差。 */
+  /** 出片还是出图。老模板没带就当 image，行为和图片再次创作一字不差。 */
   media_kind?: MediaKind;
   /** 后端算好的参考格清单（族、编号、H3 标签）。有就照它画，别再在前端算一遍。 */
   reference_cells?: RefCellWire[];
@@ -868,7 +868,7 @@ export function familyCells(cells: RefCell[], kind: RefKind): RefCell[] {
   return cells.filter((cell) => (cell.kind ?? "image") === kind);
 }
 
-/** 这份工作流有几族参考位。只有一族（图片）时，弹窗版面和图片一键同款一字不差。 */
+/** 这份工作流有几族参考位。只有一族（图片）时，弹窗版面和图片再次创作一字不差。 */
 export function referenceFamilies(template: CloneTemplate | null | undefined): RefKind[] {
   const cells = referenceCells(template);
   return REF_KINDS.filter((kind) => familyCells(cells, kind).length > 0);
@@ -900,7 +900,7 @@ export function sortByDisplayFamily(cells: RefCell[]): RefCell[] {
 /**
  * 合并进同一行的格子：只画已经填上的，族与族之间按展示序排。
  *
- * 只有一族时调用方仍走 visibleRefCells——图片一键同款的版面一个字都不动。
+ * 只有一族时调用方仍走 visibleRefCells——图片再次创作的版面一个字都不动。
  * 「+参考」不绑族，所以合并行不再替每一族摆一颗空格子。
  */
 export function mergedRefCells(cells: RefCell[], refs: Record<string, ImageSummary | null>): RefCell[] {
@@ -923,7 +923,7 @@ export function firstFreeRefKey(cells: RefCell[], refs: Record<string, ImageSumm
 /**
  * 弹窗打开时参考位的初始摆法，分两种情况：
  *
- *  - 这张图本身就是一键同款出的：按来源记录把当初那几张参考图原样摆回去（顺序＝参考位
+ *  - 这张图本身就是再次创作出的：按来源记录把当初那几张参考图原样摆回去（顺序＝参考位
  *    顺序）。用两张参考做出来的画面，点开同款就该看到那两张；只摆一张等于把多图编辑
  *    悄悄降级成单图，用户还得自己回忆当初喂了什么。
  *  - 没有来源记录（在 ComfyUI 里手动出的图）：退回把被点的那张放进「图片1」＝默认单图
@@ -976,7 +976,7 @@ export function defaultReferences(
   return out;
 }
 
-/** 这份工作流是不是只有图片一族（＝图片一键同款的老样子）。 */
+/** 这份工作流是不是只有图片一族（＝图片再次创作的老样子）。 */
 export function isImageOnlyRefs(template: CloneTemplate | null | undefined): boolean {
   const families = referenceFamilies(template);
   if (families.some((family) => family !== "image")) return false;
@@ -1104,7 +1104,7 @@ export type PromptOrigin = "image" | "recorded" | "none";
 /**
  * 预填顺序：这张产出自带的 ComfyUI 提示词 → 当初生成时记下的那句 → 最新一条反推提示词 → 空。
  * 中间那条为什么要有：flac 之类的产出带不走提示词（PNG 有 tEXt、片子有元数据），
- * 不记下来，点「一键同款」就是一句空白的台词。
+ * 不记下来，点「再次创作」就是一句空白的台词。
  * 工作流内置那条不自动填：换了参考图之后，工作流里的原文十有八九对不上内容；
  * 但给一个按钮让人一键填回来（见 shouldOfferWorkflowPrompt）。
  */
@@ -1415,7 +1415,7 @@ export type CloneSourceImage = ImageSummary & { slot?: string; kind?: string };
 export type CloneSourceOrigin = "db" | "file" | "unrecorded" | "";
 
 /**
- * 一键同款的来源：产出图当初喂的参考图（已按参考位顺序排好）。
+ * 再次创作的来源：产出图当初喂的参考图（已按参考位顺序排好）。
  * dropped 是「当初喂过、如今在图库里认不出来」的张数，弹窗要如实说出来，不能默默少一张。
  */
 export interface CloneSources {
@@ -1430,7 +1430,7 @@ export interface CloneSources {
   slot_prompts?: Record<string, string>;
 }
 
-export const CLONE_SETTINGS_TAB = "一键同款";
+export const CLONE_SETTINGS_TAB = "再次创作";
 
 // ---------- 接口 ----------
 
@@ -1490,7 +1490,7 @@ export const cloneApi = {
   detail(id: number): Promise<ImageDetail> {
     return api.http<ImageDetail>(`/api/images/${id}`);
   },
-  /** 这张图当初喂了哪几张参考图。一键同款生成过的才有，没记过时 references 是空的。 */
+  /** 这张图当初喂了哪几张参考图。再次创作生成过的才有，没记过时 references 是空的。 */
   sources(id: number): Promise<CloneSources> {
     return api.http<CloneSources>(`/api/clone/sources/${id}`);
   },
@@ -1543,7 +1543,7 @@ export interface CloudAccount {
   has_api_key: boolean;
   /** "encrypted" = 落盘时走系统加密；其它值 = 只活在本进程，重启要重填 */
   key_persistence: string;
-  /** 后端标的那一行 = 一键同款真正会用的那把 Key。界面跟着它说话，不按下标猜。 */
+  /** 后端标的那一行 = 再次创作真正会用的那把 Key。界面跟着它说话，不按下标猜。 */
   is_shared?: boolean;
 }
 

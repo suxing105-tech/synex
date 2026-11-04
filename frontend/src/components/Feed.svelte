@@ -53,7 +53,7 @@ import { hoverPlay } from "../lib/hover-play";
     overlayOpen?: boolean;
     /** F 键沉浸满屏：只剩缩略图，工具栏（标题、搜索、类型 chips、列数）整条不渲染。 */
     immersive?: boolean;
-    /** 打开设置页的某个分区（一键同款弹窗里没有模板时要去导入工作流）。 */
+    /** 打开设置页的某个分区（再次创作弹窗里没有模板时要去导入工作流）。 */
     onOpenSettings?: (tab: string) => void;
   }
   let { selectedId = $bindable(), lightboxOpen = $bindable(), lightboxIndex = $bindable(), overlayOpen = false, immersive = false, onOpenSettings }: Props = $props();
@@ -111,9 +111,9 @@ import { hoverPlay } from "../lib/hover-play";
   let totalLabel = $derived(mediaSummary($feedCounts));
   let selectedKinds = $derived(kindsIn($mediaItems.filter((it) => $multiSelectedIds.has(it.id))));
   let selectedLabel = $derived(selectionSummary(selectedCount, selectedKinds));
-  // ---------- 一键同款 ----------
+  // ---------- 再次创作 ----------
   // 弹窗目标就是被点的这一份素材；生成在后台跑，关掉弹窗不会中断（状态在后端）。
-  // 图片卡、视频卡与音频卡共用同一个入口、同一个弹窗：右下角那颗不管哪一族都是「一键同款」。
+  // 图片卡、视频卡与音频卡共用同一个入口、同一个弹窗：右下角那颗不管哪一族都是「再次创作」。
   // 从音频卡打开时，这段声音先站进「音频 1」当参考音色——与视频卡把自己放进「视频 1」同一套逻辑。
   let cloneTarget = $state<MediaFeedItem | null>(null);
   function openClone(it: MediaFeedItem) {
@@ -662,7 +662,7 @@ import { hoverPlay } from "../lib/hover-play";
         ...(isPsdFilename(t.filename) ? [{ label: "在 Photoshop 中打开", onClick: () => openInPhotoshop(t) }] : []),
         // 图片与视频共用这颗菜单项：弹窗会按卡片这一族挑默认的当前工作流
         ...(t.kind === "image" || t.kind === "video" || t.kind === "audio"
-          ? [{ label: "一键同款", onClick: () => openClone(t) }]
+          ? [{ label: "再次创作", onClick: () => openClone(t) }]
           : []),
         { label: "重命名", onClick: () => renameImage(t) },
         { label: `${noun}所在位置`, onClick: () => revealImage(t) },
@@ -1267,7 +1267,7 @@ import { hoverPlay } from "../lib/hover-play";
                     {/if}
                   </div>
                   {#if it.kind === "image" || it.kind === "video" || it.kind === "audio"}
-                    <!-- 「一键同款」角标：图片、视频、音频三类卡共用同一颗，右下角位置与尺寸只有一套规矩。
+                    <!-- 「再次创作」角标：图片、视频、音频三类卡共用同一颗，右下角位置与尺寸只有一套规矩。
                          音频卡不再有播放角标（单击/双击卡片本身就播），右下角只有这一颗。
                          卡片本身是 <button>，所以这里只能再用 role="button" 的 div，并且按下的事件都要拦，
                          否则点图标会变成选中/拖动那张卡。点开的是同一个弹窗，只是默认换成那一族的当前工作流。 -->
@@ -1275,7 +1275,7 @@ import { hoverPlay } from "../lib/hover-play";
                       role="button"
                       tabindex="-1"
                       class="media-clone-btn"
-                      title="一键同款"
+                      title="再次创作"
                       aria-label={`用同款工作流再生成${it.kind === "image" ? "一张" : it.kind === "audio" ? "一段" : "一条"}`}
                       onclick={(e) => { e.stopPropagation(); e.preventDefault(); openClone(it); }}
                       onpointerdown={(e) => e.stopPropagation()}
@@ -1562,7 +1562,7 @@ import { hoverPlay } from "../lib/hover-play";
     z-index: 2;
   }
   /* 音频卡不再有播放角标（悬停那颗圆标已删：整张卡就是播放控件）。
-     右下角那一颗是图片/视频/音频共用的「一键同款」，页脚右侧的让位由 app.css 的
+     右下角那一颗是图片/视频/音频共用的「再次创作」，页脚右侧的让位由 app.css 的
      .media-card.is-cloneable 一处负责，这里不再重复第二条尺寸公式。 */
   /* 图片的淡入与 hover 放大搬到了全局 .media-card-img；这里只留卡片自身的交互约束 */
   .thumb { user-select: none; touch-action: none; flex: none; min-height: 0; }

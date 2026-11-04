@@ -93,7 +93,7 @@ it("音频卡上没有播放角标（整张卡就是播放控件）", () => {
   expect(styleBlock).not.toMatch(/\.audio-play-btn/);
   expect(styleBlock).not.toMatch(/\.audio-play-icon/);
   expect(source).not.toContain("--audio-btn");
-  // 音频也不该再单独给页脚右侧留让位：那一格是三类共用的一键同款，规矩在 app.css 一处
+  // 音频也不该再单独给页脚右侧留让位：那一格是三类共用的再次创作，规矩在 app.css 一处
   expect(decls(".media-card.is-audio .media-card-footer")["padding-right"]).toBeUndefined();
   const appCss = readFileSync("src/app.css", "utf8");
   const cloneBlock = /\.media-card\.is-cloneable \.media-card-footer \{[^}]*\}/.exec(appCss)?.[0] ?? "";

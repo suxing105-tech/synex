@@ -30,7 +30,7 @@ export function connectEvents() {
         // 来源目录镜像文件夹被清理（磁盘目录删除）→ 刷新左侧目录树
         await Promise.all([refreshFolders(), refreshStats()]);
       } else if (payload.type === "clone_progress") {
-        // 一键同款：进度只进内存 store。产出的图片会另外发 image_indexed，
+        // 再次创作：进度只进内存 store。产出的图片会另外发 image_indexed，
         // 所以图库列表照常刷新，弹窗这里只负责显示状态与结果 chips。
         applyCloneProgress(payload);
       } else if (payload.type === "scan_progress") {

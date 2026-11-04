@@ -8,7 +8,7 @@ import { feedItems, feedLoading, multiSelectedIds, selectedId, targetColumns } f
 import { applyCloneProgress } from '../lib/clone';
 import { itemsApi } from '../lib/api';
 
-// 一键同款的入口挂在图片卡页脚上，所以这里要连 Feed 一起渲染；
+// 再次创作的入口挂在图片卡页脚上，所以这里要连 Feed 一起渲染；
 // 弹窗自己的逻辑在 clone-modal.test.ts，这里只验「入口在哪、什么时候不出现」。
 vi.mock('../lib/api', () => ({
   itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) },
@@ -57,7 +57,7 @@ async function openFeed(items: Record<string, unknown>[], width = 1200) {
 beforeEach(() => { vi.restoreAllMocks(); });
 afterEach(() => { cleanup(); feedItems.set([]); multiSelectedIds.set(new Set()); });
 
-it('图片卡文件名右边常驻一键同款图标，点它只开弹窗、不碰选区', async () => {
+it('图片卡文件名右边常驻再次创作图标，点它只开弹窗、不碰选区', async () => {
   const screen = await openFeed([card({})]);
   const btn = screen.getByRole('button', { name: '用同款工作流再生成一张' });
   // 常驻：不靠 hover 才出现，用户不用先找到那张图才能看见入口
@@ -70,7 +70,7 @@ it('图片卡文件名右边常驻一键同款图标，点它只开弹窗、不�
   expect(cardEl.querySelector('.media-card-name')?.textContent).toContain('a.png');
   await fireEvent.click(btn);
   await tick();
-  expect(screen.getByRole('dialog', { name: '一键同款' })).toBeTruthy();
+  expect(screen.getByRole('dialog', { name: '再次创作' })).toBeTruthy();
   expect([...get(multiSelectedIds)]).toEqual([]);
 });
 
@@ -105,7 +105,7 @@ it('角标不加边框也不加底色，悬停只是图标变品牌色，焦点�
   expect(/\.media-clone-btn:focus,\s*\.media-clone-btn:focus-visible \{\s*outline: none;/.test(block)).toBe(true);
 });
 
-it('三类卡挂同一颗一键同款角标，量词按族：一张 / 一条 / 一段', async () => {
+it('三类卡挂同一颗再次创作角标，量词按族：一张 / 一条 / 一段', async () => {
   const screen = await openFeed([
     card({ id: 2, kind: 'video', filename: 'v.mp4', original_url: null, thumbnail_url: '/api/videos/2/thumb', playable: false }),
     card({ id: 3, kind: 'audio', filename: 'a.mp3', original_url: '/api/audio/3/file', thumbnail_url: '/api/audio/3/waveform' }),
@@ -117,14 +117,14 @@ it('三类卡挂同一颗一键同款角标，量词按族：一张 / 一条 / �
     expect(btn.closest('.media-card-footer')).toBeNull();
     await fireEvent.click(btn);
     await tick();
-    expect(screen.getByRole('dialog', { name: '一键同款' })).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: '再次创作' })).toBeTruthy();
     await fireEvent.keyDown(document, { key: 'Escape' });
     await tick();
-    expect(screen.queryByRole('dialog', { name: '一键同款' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: '再次创作' })).toBeNull();
   }
 });
 
-it('音频卡悬停后也只有「一键同款」这一颗角标，画面里不再长出播放键', async () => {
+it('音频卡悬停后也只有「再次创作」这一颗角标，画面里不再长出播放键', async () => {
   const screen = await openFeed([
     card({ id: 3, kind: 'audio', filename: 'a.mp3', original_url: '/api/audio/3/file', thumbnail_url: '/api/audio/3/waveform' }),
   ]);
@@ -145,15 +145,15 @@ it('窄列页脚不渲染时，音频卡也没有角标（与图片/视频同一
   expect(screen.queryByRole('button', { name: /用同款工作流再生成/ })).toBeNull();
 });
 
-it('窄列下音频卡的右键菜单也能进一键同款', async () => {
+it('窄列下音频卡的右键菜单也能进再次创作', async () => {
   const screen = await openFeed([
     card({ id: 3, kind: 'audio', filename: 'a.mp3', original_url: '/api/audio/3/file', thumbnail_url: '/api/audio/3/waveform' }),
   ], 300);
   await fireEvent.contextMenu(screen.container.querySelector('.thumb')!, { clientX: 10, clientY: 10 });
   await tick();
-  await fireEvent.click(screen.getByRole('menuitem', { name: '一键同款' }));
+  await fireEvent.click(screen.getByRole('menuitem', { name: '再次创作' }));
   await tick();
-  expect(screen.getByRole('dialog', { name: '一键同款' })).toBeTruthy();
+  expect(screen.getByRole('dialog', { name: '再次创作' })).toBeTruthy();
 });
 
 /** Feed 渲染结果的具体类型：写成 ReturnType<typeof render> 会退化成通用查询签名，取不到元素类型。 */
@@ -192,7 +192,7 @@ it('点弹窗里的产出图：直接进「原图 vs 产出图」对比（两张
   await fireEvent.click(screen.getByRole('button', { name: '打开生成的第 2 张' }));
   await vi.waitFor(() => expect([...get(multiSelectedIds)].sort((a, b) => a - b)).toEqual([1, 2]));
   expect(get(selectedId)).toBe(2);
-  expect(screen.queryByRole('dialog', { name: '一键同款' })).toBeNull();
+  expect(screen.queryByRole('dialog', { name: '再次创作' })).toBeNull();
 });
 
 it('刷新后原图不在当前列表里时不硬凑对比：只选中产出图', async () => {
@@ -216,23 +216,23 @@ it('列太窄整条页脚都不渲染时，图标跟着消失（不硬挤一个�
   expect(screen.queryByRole('button', { name: '用同款工作流再生成一张' })).toBeNull();
 });
 
-it('窄列下右键菜单仍然能进一键同款', async () => {
+it('窄列下右键菜单仍然能进再次创作', async () => {
   const screen = await openFeed([card({})], 300);
   const thumb = screen.container.querySelector('.thumb')!;
   await fireEvent.contextMenu(thumb, { clientX: 10, clientY: 10 });
   await tick();
-  const item = screen.getByRole('menuitem', { name: '一键同款' });
+  const item = screen.getByRole('menuitem', { name: '再次创作' });
   await fireEvent.click(item);
   await tick();
-  expect(screen.getByRole('dialog', { name: '一键同款' })).toBeTruthy();
+  expect(screen.getByRole('dialog', { name: '再次创作' })).toBeTruthy();
 });
 
-it('视频卡的右键菜单里也有一键同款（窄列页脚不渲染时它是唯一的入口）', async () => {
+it('视频卡的右键菜单里也有再次创作（窄列页脚不渲染时它是唯一的入口）', async () => {
   const screen = await openFeed([card({ id: 4, kind: 'video', filename: 'v.mp4', original_url: null, thumbnail_url: '/api/videos/4/thumb', playable: false })], 300);
   await fireEvent.contextMenu(screen.container.querySelector('.thumb')!, { clientX: 10, clientY: 10 });
   await tick();
-  const item = screen.getByRole('menuitem', { name: '一键同款' });
+  const item = screen.getByRole('menuitem', { name: '再次创作' });
   await fireEvent.click(item);
   await tick();
-  expect(screen.getByRole('dialog', { name: '一键同款' })).toBeTruthy();
+  expect(screen.getByRole('dialog', { name: '再次创作' })).toBeTruthy();
 });

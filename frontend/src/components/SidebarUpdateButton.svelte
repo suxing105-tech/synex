@@ -45,7 +45,7 @@
 {/if}
 
 {#if cardVisible}
-  <!-- 下载与安装期间整屏糊掉、弹窗居中：和「一键同款」同一套背景虚化，侧栏也在糊掉的那一层里。
+  <!-- 下载与安装期间整屏糊掉、弹窗居中：和「再次创作」同一套背景虚化，侧栏也在糊掉的那一层里。
        这段过程没有可撤销的动作（装完就重启），所以底不做出声、也不给关闭按钮。 -->
   <div class="update-scrim">
     <div class="update-modal" role="status" aria-live="polite">
@@ -110,7 +110,7 @@
     background: rgb(242 78 78 / 20%);
   }
 
-  /* 下载/安装中的弹窗：居中，背后整屏虚化（与一键同款 .cm-backdrop 同一套 blur）。
+  /* 下载/安装中的弹窗：居中，背后整屏虚化（与再次创作 .cm-backdrop 同一套 blur）。
      遮罩 inset:0 且盖住侧栏——这段时间用户要看的只有这一件事。 */
   .update-scrim {
     position: fixed;

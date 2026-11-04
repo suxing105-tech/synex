@@ -185,7 +185,7 @@ def test_runninghub_key_lives_in_the_cloud_account_not_the_config(client):
     assert result["has_api_key"] is True
     accounts = accounts_rows()
     assert len(accounts) == 1 and accounts[0]["provider"] == "runninghub"
-    # 一键同款那一侧看到的是同一个账号：不用他再填第二遍
+    # 再次创作那一侧看到的是同一个账号：不用他再填第二遍
     from app.cloud import accounts as cloud_accounts
 
     assert cloud_accounts.usable_account() is not None
@@ -203,7 +203,7 @@ def test_key_typed_on_the_cloud_side_reaches_the_reverse_model(client):
 
 
 def test_clearing_the_shared_key_disables_both_uses(client):
-    """一把就是真一把：清一次，反推与一键同款同时失效，界面必须照这个说。"""
+    """一把就是真一把：清一次，反推与再次创作同时失效，界面必须照这个说。"""
     from app.cloud import accounts as cloud_accounts
 
     config = client.post("/api/model-configs", json=runninghub_draft(api_key="RH-SHARED-3")).json()
@@ -311,7 +311,7 @@ def shared_flags(client):
 
 
 def test_clear_shared_key_endpoint_kills_both_uses(client):
-    """「清除」这一个动作把反推与一键同款同时停用：它删的是同一把 Key。"""
+    """「清除」这一个动作把反推与再次创作同时停用：它删的是同一把 Key。"""
     client.post("/api/model-configs", json=runninghub_draft(api_key="RH-CLEAR-1"))
     assert shared_flags(client) == (True, False)
     out = client.delete("/api/model-providers/runninghub/key")

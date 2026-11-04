@@ -676,7 +676,7 @@ def _row_to_summary(row: sqlite3.Row) -> dict:
 def image_summary(image_id: int | None = None, *, path: str | None = None) -> dict | None:
     """按 id 或磁盘路径取一条「列表口径」的图片信息。
 
-    存在的理由是一键同款的来源记录：那里手上的线索可能是 id，也可能只是当初记下的
+    存在的理由是再次创作的来源记录：那里手上的线索可能是 id，也可能只是当初记下的
     路径（见 clone_sources）。口径和 feed 完全一致，前端拿到就能直接画参考位。
     """
     if image_id is None and not path:

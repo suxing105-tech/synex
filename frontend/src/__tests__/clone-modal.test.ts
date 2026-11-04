@@ -140,7 +140,7 @@ it('比例与百万像素收进参数面板：默认值在面板里点得中，�
   expect(screen.getByRole('button', { name: '画面参数' }).textContent).toContain('16:9 / 2MP');
 });
 
-it('Esc 只收起参数面板，不会把整个一键同款弹窗关掉', async () => {
+it('Esc 只收起参数面板，不会把整个再次创作弹窗关掉', async () => {
   routes(baseRoutes());
   const onClose = vi.fn();
   const screen = await ready({ onClose });
@@ -219,7 +219,7 @@ it('还没有模板时不是一句空提示，而是直接把人带去设置导�
   const screen = render(CloneModal, { open: true, image: SOURCE, onClose: () => {}, onOpenSettings });
   await screen.findByText(/还没有同款工作流/);
   await fireEvent.click(screen.getByRole('button', { name: '去设置里看说明' }));
-  expect(onOpenSettings).toHaveBeenCalledWith('一键同款');
+  expect(onOpenSettings).toHaveBeenCalledWith('再次创作');
 });
 
 it('ComfyUI 真没在跑时顶上有一条说得清的提示，点「重新探测」就换掉', async () => {
@@ -1030,7 +1030,7 @@ it("删除是一颗 X 图标而不是红字：中性灰，悬停只提亮，不�
   expect(hover).toMatch(/background: rgb\(255 255 255 \/ 10%\)/);
 });
 
-/* ── 一键同款生成的图：参考位摆的是当初那几张参考图 ───────────────────── */
+/* ── 再次创作生成的图：参考位摆的是当初那几张参考图 ───────────────────── */
 
 const REF_A = { id: 11, item_type: 'media', kind: 'image', filename: '甲.png', path: 'D:/甲.png', original_url: '/api/images/11/file', thumbnail_url: '/api/images/11/file?max=256', width: 512, height: 512 } as any;
 const REF_B = { id: 12, item_type: 'media', kind: 'image', filename: '乙.png', path: 'D:/乙.png', original_url: '/api/images/12/file', thumbnail_url: '/api/images/12/file?max=256', width: 512, height: 512 } as any;
@@ -1165,7 +1165,7 @@ it('胶囊定宽时长名字会被截断，全名必须另有落点：顶部标�
   expect(document.querySelector('.cm-title')?.textContent).toBe('Qwen-image-2.1多图编辑');
 });
 
-/* ── 视频一键同款（H3 参考生视频）────────────────────────────────────── */
+/* ── 视频再次创作（H3 参考生视频）────────────────────────────────────── */
 
 /** 真机那份 H3 参考生视频的形状：三族参考位 + 比例 + 时长，产出是片子。名字末尾的空格照抄导出文件。 */
 const H3 = {
@@ -1353,7 +1353,7 @@ it('往已经填好的音频位拖一张图片：说清是哪一格要音频，�
 
 /* ── 参考区合并成一行 + 视频可播（苏醒 2026-10-29 三条要求）────────────── */
 
-it('视频卡左侧是能播的播放器：一键同款要抄的是片子里的节奏，不是一张首帧', async () => {
+it('视频卡左侧是能播的播放器：再次创作要抄的是片子里的节奏，不是一张首帧', async () => {
   routes({ ...videoRoutes(), '/api/clone/templates': { items: [H3] } });
   await ready({ image: VIDEO_CARD });
   const player = document.querySelector('video.cm-hero') as HTMLVideoElement;
@@ -1408,7 +1408,7 @@ it('往已经放满的那一族再拖一份：说清是哪一族满了，不默�
   expect(imagesApi.import).not.toHaveBeenCalled();
 });
 
-/* ── 音频一键同款（Qwen3 音色克隆）────────────────────────────────────── */
+/* ── 音频再次创作（Qwen3 音色克隆）────────────────────────────────────── */
 
 /** 真机那条音色克隆的形状：两个提示词位（要说的话 + 参考音频的原话）+ 一台 LoadAudio + 语言下拉。 */
 const TTS = {

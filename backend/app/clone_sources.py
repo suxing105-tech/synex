@@ -1,7 +1,7 @@
-"""一键同款的来源：这张生成图当初喂了哪几张参考图。
+"""再次创作的来源：这张生成图当初喂了哪几张参考图。
 
 为什么要有这件事：参考图数量本身就是这张图的一部分——用两张参考做出来的画面，点
-「一键同款」就该看到当初那两张，不然「同款」只剩提示词同款，用户得自己回忆喂了什么。
+「再次创作」就该看到当初那两张，不然就只剩提示词一样，用户得自己回忆喂了什么。
 
 来源有两条路，读的时候两条都走：
 
@@ -314,7 +314,7 @@ def _ref_order(node: str, feeds: dict[str, list[tuple[str, str]]]) -> tuple[int,
 def _prompt_references(prompt: dict[str, Any]) -> list[dict[str, Any]]:
     """按参考位顺序挑出成图里用过的参考图：[{image_id, digest}]。
 
-    只认 `seekx_ref_<id>_<hash>` 这种一键同款自己的上传名——用户工作流里的别的图
+    只认 `seekx_ref_<id>_<hash>` 这种再次创作自己的上传名——用户工作流里的别的图
     （底图、LoRA 示例图）不该被说成「当初的参考图」。
     """
     nodes = {str(nid): node for nid, node in prompt.items() if isinstance(node, dict)}

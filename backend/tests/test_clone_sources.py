@@ -1,4 +1,4 @@
-"""一键同款的来源记录：生成完之后，弹窗要能说出「这张图当初喂了哪几张参考图」。
+"""再次创作的来源记录：生成完之后，弹窗要能说出「这张图当初喂了哪几张参考图」。
 
 这里只测来源本身（登记、认出参考图、认不出来时怎么办）；跑完整生成链路顺手登记
 那一条在 test_clone_generate.py，因为那条需要一个假 ComfyUI。
@@ -288,7 +288,7 @@ def test_a_row_that_resolves_to_nothing_is_not_the_end(init_db, tmp_path: Path):
 
 # ---------- 当初那句话：台词与原话 ----------
 # 成图带不带走提示词看文件类型：PNG 有 tEXt、VHS 出的片子带元数据、音频什么都没有。
-# 所以生成当时说过什么必须自己记一份，否则点「一键同款」要用户重新打一遍字。
+# 所以生成当时说过什么必须自己记一份，否则点「再次创作」要用户重新打一遍字。
 
 
 def test_record_keeps_the_prompt_and_the_transcript(init_db, tmp_path: Path):

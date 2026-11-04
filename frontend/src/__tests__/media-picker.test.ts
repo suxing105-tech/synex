@@ -137,7 +137,7 @@ it('选择器按弹窗自己的高度撑开，不再被全局 .media-pick-grid �
  * 在一大堆画面里翻那几条 mp3，跟让厨师在冰箱里找螺丝刀一样离谱。
  */
 describe("按参考位所属族列素材", () => {
-  it('不传 kind 时还是图片一键同款的老样子：只列图片，标题「选一张图片」', async () => {
+  it('不传 kind 时还是图片再次创作的老样子：只列图片，标题「选一张图片」', async () => {
     const screen = await opened();
     expect(imagesApi.list).toHaveBeenCalledWith(expect.objectContaining({ kind: "image" }));
     expect(screen.getByRole("dialog").getAttribute("aria-label")).toBe("从图库选一张图片");
@@ -186,7 +186,7 @@ describe("一颗「+ 参考」管三族", () => {
     width: 768, height: 1360, original_url: `/api/images/${i + 1}/file`, thumbnail_url: `/api/images/${i + 1}/file`,
   }));
 
-  it("只给一族时不出 tab：图片一键同款的标题行一个字没多", async () => {
+  it("只给一族时不出 tab：图片再次创作的标题行一个字没多", async () => {
     const screen = await opened();
     expect(screen.queryByRole("group", { name: "素材类型" })).toBeNull();
     expect(screen.queryByRole("button", { name: "音频" })).toBeNull();
@@ -276,7 +276,7 @@ describe("一颗「+ 参考」管三族", () => {
 
 
 /**
- * 一键同款的素材选择器里，缩略图得先自己交代内容：
+ * 再次创作的素材选择器里，缩略图得先自己交代内容：
  * 视频滑过就动起来（不然挑视频只能靠文件名猜），音频要有能点开的试听角标
  * ——但点角标绝不能顺手把那张「选」出去。
  */

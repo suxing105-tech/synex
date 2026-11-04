@@ -1,4 +1,4 @@
-"""内置的「一键同款」工作流：安装包自带图片、视频各一份，装完就有。
+"""内置的「再次创作」工作流：安装包自带图片、视频各一份，装完就有。
 
 为什么槽位固化在资源文件里，而不是首次启动现检测：检测槽位要 ComfyUI 的
 `object_info`，而首启时 ComfyUI 大概率还没开——那时候检测出来的模板会整族缺掉
@@ -338,7 +338,7 @@ def seed(conn) -> dict:
 
     if summary["inserted"] or summary["updated"] or summary["adopted"] or summary["renamed"]:
         logger.info(
-            "内置一键同款工作流：新增 %s，刷新 %s，认领同名 %s（改名 %s）",
+            "内置再次创作工作流：新增 %s，刷新 %s，认领同名 %s（改名 %s）",
             "、".join(summary["inserted"]) or "无",
             "、".join(summary["updated"]) or "无",
             "、".join(summary["adopted"]) or "无",

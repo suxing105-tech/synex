@@ -9,7 +9,7 @@ from PyInstaller.utils.hooks import collect_submodules
 REPO_ROOT = Path(os.environ["SUXING_REPO_ROOT"])
 BACKEND_DIR = REPO_ROOT / "backend"
 ENTRY = BACKEND_DIR / "run_server.py"
-# 内置的「一键同款」工作流：随 sidecar 一起打包，首启装进库（app/clone_bundled.py 在 _MEIPASS/app 下找它）
+# 内置的「再次创作」工作流：随 sidecar 一起打包，首启装进库（app/clone_bundled.py 在 _MEIPASS/app 下找它）
 BUNDLED_WORKFLOWS = BACKEND_DIR / "app" / "bundled_workflows"
 PSD_HIDDENIMPORTS = collect_submodules("psd_tools")
 

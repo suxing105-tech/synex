@@ -1,4 +1,4 @@
-"""一键同款的生成任务：单任务串行，跑在本机 ComfyUI 上。
+"""再次创作的生成任务：单任务串行，跑在本机 ComfyUI 上。
 
 为什么串行：本地只有一块 GPU，两个任务一起排队只会互相拖慢，还要用户分辨"哪张是
 哪次生成的"。所以第二个请求直接 409 挡回去，比假装支持并发诚实。
@@ -214,7 +214,7 @@ async def start(
     )
     async with _lock:
         if _job and _job.get("state") in RUNNING_STATES:
-            raise CloneBusy("已经有一键同款正在生成，等这一批出来再点。")
+            raise CloneBusy("已经有一条再次创作正在生成，等这一批出来再点。")
         cfg = load_config()
         engine = clone_templates.engine_of(template)
         cloud_task_id = 0

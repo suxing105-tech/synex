@@ -11,7 +11,7 @@ vi.mock("../lib/ws", () => ({ copyText: vi.fn().mockResolvedValue(true) }));
 
 const model = { id: 1, name: "测试视觉", base_url: "https://example.com/v1", model: "vision", timeout: 120, provider: null, has_api_key: true, key_persistence: "encrypted" as const };
 const preset = { id: "qwen", name: "通义千问 Qwen", base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1", models: [{ id: "qwen2.5-vl-72b-instruct", label: "Qwen2.5-VL-72B", recommended: true }], default_timeout: 120, note: "" };
-// RunningHub：Key 与「一键同款」云端生成共用一把（credential_scope=cloud），清单由它自己报（models_dynamic）
+// RunningHub：Key 与「再次创作」云端生成共用一把（credential_scope=cloud），清单由它自己报（models_dynamic）
 const cloudPreset = {
   id: "runninghub", name: "RunningHub", base_url: "https://llm.runninghub.cn/v1", models: [],
   default_timeout: 120, note: "一把 Key 走天下：这里的 Key 与云端生成共用同一把", credential_scope: "cloud", models_dynamic: true,
@@ -302,7 +302,7 @@ describe("reverse prompts", () => {
     // 删的是云端那一行账号，不是这条模型配置：一把 Key 走天下，只能有一个家
     await waitFor(() => expect(clear).toHaveBeenCalledWith("runninghub", "model"));
     expect(save).not.toHaveBeenCalled();
-    expect(await panel.findByText(/图片反推与一键同款同时停用/)).toBeTruthy();
+    expect(await panel.findByText(/图片反推与再次创作同时停用/)).toBeTruthy();
   });
   it("点 RunningHub 那张服务商卡时改的是已有那条配置，不新建第二条", async () => {
     vi.mocked(reverseApi.providers).mockResolvedValue([preset, { ...cloudPreset, shared_has_key: true }]);

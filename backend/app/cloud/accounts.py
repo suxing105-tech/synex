@@ -132,7 +132,7 @@ def key_for(row: dict, *, quiet: bool = False, kind: str = "model") -> str:
 def shared_row() -> dict | None:
     """「一把 Key 走天下」里那把 Key 落在哪一行。
 
-    先给 usable_account()：反推侧和一键同款必须读同一行，否则会出现「一键同款能跑、
+    先给 usable_account()：反推侧和再次创作必须读同一行，否则会出现「再次创作能跑、
     反推说没 Key」这种查起来最费劲的分叉。一家都没配 Key 时退到第一行 RunningHub 账号，
     让第一次填 Key 有唯一去处。
     """

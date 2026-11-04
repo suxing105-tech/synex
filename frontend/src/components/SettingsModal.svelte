@@ -37,7 +37,7 @@
       { id: "model-api", label: "模型API配置", keywords: "api key 服务商 视觉模型 密钥 清除 key 检查 超时 云端 runninghub minimax 收费 扣费 花费 余额 出图 出片 配音 图片api 视频api 音频api 取回 一把走天下 测试连接 模型服务api" },
       { id: "reverse", label: "反推指令", keywords: "反推 指令 默认服务商 选模型 图片反推 视频反推 seedance h3 视频提示词 帧数 单元时长 分镜 恢复默认 中英文" },
       { id: "comfyui", label: "ComfyUI", keywords: "工作流 服务地址 端口 连接 探测 节点" },
-      { id: "clone", label: "一键同款", keywords: "工作流 模板 提示词 参考图 生成 一键同款 同款 ComfyUI 出图" },
+      { id: "clone", label: "再次创作", keywords: "工作流 模板 提示词 参考图 生成 再次创作 一键同款 同款 重做 ComfyUI 出图" },
     ] },
     { label: "应用", items: [
       { id: "media", label: "媒体组件", keywords: "ffmpeg ffprobe 封面 波形 内置 检测 版本" },
@@ -192,7 +192,7 @@
    * 探测一次 ComfyUI。输入框和已保存的不一致时，探的是输入框里那一条：
    * 「改动后要重新探测再保存」只有在这种前提下才成立。以前点一下探测就把
    * 用户刚敲的地址打回旧值，换机器时永远试不出正确端口。
-   * 草稿地址探出来的结果不回写 store——顶栏和一键同款弹窗说的必须是真正生效的地址。
+   * 草稿地址探出来的结果不回写 store——顶栏和再次创作弹窗说的必须是真正生效的地址。
    */
   async function refreshComfyui() {
     const draft = comfyuiUrlInput.trim();
@@ -448,7 +448,7 @@
           {#if shown("model-api")}
             <section id="settings-model-api" class="settings-section" aria-labelledby="settings-model-api-title">
               <h3 id="settings-model-api-title">模型API配置</h3>
-              <p class="section-description">一家服务商一把 Key：图片、视频、语音与一键同款的云端生成都走它。</p>
+              <p class="section-description">一家服务商一把 Key：图片、视频、语音与再次创作的云端生成都走它。</p>
               <ModelApiSettings />
             </section>
           {/if}
@@ -472,7 +472,7 @@
                     <button class="setting-button" disabled={probing} onclick={refreshComfyui}>{probing ? "探测中…" : "重新探测"}</button>
                   {/snippet}
                 </SettingsRow>
-                <SettingsRow title="连接状态" description="连不上也能看图，只是打不开工作流与一键同款。">
+                <SettingsRow title="连接状态" description="连不上也能看图，只是打不开工作流与再次创作。">
                   {#snippet control()}
                     <span class="status-dot" class:bg-success={comfyuiStatusLocal?.running} class:bg-danger={comfyuiStatusLocal && !comfyuiStatusLocal.running} class:bg-muted={!comfyuiStatusLocal}></span>
                     <span role="status">{comfyuiStatusLocal?.running ? "已连接 ComfyUI" : probing ? "正在探测服务…" : "未连接 ComfyUI"}</span>
@@ -517,8 +517,8 @@
 
           {#if shown("clone")}
             <section id="settings-clone" class="settings-section" aria-labelledby="settings-clone-title">
-              <h3 id="settings-clone-title">一键同款</h3>
-              <p class="section-description">换一份工作流，图片卡上的「一键同款」立刻跟着换；出图统一存进图库的「一键同款」文件夹。</p>
+              <h3 id="settings-clone-title">再次创作</h3>
+              <p class="section-description">换一份工作流，图片卡上的「再次创作」立刻跟着换；出图就地存回 ComfyUI 的输出目录，图库直接认领那一张，不另建文件夹。</p>
               <CloneTemplates />
             </section>
           {/if}

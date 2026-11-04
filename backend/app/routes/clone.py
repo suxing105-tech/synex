@@ -1,4 +1,4 @@
-"""一键同款路由：同款工作流模板管理 + 生成任务。
+"""再次创作路由：同款工作流模板管理 + 生成任务。
 
 和反推提示词同一原则：外部请求只从 sidecar 出发，前端只认这套 REST 加上
 clone_progress 事件。ComfyUI 的地址与开关沿用已有的 comfyui_url / comfyui_enabled。

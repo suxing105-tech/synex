@@ -5,7 +5,7 @@
  * property，两者不同步会被 Chromium 拦掉。解不开容器就什么都不做，底下的海报图本来就在，
  * 最差也只是不动。
  *
- * 图库卡片（Feed）与一键同款的素材选择器共用这一份：两处各写一遍，早晚有一处忘了置 muted。
+ * 图库卡片（Feed）与再次创作的素材选择器共用这一份：两处各写一遍，早晚有一处忘了置 muted。
  */
 export function hoverPlay(node: HTMLVideoElement) {
   node.muted = true;

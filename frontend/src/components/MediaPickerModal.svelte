@@ -1,8 +1,8 @@
 <script lang="ts">
   /**
-   * 从图库里挑一份素材（一键同款的参考位替换用）。
+   * 从图库里挑一份素材（再次创作的参考位替换用）。
    *
-   * 默认只列图片：图片一键同款的参考位最终要喂给 ComfyUI 的 LoadImage，别的族在那儿没有意义。
+   * 默认只列图片：图片再次创作的参考位最终要喂给 ComfyUI 的 LoadImage，别的族在那儿没有意义。
    * 视频工作流有三族参考位，调用方传 kind="audio" / "video"，这里就换成列音频 / 列视频，
    * 免得用户在一片画面里翻那几条 mp3。
    * 卡片复用 app.css 的 .media-card 规范；画面框按每份素材自己的宽高比排，
@@ -23,7 +23,7 @@
     open: boolean;
     /** 弹窗标题。不传就按当前那一族自己拼一句（选一张 / 选一段 / 选一条）。 */
     title?: string;
-    /** 初始族，也是唯一族：图片一键同款只给 image，版面上就跟以前一模一样。 */
+    /** 初始族，也是唯一族：图片再次创作只给 image，版面上就跟以前一模一样。 */
     kind?: RefKind;
     /**
      * 能挑哪几族。参考区合成一行之后，那颗「+ 参考」不绑族，调用方把还有空位的族一起给进来，
@@ -294,7 +294,7 @@
   /* 标题 + 三族 tab + 搜索 + 列数滑块挤在一行：窄窗口里宁可整块换行，也别把「图片」掰成竖排两个字。 */
   .mp-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .mp-head h3 { margin: 0; font-size: 15px; font-weight: 600; }
-  /* 族 tab 只在能挑几族时出现：图片一键同款仍是原来那颗干净的标题行。 */
+  /* 族 tab 只在能挑几族时出现：图片再次创作仍是原来那颗干净的标题行。 */
   .mp-tabs { display: flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid #26262b; border-radius: 10px; background: #101013; }
   .mp-tab { flex: none; white-space: nowrap; height: 26px; padding: 0 10px; font-size: 12.5px; color: #a1a1aa; background: transparent; border-radius: 8px; cursor: pointer; transition: background-color 140ms ease, color 140ms ease; }
   .mp-tab:hover { color: #e4e4e7; }

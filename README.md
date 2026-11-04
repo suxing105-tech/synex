@@ -112,6 +112,15 @@ cargo tauri build
 
 ### 本地开发
 
+**机器上装着正式版在跑时，用一键脚本起 dev（端口自己错开，别手打 README 默认端口，会撞车）：**
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File frontend\scripts\launch-dev.ps1
+# 默认 uvicorn :8897 + vite :5199；-CheckOnly 看状态，-Stop 停，-Restart 重启
+```
+
+从零手打的等价步骤：
+
 ```powershell
 # 后端
 cd backend

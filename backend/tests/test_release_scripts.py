@@ -161,6 +161,31 @@ def test_release_scripts_exist() -> None:
         assert (SCRIPTS / name).is_file(), name
 
 
+def test_dev_launcher_exists() -> None:
+    assert (SCRIPTS / "launch-dev.ps1").is_file()
+
+
+def test_dev_launcher_defaults_to_the_ports_dev_actually_uses() -> None:
+    """dev 栈的端口不是 README 里那个默认值：已安装正式版的 sidecar 独占默认端口，
+    起错端口 = 改了代码看不到东西（MEMORY 里反复踩过）。默认值必须钉在这里。"""
+    script = (SCRIPTS / "launch-dev.ps1").read_text(encoding="utf-8-sig")
+    assert "[int]$BackendPort = 8897" in script
+    assert "[int]$FrontendPort = 5199" in script
+    # 前端不指到本地这个后端，页面读的就是别的实例
+    assert "$env:VITE_BACKEND_PORT = [string]$BackendPort" in script
+    # 端口被占就自动换一个 = 起在没人知道的端口上
+    assert "'--strictPort'" in script
+
+
+def test_dev_launcher_only_stops_processes_it_started() -> None:
+    """-Stop 认的是「命令行里带本仓库路径」，不是端口号：
+    已安装正式版可能正占着同一个端口，按端口号杀就是删用户的窗口。"""
+    script = (SCRIPTS / "launch-dev.ps1").read_text(encoding="utf-8-sig")
+    assert "CommandLine -like $RepoPattern" in script
+    assert "if (-not (Test-DevOwned -ProcId $owner))" in script
+    assert "Stop-Process" in script
+
+
 class TestWorktreeMustBeCommitted:
     """每轮做完立刻 commit：闸拦的是「这一轮的东西还没进 commit」，不是「仓库有没有脏历史」。"""
 

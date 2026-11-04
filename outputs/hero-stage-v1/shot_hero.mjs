@@ -85,6 +85,10 @@ const idle = await ev(`(() => {
     hero: box(hero), heroName: Boolean(document.querySelector('.cm-hero-name')),
     heroMaxH: hero ? getComputedStyle(hero).maxHeight : null,
     heroSrc: hero ? hero.getAttribute('src') : null,
+    /* 外框撤了没：边框宽度/圆角/底色/投影四项都要是「没有」；胶囊静止态必须透明；生成那颗必须是正圆 */
+    panelFrame: (() => { const c = getComputedStyle(panel); return { border: c.borderTopWidth + ' ' + c.borderTopStyle, radius: c.borderTopLeftRadius, bg: c.backgroundColor, shadow: c.boxShadow === 'none' ? 'none' : 'YES' }; })(),
+    pills: [...document.querySelectorAll('.cm-foot-left .cm-pill')].map((el) => { const c = getComputedStyle(el); return { t: el.textContent.trim().slice(0, 10), bg: c.backgroundColor, bw: c.borderTopWidth }; }),
+    go: (() => { const g = document.querySelector('.cm-go'); if (!g) return null; const c = getComputedStyle(g); const r = g.getBoundingClientRect(); const m = g.querySelector('.cm-go-mark'); const mc = m ? getComputedStyle(m) : null; return { w: Math.round(r.width), h: Math.round(r.height), radius: c.borderTopLeftRadius, label: g.getAttribute('aria-label'), title: g.getAttribute('title'), text: g.textContent.trim(), markW: mc ? Math.round(parseFloat(mc.width)) : null, mark: mc ? String(mc.maskImage || mc.webkitMaskImage || '').slice(0, 34) : null, markVis: mc ? mc.visibility : null }; })(),
     leftH: Math.round(document.querySelector('.cm-left').getBoundingClientRect().height),
     dialogLabel: document.querySelector('.cm-panel')?.getAttribute('aria-label'),
     closeLabel: document.querySelector('.cm-close')?.getAttribute('aria-label'),
@@ -138,7 +142,9 @@ const stage = await ev(`(() => {
     steps: [...st.querySelectorAll('.cm-stage-step')].map((e) => e.textContent + (e.className.includes('is-now') ? '[现在]' : e.className.includes('is-past') ? '[已过]' : '')),
     ghost: ghost ? { animation: ghost.animationName + ' ' + ghost.animationDuration, opacity: ghost.opacity, blur: ghost.filter } : null,
     beam: beam ? { animation: beam.animationName + ' ' + beam.animationDuration } : null,
-    goButton: document.querySelector('.cm-go')?.textContent.trim(),
+    goLabel: document.querySelector('.cm-go')?.getAttribute('aria-label'),
+    goMarkVis: document.querySelector('.cm-go-mark') ? getComputedStyle(document.querySelector('.cm-go-mark')).visibility : null,
+    goDotAnim: document.querySelector('.cm-go-dot') ? getComputedStyle(document.querySelector('.cm-go-dot')).animationName : null,
     cancel: Boolean([...document.querySelectorAll('button,span')].find((e) => e.textContent.trim() === '取消')),
   }, null, 1);
 })()`);

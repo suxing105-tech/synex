@@ -1936,10 +1936,16 @@
                   <!-- 同宽的隐形占位，不是第二颗按钮：aria-hidden，也点不到 -->
                   <span class="cm-btn cm-btn-quiet cm-cancel-slot" aria-hidden="true">取消</span>
                 {/if}
-                <button class="cm-go" class:is-busy={busy} disabled={!canGenerate} onclick={() => void generate()}>
+                <!-- 圆形品牌钮（2026-11-04 苏醒：「这个按钮做成圆形，用品牌图标」）：圆里放不下
+                     「生成」两个字，文字撤了就要把名字从别处补回来——aria-label 与悬浮提示都跟着状态走，
+                     读屏和鼠标用户拿到的信息一个字不少。后端的逐句进度仍然不进这颗（名字只有两态，
+                     宽度才不会一边跑一边抖）。 -->
+                <button class="cm-go" class:is-busy={busy} disabled={!canGenerate}
+                  aria-label={busy ? "生成中…" : "生成"} title={busy ? "生成中…" : "生成"}
+                  onclick={() => void generate()}>
                   <span class="cm-go-shine" aria-hidden="true"></span>
+                  <span class="cm-go-mark" aria-hidden="true"></span>
                   <span class="cm-go-dot" aria-hidden="true"></span>
-                  <span class="cm-go-text">{busy ? "生成中…" : "生成"}</span>
                 </button>
               </div>
             </div>
@@ -2033,14 +2039,14 @@
     display: flex; align-items: center; justify-content: center;
     background: #0e0e10;
   }
-  /* 背后不透明了，卡片自己不用再糊一层：整块实心，滚动时提示词从底下过去也不会透字。
-     max-height 从 90vh 改成 100%——量的是这一列去掉 20px padding 之后的高度，
-     桌面壳那条标题栏不再把卡片顶出去；阴影跟着收一档，实心底上不需要那么重的投影撑层次。 */
+  /* 外框也撤了（2026-11-04 苏醒照图：「这个外框也不要了。简洁化」）：这一层背后已经是整列纯色，
+     再画一圈边框 + 圆角 + 一张投影，等于在纯色上又贴了一张卡片，凭空多一层盒子。
+     现在展示图直接坐在 #0e0e10 上，整个弹窗只剩输入区那一张卡（.cm-composer）还带面。
+     几何一个字不动：max-height 量的还是这一列去掉 backdrop 那 20px 之后的净高，
+     下内边距那 20px 是钉住的坞 bottom:-20px 的测量基准——改它就露一条缝（538x682 踩过）。 */
   .cm-panel {
     position: relative; width: min(820px, 100%); max-height: 100%; overflow: auto; padding: 20px 22px;
-    border: 1px solid rgb(255 255 255 / 8%); border-radius: 20px;
-    background: #131316;
-    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55); color: #e4e4e7;
+    color: #e4e4e7;
   }
 
   /* 顶栏只剩关闭那颗（标题那两行撤了）：它不该占一整行的高度，负一点上边距把它按到角上，
@@ -2362,14 +2368,17 @@
     /* 卡不能 overflow:hidden（工作流弹层要往卡外冒），所以这条带自己带上卡的下圆角（18px 减 1px 边框）。 */
     border-radius: 0 0 17px 17px;
     /* 一点都不许透：0.98/0.9 那一版在 538x682 打长提示词时，「完整提示词 · …」那行从坞底下
-       过去，字整个透出来压在按钮上。弹窗自己是 0.86 的毛玻璃，实心这条看不出接缝。 */
-    background: #131316;
+       过去，字整个透出来压在按钮上。
+       底色不再是卡片色 #131316：外框撤了之后没有那块底了，这条压在 composer 那张卡的下沿上，
+       就跟它下沿的合成色（#0e0e10 + 24% 黑 = #0b0b0c）。留旧色的话这条比卡底亮一档，
+       看着就像在输入卡上外挂了一块板——正是苏醒 Round 24 撤过一次的东西。 */
+    background: #0b0b0c;
   }
   /* 上面那 14px 是一条渐隐，不是分隔线：钉住时滚上来的字在这里淡掉，比被这条的上沿切一刀干净。
      不占布局、不接点击（pointer-events:none），弹层与按钮都不受影响。 */
   .cm-dock::before {
     content: ""; position: absolute; left: 0; right: 0; top: -14px; height: 14px;
-    background: linear-gradient(180deg, rgb(19 19 22 / 0) 0%, #131316 100%);
+    background: linear-gradient(180deg, rgb(11 11 12 / 0) 0%, #0b0b0c 100%);
     pointer-events: none;
   }
   .cm-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
@@ -2387,8 +2396,12 @@
   .cm-foot-left > .cm-fill { flex: 0 1 auto; }
   .cm-fill .cm-pill { width: auto; max-width: 100%; }
   .cm-pill:disabled { opacity: .62; cursor: default; }
-  .cm-pill { position: relative; z-index: 5; flex: 0 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 13px; font-size: 12.5px; color: #e4e4e7; background: rgb(255 255 255 / 7%); border: 1px solid rgb(255 255 255 / 9%); border-radius: 999px; cursor: pointer; }
-  .cm-pill:hover { background: rgb(255 255 255 / 11%); }
+  /* 那圈圆角矩形撤了（2026-11-04 苏醒照图：「这几个按钮的圆角矩形框也不要。简洁大气」）：
+     图标 + 名字 + 下拉箭头已经把「这是一颗能点的当前值」说完了，外面再套一圈框是重复表达。
+     静止态完全透明，只在悬浮和展开时给一层极淡的底当反馈——radius 留着，那是反馈的形状不是框。
+     左右内边距从 13 收到 10：没有框之后，间隔由 padding + gap 给，读起来还是三件事。 */
+  .cm-pill { position: relative; z-index: 5; flex: 0 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 10px; font-size: 12.5px; color: #d4d4d8; background: transparent; border: 0; border-radius: 999px; cursor: pointer; transition: background 140ms ease, color 140ms ease; }
+  .cm-pill:hover:not(:disabled) { color: #fafafa; background: rgb(255 255 255 / 7%); }
   .cm-pill-text { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* 箭头不参与压缩，被挤的只许是中间那段名字（svg 自带尺寸，压不动） */
   .cm-chevron { display: inline-flex; flex: none; transition: transform 160ms ease; }
@@ -2417,7 +2430,8 @@
   .cm-kind-check { flex: none; display: inline-flex; color: #e4e4e7; }
   /* 三颗里它最窄，也最不能截断——截成「图片生…」没人认得那是干什么的。让位的是工作流那颗的名字。 */
   .cm-pill-kind { flex: none; }
-  .cm-pill-kind.is-on { background: rgb(255 255 255 / 14%); border-color: rgb(255 255 255 / 16%); }
+  /* 展开态：名字提亮 + 一层淡底。不再描边——静止态没有边，展开时凭空长出一圈边就是闪烁。 */
+  .cm-pill-kind.is-on { color: #fff; background: rgb(255 255 255 / 9%); }
   /* API 那一屏要装两列（左列 156 + 右列模型清单），宽度只在这一屏放开。
      别写 100%：这块弹层的包含块是那颗胶囊外面那一格（position:relative），100% = 胶囊那么宽。
      452px 是量出来的上限（弹窗收窄到 820 之后内容框 776，这一屏贴左往右长 352..804 仍在框里），
@@ -2573,24 +2587,30 @@
   .cm-btn-accent { background: #f24e4e; border-color: transparent; color: #141416; font-weight: 600; }
 
   /*
-    主按钮：图库各处的主操作都是这颗品牌红，这里跟它对齐（同一套红、同一套圆角节奏）。
-    生成要等十几秒到几十秒，所以按下去之后必须有东西在动：一道扫光 + 一颗转动的点，
-    让人知道请求活着，而不是界面卡住了。转圈的是按钮里的小圆点，不是整颗按钮。
+    主按钮收成一颗圆形，中间是品牌字标（2026-11-04 苏醒照图：「这个按钮做成圆形，用品牌图标」）。
+    字标不另画一份矢量：走 /logo.png 的透明通道当 mask，和启动页、标题栏同一份资产，
+    颜色由这颗按钮自己给（currentColor），换配色不用动图。
+    文字撤了，可访问名与悬浮提示必须补上（见模板那颗的 aria-label / title）。
+    生成要等十几秒到几十秒，按下去之后必须有东西在动：扫光继续扫，字标换成转圈。
   */
-  .cm-go { position: relative; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; gap: 9px; height: 36px; min-width: 112px; padding: 0 18px; font-size: 13px; font-weight: 600; color: #fff; background: linear-gradient(135deg, #ff6a4d, #f24e4e 46%, #d63b57); border: 0; border-radius: 999px; box-shadow: 0 6px 18px rgba(242, 78, 78, .26), inset 0 1px 0 rgba(255, 255, 255, .18); cursor: pointer; transition: transform 140ms ease, box-shadow 140ms ease, filter 140ms ease; }
+  .cm-go { position: relative; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; color: #fff; background: linear-gradient(135deg, #ff6a4d, #f24e4e 46%, #d63b57); border: 0; border-radius: 50%; box-shadow: 0 6px 18px rgba(242, 78, 78, .26), inset 0 1px 0 rgba(255, 255, 255, .18); cursor: pointer; transition: transform 140ms ease, box-shadow 140ms ease, filter 140ms ease; }
   .cm-go:hover:not(:disabled) { filter: brightness(1.07); transform: translateY(-1px); box-shadow: 0 10px 26px rgba(242, 78, 78, .34), inset 0 1px 0 rgba(255, 255, 255, .22); }
   .cm-go:active:not(:disabled) { transform: translateY(0); filter: brightness(.97); }
   .cm-go:disabled { color: #6f6f78; background: #2a2a2e; box-shadow: none; cursor: default; transform: none; filter: none; }
   /* 生成中不能塌成一颗死灰的禁用键：还是同一颗 CTA，只是压暗 + 扫光 + 转圈，
      一眼看得懂「它在干活」，而不是「这个按钮坏了/不能点」。 */
   .cm-go.is-busy { color: #fff; cursor: progress; background: linear-gradient(135deg, #b3563f, #a03b3b 46%, #8b2f40); box-shadow: 0 4px 14px rgba(242, 78, 78, .16), inset 0 1px 0 rgba(255, 255, 255, .12); filter: none; transform: none; }
-  .cm-go-text { position: relative; white-space: nowrap; }
+  /* 品牌字标：mask 只借 /logo.png 的透明通道，颜色是这颗按钮的字色。
+     /logo.png 在 public/ 里（vite 不改绝对路径），SplashOverlay 的 mask 用的是同一支。 */
+  .cm-go-mark { position: relative; flex: none; width: 21px; height: 21px; background: currentColor; -webkit-mask: url(/logo.png) center / contain no-repeat; mask: url(/logo.png) center / contain no-repeat; }
+  .cm-go:disabled .cm-go-mark { color: #57575f; }
   .cm-go-shine { position: absolute; inset: 0; transform: translateX(-105%); background: linear-gradient(100deg, transparent 22%, rgba(255, 255, 255, .34) 50%, transparent 78%); pointer-events: none; }
   .cm-go.is-busy .cm-go-shine { animation: cm-sweep 1.45s linear infinite; }
-  .cm-go-dot { position: relative; flex: none; width: 13px; height: 13px; border-radius: 50%; background: radial-gradient(circle at 34% 32%, #fff, rgba(255, 255, 255, .35)); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .4); }
-    /* 静止时那颗白点只会把「生成」两个字顶偏（真机上就是苏醒指出的不对称）——圆点只在生成中转圈。 */
-  .cm-go:not(.is-busy) { gap: 0; }
+  /* 转圈那一条：圆里同一时刻只许有一个东西，所以生成中把字标藏掉、这一颗绝对居中。
+     display:none 那条被测试钉着（真机上它把居中的字标顶偏过），别改写法。 */
+  .cm-go-dot { position: absolute; left: 50%; top: 50%; flex: none; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: radial-gradient(circle at 34% 32%, #fff, rgba(255, 255, 255, .35)); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .4); }
   .cm-go:not(.is-busy) .cm-go-dot { display: none; }
+  .cm-go.is-busy .cm-go-mark { visibility: hidden; }
   .cm-go.is-busy .cm-go-dot { background: transparent; box-shadow: none; border: 2px solid rgba(255, 255, 255, .42); border-top-color: #fff; animation: cm-spin .68s linear infinite; }
   @keyframes cm-sweep { to { transform: translateX(105%); } }
   @keyframes cm-spin { to { transform: rotate(360deg); } }

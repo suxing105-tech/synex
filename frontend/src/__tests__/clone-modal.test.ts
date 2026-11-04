@@ -543,7 +543,7 @@ it('弹层上限实测写进 --cm-pop-max：封顶量的是这一列，不是视
   cleanup();
 });
 
-it('这一层收进缩略图那一列、底色纯色：不再整屏虚化', () => {
+it('这一层收进缩略图那一列：纯色底、外框也撤干净，不再整屏虚化', () => {
   // 2026-11-04 苏醒：「再次创作和放大功能一样，收进缩略图区域，不要模糊背景了，和放大一样的纯色背景」
   const src = readFileSync('src/components/CloneModal.svelte', 'utf8');
   const blk = (sel: string) => {
@@ -557,8 +557,12 @@ it('这一层收进缩略图那一列、底色纯色：不再整屏虚化', () =
   expect(backdrop).not.toMatch(/backdrop-filter/);
   const panel = blk('.cm-panel {');
   expect(panel).toMatch(/max-height:\s*100%/); // 量这一列的高度，不再拿整窗 90vh 去量
-  expect(panel).toMatch(/background:\s*#131316/);
+  // 2026-11-04 第二次：连外框一起撤。纯色底上再画一圈边 + 圆角 + 投影，等于凭空多贴一张卡片。
+  // 整个弹窗只剩输入区那一张卡（.cm-composer）带面，展示图直接坐在 #0e0e10 上。
+  expect(panel).not.toMatch(/background|border|box-shadow|border-radius/);
   expect(panel).not.toMatch(/backdrop-filter/);
+  // 撤的是外框，不是几何：钉住的坞 bottom:-20px 量的就是这里的下内边距
+  expect(panel).toMatch(/overflow:\s*auto;\s*padding:\s*20px 22px/);
   // 两侧栏还在外面可点：aria-modal 是句假话，撤；role=dialog 必须留着，全局快捷键判重认它
   const panelTag = /<div class="cm-panel"[^>]*>/.exec(src)?.[0] ?? '';
   expect(panelTag).not.toContain('aria-modal');
@@ -611,8 +615,11 @@ it('生成中不显示状态行：按钮就是进度，提示词下面不再重�
   // 整行也不要：按钮已经在转、文案写着「生成中…」，下面再摆一句是纯重复（苏醒 Round 12 截图点名）
   expect(document.querySelector('.cm-foot-note.cm-status')).toBeNull();
   expect(document.querySelector('.cm-foot-note')).toBeNull();
-  // 按钮文案不跟随后端逐句进度，宽度才不会一边跑一边抖
-  expect(screen.getByRole('button', { name: '生成中…' }).textContent?.trim()).toBe('生成中…');
+  // 文案撤成圆形品牌钮之后，「不跟着后端逐句进度抖」这件事落在可访问名上：
+  // 名字只有两态（生成 / 生成中…），后端那句「上传参考图…」一个字都不许进来。
+  const go = screen.getByRole('button', { name: '生成中…' });
+  expect(go.getAttribute('aria-label')).toBe('生成中…');
+  expect(go.textContent?.trim()).toBe('');
   // 工作流那颗胶囊留在原地：一藏，这一排就空出一块，还看不出正在用哪一份出图（苏醒 Round 13 点名）
   const pill = screen.getByRole('button', { name: '工作流' }) as HTMLButtonElement;
   expect(pill.closest('.cm-hidden')).toBeNull();
@@ -736,6 +743,8 @@ it('竖排不回到左右两栏：弹窗收窄、预览按高度定大小、卡�
   const fade = /\.cm-dock::before\s*\{[^}]*\}/.exec(css)?.[0] ?? "";
   expect(fade).toMatch(/top:\s*-14px/);
   expect(fade).toMatch(/pointer-events:\s*none/);
+  // 渐隐收进的那个色必须和这条同一个，不然钉住时上沿会横着一道接缝
+  expect(fade).toMatch(/#0b0b0c 100%/);
   // 「创作类型」那层与「工作流」那层同宽：窄一档的话，正在用的那行末尾多个勾，
   // 行末的数把「图片生成」挤成「图…」。
   expect(rule(".cm-pop-kind {")).toMatch(/width:\s*268px/);
@@ -927,6 +936,9 @@ it('钉住那条坞不许透字；窗口一矮先给预览图砍一档', () => {
   // 0.98/0.9 那版实测会透出底下那行字压在按钮上，所以只许实心色
   expect(dock).toMatch(/background:\s*#[0-9a-fA-F]{6}/);
   expect(dock).not.toMatch(/background:[^;]*rgba?\(/);
+  // 外框撤了之后不能再拿旧卡片色 #131316 当这条的底：那比 composer 卡底亮一档，看着是外挂的一块板。
+  // 正解是卡底那条渐隐的合成色：#0e0e10 + 24% 黑 = #0b0b0c。
+  expect(dock).toMatch(/background:\s*#0b0b0c/);
   // 又矮又窄时按矮处理：矮那一档必须写在窄那一档之后
   const shortAt = css.indexOf('@media (max-height: 720px)');
   expect(shortAt).toBeGreaterThan(css.indexOf('@media (max-width: 900px)'));
@@ -979,12 +991,16 @@ it('跑完之后状态行才回来：已取消要有交代，不能一声不吭'
   expect(note?.textContent).toContain('已取消');
 });
 
-it('生成与取消都是全圆角胶囊（苏醒明确点名的形状）', () => {
+it('生成是一颗圆形品牌钮（苏醒点名的形状），取消那颗仍是胶囊', () => {
   const source = readFileSync('src/components/CloneModal.svelte', 'utf8');
-  for (const selector of ['.cm-btn {', '.cm-go {']) {
-    const block = source.slice(source.indexOf(selector), source.indexOf('}', source.indexOf(selector)));
-    expect(block).toContain('border-radius: 999px');
-  }
+  const rule = (sel: string) => source.slice(source.indexOf(sel), source.indexOf('}', source.indexOf(sel)));
+  expect(rule('.cm-btn {')).toContain('border-radius: 999px');
+  const go = rule('.cm-go {');
+  expect(go).toMatch(/border-radius:\s*50%/);
+  expect(go).toMatch(/width:\s*40px;\s*height:\s*40px/);
+  // 圆里没有文字，就不许再留着撑宽度的 min-width / 左右内边距——那颗必须是个正圆
+  expect(go).not.toMatch(/min-width/);
+  expect(go).toMatch(/padding:\s*0;/);
 });
 
 /** 参考位多于一个：图片1 默认挂着被点击的图，图片2 空着，正好测「再挂一张」。 */
@@ -1083,6 +1099,37 @@ it("生成按钮静止时不挂那颗圆点，文案居中（真机上圆点把�
   const source = readFileSync("src/components/CloneModal.svelte", "utf8");
   expect(source).toMatch(/\.cm-go:not\(\.is-busy\) \.cm-go-dot\s*\{\s*display: none;/);
   expect(/\.cm-go \{[^}]*justify-content: center/.test(source)).toBe(true);
+});
+
+it("圆形那颗用的是品牌字标，名字挂在 aria-label 与悬浮提示上", () => {
+  const source = readFileSync("src/components/CloneModal.svelte", "utf8");
+  const at = source.indexOf(".cm-go-mark {");
+  const mark = source.slice(at, source.indexOf("}", at));
+  // 字标走 /logo.png 的透明通道当 mask（与启动页、标题栏同一份资产），不另画一份矢量
+  expect(mark).toMatch(/mask:\s*url\(\/logo\.png\)/);
+  expect(mark).toMatch(/-webkit-mask:\s*url\(\/logo\.png\)/);
+  expect(mark).toMatch(/background:\s*currentColor/);
+  // 圆里没字：读屏与鼠标用户拿到的名字必须跟着状态走
+  expect(source).toMatch(/aria-label=\{busy \? "生成中…" : "生成"\}/);
+  expect(source).toMatch(/title=\{busy \? "生成中…" : "生成"\}/);
+  // 圆里同一时刻只许一个东西：转圈时字标让位
+  expect(source).toMatch(/\.cm-go\.is-busy \.cm-go-mark\s*\{\s*visibility:\s*hidden/);
+});
+
+it("底下那排胶囊不再画圆角矩形框：静止透明，只在悬浮与展开时给一层淡底", () => {
+  // 2026-11-04 苏醒照图：「这几个按钮的圆角矩形框也不要。简洁大气」
+  const css = readFileSync("src/components/CloneModal.svelte", "utf8");
+  // 只认行首那条裸选择器：.cm-fill .cm-pill 也在前面排着，indexOf 会先撞上它
+  const at = /\n\s*\.cm-pill \{/.exec(css)!.index;
+  const pill = css.slice(at, css.indexOf("}", at));
+  expect(pill).toMatch(/background:\s*transparent/);
+  expect(pill).toMatch(/border:\s*0/);
+  // 但反馈不能一起撤干净：悬浮与展开各有一层淡底，否则点得动的东西看起来是死的
+  expect(css).toMatch(/\.cm-pill:hover:not\(:disabled\)\s*\{[^}]*background:/);
+  const onAt = css.indexOf(".cm-pill-kind.is-on {");
+  const on = css.slice(onAt, css.indexOf("}", onAt));
+  expect(on).toMatch(/background:/);
+  expect(on).not.toMatch(/border-color/); // 静止没边，展开时凭空长一圈边就是闪烁
 });
 
 it("引用标签按品牌色高亮：textarea 涂透明，字画在背后的遮罩上", async () => {

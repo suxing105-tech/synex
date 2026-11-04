@@ -523,6 +523,13 @@ const RUNNING_STATES: CloneState[] = ["uploading", "queued", "running", "downloa
 /** 任务状态只活在内存 + WS：出图本身就是历史，不需要再造一张生成记录表。 */
 export const cloneJob = writable<CloneJob>(EMPTY_CLONE_JOB);
 
+/**
+ * 再次创作那一层开着时置真。它现在和「放大」一样只盖中间那一列（缩略图区域），
+ * 侧栏与右侧详情栏没被盖住、也没被 inert，所以键盘归谁必须由状态说话：
+ * 网格的 Delete / Esc / 空格在这一层开着时全部让位，全局内容快捷键也认这条。
+ */
+export const cloneOpen = writable<boolean>(false);
+
 /** WS 的 clone_progress 与 REST 的 jobs/current 都走这里；认不出的状态退回空壳。 */
 export function applyCloneProgress(payload: unknown): CloneJob {
   if (!payload || typeof payload !== "object") return EMPTY_CLONE_JOB;

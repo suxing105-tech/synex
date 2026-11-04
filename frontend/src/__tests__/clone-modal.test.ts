@@ -5,8 +5,8 @@ import { tick } from 'svelte';
 import { get } from 'svelte/store';
 import CloneModal from '../components/CloneModal.svelte';
 import { comfyuiApi, imagesApi } from '../lib/api';
-import { EMPTY_CLONE_JOB, applyCloneProgress, cloneJob } from '../lib/clone';
-import { comfyuiStatus, overlayMuted } from '../lib/stores';
+import { EMPTY_CLONE_JOB, applyCloneProgress, cloneJob, cloneOpen } from '../lib/clone';
+import { comfyuiStatus } from '../lib/stores';
 
 const TPL = {
   id: 1, name: 'Qwen 多图编辑', is_active: true, default_prompt: '工作流里写的那句',
@@ -517,25 +517,60 @@ it('生成中那颗主按钮本身就是进度：换了状态文案也挂着动�
   expect(screen.getByRole('button', { name: '取消' })).toBeTruthy();
 });
 
-it('弹窗开着才藏背景里的分割线与箭头，关掉或卸载就还原', async () => {
+it('这一层开着才把键盘交给它：cloneOpen 与 open 同进同出，卸载也清干净', async () => {
+  // 这一层现在只盖中间那一列，网格没被 inert 挡着——键盘归谁全靠这条状态说话（Feed 认它让位）。
   routes(baseRoutes());
   const screen = await ready();
-  expect(get(overlayMuted)).toBe(true);
+  expect(get(cloneOpen)).toBe(true);
   screen.rerender({ open: false });
   await tick();
-  expect(get(overlayMuted)).toBe(false);
+  expect(get(cloneOpen)).toBe(false);
   await ready();
-  expect(get(overlayMuted)).toBe(true);
-  // 还开着就被整棵树换掉：不能把「藏起来」留在背景上
+  expect(get(cloneOpen)).toBe(true);
+  // 还开着就被整棵树换掉：不能把「让位」留在背景上
   cleanup();
-  expect(get(overlayMuted)).toBe(false);
+  expect(get(cloneOpen)).toBe(false);
 });
 
-it('虚化背景要干净：右侧详情栏整块内容也要藏掉，不只是藏分割线', () => {
-  // 真机被指出来的是详情栏空态那支 36px 的 arrow-left：blur 之后就是幽灵箭头。
-  const css = readFileSync('src/App.svelte', 'utf8');
-  expect(css).toMatch(/\.overlay-muted \.app-grid > aside:last-child > \*\s*\{[^}]*visibility:\s*hidden/);
-  expect(css).toMatch(/\.overlay-muted \.splitter::before\s*\{[^}]*opacity:\s*0/);
+it('弹层上限实测写进 --cm-pop-max：封顶量的是这一列，不是视口', async () => {
+  // happy-dom 不排版，rect 全是 0，正好验到兜底那一档：结果必须还是 240px 起，不能是负数
+  routes(baseRoutes());
+  const screen = await ready();
+  const panel = screen.container.querySelector('.cm-panel') as HTMLElement;
+  const popMax = panel.style.getPropertyValue('--cm-pop-max');
+  expect(/^-?\d+px$/.test(popMax), popMax).toBe(true);
+  expect(Number.parseInt(popMax, 10)).toBeGreaterThanOrEqual(240);
+  cleanup();
+});
+
+it('这一层收进缩略图那一列、底色纯色：不再整屏虚化', () => {
+  // 2026-11-04 苏醒：「再次创作和放大功能一样，收进缩略图区域，不要模糊背景了，和放大一样的纯色背景」
+  const src = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  const blk = (sel: string) => {
+    const at = src.indexOf(sel);
+    expect(at, sel).toBeGreaterThan(-1);
+    return src.slice(at, src.indexOf('}', at));
+  };
+  const backdrop = blk('.cm-backdrop {');
+  expect(backdrop).toMatch(/position:\s*absolute/); // fixed = 盖住整窗；absolute 的盒子是 <main>
+  expect(backdrop).toMatch(/background:\s*#0e0e10/); // 与 Lightbox 的 bg-bg 同一支
+  expect(backdrop).not.toMatch(/backdrop-filter/);
+  const panel = blk('.cm-panel {');
+  expect(panel).toMatch(/max-height:\s*100%/); // 量这一列的高度，不再拿整窗 90vh 去量
+  expect(panel).toMatch(/background:\s*#131316/);
+  expect(panel).not.toMatch(/backdrop-filter/);
+  // 两侧栏还在外面可点：aria-modal 是句假话，撤；role=dialog 必须留着，全局快捷键判重认它
+  const panelTag = /<div class="cm-panel"[^>]*>/.exec(src)?.[0] ?? '';
+  expect(panelTag).not.toContain('aria-modal');
+  expect(panelTag).toContain('role="dialog"');
+  expect(panelTag).toContain('aria-label="再次创作"');
+  // 最宽那颗弹层（云端两栏）的封顶从视口改成量这一列
+  const api = blk('.cm-pop-wf.is-api {');
+  expect(api).toMatch(/width:\s*min\(452px,\s*var\(--cm-pop-max/);
+  expect(api).not.toMatch(/100vw/);
+  // 「虚化时藏侧栏骨架」那一套整条撤了：栏没被盖住，凭什么藏
+  expect(readFileSync('src/App.svelte', 'utf8')).not.toContain('overlay-muted');
+  expect(readFileSync('src/lib/stores.ts', 'utf8')).not.toContain('overlayMuted');
 });
 
 it('生成中的按钮还是那颗 CTA：压暗的渐变 + 扫光 + 转圈，不是灰掉的禁用键', () => {

@@ -14,7 +14,7 @@
   import { comfyuiApi, imagesApi } from "../lib/api";
   import { backendUrl } from "../lib/backend-url";
   import { basenameOnly } from "../lib/media-format";
-  import { comfyuiStatus, overlayMuted, stopAudio } from "../lib/stores";
+  import { comfyuiStatus, stopAudio } from "../lib/stores";
   import { pushToast } from "../lib/toast";
   import { modalFocus } from "../lib/modal-focus";
   import Icon from "./Icon.svelte";
@@ -26,7 +26,7 @@
     primaryPromptGroup, promptGroupHint, promptPlaceholder, promptSlots, promptSourceLabel, secondaryPromptGroups,
     ratioShape, referenceCells, referenceIssues, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, visibleRefCells, voiceAvatar, voiceSample, nativeLanguageOverride,
     firstFreeRefKey, mergedRefCells, openRefKinds, REF_DISPLAY_ORDER,
-    CLONE_SETTINGS_TAB,
+    CLONE_SETTINGS_TAB, cloneOpen,
     cloudApi, coinsLabel, isCloudTemplate, mentionsTags, supportsRefFamily,
     type CloudStatus,
     applyMention, caretCoordinates, mentionAddLabel, mentionChunks, mentionInsertText, mentionItems as buildMentionItems, mentionToken,
@@ -524,6 +524,32 @@
     const next = outputChips[(heroOutIndex + delta + n) % n];
     if (next) heroOut = next.id;
   }
+
+  /* 这一层现在被中间那一列的宽度框住，最宽那颗弹层（云端两栏 452px）不能再用 100vw 封顶——
+     量错了对象：列一窄它就从面板右边顶出去，把整块面板顶出横向滚动条。真实上限是
+     「面板内容右沿 − 弹层定位父级的左沿」，实测写进 --cm-pop-max；用户折展侧栏与详情栏
+     会改变这一列的宽度，ResizeObserver 让它跟着走。
+     别改成 container query：container-type 会给 .cm-panel 加 contain:layout，
+     面板里那两条 position:fixed（参考图悬停放大预览、弹层那张整屏兜底遮罩）会跟着错位。 */
+  $effect(() => {
+    if (!open) return;
+    const host = panelEl;
+    if (!host) return;
+    const writePopMax = () => {
+      const box = host.getBoundingClientRect();
+      const pill = host.querySelector<HTMLElement>('[aria-label="工作流"]');
+      // 弹层与那颗胶囊同一个定位父级：照父级左沿算，才不把胶囊自己那 110px 算进余量。
+      const anchorLeft = pill && pill.offsetParent instanceof HTMLElement
+        ? pill.offsetParent.getBoundingClientRect().left
+        : box.left + 22;
+      host.style.setProperty("--cm-pop-max", `${Math.max(240, Math.round(box.right - 24 - anchorLeft))}px`);
+    };
+    writePopMax();
+    if (typeof ResizeObserver !== "function") return; // 单测环境（happy-dom）没有 RO：写一次就够
+    const ro = new ResizeObserver(writePopMax);
+    ro.observe(host);
+    return () => ro.disconnect();
+  });
 
   /** 弹窗自己会滚：跑完时人若滚在下面，把这一格滚回视野，否则「直接展示」等于没展示。 */
   let panelEl = $state<HTMLElement | null>(null);
@@ -1096,11 +1122,12 @@
     return () => untrack(stopVoiceSample);
   });
 
-  /* 背景虚化时把右侧栏的分割线和折叠箭头一起藏掉（样式在 App.svelte，糊成一条灰竖杠很难看）。 */
+  /* 这一层开着时键盘归它。它只盖中间那一列、网格没被 inert，不报一声的话
+     在弹窗里按 Delete 会把背后选中的那张删掉（Feed 认 cloneOpen 让位）。 */
   $effect(() => {
-    overlayMuted.set(open);
-    // 卸载时也清干净：弹窗还开着就被整棵树换掉，右侧栏不该一直缺分割线。
-    return () => overlayMuted.set(false);
+    cloneOpen.set(open);
+    // 卸载时也清干净：还开着就被整棵树换掉，不能把「让位」留在背景上。
+    return () => cloneOpen.set(false);
   });
 
   /** 弹窗重开时接手正在跑的任务：状态在后端内存里，关弹窗不会让它停下。 */
@@ -1334,8 +1361,12 @@
 <svelte:window onkeydown={onKey} />
 
 {#if open}
+  <!-- 这一层不再糊掉整个窗口（2026-11-04 苏醒：「和放大功能一样，收进缩略图区域，不要模糊背景了，
+       和放大一样的纯色背景」）：absolute 落在 <main> 那一列上，底色抄 Lightbox 的 bg-bg。
+       侧栏和右侧详情栏因此还在外面——aria-modal 那句假话撤了，role=dialog 留着
+       （App / 搜索框 / 侧栏那几处全局快捷键判重认的就是它）。 -->
   <div class="cm-backdrop" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-    <div class="cm-panel" bind:this={panelEl} role="dialog" aria-modal="true" aria-label="再次创作" use:modalFocus onscroll={() => (refZoom = null)}>
+    <div class="cm-panel" bind:this={panelEl} role="dialog" aria-label="再次创作" use:modalFocus onscroll={() => (refZoom = null)}>
       <!-- 顶栏那两行字撤了（2026-11-04 苏醒照图把它圈出来说「删除」）：「再次创作」是这弹窗的可访问名，
            role=dialog 的 aria-label 还在，读屏照样报得出这是什么；工作流名字底部那颗胶囊本来就报同一份，
            顶栏再说一遍只是把一件事讲两次。这一条只剩右上角那颗关闭，让出来的竖向空间归展示图。 -->
@@ -1991,20 +2022,25 @@
 />
 
 <style>
-  /* 背景虚化：整个图库画面糊在身后，注意力留在弹窗里（图5 那张版式就是这个感觉）。 */
+  /* 与「放大」同一层、同一块底色（2026-11-04 苏醒：「再次创作和放大功能一样，收进缩略图区域，
+     不要模糊背景了，和放大一样的纯色背景」）。absolute 的 containing block 为什么是 <main>：
+     Feed 的根是 display:contents（不生成盒子），外面那层 wrapper 没有 position，
+     往上最近的就是 main.relative——所以这一层刚好铺满中间那一列，侧栏与详情栏留在外面。
+     #0e0e10 就是 tailwind 的 bg-bg，Lightbox 那块用的同一支色；z-30 在 main 的 isolate 里，
+     比 Lightbox 的 z-20 高一档，顺序是定的（两者不同屏，但别靠 DOM 顺序赌）。 */
   .cm-backdrop {
-    position: fixed; inset: 0; z-index: 65; padding: 20px;
+    position: absolute; inset: 0; z-index: 30; padding: 20px;
     display: flex; align-items: center; justify-content: center;
-    background: rgba(0, 0, 0, 0.5);
-    -webkit-backdrop-filter: blur(22px) saturate(112%);
-    backdrop-filter: blur(22px) saturate(112%);
+    background: #0e0e10;
   }
+  /* 背后不透明了，卡片自己不用再糊一层：整块实心，滚动时提示词从底下过去也不会透字。
+     max-height 从 90vh 改成 100%——量的是这一列去掉 20px padding 之后的高度，
+     桌面壳那条标题栏不再把卡片顶出去；阴影跟着收一档，实心底上不需要那么重的投影撑层次。 */
   .cm-panel {
-    position: relative; width: min(820px, 100%); max-height: 90vh; overflow: auto; padding: 20px 22px;
+    position: relative; width: min(820px, 100%); max-height: 100%; overflow: auto; padding: 20px 22px;
     border: 1px solid rgb(255 255 255 / 8%); border-radius: 20px;
-    background: rgba(19, 19, 22, 0.86);
-    -webkit-backdrop-filter: blur(36px); backdrop-filter: blur(36px);
-    box-shadow: 0 32px 90px rgba(0, 0, 0, 0.62); color: #e4e4e7;
+    background: #131316;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55); color: #e4e4e7;
   }
 
   /* 顶栏只剩关闭那颗（标题那两行撤了）：它不该占一整行的高度，负一点上边距把它按到角上，
@@ -2386,7 +2422,8 @@
      别写 100%：这块弹层的包含块是那颗胶囊外面那一格（position:relative），100% = 胶囊那么宽。
      452px 是量出来的上限（弹窗收窄到 820 之后内容框 776，这一屏贴左往右长 352..804 仍在框里），
      弹窗左右各 20px 留白 + 面板内边距 22px×2，窄窗口下才不会被 .cm-panel 的 overflow 裁掉左边。 */
-  .cm-pop-wf.is-api { width: min(452px, calc(100vw - 96px)); max-height: min(58vh, 430px); }
+    /* 封顶不再看视口：这一层被中间那一列框住，--cm-pop-max 是「面板内容右沿 − 弹层左沿」的实测值。 */
+  .cm-pop-wf.is-api { width: min(452px, var(--cm-pop-max, 452px)); max-height: min(58vh, 430px); }
   /* 本机那一屏那一列行。包一层是为了让 else 挂在外层 if 上（见模板那三条注释），所以行距自己守。 */
   .cm-pop-list { display: flex; flex-direction: column; gap: 3px; }
   .cm-api { display: grid; grid-template-columns: 172px minmax(0, 1fr); gap: 10px; min-height: 0; }

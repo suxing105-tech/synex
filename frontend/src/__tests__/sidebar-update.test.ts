@@ -116,7 +116,7 @@ it('keeps the background startup check silent and only shows the modal once the 
 });
 it('更新弹窗居中，背后整屏虚化连侧栏一起糊掉', () => {
   const css = readFileSync('src/components/SidebarUpdateButton.svelte', 'utf8');
-  // 遮罩铺满整屏（侧栏也在里面），虚化照抄再次创作 .cm-backdrop 那一档 blur
+  // 遮罩铺满整屏（侧栏也在里面）；22px 这档 blur 是这颗弹窗自己的（再次创作已改成纯色内嵌层，不再是参照）
   expect(css).toMatch(/\.update-scrim\s*\{[^}]*position:\s*fixed;[^}]*inset:\s*0;/);
   expect(css).toMatch(/\.update-scrim\s*\{[^}]*backdrop-filter:\s*blur\(22px\)/);
   // 居中靠 flex 居中，不再靠贴底那条 left:50% + translateX

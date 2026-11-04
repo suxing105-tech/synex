@@ -7,6 +7,7 @@ import Lightbox from '../components/Lightbox.svelte';
 import ImageCompare from '../components/ImageCompare.svelte';
 import { feedItems, feedLoading, multiSelectedIds, selectedId } from '../lib/stores';
 import { compareMode } from '../lib/compare-mode';
+import { cloneOpen } from '../lib/clone';
 import { getOrientedImageSize } from '../lib/image-dims';
 import { foldersApi, imagesApi } from '../lib/api';
 vi.mock('../lib/api', () => ({
@@ -33,7 +34,7 @@ beforeEach(() => {
   compareMode.set('side');
   vi.mocked(imagesApi.remove).mockReset().mockResolvedValue({ ok: true, cleaned_previews: 1 } as any);
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.mocked(imagesApi.list).mockResolvedValue({ items: [], total: 0 } as any); feedItems.set([]); multiSelectedIds.set(new Set()); });
+afterEach(() => { cloneOpen.set(false); cleanup(); vi.restoreAllMocks(); vi.mocked(imagesApi.list).mockResolvedValue({ items: [], total: 0 } as any); feedItems.set([]); multiSelectedIds.set(new Set()); });
 it('两张选中图片预览自动进入对比，并可切换单图', async () => {
   multiSelectedIds.set(new Set([1, 2]));
   const screen = render(Lightbox, { open: true, index: 0, selectedId: 1 });
@@ -84,6 +85,18 @@ it('输入框及重复按键不删除，打开预览后 Feed 不重复删除', a
   await fireEvent.keyDown(window, { key: 'Delete', repeat: true });
   await screen.rerender({ selectedId: 1, lightboxOpen: true, lightboxIndex: 0 });
   await fireEvent.keyDown(window, { key: 'Delete' });
+  expect(imagesApi.remove).not.toHaveBeenCalled();
+});
+it('再次创作那一层开着时，Delete 不删背后选中的那张', async () => {
+  // 这一层只盖中间那一列、没给网格加 inert，键盘靠 cloneOpen 让位。
+  // 漏了这条就是：人在弹窗里按 Delete，背后选中的那张直接被删。
+  multiSelectedIds.set(new Set([1]));
+  render(Feed, { selectedId: 1, lightboxOpen: false, lightboxIndex: 0 });
+  await tick();
+  // 得等挂载之后再置真：Feed 常驻挂着 CloneModal，它自己的 effect 会按 open 把这条写回 false。
+  cloneOpen.set(true);
+  await fireEvent.keyDown(window, { key: 'Delete' });
+  await tick();
   expect(imagesApi.remove).not.toHaveBeenCalled();
 });
 it('对比中的 Delete 删除两张，保留未选图片', async () => {

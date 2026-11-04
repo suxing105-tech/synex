@@ -2,7 +2,8 @@
   import { startUpdates } from "./lib/updates";
   import { onMount, onDestroy } from "svelte";
   import { connectEvents, disconnectEvents } from "./lib/ws";
-  import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, comfyuiEnabled, mediaItems, tag, folderId, query, selectedDetail, overlayMuted, appBooting } from "./lib/stores";
+  import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, comfyuiEnabled, mediaItems, tag, folderId, query, selectedDetail, appBooting } from "./lib/stores";
+  import { cloneOpen } from "./lib/clone";
   import { createSplashGate } from "./lib/splash-gate.svelte";
   import FolderTree from "./components/FolderTree.svelte";
   import DesktopTitlebar from "./components/DesktopTitlebar.svelte";
@@ -14,10 +15,12 @@
   import { registerSidebarShortcuts } from "./lib/sidebar-shortcuts";
   // 内嵌层（图片 / 文本 / 视频）开着时全局快捷键让位；右侧栏常驻，所以 rightAvailable 恒真。
   const viewerOpen = () => lightboxOpen || videoPlayerOpen || Boolean($readerItem);
+  // 再次创作那一层现在也只盖中间这一列，压不住侧栏：它开着时全局快捷键同样要停。
+  const shortcutsPaused = () => viewerOpen() || settingsOpen || onboardingOpen || $cloneOpen;
   onMount(() => registerSidebarShortcuts(
     () => sidebarCollapsed = !sidebarCollapsed,
     () => detailCollapsed = !detailCollapsed,
-    () => viewerOpen() || settingsOpen || onboardingOpen,
+    shortcutsPaused,
     () => true,
   ));
   import { registerContentShortcuts } from './lib/content-shortcuts';
@@ -25,7 +28,7 @@
   import { applyFocusStage, nextFocusStage, windowIsMaximized, type FocusStage } from './lib/window-focus';
   import { focusGallerySearch, registerSearchFocusShortcut } from './lib/search-focus';
   import { pushToast } from './lib/toast';
-  onMount(() => registerContentShortcuts(type => switchContent(type, false, true), () => viewerOpen() || settingsOpen || onboardingOpen));
+  onMount(() => registerContentShortcuts(type => switchContent(type, false, true), shortcutsPaused));
   // F = 沉浸循环（在输入框里打字不算），Ctrl+F = 光标进搜索框（正在打字时也能按）。
   onMount(() => registerShortcuts([{ key: "f", action: "focusMode", handler: () => cycleFocusMode() }]));
   onMount(() => registerSearchFocusShortcut(() => {
@@ -280,7 +283,7 @@
   });
 </script>
 
-<div class="app-shell" class:overlay-muted={$overlayMuted} class:desktop-shell={desktop} style:--desktop-titlebar-height={desktop && !immersive ? (desktopMaximized ? "24px" : "28px") : "0px"}>
+<div class="app-shell" class:desktop-shell={desktop} style:--desktop-titlebar-height={desktop && !immersive ? (desktopMaximized ? "24px" : "28px") : "0px"}>
 {#if desktop && !immersive}<DesktopTitlebar bind:maximized={desktopMaximized} />{/if}
 <div class="h-full w-full flex flex-col bg-bg text-zinc-200" ondragover={swallowDrag} ondrop={swallowDrag} role="application">
   <ScanProgressBar />
@@ -415,27 +418,8 @@
   .app-grid.drawer-mode .splitter {
     display: none;
   }
-  /*
-    弹窗虚化背景时让应用骨架一起退场：1px 的分割线和折叠箭头被 blur 糊开后不会消失，
-    只会变成一条灰竖杠压在虚化图上，比不糊还难看。只藏线条和箭头，栏本身留着。
-    详情栏整块内容一起藏：真机被指出来的是空态那个 36px 的 arrow-left 图标，糊开之后
-    就是一支幽灵箭头浮在虚化图上；详情有内容时更糟，一整栏糊字。栏位与底色留着，
-    虚化层背后的画面尺寸不会跳。
-  */
-  .overlay-muted .app-grid > aside {
-    border-left-color: transparent;
-    border-right-color: transparent;
-  }
-  .overlay-muted .app-grid > aside:last-child > * {
-    visibility: hidden;
-  }
-  .overlay-muted .splitter::before {
-    opacity: 0;
-  }
-  .overlay-muted .sidebar-expand,
-  .overlay-muted .collapse-sidebar {
-    visibility: hidden;
-  }
+  /* 「弹窗虚化时把侧栏骨架藏掉」那一套跟着 .cm-backdrop 的 blur 一起撤了（2026-11-04）：
+     再次创作现在是不透明的内嵌层、只盖中间那一列，两侧栏根本没被盖住，没有理由再藏。 */
   .drawer-toggle {
     position: fixed;
     right: 16px;

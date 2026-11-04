@@ -39,7 +39,7 @@
   import TextCreateModal from "./TextCreateModal.svelte";
   import TextAssociateModal from "./TextAssociateModal.svelte";
   import CloneModal from "./CloneModal.svelte";
-import { comparePair } from "../lib/clone";
+import { cloneOpen, comparePair } from "../lib/clone";
 import { hoverPlay } from "../lib/hover-play";
   import { textsApi } from "../lib/texts";
   import { isTextFilePath, textFeedItemOf, textFormatLabel } from "../lib/text-reading";
@@ -840,7 +840,9 @@ import { hoverPlay } from "../lib/hover-play";
   function handleKey(e: KeyboardEvent) {
     if (shortcutBlocked(e)) return;
     // 内嵌层（图片预览 / 文本阅读 / 视频播放）开着时，按键归它自己，网格不抢 Delete / Esc / 空格。
-    if (overlayOpen) return;
+    // 「再次创作」走同一条：它现在只盖中间这一列、没给网格加 inert，
+    // 焦点又锁在弹窗里——不挡的话在弹窗里按 Delete 会删掉背后选中的那张。
+    if (overlayOpen || $cloneOpen) return;
     if (isTypingTarget(e.target) || lightboxOpen) return;
     if (e.key === "Delete" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
       e.preventDefault();

@@ -1321,117 +1321,9 @@
 
             <div class="cm-foot">
               <div class="cm-foot-left">
-                {#if hasParams}
-                  <div class="cm-pop-wrap">
-                    <button class="cm-pill" aria-label="画面参数" aria-haspopup="dialog" aria-expanded={popOpen} onclick={() => { closeWorkflowPop(); popOpen = !popOpen; }}>
-                      {#if pickedFace}
-                        <img class="cm-pill-face" src={pickedFace} alt="" draggable="false" />
-                      {/if}
-                      <span class="cm-pill-text">{summary || "设置画面参数"}</span>
-                      <span class="cm-chevron" class:is-open={popOpen} aria-hidden="true"><Icon name="chevron-down" size={12} /></span>
-                    </button>
-                    {#if popOpen}
-                      <div class="cm-pop-scrim" role="presentation" onclick={() => (popOpen = false)}></div>
-                      <div class="cm-pop" role="dialog" aria-label="画面参数">
-                        {#each selectSlots as slot (slotKey(slot))}
-                          {@const key = slotKey(slot)}
-                          <p class="cm-pop-title">{slot.label}</p>
-                          <div class="cm-ratio-grid" role="group" aria-label={`${slot.label}选项`}>
-                            {#each slot.options ?? [] as option (option)}
-                              {@const shape = ratioShape(option)}
-                              {@const face = voiceAvatar(option)}
-                              {@const hearing = hearingVoice === option && voiceSample(option) !== null}
-                              <button
-                                class="cm-ratio"
-                                class:is-voice={face !== null}
-                                class:is-on={controls[key] === option}
-                                class:is-hearing={hearing}
-                                title={face ? `试听并选用：${option}` : option}
-                                aria-label={option}
-                                aria-pressed={controls[key] === option}
-                                onclick={() => pickVoiceValue(key, option)}
-                              >
-                                {#if face}
-                                  <!-- 内置音色：认得出是谁就摆那张脸。名字仍在下面，不看图也不影响读；
-                                       圆形遮罩由 CSS 负责，图自己按「脸居中、头顶留白」出。
-                                       正在放的那位右上角挂三条跳动的窄条——扫一眼就知道在听谁。 -->
-                                  <span class="cm-ratio-face-wrap">
-                                    <img class="cm-ratio-face" src={face} alt="" draggable="false" />
-                                    {#if hearing}
-                                      <span class="cm-voice-eq" aria-hidden="true"><i></i><i></i><i></i></span>
-                                    {/if}
-                                  </span>
-                                {:else if shape.ratio}
-                                  <span class="cm-ratio-box" style="width: {shape.box.w}px; height: {shape.box.h}px;" aria-hidden="true"></span>
-                                {:else}
-                                  <span class="cm-ratio-flat" aria-hidden="true">•</span>
-                                {/if}
-                                <span class="cm-ratio-label">{shape.label}</span>
-                              </button>
-                            {/each}
-                          </div>
-                        {/each}
-                        {#each numberSlots as slot (slotKey(slot))}
-                          {@const key = slotKey(slot)}
-                          {@const range = durationRange(slot)}
-                          <p class="cm-pop-title">{slot.label}</p>
-                          {#if isDurationSlot(slot)}
-                            <!-- 时长是连续量：档位按钮点起来像在猜，拖滑块到几秒就是几秒（3–15 秒，
-                                 也不越过工作流自己给的上下限）。右边留个数字框，要几秒直接敲。 -->
-                            <div class="cm-slide">
-                              <input
-                                type="range"
-                                class="cm-slider"
-                                min={range[0]}
-                                max={range[1]}
-                                step="1"
-                                value={slideValue(controls[key], range)}
-                                style="--min: {range[0]}; --span: {range[1] - range[0]}; --value: {slideValue(controls[key], range)}"
-                                aria-label={`${slot.label}滑块`}
-                                oninput={(e) => (controls[key] = Number((e.target as HTMLInputElement).value))}
-                              />
-                              <input
-                                type="number"
-                                class="cm-slide-num"
-                                aria-label={slot.label}
-                                min={range[0]}
-                                max={range[1]}
-                                step="1"
-                                bind:value={controls[key]}
-                              />
-                              <span class="cm-slide-unit">{numberUnit(slot) || "秒"}</span>
-                            </div>
-                          {:else}
-                            <div class="cm-seg" role="group" aria-label={`${slot.label}档位`}>
-                              {#each numberPresets(slot) as preset (preset)}
-                                <button
-                                  class="cm-seg-item"
-                                  class:is-on={Number(controls[key]) === preset}
-                                  aria-label={`${preset}${numberUnit(slot)}`}
-                                  aria-pressed={Number(controls[key]) === preset}
-                                  onclick={() => (controls[key] = preset)}
-                                >{preset}</button>
-                              {/each}
-                            </div>
-                            <label class="cm-custom" for={`clone-${key}`}>
-                              <span>自定义{numberUnit(slot) ? `（${numberUnit(slot)}）` : ""}</span>
-                              <input
-                                id={`clone-${key}`}
-                                type="number"
-                                aria-label={slot.label}
-                                min={slot.min ?? undefined}
-                                max={slot.max ?? undefined}
-                                step={slot.step ?? undefined}
-                                bind:value={controls[key]}
-                              />
-                            </label>
-                          {/if}
-                        {/each}
-                      </div>
-                    {/if}
-                  </div>
-                {/if}
                 <div class="cm-pop-wrap cm-fill">
+                  <!-- 这一排的顺序：先挑用哪份工作流 / 哪个云端模型，再定它的具体参数（2026-11-04 苏醒）。
+                  参数是这份工作流自己的参数，反过来摆会让人先设完参数再发现工作流换了、参数得重来。 -->
                   <!-- 生成中不藏这颗：一藏这一行就空出一块，还看不出正在用哪份工作流出图。
                        但生成期间不给换：中途换工作流会把参考位和参数冲成另一份的，
                        而正在跑的那张既看不见也撤不回。理由写在 title 里，别让人对着点不动的按钮猜。
@@ -1546,6 +1438,116 @@
                     </div>
                   {/if}
                 </div>
+                {#if hasParams}
+                  <div class="cm-pop-wrap">
+                    <button class="cm-pill" aria-label="画面参数" aria-haspopup="dialog" aria-expanded={popOpen} onclick={() => { closeWorkflowPop(); popOpen = !popOpen; }}>
+                      {#if pickedFace}
+                        <img class="cm-pill-face" src={pickedFace} alt="" draggable="false" />
+                      {/if}
+                      <span class="cm-pill-text">{summary || "设置画面参数"}</span>
+                      <span class="cm-chevron" class:is-open={popOpen} aria-hidden="true"><Icon name="chevron-down" size={12} /></span>
+                    </button>
+                    {#if popOpen}
+                      <div class="cm-pop-scrim" role="presentation" onclick={() => (popOpen = false)}></div>
+                      <div class="cm-pop" role="dialog" aria-label="画面参数">
+                        {#each selectSlots as slot (slotKey(slot))}
+                          {@const key = slotKey(slot)}
+                          <p class="cm-pop-title">{slot.label}</p>
+                          <div class="cm-ratio-grid" role="group" aria-label={`${slot.label}选项`}>
+                            {#each slot.options ?? [] as option (option)}
+                              {@const shape = ratioShape(option)}
+                              {@const face = voiceAvatar(option)}
+                              {@const hearing = hearingVoice === option && voiceSample(option) !== null}
+                              <button
+                                class="cm-ratio"
+                                class:is-voice={face !== null}
+                                class:is-on={controls[key] === option}
+                                class:is-hearing={hearing}
+                                title={face ? `试听并选用：${option}` : option}
+                                aria-label={option}
+                                aria-pressed={controls[key] === option}
+                                onclick={() => pickVoiceValue(key, option)}
+                              >
+                                {#if face}
+                                  <!-- 内置音色：认得出是谁就摆那张脸。名字仍在下面，不看图也不影响读；
+                                       圆形遮罩由 CSS 负责，图自己按「脸居中、头顶留白」出。
+                                       正在放的那位右上角挂三条跳动的窄条——扫一眼就知道在听谁。 -->
+                                  <span class="cm-ratio-face-wrap">
+                                    <img class="cm-ratio-face" src={face} alt="" draggable="false" />
+                                    {#if hearing}
+                                      <span class="cm-voice-eq" aria-hidden="true"><i></i><i></i><i></i></span>
+                                    {/if}
+                                  </span>
+                                {:else if shape.ratio}
+                                  <span class="cm-ratio-box" style="width: {shape.box.w}px; height: {shape.box.h}px;" aria-hidden="true"></span>
+                                {:else}
+                                  <span class="cm-ratio-flat" aria-hidden="true">•</span>
+                                {/if}
+                                <span class="cm-ratio-label">{shape.label}</span>
+                              </button>
+                            {/each}
+                          </div>
+                        {/each}
+                        {#each numberSlots as slot (slotKey(slot))}
+                          {@const key = slotKey(slot)}
+                          {@const range = durationRange(slot)}
+                          <p class="cm-pop-title">{slot.label}</p>
+                          {#if isDurationSlot(slot)}
+                            <!-- 时长是连续量：档位按钮点起来像在猜，拖滑块到几秒就是几秒（3–15 秒，
+                                 也不越过工作流自己给的上下限）。右边留个数字框，要几秒直接敲。 -->
+                            <div class="cm-slide">
+                              <input
+                                type="range"
+                                class="cm-slider"
+                                min={range[0]}
+                                max={range[1]}
+                                step="1"
+                                value={slideValue(controls[key], range)}
+                                style="--min: {range[0]}; --span: {range[1] - range[0]}; --value: {slideValue(controls[key], range)}"
+                                aria-label={`${slot.label}滑块`}
+                                oninput={(e) => (controls[key] = Number((e.target as HTMLInputElement).value))}
+                              />
+                              <input
+                                type="number"
+                                class="cm-slide-num"
+                                aria-label={slot.label}
+                                min={range[0]}
+                                max={range[1]}
+                                step="1"
+                                bind:value={controls[key]}
+                              />
+                              <span class="cm-slide-unit">{numberUnit(slot) || "秒"}</span>
+                            </div>
+                          {:else}
+                            <div class="cm-seg" role="group" aria-label={`${slot.label}档位`}>
+                              {#each numberPresets(slot) as preset (preset)}
+                                <button
+                                  class="cm-seg-item"
+                                  class:is-on={Number(controls[key]) === preset}
+                                  aria-label={`${preset}${numberUnit(slot)}`}
+                                  aria-pressed={Number(controls[key]) === preset}
+                                  onclick={() => (controls[key] = preset)}
+                                >{preset}</button>
+                              {/each}
+                            </div>
+                            <label class="cm-custom" for={`clone-${key}`}>
+                              <span>自定义{numberUnit(slot) ? `（${numberUnit(slot)}）` : ""}</span>
+                              <input
+                                id={`clone-${key}`}
+                                type="number"
+                                aria-label={slot.label}
+                                min={slot.min ?? undefined}
+                                max={slot.max ?? undefined}
+                                step={slot.step ?? undefined}
+                                bind:value={controls[key]}
+                              />
+                            </label>
+                          {/if}
+                        {/each}
+                      </div>
+                    {/if}
+                  </div>
+                {/if}
               </div>
               <div class="cm-actions">
                 {#if busy}
@@ -1779,6 +1781,9 @@
   }
   .cm-pop-title { margin: 2px 0 0; font-size: 12.5px; color: #a1a1aa; }
   /* 这颗胶囊靠着右列的右边缘，弹层左对齐会被顶出弹窗（窄窗口实测错位）。贴着胶囊右边往左长才稳。 */
+  /* 宽屏贴右往左长（1478px 实测：本机屏 637..905、API 屏 453..905，都在面板内容 221..1257 里）。
+     窄窗口反过来：2026-11-04 把这颗挪到这一排的最左边之后，胶囊自己就贴着面板左边，
+     再贴右长会顶穿左边界（798px 实测 -106..162）。这一档改成贴左往右长，见下面那条 media。 */
   .cm-pop-wf { left: auto; right: 0; width: 268px; gap: 3px; }
   /* API 那一屏要装两列（左列 156 + 右列模型清单），宽度只在这一屏放开。
      别写 100%：这块弹层的包含块是那颗胶囊外面那一格（position:relative），100% = 胶囊那么宽。
@@ -1982,6 +1987,9 @@
     .cm-pop-wf.is-api { width: min(268px, 78vw); }
     .cm-api { grid-template-columns: minmax(0, 1fr); gap: 6px; }
     .cm-api-side { padding-right: 0; padding-bottom: 5px; border-right: 0; border-bottom: 1px solid rgb(255 255 255 / 8%); }
+    /* 这一排里这颗排在最左（先挑工作流/云端模型，再定参数），所以弹层贴它左边缘往右长：
+       798px 实测 43..311、538px 实测 42..310，都在面板内容框里。 */
+    .cm-pop-wf { left: 0; right: auto; }
   }
 
   /* ── @ 引用素材菜单：抄图库那套胶囊菜单的版式，只是贴在光标下面。 */

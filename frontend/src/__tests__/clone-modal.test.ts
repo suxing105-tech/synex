@@ -553,9 +553,13 @@ it('定宽优先：名字长短不许决定这一排的几何，取消和生成�
   // （Round 28：靠右 packing 时参数胶囊前面空出一截，读着像漏了一块）。
   expect(css).toMatch(/\.cm-fill \.cm-pill\s*\{[^}]*max-width:\s*100%/);
   expect(css).toMatch(/\.cm-foot-left\s*\{[^}]*justify-content:\s*flex-start/);
-  // 弹层贴着胶囊右边往左长：左对齐的弹层在窄窗口会被顶出弹窗
+  // 宽屏那档弹层仍贴着胶囊右边往左长（1478px 实测在面板内容框里）
   expect(css).toMatch(/\.cm-pop-wf\s*\{[^}]*left:\s*auto/);
   expect(css).toMatch(/\.cm-pop-wf\s*\{[^}]*right:\s*0/);
+  // 但窄窗口反过来贴左：这颗胶囊在这一排的最左边，贴右长会顶穿左边界（798px 实测 -106..162）
+  const at = css.indexOf('@media (max-width: 900px)');
+  expect(at).toBeGreaterThan(0);
+  expect(css.slice(at)).toMatch(/\.cm-pop-wf\s*\{\s*left:\s*0;\s*right:\s*auto/);
   expect(css).toMatch(/\.cm-actions\s*\{[^}]*flex:\s*none/);
   expect(css).toMatch(/\.cm-actions\s*\{[^}]*z-index:\s*6/);
   expect(css).toMatch(/\.cm-pop-wrap\s*\{[^}]*min-width:\s*0/);
@@ -2232,6 +2236,17 @@ it('云端那条要扣钱：没有「当前」时开弹窗仍走本机那条，�
   const screen = await ready();
   expect(screen.getByRole('heading', { name: 'Qwen 多图编辑' })).toBeTruthy();
   expect(screen.getByRole('button', { name: '同款工作流' }).textContent).toContain('Qwen 多图编辑');
+});
+
+it('底部那一排先挑工作流、再定参数：两颗胶囊的左右顺序就是决策顺序', async () => {
+  // 参数是这份工作流自己的参数——先设完参数再换工作流，参数就得重来。所以顺序是：先定用谁，再定它怎么出。
+  routes(baseRoutes());
+  const screen = await ready();
+  const pills = [...screen.container.querySelectorAll('.cm-foot-left .cm-pill')] as HTMLElement[];
+  expect(pills.map((x) => x.getAttribute('aria-label'))).toEqual(['同款工作流', '画面参数']);
+  // 生成和取消仍钉在这一排最右，不参与压缩（上面那条「定宽优先」压的是几何，这里压的是左右次序）
+  const actions = screen.container.querySelector('.cm-actions') as HTMLElement;
+  expect(pills[1].compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 it('用户在设置页把云端那条设成「当前」之后，弹窗就开在它上面', async () => {

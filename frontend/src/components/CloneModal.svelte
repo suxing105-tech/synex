@@ -462,6 +462,82 @@
       id, kind: "image", filename: "", thumbnail_url: `/api/images/${id}/file?max=256`,
     }));
   });
+
+  /**
+   * 顶部这一格是一条「舞台」，三种状态轮流占（2026-11-04 苏醒照图：「在生成中的状态，做一个
+   * 交互动画，生成后，这里展示新生成的内容」）。以前生成中它仍摆着那张静止的旧图，唯一的动静
+   * 是底栏那颗按钮在转——等十分钟的人盯着一张不会变的图，只会以为卡死了。
+   */
+  /** 本机与云端发的是同一组状态，各有一句 message（clone_jobs 与 cloud/engine 同一口径）。 */
+  const STAGES = [
+    { state: "uploading", word: "上传素材", percent: 14 },
+    { state: "queued", word: "提交配方", percent: 34 },
+    { state: "running", word: "正在生成", percent: 76 },
+    { state: "downloading", word: "收进图库", percent: 92 },
+  ];
+  const stageIndex = $derived(STAGES.findIndex((s) => s.state === job?.state));
+  /**
+   * 那条只承诺「走到哪一档」，不承诺百分比：ComfyUI 不给整条工作流的剩余时间，
+   * 编一条会自己往前爬的假百分比比诚实的台阶更坏。跑完补满 100。
+   */
+  const stagePercent = $derived(done ? 100 : stageIndex >= 0 ? STAGES[stageIndex].percent : busy ? 6 : 0);
+  /** 舞台上一句话照后端那句 message：本机与云端说的不是一回事，这里不自己拼。 */
+  const stageLine = $derived(job?.message || (busy ? "正在准备…" : ""));
+  /**
+   * 已经等了多久：后端的 elapsed 只在状态切换那一刻推一次，中间不推，照它显示就是数字不动——
+   * 那正是「以为卡死了」的成因。所以本地起一条秒表，起点用后端给的 elapsed 校准。
+   */
+  let waited = $state(0);
+  $effect(() => {
+    if (!busy) { waited = 0; return; }
+    const anchorAt = Date.now() - untrack(() => Math.max(0, job?.elapsed ?? 0)) * 1000;
+    const stepWait = () => { waited = Math.max(0, Math.floor((Date.now() - anchorAt) / 1000)); };
+    stepWait();
+    const timer = window.setInterval(stepWait, 1000);
+    return () => window.clearInterval(timer);
+  });
+  function waitedLabel(sec: number): string {
+    const m = Math.floor(sec / 60);
+    return m ? `${m} 分 ${sec % 60} 秒` : `${sec} 秒`;
+  }
+  /** 舞台底图还是被点的这份素材（虚化着）：等待也看得见在等的是谁。音频没有可虚化的画面，宁可空着。 */
+  const stageGhost = $derived(
+    image && image.kind !== "audio" ? backendUrl(image.original_url || image.thumbnail_url || "") : "",
+  );
+
+  /**
+   * 跑完这一格让给刚出来的那一份：多份产出时 heroOut 记着人在看第几份，
+   * 提交下一批时清空——旧那批已经不是「刚生成的」了。
+   */
+  let heroOut = $state<number | null>(null);
+  const heroOutput = $derived.by<CloneOutput | null>(() => {
+    if (!done || !outputChips.length) return null;
+    return outputChips.find((o) => o.id === heroOut) ?? outputChips[0];
+  });
+  const heroOutIndex = $derived(heroOutput ? outputChips.findIndex((o) => o.id === heroOutput.id) : -1);
+  /** 图片取 1024 那张预览（后端缩好并落盘缓存）；视频与音频只认后端给的地址，前端硬拼必错。 */
+  function heroOutSrc(out: CloneOutput): string {
+    return out.kind === "image" ? `/api/images/${out.id}/file?max=1024` : out.thumbnail_url;
+  }
+  function stepHeroOut(delta: number) {
+    const n = outputChips.length;
+    const next = outputChips[(heroOutIndex + delta + n) % n];
+    if (next) heroOut = next.id;
+  }
+
+  /** 弹窗自己会滚：跑完时人若滚在下面，把这一格滚回视野，否则「直接展示」等于没展示。 */
+  let panelEl = $state<HTMLElement | null>(null);
+  let revealedId = 0;
+  $effect(() => {
+    const firstId = done ? outputChips[0]?.id ?? 0 : 0;
+    if (!firstId || firstId === revealedId) return;
+    revealedId = firstId;
+    const el = panelEl;
+    if (!el || el.scrollTop < 40) return;
+    const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced || typeof el.scrollTo !== "function") el.scrollTop = 0;
+    else el.scrollTo({ top: 0, behavior: "smooth" });
+  });
   /**
    * 弹窗标题与底部那颗胶囊上的名字：跟「切换工作流」清单里那一行同一个叫法。
    * 三条音频工作流在清单里折成一条「闪寻音频」，这两处也跟着叫「闪寻音频」——一个弹窗里两种叫法，
@@ -1140,6 +1216,8 @@
     }
     submitting = true;
     error = "";
+    // 上一批产出马上要让位：先收掉，这一格才能干净地回到「正在生成」那一态
+    heroOut = null;
     // 提交那一刻收掉两个弹层：不然菜单会盖在跑动的界面上，而且它里面的条目马上要全部禁用
     popOpen = false;
     closeWorkflowPop();
@@ -1257,15 +1335,11 @@
 
 {#if open}
   <div class="cm-backdrop" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-    <div class="cm-panel" role="dialog" aria-modal="true" aria-label="再次创作" use:modalFocus onscroll={() => (refZoom = null)}>
+    <div class="cm-panel" bind:this={panelEl} role="dialog" aria-modal="true" aria-label="再次创作" use:modalFocus onscroll={() => (refZoom = null)}>
+      <!-- 顶栏那两行字撤了（2026-11-04 苏醒照图把它圈出来说「删除」）：「再次创作」是这弹窗的可访问名，
+           role=dialog 的 aria-label 还在，读屏照样报得出这是什么；工作流名字底部那颗胶囊本来就报同一份，
+           顶栏再说一遍只是把一件事讲两次。这一条只剩右上角那颗关闭，让出来的竖向空间归展示图。 -->
       <header class="cm-top">
-        <div class="cm-top-text">
-          <span class="cm-kicker">再次创作</span>
-          {#if template}
-            <!-- 切换与导入收在底部那颗「工作流」按钮里，顶栏只报当前在用哪一份。 -->
-            <h3 class="cm-title" title={`${wfFullTitle} · ${template.node_count} 个节点`}>{wfName}</h3>
-          {/if}
-        </div>
         <button class="cm-close" aria-label="关闭再次创作" onclick={onClose}><Icon name="x" size={16} /></button>
       </header>
 
@@ -1278,45 +1352,89 @@
 
       <div class="cm-body">
         <div class="cm-left">
-          {#if image?.kind === "video" && image.playable !== false && image.play_url}
-            <!-- 视频卡的左边直接能播：再次创作要抄的常常是片子里的节奏、运镜和转场，
-                 只给一张首帧等于让人凭记忆写提示词。放不出来的容器（playable=false）退回海报帧。 -->
-            <!-- svelte-ignore a11y_media_has_caption -->
-            <video
-              class="cm-hero"
-              src={backendUrl(image.play_url)}
-              poster={image.thumbnail_url ? backendUrl(image.thumbnail_url) : undefined}
-              controls
-              playsinline
-              preload="metadata"
-              aria-label={`预览${image.filename}`}
-            >
-              <span>这个容器放不出来，去图库里用外部播放器看。</span>
-            </video>
-          {:else if image?.kind === "audio"}
-            <!-- 音频卡的左边：波形 + 一条原生播放器。写提示词时能就地听这段参考音色，
-                 不用回图库放一遍再回来；波形是后端画好的那张（thumbnail_url）。 -->
-            {#if image.thumbnail_url}
-              <img class="cm-hero cm-hero-wave" src={backendUrl(image.thumbnail_url)} alt={image.filename} />
+          {#if busy && job}
+            <!-- 生成中：这一格不再摆一张静止的旧图。底图慢慢呼吸、一条光带慢慢扫过去，中间那张卡说清三件
+                 事——在等哪一份、走到第几步、已经等了多久。条子按状态台阶往前走：后端不给整条工作流的剩余
+                 时间，就不编一条会自己爬的假百分比。动效只说「它还活着」，不催人。 -->
+            <div class="cm-stage" data-stage={job.state}>
+              {#if stageGhost}
+                <img class="cm-stage-ghost" src={stageGhost} alt="" aria-hidden="true" draggable="false" />
+              {/if}
+              <span class="cm-stage-veil" aria-hidden="true"></span>
+              <span class="cm-stage-beam" aria-hidden="true"></span>
+              <div class="cm-stage-card">
+                <span class="cm-stage-orb" aria-hidden="true"><i></i><i></i><i></i></span>
+                <p class="cm-stage-line" role="status">{stageLine}</p>
+                <p class="cm-stage-clock" aria-hidden="true">已等 {waitedLabel(waited)}</p>
+                <div class="cm-stage-bar" aria-hidden="true"><span style="width: {stagePercent}%"></span></div>
+                <p class="cm-stage-steps" aria-hidden="true">
+                  {#each STAGES as st, si (st.state)}
+                    <span class="cm-stage-step" class:is-now={si === stageIndex} class:is-past={stageIndex > si}>{st.word}</span>
+                  {/each}
+                </p>
+              </div>
+            </div>
+          {:else if heroOutput}
+            {@const out = heroOutput}
+            <!-- 生成完直接在这格看新东西（2026-11-04 苏醒：「生成后，这里展示新生成的内容」）。
+                 整块点下去 = 到图库里看那一份（图片进对比、视频进播放器，由父组件分派）；一次出几份时
+                 中间那两颗箭头换着看，卡底那排小缩略图仍旧负责跳到图库。 -->
+            <button class="cm-hero-out" aria-label={`在图库中打开刚生成的第 ${out.id} ${out.kind === "image" ? "张" : "条"}`}
+              onclick={() => onOpenImage?.(out.id, out.kind)}>
+              <img class="cm-hero cm-hero-new" src={backendUrl(heroOutSrc(out))}
+                alt={out.kind === "image" ? "刚生成的画面" : ""} draggable="false" />
+              {#if out.kind !== "image"}
+                <span class="cm-hero-out-play" aria-hidden="true"><Icon name="play" size={22} /></span>
+              {/if}
+              <span class="cm-hero-out-hint" aria-hidden="true"><Icon name="external-link" size={12} />在图库中打开</span>
+            </button>
+            {#if outputChips.length > 1}
+              <div class="cm-hero-pager">
+                <button class="cm-hero-nav" aria-label="看上一份产出" onclick={() => stepHeroOut(-1)}><Icon name="chevron-left" size={14} /></button>
+                <span class="cm-hero-count">{heroOutIndex + 1} / {outputChips.length}</span>
+                <button class="cm-hero-nav" aria-label="看下一份产出" onclick={() => stepHeroOut(1)}><Icon name="chevron-right" size={14} /></button>
+              </div>
             {/if}
-            {#if image.playable !== false && (image.play_url || image.original_url)}
-              <!-- svelte-ignore a11y_media_has_caption -->
-              <audio
-                bind:this={heroEl}
-                class="cm-hero-audio"
-                src={backendUrl(image.play_url || image.original_url!)}
-                controls
-                preload="metadata"
-                aria-label={`预览${image.filename}`}
-                onplay={stopVoiceSample}
-              ></audio>
-            {/if}
-          {:else if image?.original_url || image?.thumbnail_url}
-            <img class="cm-hero" src={backendUrl(image.original_url || image.thumbnail_url!)} alt={image.filename} />
           {:else}
-            <div class="cm-hero cm-hero-empty">没有预览</div>
+            {#if image?.kind === "video" && image.playable !== false && image.play_url}
+                <!-- 视频卡的左边直接能播：再次创作要抄的常常是片子里的节奏、运镜和转场，
+                     只给一张首帧等于让人凭记忆写提示词。放不出来的容器（playable=false）退回海报帧。 -->
+                <!-- svelte-ignore a11y_media_has_caption -->
+                <video
+                  class="cm-hero"
+                  src={backendUrl(image.play_url)}
+                  poster={image.thumbnail_url ? backendUrl(image.thumbnail_url) : undefined}
+                  controls
+                  playsinline
+                  preload="metadata"
+                  aria-label={`预览${image.filename}`}
+                >
+                  <span>这个容器放不出来，去图库里用外部播放器看。</span>
+                </video>
+              {:else if image?.kind === "audio"}
+                <!-- 音频卡的左边：波形 + 一条原生播放器。写提示词时能就地听这段参考音色，
+                     不用回图库放一遍再回来；波形是后端画好的那张（thumbnail_url）。 -->
+                {#if image.thumbnail_url}
+                  <img class="cm-hero cm-hero-wave" src={backendUrl(image.thumbnail_url)} alt={image.filename} />
+                {/if}
+                {#if image.playable !== false && (image.play_url || image.original_url)}
+                  <!-- svelte-ignore a11y_media_has_caption -->
+                  <audio
+                    bind:this={heroEl}
+                    class="cm-hero-audio"
+                    src={backendUrl(image.play_url || image.original_url!)}
+                    controls
+                    preload="metadata"
+                    aria-label={`预览${image.filename}`}
+                    onplay={stopVoiceSample}
+                  ></audio>
+                {/if}
+              {:else if image?.original_url || image?.thumbnail_url}
+                <img class="cm-hero" src={backendUrl(image.original_url || image.thumbnail_url!)} alt={image.filename} />
+              {:else}
+                <div class="cm-hero cm-hero-empty">没有预览</div>
+              {/if}
           {/if}
-          <p class="cm-hero-name" title={image?.filename}>{basenameOnly(image?.filename ?? "")}</p>
         </div>
 
         <div class="cm-right">
@@ -1510,20 +1628,9 @@
                   placeholder={promptGroupPlaceholder(group.label)} value={extraPrompts[group.keys[0]] ?? ""}
                   oninput={(e) => setPromptGroup(group, (e.target as HTMLTextAreaElement).value)}></textarea>
               {/each}
-              <!-- 产出缩略图紧跟提示词：这一排卡底条是 sticky 的，缩略图留在它上面而不是下面，生成完一眼看到结果，不用先滚过一条钉着的按钮。 -->
-              {#if outputChips.length}
-                <div class="cm-results">
-                  <span class="cm-results-label">本次产出</span>
-                  {#each outputChips as out (out.id)}
-                    <!-- 缩略图地址由后端按那一行的 kind 给准：视频的海报帧不是 /api/images/{id}/file。 -->
-                    <button class="cm-chip media-chip" class:cm-chip-video={out.kind !== "image"} title={out.filename}
-                      aria-label={`打开生成的第 ${out.id} ${out.kind === "image" ? "张" : "条"}`} onclick={() => onOpenImage?.(out.id, out.kind)}>
-                      <img src={backendUrl(out.thumbnail_url)} alt="" />
-                      {#if out.kind !== "image"}<span class="cm-chip-play" aria-hidden="true"><Icon name="play" size={12} /></span>{/if}
-                    </button>
-                  {/each}
-                </div>
-              {/if}
+              <!-- 「本次产出」那一排缩略图撤了（2026-11-04 苏醒：删掉干扰，生成后直接展示新内容）。
+                   它原本管的是「跑完一眼看到结果，不用先滚过一排钉着的按钮」——顶上那一格现在直接摆
+                   刚出来的那一份，人滚在下面还会自己滚回视野里，同一件事不必在两处各摆一遍。 -->
 
               <!-- 这一排是这张卡的底（2026-11-04 苏醒照图一收进同一个框）：族、工作流、参数、生成跟参考和提示词
                    同属一次表达，框外再摆一条深色的坞就等于把一次输入拆成两件事。
@@ -1900,10 +2007,9 @@
     box-shadow: 0 32px 90px rgba(0, 0, 0, 0.62); color: #e4e4e7;
   }
 
-  .cm-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
-  .cm-top-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  .cm-kicker { font-size: 12px; color: #7f7f87; letter-spacing: .02em; }
-  .cm-title { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* 顶栏只剩关闭那颗（标题那两行撤了）：它不该占一整行的高度，负一点上边距把它按到角上，
+     让出来的竖向空间全归展示图。 */
+  .cm-top { display: flex; align-items: center; justify-content: flex-end; margin: -4px -4px 2px; }
   .cm-close { flex: none; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 9px; color: #8a8a8e; background: transparent; }
   .cm-close:hover { color: #fafafa; background: rgb(255 255 255 / 10%); }
 
@@ -1913,13 +2019,82 @@
      预览图占了半屏，提示词只剩 470px 一条——写提示词才是这件事的主体，预览只是参照。 */
   .cm-body { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
   .cm-left { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
-  /* 竖排之后预览图由高度定大小（横排时是栏宽撑着的）：限高、等比、居中。宽图不摊满整行，竖图不冲出弹窗。 */
-  .cm-hero { width: auto; max-width: 100%; max-height: min(26vh, 300px); object-fit: contain; border-radius: 16px; background: #0c0c0e; }
+  /* 竖排之后展示图由高度定大小（横排时是栏宽撑着的）：限高、等比、居中。
+     2026-11-04 苏醒：「适当放大展示图」。26vh/300px 是这张还跟右侧并排时定的数；改成上下结构之后
+     顶上这一格独占整宽，先在真浏览器里量了四档（1440x900 可视高 802，展示图是竖构图时）：
+       38vh → 图 305 高，弹窗 575 高，离 90vh 上限还差 18vh
+       46vh → 图 369 高，弹窗 639 高，差 10vh            ← 取这档
+       54vh → 图 433 高，弹窗 703 高，只剩 2vh，弹窗自己开始滚
+     所以定 46vh/480px：比原来的 26vh 高一截，又不至于把弹窗顶到要滚动才看得见生成那颗。
+     480px 那条封顶是给高屏的：屏越高不等于图可以无限大，图一大字小的对比会更难受。 */
+  .cm-hero { width: auto; max-width: 100%; max-height: min(46vh, 480px); object-fit: contain; border-radius: 16px; background: #0c0c0e; }
   /* 波形是一张扁的后端 PNG：照搬 cm-hero 的 contain 会把它拉成一大块模糊，这里锁住高度。 */
   .cm-hero-wave { width: min(100%, 560px); height: clamp(88px, 18vh, 148px); object-fit: cover; }
   .cm-hero-audio { width: min(100%, 560px); margin-top: 10px; height: 36px; }
   .cm-hero-empty { display: flex; align-items: center; justify-content: center; min-height: 140px; font-size: 12.5px; color: #71717a; }
-  .cm-hero-name { margin: 0; font-size: 12px; color: #8a8a8e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ── 生成中这一格：等待台。三层叠——底图慢慢呼吸、一条光带斜着扫过去、中间那张卡报状态。
+     2026-11-04 苏醒：「做一个友好的交互动效，减少用户的等待焦虑」。两条规矩：
+     ① 尺寸写死，不跟素材宽高比跳，换阶段也不重排——来回拉扯本身就是在制造焦虑；
+     ② 节奏一律放慢（呼吸 7.5s、扫光 3.4s），动的是「它还活着」，不是催人。 */
+  .cm-stage {
+    position: relative; width: min(100%, 620px); height: min(46vh, 480px); overflow: hidden;
+    display: flex; align-items: center; justify-content: center; border-radius: 16px; background: #0c0c0e;
+    border: 1px solid rgb(255 255 255 / 6%);
+  }
+  .cm-stage-ghost { position: absolute; inset: -6%; width: 112%; height: 112%; object-fit: cover; opacity: .32; filter: blur(14px) saturate(105%); animation: cm-breathe 7.5s ease-in-out infinite; }
+  .cm-stage-veil { position: absolute; inset: 0; background: radial-gradient(120% 90% at 50% 40%, rgb(242 78 78 / 10%), transparent 62%), linear-gradient(180deg, rgb(9 9 11 / 24%), rgb(9 9 11 / 74%)); }
+  .cm-stage-beam { position: absolute; top: -40%; left: -20%; width: 38%; height: 180%; transform: rotate(14deg) translateX(-200%); background: linear-gradient(90deg, transparent, rgb(255 255 255 / 11%) 48%, transparent); animation: cm-scan 3.4s ease-in-out infinite; }
+  /* 手放上去画面要答一声：底图再抬一点、光带快一点——这是「交互」该有的样子，不是多加一颗按钮。 */
+  .cm-stage:hover .cm-stage-ghost { opacity: .44; }
+  .cm-stage:hover .cm-stage-beam { animation-duration: 2.1s; }
+  .cm-stage-card {
+    position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 9px;
+    padding: 18px 24px; border-radius: 15px; text-align: center;
+    background: rgb(12 12 14 / 62%); border: 1px solid rgb(255 255 255 / 8%);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  }
+  .cm-stage-orb { display: inline-flex; align-items: flex-end; gap: 4px; height: 22px; }
+  .cm-stage-orb i { width: 4px; height: 8px; border-radius: 3px; background: linear-gradient(180deg, #ff8a70, #f24e4e); animation: cm-pulse 1.15s ease-in-out infinite; }
+  .cm-stage-orb i:nth-child(2) { animation-delay: .16s; }
+  .cm-stage-orb i:nth-child(3) { animation-delay: .32s; }
+  .cm-stage-line { margin: 0; font-size: 13.5px; font-weight: 600; color: #f4f4f5; }
+  .cm-stage-clock { margin: 0; font-size: 11.5px; color: #9d9da4; font-variant-numeric: tabular-nums; }
+  /* 台阶条：只在换档时走一段（900ms 缓动），中间不许自己爬——后端不给整条工作流的剩余时间，
+     编一条会自己往前蹭的假百分比比诚实的台阶更坏。两条缝钉在 34% 与 76%：跑最久那一段一眼认得出。 */
+  .cm-stage-bar { position: relative; width: 212px; height: 3px; border-radius: 999px; overflow: hidden; background: rgb(255 255 255 / 10%); }
+  .cm-stage-bar > span { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #ff8a70, #f24e4e); transition: width 900ms cubic-bezier(.22, .61, .36, 1); }
+  .cm-stage-bar::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+    background-image: linear-gradient(90deg, transparent calc(34% - 1px), #0c0c0e calc(34% - 1px), #0c0c0e calc(34% + 1px), transparent calc(34% + 1px)),
+      linear-gradient(90deg, transparent calc(76% - 1px), #0c0c0e calc(76% - 1px), #0c0c0e calc(76% + 1px), transparent calc(76% + 1px)); }
+  .cm-stage-steps { display: flex; gap: 9px; margin: 0; padding: 0; font-size: 11px; color: #6f6f78; }
+  .cm-stage-step { transition: color 220ms ease; }
+  .cm-stage-step.is-past { color: #8f8f97; }
+  .cm-stage-step.is-now { color: #f8a29a; }
+  @keyframes cm-breathe { 0%, 100% { transform: scale(1); opacity: .30; } 50% { transform: scale(1.045); opacity: .40; } }
+  @keyframes cm-scan { 0% { transform: rotate(14deg) translateX(-220%); } 62%, 100% { transform: rotate(14deg) translateX(400%); } }
+  @keyframes cm-pulse { 0%, 100% { height: 7px; opacity: .5; } 50% { height: 19px; opacity: 1; } }
+
+  /* 刚跑完：这一格直接换成新出来的那一份。淡入加一点点抬起，「出来了」不用读字也知道。
+     整块可点 = 到图库里看那一份；悬停或键盘聚焦才浮出右下角那颗提示，静止时画面上一条多余的字都没有。 */
+  .cm-hero-out { position: relative; display: block; padding: 0; border: 0; background: transparent; cursor: pointer; }
+  .cm-hero-new { animation: cm-hero-in 320ms cubic-bezier(.22, .61, .36, 1); }
+  .cm-hero-out:hover .cm-hero-new, .cm-hero-out:focus-visible .cm-hero-new { outline: 1px solid rgb(255 255 255 / 24%); outline-offset: 3px; }
+  .cm-hero-out-play { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 50%; color: #fafafa; background: rgb(12 12 14 / 62%); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+  .cm-hero-out-hint { position: absolute; right: 12px; bottom: 12px; display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; font-size: 11.5px; color: #f4f4f5; border-radius: 999px; background: rgb(12 12 14 / 74%); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); opacity: 0; transition: opacity 140ms ease; }
+  .cm-hero-out:hover .cm-hero-out-hint, .cm-hero-out:focus-visible .cm-hero-out-hint { opacity: 1; }
+  .cm-hero-pager { display: flex; align-items: center; gap: 6px; }
+  .cm-hero-nav { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; color: #c9c9cf; background: rgb(255 255 255 / 7%); border: 1px solid rgb(255 255 255 / 8%); cursor: pointer; transition: background-color 140ms ease, color 140ms ease; }
+  .cm-hero-nav:hover { color: #fafafa; background: rgb(255 255 255 / 14%); }
+  .cm-hero-count { font-size: 11.5px; color: #8a8a8e; font-variant-numeric: tabular-nums; }
+  @keyframes cm-hero-in { from { opacity: 0; transform: scale(.985) translateY(6px); } to { opacity: 1; transform: none; } }
+  /* 不想看动效的人：等待台照样报状态、照样换档，只是不呼吸不扫光不跳——信息一条不少。 */
+  @media (prefers-reduced-motion: reduce) {
+    .cm-stage-ghost, .cm-stage-beam, .cm-stage-orb i, .cm-hero-new { animation: none; }
+    .cm-stage-ghost { opacity: .34; }
+    .cm-stage-beam { display: none; }
+    .cm-stage-bar > span, .cm-stage-step, .cm-hero-out-hint { transition: none; }
+  }
 
   .cm-right { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
   .cm-block { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
@@ -2390,15 +2565,14 @@
   .cm-status { margin: 0; font-size: 12px; color: #9ad1a4; }
 /* 状态与报错单独占操作行下面一行：生成前后那颗按钮一动不动。 */
 .cm-foot-note { margin: 8px 0 0; }
-  .cm-results { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .cm-results-label { font-size: 11.5px; color: #71717a; }
-  .cm-chip { width: 60px; height: 60px; }
-  /* 视频产出也得看得出是视频：右下角一枚小播放键，点下去进播放器而不是对比视图。 */
-  .cm-chip-video { position: relative; }
-  .cm-chip-play { position: absolute; right: 4px; bottom: 4px; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; color: #fafafa; background: rgb(18 18 20 / 80%); }
+  /* 卡底那排「本次产出」缩略图连同这几条样式一起撤了：刚出来的那一份现在直接摆在顶上那一格，
+     视频与音频的角标跟着搬过去（.cm-hero-out-play）。 */
 
   @media (max-width: 900px) {
-    .cm-hero { max-height: 24vh; }
+    /* 窄窗口这两条必须同一个数：展示图与等待台是同一格轮流占，高一档矮一档都会在换状态时
+       把下面那张输入卡往上顶一下、往下坠一下。 */
+    .cm-hero { max-height: min(34vh, 360px); }
+    .cm-stage { width: min(100%, 480px); height: min(34vh, 360px); }
     .cm-pop { width: min(328px, 78vw); }
     .cm-pop-wf { width: min(268px, 78vw); }
   .cm-pop-kind { width: min(268px, 78vw); }
@@ -2414,7 +2588,13 @@
      不砍的话 1478x562 实测整弹窗 573 > 可视 504，钉住的坞直接压在输入区上面，得往下滚才看得见光标。
      放在 max-width 那条之后：又矮又窄时按矮处理。 */
   @media (max-height: 720px) {
-    .cm-hero { max-height: 17vh; }
+    /* 矮窗口这两条也必须是同一个数（同上：同一格轮流占，别把下面的输入卡顶来顶去）。
+       154px 那条地板是等待台中间那张卡量出来的最低可用高度，展示图跟着抬到同一档，
+       顺带让矮屏上的图不再只有 79px 高。 */
+    .cm-hero { max-height: max(154px, 19vh); }
+    .cm-stage { height: max(154px, 19vh); }
+    .cm-stage-card { gap: 7px; padding: 14px 18px; }
+    .cm-stage-bar { width: 168px; }
     .cm-hero-wave { height: clamp(64px, 12vh, 96px); }
     .cm-hero-empty { min-height: 96px; }
   }

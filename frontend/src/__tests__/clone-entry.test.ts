@@ -189,7 +189,7 @@ it('点弹窗里的产出图：直接进「原图 vs 产出图」对比（两张
   await submitClone(screen);
   applyCloneProgress(DONE_ONE);
   await tick();
-  await fireEvent.click(screen.getByRole('button', { name: '打开生成的第 2 张' }));
+  await fireEvent.click(screen.getByRole('button', { name: '在图库中打开刚生成的第 2 张' }));
   await vi.waitFor(() => expect([...get(multiSelectedIds)].sort((a, b) => a - b)).toEqual([1, 2]));
   expect(get(selectedId)).toBe(2);
   expect(screen.queryByRole('dialog', { name: '再次创作' })).toBeNull();
@@ -205,7 +205,7 @@ it('刷新后原图不在当前列表里时不硬凑对比：只选中产出图'
   await submitClone(screen);
   applyCloneProgress(DONE_ONE);
   await tick();
-  await fireEvent.click(screen.getByRole('button', { name: '打开生成的第 2 张' }));
+  await fireEvent.click(screen.getByRole('button', { name: '在图库中打开刚生成的第 2 张' }));
   await vi.waitFor(() => expect([...get(multiSelectedIds)]).toEqual([2]));
   expect(get(selectedId)).toBe(2);
 });

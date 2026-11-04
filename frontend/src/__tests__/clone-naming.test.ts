@@ -52,7 +52,9 @@ it("三处入口说的是新名字，弹窗的可访问名跟着换", () => {
   const modal = readFileSync("src/components/CloneModal.svelte", "utf8");
   expect(modal).toContain("aria-label=\"" + NEW + "\"");
   expect(modal).toContain("aria-label=\"关闭" + NEW + "\"");
-  expect(modal).toContain("<span class=\"cm-kicker\">" + NEW + "</span>");
+  // 顶栏那行字撤了（2026-11-04 苏醒照图点名删除）：这名字不再作为文字摆在弹窗里，
+  // 只剩两个可访问名——dialog 叫什么、关闭那颗关的是什么。读屏与截图各走各的口径。
+  expect(modal).not.toContain("cm-kicker");
 
   const settings = readFileSync("src/lib/clone.ts", "utf8");
   expect(settings).toContain("export const CLONE_SETTINGS_TAB = \"" + NEW + "\";");

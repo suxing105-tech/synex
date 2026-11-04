@@ -285,8 +285,10 @@ it('生成完成后在弹窗里给出这次出的图，点它跳到图库里那�
   await fireEvent.click(screen.getByRole('button', { name: '生成' }));
   applyCloneProgress({ active: true, job_id: 'j1', state: 'done', running: false, template_id: 1, image_ids: [41] });
   await tick();
-  const chip = await screen.findByRole('button', { name: '打开生成的第 41 张' });
-  await fireEvent.click(chip);
+  const hero = await screen.findByRole('button', { name: '在图库中打开刚生成的第 41 张' });
+  // 顶上那一格吃的是 1024 那张预览，不是小缩略图那档 256
+  expect((hero.querySelector('img') as HTMLImageElement).getAttribute('src')).toContain('/api/images/41/file?max=1024');
+  await fireEvent.click(hero);
   // 带上 kind：图片进「原图 vs 产出图」对比，视频要进播放器，父组件靠这个分派
   expect(onOpenImage).toHaveBeenCalledWith(41, 'image');
 });
@@ -345,12 +347,12 @@ it('续位填了就以 node.input::image_N 的键交回后端，真槽位那张�
 it('底部那颗「工作流」按钮里能切到另一份工作流，参考位跟着重填', async () => {
   routes({ ...baseRoutes(), '/api/clone/templates': { items: [TPL, TPL_MULTI] } });
   const screen = await ready();
-  expect(screen.getByRole('heading', { name: 'Qwen 多图编辑' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '工作流' }).textContent).toContain('Qwen 多图编辑');
   expect(screen.queryByRole('menuitemradio')).toBeNull();
   await fireEvent.click(screen.getByRole('button', { name: '工作流' }));
   await screen.findByRole('menu', { name: '工作流' });
   await fireEvent.click(screen.getByRole('menuitemradio', { name: /多图编辑 16 位/ }));
-  await vi.waitFor(() => expect(screen.getByRole('heading', { name: '多图编辑 16 位' })).toBeTruthy());
+  await vi.waitFor(() => expect(screen.getByRole('button', { name: '工作流' }).textContent).toContain('多图编辑 16 位'));
   // 换工作流 = 换一套槽位：回到「被点的那张图填第一位 + 两个空续位」，菜单也收起来
   expect(screen.getByRole('button', { name: '替换图片1' })).toBeTruthy();
   expect(screen.getByRole('button', { name: '添加图片2参考图' })).toBeTruthy();
@@ -378,7 +380,7 @@ it('弹窗里直接加载本地工作流 JSON：解析槽位、落库、立刻�
   const file = new File([JSON.stringify(WF)], '我的多图.json', { type: 'application/json' });
   Object.defineProperty(file, 'text', { value: async () => JSON.stringify(WF) });
   await fireEvent.change(input, { target: { files: [file] } });
-  await vi.waitFor(() => expect(screen.getByRole('heading', { name: '新的工作流' })).toBeTruthy());
+  await vi.waitFor(() => expect(screen.getByRole('button', { name: '工作流' }).textContent).toContain('新的工作流'));
   expect(inspected[0].workflow).toEqual(WF);
   // 底部那颗按钮也跟着换名，用户随时知道自己在用哪一份
   expect(screen.getByRole('button', { name: '工作流' }).textContent).toContain('新的工作流');
@@ -393,7 +395,7 @@ it('选了个不是 JSON 的文件，说清楚原因而不是默默什么都不�
   Object.defineProperty(file, 'text', { value: async () => '{ 不是 json' });
   await fireEvent.change(input, { target: { files: [file] } });
   expect(await screen.findByText(/不是合法的 JSON/)).toBeTruthy();
-  expect(screen.getByRole('heading', { name: 'Qwen 多图编辑' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '工作流' }).textContent).toContain('Qwen 多图编辑');
 });
 
 it('参考是左栏那一摞：栏宽固定、每张露出多少按张数算，十六格也不顶人', async () => {
@@ -819,11 +821,12 @@ it('菜单、提示词、参考收进同一个圆角框：卡底那条是卡的�
   const err = screen.container.querySelector('.cm-foot-note.cm-error') as HTMLElement;
   expect(err && err.closest('.cm-dock')).toBeTruthy();
   await fireEvent.click(retry);
-  // 产出缩略图也在卡里，且排在钉住那条上面：跑完先看结果，不用先滚过一排按钮
-  const results = await screen.findByText('本次产出');
-  expect(results.closest('.cm-composer')).toBe(card);
-  const inside = Array.from(card.querySelectorAll('*'));
-  expect(inside.indexOf(results as Element)).toBeLessThan(inside.indexOf(dock as Element));
+  // 卡底那一排「本次产出」撤了（2026-11-04 苏醒照图：「生成后，直接展示新的生成内容」）：跑完的
+  // 东西在左栏那一格里，卡里只剩输入——钉住那条仍然是卡的最后一块，sticky 不成其为假话
+  const hero = await screen.findByRole('button', { name: '在图库中打开刚生成的第 88 张' });
+  expect(hero.closest('.cm-left')).toBeTruthy();
+  expect(screen.container.querySelector('.cm-results')).toBeNull();
+  expect(card.lastElementChild).toBe(dock);
 });
 
 it('输入区按内容长高：空着只有两行，不再写死一格 224px', async () => {
@@ -892,7 +895,11 @@ it('钉住那条坞不许透字；窗口一矮先给预览图砍一档', () => {
   // 又矮又窄时按矮处理：矮那一档必须写在窄那一档之后
   const shortAt = css.indexOf('@media (max-height: 720px)');
   expect(shortAt).toBeGreaterThan(css.indexOf('@media (max-width: 900px)'));
-  expect(css.slice(shortAt)).toMatch(/\.cm-hero\s*\{[^}]*max-height:\s*17vh/);
+  // 矮窗口这一档：展示图与等待台是同一格轮流占，两条必须同一个数。
+  // 1478x562 实测过旧写法的问题——hero 17vh(79) / stage max(154,19vh)(154) 差 75px，
+  // 点「生成」那一下整张输入卡往下坠一截，等待台反而把人晃了一下。
+  expect(css.slice(shortAt)).toMatch(/\.cm-hero\s*\{[^}]*max-height:\s*max\(154px, 19vh\)/);
+  expect(css.slice(shortAt)).toMatch(/\.cm-stage\s*\{[^}]*height:\s*max\(154px, 19vh\)/);
 });
 
 it("窄窗口那一屏不许再撑 452px：面板放不下，两列上下叠、宽度回到 268 那一档", () => {
@@ -1121,9 +1128,9 @@ it("删掉当前这条后自动切到剩下那份，弹层保持打开，能接�
   const screen = await ready();
   await fireEvent.click(screen.getByRole("button", { name: "工作流" }));
   await fireEvent.click(await screen.findByRole("button", { name: "删除工作流 Qwen 多图编辑" }));
-  await vi.waitFor(() => expect(screen.getByRole("heading", { name: "单图编辑" })).toBeTruthy());
+  await vi.waitFor(() => expect(screen.getByRole("button", { name: "工作流" }).textContent).toContain("单图编辑"));
   expect(deleteCalls()).toEqual(["/api/clone/templates/1"]);
-  // 标题已经换成剩下那条，弹层却没关，下一条的 X 就地可用
+  // 底部那颗已经换成剩下那条，弹层却没关，下一条的 X 就地可用
   expect(screen.getByRole("menu", { name: "工作流" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "删除工作流 Qwen 多图编辑" })).toBeNull();
   // 换模板 = 换一套槽位：参考位按新模板重摆，被点的那张图回到图片1
@@ -1296,7 +1303,7 @@ it('来源读失败也照常开弹窗：参考位退回被点的这一张', asyn
 
 /* ── 工作流名字：本地导入那份的文件后缀不是名字的一部分 ───────────────── */
 
-it('工作流名字不显示 .json 后缀：标题、胶囊、切换列表、删除按钮一起', async () => {
+it('工作流名字不显示 .json 后缀：胶囊、切换列表、删除按钮一起', async () => {
   routes({
     ...baseRoutes(),
     '/api/clone/templates': {
@@ -1305,7 +1312,6 @@ it('工作流名字不显示 .json 后缀：标题、胶囊、切换列表、删
     },
   });
   const screen = await ready();
-  expect(screen.getByRole('heading', { name: '视频创作者-1024 x 576_参考生视频_' })).toBeTruthy();
   const pill = screen.getByRole('button', { name: '工作流' });
   expect(pill.textContent).toContain('视频创作者-1024 x 576_参考生视频_');
   expect(pill.textContent).not.toMatch(/\.json/i);
@@ -1343,15 +1349,20 @@ it('本地导入时就把后缀摘掉，并且不和已有那条重名', async (
   await vi.waitFor(() => expect(names).toEqual(['我的多图 (2)']));
 });
 
-it('胶囊定宽时长名字会被截断，全名必须另有落点：顶部标题 + 悬浮提示', async () => {
+it('胶囊定宽时长名字会被截断，全名必须另有落点：两处悬浮提示（顶栏那行字已撤）', async () => {
   const long = { ...TPL, name: 'Qwen-image-2.1多图编辑.json' };
   routes({ ...baseRoutes(), '/api/clone/templates': { items: [long] } });
   const screen = await ready();
   const pill = screen.getByRole('button', { name: '工作流' }) as HTMLButtonElement;
-  // 胶囊宽度是定死的（.cm-fill），名字长在这儿只能截断——所以全名不许只活在胶囊里：
-  // 顶部标题（17px）报当前用的是哪一份，悬浮提示给完整名字（含「生成中」那句前缀）。
+  // 胶囊宽度是定死的（.cm-fill），名字长在这儿只能截断——所以全名不许只活在胶囊里。顶栏那行字
+  // 撤了（2026-11-04 苏醒照图点名删除），剩下的落点是两处悬浮提示：胶囊这一颗（含「生成中」那句
+  // 前缀）+「切换工作流」清单里那一行，节点数与参数数也只在后者报，顶栏那份跟着那行字一起没了。
   expect(pill.getAttribute('title')).toBe('Qwen-image-2.1多图编辑');
-  expect(document.querySelector('.cm-title')?.textContent).toBe('Qwen-image-2.1多图编辑');
+  expect(document.querySelector('.cm-title')).toBeNull();
+  await fireEvent.click(pill);
+  const row = await screen.findByRole('menuitemradio', { name: /Qwen-image-2\.1多图编辑/ });
+  expect(row.getAttribute('title')).toContain('Qwen-image-2.1多图编辑 · ');
+  expect(row.getAttribute('title')).toContain('4 个节点');
 });
 
 /* ── 视频再次创作（H3 参考生视频）────────────────────────────────────── */
@@ -1389,12 +1400,12 @@ const videoRoutes = () => ({
 it('视频卡点开默认吃出片那条工作流；这一族没有就退回库里现有的', async () => {
   routes({ ...videoRoutes(), '/api/clone/templates': { items: [TPL, { ...H3, is_active: false }] } });
   const screen = await ready({ image: VIDEO_CARD });
-  expect(screen.getByRole('heading', { name: 'H3参考视频' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '工作流' }).textContent).toContain('H3参考视频');
   cleanup();
   // 库里只导过图片工作流：视频卡也要开得出弹窗，别给一片空白
   routes({ ...videoRoutes(), '/api/clone/templates': { items: [TPL] } });
   const again = await ready({ image: VIDEO_CARD });
-  expect(again.getByRole('heading', { name: 'Qwen 多图编辑' })).toBeTruthy();
+  expect(again.getByRole('button', { name: '工作流' }).textContent).toContain('Qwen 多图编辑');
 });
 
 it('三族参考合成一摞：已填的按 图片→视频→音频 排，末尾只有一颗「+ 参考」', async () => {
@@ -1496,11 +1507,11 @@ it('出片之后的产出按 kind 取缩略图，点它是「第 N 条」并把 
   });
   await tick();
   expect(screen.getByText('已生成 1 条')).toBeTruthy();
-  const chip = await screen.findByRole('button', { name: '打开生成的第 41 条' });
+  const hero = await screen.findByRole('button', { name: '在图库中打开刚生成的第 41 条' });
   // 视频的海报帧不是 /api/images/{id}/file，前端硬拼必然拼错
-  expect(chip.querySelector('img')?.getAttribute('src')).toContain('/api/videos/41/thumb');
-  expect(chip.className).toContain('cm-chip-video');
-  await fireEvent.click(chip);
+  expect(hero.querySelector('img')?.getAttribute('src')).toContain('/api/videos/41/thumb');
+  expect(hero.querySelector('.cm-hero-out-play')).toBeTruthy();
+  await fireEvent.click(hero);
   expect(onOpenImage).toHaveBeenCalledWith(41, 'video');
 });
 
@@ -1630,11 +1641,11 @@ const audioRoutes = () => ({
 it('音频卡点开默认吃出声音那条；这一族没有就退回库里现有的', async () => {
   routes({ ...audioRoutes(), '/api/clone/templates': { items: [TPL, { ...TTS, is_active: false }] } });
   const screen = await ready({ image: AUDIO });
-  expect(screen.getByRole('heading', { name: '闪寻音频克隆' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '工作流' }).textContent).toContain('闪寻音频克隆');
   cleanup();
   routes({ ...audioRoutes(), '/api/clone/templates': { items: [TPL] } });
   const again = await ready({ image: AUDIO });
-  expect(again.getByRole('heading', { name: 'Qwen 多图编辑' })).toBeTruthy();
+  expect(again.getByRole('button', { name: '工作流' }).textContent).toContain('Qwen 多图编辑');
 });
 
 it('音频卡的左边是波形加一条播放器：写词的时候能就地听这段音色', async () => {
@@ -1674,7 +1685,7 @@ it('清单里只剩一族，所以族徽从「分得清」降级成「报到」�
   await vi.waitFor(() => expect(screen.getByRole('button', { name: '工作流' }).textContent).toContain('Qwen 多图编辑'));
 });
 
-it('产出是音频时 chip 上挂播放角标，点它就地播而不是进图片对比', async () => {
+it('产出是音频时那一格挂播放角标，点它就地播而不是进图片对比', async () => {
   routes({
     ...audioRoutes(),
     '/api/clone/templates': { items: [TTS] },
@@ -1691,12 +1702,11 @@ it('产出是音频时 chip 上挂播放角标，点它就地播而不是进图�
     outputs: [{ id: 88, kind: 'audio', filename: '闪寻音频克隆_00001.flac', thumbnail_url: '/api/audio/88/waveform' }],
   });
   await tick();
-  const chip = screen.getByRole('button', { name: '打开生成的第 88 条' });
-  expect(chip.querySelector('img')?.getAttribute('src')).toContain('/api/audio/88/waveform');
-  // 产出是音频：chip 上挂着播放角标，点下去交给父组件就地播，不是进图片对比
-  expect(chip.classList.contains('cm-chip-video')).toBe(true);
-  expect(chip.querySelector('.cm-chip-play')).toBeTruthy();
-  await fireEvent.click(chip);
+  const hero = screen.getByRole('button', { name: '在图库中打开刚生成的第 88 条' });
+  expect(hero.querySelector('img')?.getAttribute('src')).toContain('/api/audio/88/waveform');
+  // 产出是音频：那一格挂着播放角标，点下去交给父组件就地播，不是进图片对比
+  expect(hero.querySelector('.cm-hero-out-play')).toBeTruthy();
+  await fireEvent.click(hero);
   expect(onOpen).toHaveBeenCalledWith(88, 'audio');
 });
 
@@ -2118,7 +2128,7 @@ it("三种出声方式底下那颗都写「闪寻音频」：与切换清单那�
   const screen = await ready({ image: AUDIO_CARD });
   const pill = () => screen.getByRole('button', { name: '工作流' });
   expect(pill().textContent?.trim()).toBe('闪寻音频');
-  expect(document.querySelector('.cm-title')?.textContent).toBe('闪寻音频');
+  expect(document.querySelector('.cm-title')).toBeNull();
   // 具体是哪一条没丢：悬浮提示里报到，设置页里也各占一行
   expect(pill().getAttribute('title')).toContain('闪寻参考音色');
 
@@ -2126,7 +2136,7 @@ it("三种出声方式底下那颗都写「闪寻音频」：与切换清单那�
   await fireEvent.click(group.querySelectorAll('button')[1]);
   await vi.waitFor(() => expect(pill().getAttribute('title')).toContain('音色描述'));
   expect(pill().textContent?.trim()).toBe('闪寻音频');
-  expect(document.querySelector('.cm-title')?.textContent).toBe('闪寻音频');
+  expect(document.querySelector('.cm-title')).toBeNull();
 });
 
 it("图片工作流不该被折名：底部那颗仍是这份工作流自己的名字，悬浮提示不多余一句", async () => {
@@ -2588,7 +2598,6 @@ it('云端那条要扣钱：没有「当前」时开弹窗仍走本机那条，�
   // 库里云端那条排在前面也白搭——默认走它等于「用户什么也没点就产生了费用」
   routes({ ...baseRoutes(), '/api/clone/cloud/status': cloudOn(), '/api/clone/templates': { items: [CLOUD_IMG, TPL] } });
   const screen = await ready();
-  expect(screen.getByRole('heading', { name: 'Qwen 多图编辑' })).toBeTruthy();
   expect(screen.getByRole('button', { name: '工作流' }).textContent).toContain('Qwen 多图编辑');
 });
 
@@ -2661,14 +2670,14 @@ it('两屏切着换工作流：API 屏点云端那条就换过去，回本机屏
   await fireEvent.click(screen.getByRole('button', { name: '工作流' }));
   await fireEvent.click(await screen.findByRole('button', { name: /^云端API服务/ }));
   await fireEvent.click(await screen.findByRole('menuitemradio', { name: /Seedream v5/ }));
-  await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Seedream v5' })).toBeTruthy());
+  await vi.waitFor(() => expect(screen.getByRole('button', { name: '工作流' }).textContent).toContain('Seedream v5'));
   // 现在挂在云端：再开弹层该直接开在 API 屏，不用人再点一次
   await fireEvent.click(screen.getByRole('button', { name: '工作流' }));
   await tick();
   expect(screen.getByRole('button', { name: /^云端API服务/ }).getAttribute('aria-pressed')).toBe('true');
   await fireEvent.click(screen.getByRole('button', { name: '本地工作流' }));
   await fireEvent.click(await screen.findByRole('menuitemradio', { name: /Qwen 多图编辑/ }));
-  await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Qwen 多图编辑' })).toBeTruthy());
+  await vi.waitFor(() => expect(screen.getByRole('button', { name: '工作流' }).textContent).toContain('Qwen 多图编辑'));
 });
 
 /** 另一家出片模型：verified=true，用来钉「已实测」这一态。 */
@@ -2850,7 +2859,7 @@ it('云端跑挂了但产物还取得回来：给一颗「取回结果」，点�
   await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '把这套视觉搬过来' } });
   await fireEvent.click(screen.getByRole('button', { name: '生成' }));
   await fireEvent.click(await screen.findByRole('button', { name: '取回结果' }));
-  await vi.waitFor(() => expect(screen.getByText('本次产出')).toBeTruthy());
+  await vi.waitFor(() => expect(screen.getByRole('button', { name: '在图库中打开刚生成的第 88 张' })).toBeTruthy());
   expect(http.mock.calls.some(([path]) => String(path) === '/api/clone/cloud/tasks/77/refetch')).toBe(true);
   // 取回绝不重新提交：那是在同一件事上扣第二次钱
   expect(http.mock.calls.filter(([path]) => String(path) === '/api/clone/generate')).toHaveLength(1);
@@ -2941,4 +2950,146 @@ it('那一摞是后挂的压在前挂的上头，加载参考那颗压在全摞�
   const tiles = [...css.matchAll(/\.cm-tile-add\s*\{[^}]*\}/g)].map((m) => m[0]);
   expect(tiles.some((r) => /background:\s*#1a1a1e/.test(r))).toBe(true);
   expect(tiles[tiles.length - 1]).not.toMatch(/background:/);
+});
+
+/* ── 顶部那一格：生成中是等待台，跑完直接给新东西（2026-11-04 苏醒照图）────── */
+
+it('顶栏那两行字与图下那行文件名都撤了：信息各有落点，读屏仍报得出这是什么', async () => {
+  routes(baseRoutes());
+  const screen = await ready();
+  expect(document.querySelector('.cm-kicker')).toBeNull();
+  expect(document.querySelector('.cm-title')).toBeNull();
+  expect(document.querySelector('.cm-hero-name')).toBeNull();
+  // 文件名不是藏起来：DOM 里再没出现过（图下那行是真删，不是 visibility）
+  expect(screen.container.textContent ?? '').not.toContain('source.png');
+  // 撤字不等于撤可访问名：dialog 与关闭那颗都还知道自己是什么
+  expect(screen.getByRole('dialog', { name: '再次创作' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '关闭再次创作' })).toBeTruthy();
+  // 当前用哪份工作流没丢，还在底部那颗胶囊上
+  expect(screen.getByRole('button', { name: '工作流' }).textContent).toContain('Qwen 多图编辑');
+});
+
+it('生成中那一格是等待台：台阶条、已等多久、虚化的底图，不再摆一张静止的旧图', async () => {
+  routes({
+    ...baseRoutes(),
+    '/api/clone/jobs/current': {
+      active: true, job_id: 'j1', state: 'running', running: true, template_id: 1,
+      image_ids: [], message: '模型正在出图', elapsed: 41,
+    },
+  });
+  const screen = await ready();
+  const stage = screen.container.querySelector('.cm-stage') as HTMLElement;
+  expect(stage).toBeTruthy();
+  expect(stage.getAttribute('data-stage')).toBe('running');
+  // 那一句话是后端自己那句，本机与云端说的不是一回事，前端不另拼一套
+  expect(stage.querySelector('.cm-stage-line')?.textContent).toBe('模型正在出图');
+  const steps = [...stage.querySelectorAll('.cm-stage-step')];
+  expect(steps.map((el) => el.textContent)).toEqual(['上传素材', '提交配方', '正在生成', '收进图库']);
+  expect(steps[2].className).toContain('is-now');
+  expect(steps[0].className).toContain('is-past');
+  expect(steps[3].className).not.toMatch(/is-now|is-past/);
+  // 秒表从后端给的 elapsed 起算再自己走：照抄那个数会停在 41 不动，那正是「以为卡死了」的成因
+  await vi.waitFor(() => expect(stage.querySelector('.cm-stage-clock')?.textContent).toMatch(/已等 4[12] 秒/));
+  // 台阶条只承诺走到哪一档：ComfyUI 不给整条工作流的剩余时间，就不编一条会自己爬的假百分比
+  expect((stage.querySelector('.cm-stage-bar > span') as HTMLElement).getAttribute('style')).toContain('width: 76%');
+  // 底图还是被点的这一份，虚化着当背景：纯装饰，读屏不该念它
+  const ghost = stage.querySelector('img.cm-stage-ghost') as HTMLImageElement;
+  expect(ghost.getAttribute('aria-hidden')).toBe('true');
+  expect(ghost.getAttribute('src')).toContain('/api/images/7/file');
+  // 同一时间这一格只有一件事：等待台在，就不该同时摆着「刚出的新产出」
+  expect(screen.container.querySelectorAll('.cm-stage')).toHaveLength(1);
+  expect(screen.container.querySelector('.cm-hero-out')).toBeNull();
+  // 这一条故意不问「底下那张旧素材图被摘了没有」：happy-dom 不会把坐在 {:else} 里的嵌套 {#if}
+  // 那一份从树上摘掉，旧图会留在 .cm-left 里。真 Chrome 里量过三种写法（摊平、包一层元素、
+  // 原地嵌套），换分支都是干净的（outputs/hero-stage-v1/probe-leak.mjs）——在这里断言「旧图必须
+  // 消失」等于把测试环境的 bug 写成产品的规格，改错的是产品还是测试从此就分不清了。
+});
+
+it('一次出两份时顶上那一格翻着看：1 / 2、看下一份、再点绕回第一份', async () => {
+  routes({ ...baseRoutes(), '/api/clone/generate': { ...EMPTY_CLONE_JOB, active: true, job_id: 'j1', state: 'queued', running: true } });
+  const screen = await ready();
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '出两张' } });
+  await fireEvent.click(screen.getByRole('button', { name: '生成' }));
+  applyCloneProgress({
+    active: true, job_id: 'j1', state: 'done', running: false, template_id: 1, image_ids: [],
+    outputs: [
+      { id: 41, kind: 'image', filename: 'a.png', thumbnail_url: '/api/images/41/file?max=256' },
+      { id: 42, kind: 'image', filename: 'b.png', thumbnail_url: '/api/images/42/file?max=256' },
+    ],
+  });
+  await tick();
+  const count = () => screen.container.querySelector('.cm-hero-count')?.textContent;
+  const src = () => (screen.container.querySelector('img.cm-hero-new') as HTMLImageElement).getAttribute('src') ?? '';
+  expect(count()).toBe('1 / 2');
+  expect(src()).toContain('/api/images/41/file?max=1024');
+  await fireEvent.click(screen.getByRole('button', { name: '看下一份产出' }));
+  expect(count()).toBe('2 / 2');
+  expect(src()).toContain('/api/images/42/file?max=1024');
+  expect(screen.getByRole('button', { name: '在图库中打开刚生成的第 42 张' })).toBeTruthy();
+  await fireEvent.click(screen.getByRole('button', { name: '看下一份产出' }));
+  expect(count()).toBe('1 / 2');
+  await fireEvent.click(screen.getByRole('button', { name: '看上一份产出' }));
+  expect(count()).toBe('2 / 2');
+  // 一份产出时不摆这排箭头：只有一个可看的东西，翻页是噪音
+  expect(screen.queryByRole('button', { name: '看上一份产出' })).toBeTruthy();
+  cleanup();
+  routes({ ...baseRoutes(), '/api/clone/generate': { ...EMPTY_CLONE_JOB, active: true, job_id: 'j1', state: 'queued', running: true } });
+  const one = await ready();
+  await fireEvent.input(one.getByLabelText('提示词'), { target: { value: '出一张' } });
+  await fireEvent.click(one.getByRole('button', { name: '生成' }));
+  applyCloneProgress({ active: true, job_id: 'j1', state: 'done', running: false, template_id: 1, image_ids: [41] });
+  await tick();
+  expect(one.container.querySelector('.cm-hero-pager')).toBeNull();
+});
+
+it('跑完时人若滚在下面，自动把展示那一格滚回视野；本来就在顶上的不动', async () => {
+  routes({ ...baseRoutes(), '/api/clone/generate': { ...EMPTY_CLONE_JOB, active: true, job_id: 'j1', state: 'queued', running: true } });
+  const screen = await ready();
+  const panel = screen.container.querySelector('.cm-panel') as HTMLElement;
+  const scrollTo = vi.fn();
+  // happy-dom 的 scrollTop 不是真布局量出来的，只能自己钉一个读数：钉 300 = 人滚到了卡底
+  Object.defineProperty(panel, 'scrollTo', { value: scrollTo, configurable: true });
+  Object.defineProperty(panel, 'scrollTop', { configurable: true, get: () => 300 });
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '写点什么' } });
+  await fireEvent.click(screen.getByRole('button', { name: '生成' }));
+  applyCloneProgress({ active: true, job_id: 'j1', state: 'done', running: false, template_id: 1, image_ids: [41] });
+  await vi.waitFor(() => expect(screen.getByRole('button', { name: '在图库中打开刚生成的第 41 张' })).toBeTruthy());
+  await vi.waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' }));
+  cleanup();
+  // 已经滚在顶上就别抢滚动条：那一下会把人正在敲的字挪走
+  routes({ ...baseRoutes(), '/api/clone/generate': { ...EMPTY_CLONE_JOB, active: true, job_id: 'j1', state: 'queued', running: true } });
+  const top = await ready();
+  const panel2 = top.container.querySelector('.cm-panel') as HTMLElement;
+  const still = vi.fn();
+  Object.defineProperty(panel2, 'scrollTo', { value: still, configurable: true });
+  Object.defineProperty(panel2, 'scrollTop', { configurable: true, get: () => 0 });
+  await fireEvent.input(top.getByLabelText('提示词'), { target: { value: '写点什么' } });
+  await fireEvent.click(top.getByRole('button', { name: '生成' }));
+  applyCloneProgress({ active: true, job_id: 'j1', state: 'done', running: false, template_id: 1, image_ids: [42] });
+  await vi.waitFor(() => expect(top.getByRole('button', { name: '在图库中打开刚生成的第 42 张' })).toBeTruthy());
+  await tick();
+  expect(still).not.toHaveBeenCalled();
+});
+
+it('展示图确实放大了，等待台的动效也有降级：CSS 三条钉住', () => {
+  const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  // 46vh/480 是这一轮从 26vh/300 提上来的：让图当主角，靠的是这一格而不是把弹窗撑破
+  // （1440x900 实测四档，54vh 时弹窗自己开始滚，所以停在 46vh；注释里有量过的数）
+  expect(css).toMatch(/\.cm-hero \{[^}]*max-height: min\(46vh, 480px\)/);
+  // 等待台与展示图是同一格轮流占：宽窗口与窄窗口两档都必须和 cm-hero 同一个数，
+  // 否则「开始生成」那一下会把下面的输入卡往下坠。
+  expect(css).toMatch(/\.cm-stage \{[^}]*height: min\(46vh, 480px\)/);
+  const narrow = css.match(/@media \(max-width: 900px\) \{[\s\S]*?\n  \}/);
+  expect(narrow).toBeTruthy();
+  const nHero = narrow![0].match(/\.cm-hero \{ max-height: (min\([^)]*\)); \}/);
+  const nStage = narrow![0].match(/\.cm-stage \{[^}]*height: (min\([^)]*\)); \}/);
+  expect(nHero && nStage ? nHero[1] : null).toBeTruthy();
+  expect(nHero![1]).toBe(nStage![1]);
+  // 台阶之间是缓动缝过去的，不是瞬间跳格
+  expect(css).toMatch(/\.cm-stage-bar > span \{[^}]*transition: width 900ms/);
+  // 关动效的人：台阶、那句话、秒表一条不少，呼吸/扫光/跳动/入场全停
+  const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n  \}/);
+  expect(reduced).toBeTruthy();
+  expect(reduced![0]).toContain('.cm-stage-ghost');
+  expect(reduced![0]).toMatch(/animation: none/);
 });

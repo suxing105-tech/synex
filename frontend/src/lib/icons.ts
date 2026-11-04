@@ -124,6 +124,10 @@ export const ICON_PATHS: Record<string, string> = {
   "chevron-right":
     '<polyline points="9 18 15 12 9 6"/>',
 
+  // 左箭头（换看上一份产出）：与右箭头镜像，成对出现才对得齐
+  "chevron-left":
+    '<polyline points="15 18 9 12 15 6"/>',
+
   // 下箭头（展开）
   "chevron-down":
     '<polyline points="6 9 12 15 18 9"/>',

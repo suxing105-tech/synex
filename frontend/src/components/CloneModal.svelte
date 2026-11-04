@@ -87,6 +87,40 @@
   let probing = $state(false);
   let popOpen = $state(false);
   let wfOpen = $state(false);
+
+  /* 悬停/键盘聚焦某一张参考就放大那一张（图二那个 composer 的交互）：格子里只有 84px，
+     一眼认不出是哪份素材。坐标现场量、用 fixed 摆——弹窗自己会滚，挂成绝对定位会被裁掉。
+     尺寸按这份素材自己的比例算：格子是被裁成方的，放大还按方的摆，就成了「一条黑边裱一张小图」。
+     比例直接从格子里那张已经解码完的 <img> 拿，不用再等一次加载；拿不到（音频、图没解码）退回竖版。
+     优先朝上开（composer 在这一屏下半部），上面放不下才朝下。 */
+  const ZOOM_MAX_W = 224;
+  const ZOOM_MAX_H = 268;
+  const ZOOM_MIN_H = 96;
+  let refZoom = $state<{ src: string; label: string; file: string; style: string } | null>(null);
+  function refZoomFor(
+    el: HTMLElement,
+    picked: { filename: string; thumbnail_url?: string | null; original_url?: string | null } | null | undefined,
+    label: string,
+  ) {
+    if (!picked) { refZoom = null; return; }
+    const img = el.querySelector("img");
+    const ar = img && img.naturalWidth > 0 && img.naturalHeight > 0 ? img.naturalWidth / img.naturalHeight : 0.75;
+    let w = ZOOM_MAX_W;
+    let h = w / ar;
+    if (h > ZOOM_MAX_H) { h = ZOOM_MAX_H; w = h * ar; }
+    if (h < ZOOM_MIN_H) { h = ZOOM_MIN_H; w = Math.min(ZOOM_MAX_W, h * ar); }
+    const r = el.getBoundingClientRect();
+    const left = Math.max(12, Math.min(r.left, innerWidth - w - 12));
+    const roomAbove = r.top - 20;
+    const above = roomAbove >= h || roomAbove >= innerHeight - r.bottom - 20;
+    refZoom = {
+      src: backendUrl(picked.thumbnail_url || picked.original_url || ""),
+      label,
+      file: picked.filename,
+      style: `width:${w.toFixed(1)}px; height:${h.toFixed(1)}px; left:${left.toFixed(1)}px; `
+        + (above ? `bottom:${(innerHeight - r.top + 10).toFixed(1)}px;` : `top:${(r.bottom + 10).toFixed(1)}px;`),
+    };
+  }
   /** 弹层顶部那一排的两个屏：本机的配方在「本地工作流」，云端的收费模型在「云端API服务」。 */
   let wfTab = $state<"local" | "cloud">("local");
   /**
@@ -489,10 +523,38 @@
     if (promptBg && promptEl) promptBg.scrollTop = promptEl.scrollTop;
   }
 
+  /**
+   * 输入区按内容长高：空着只有两行，写长了才往下撑，撑到上限再自己滚。
+   * 写死 224px 的框在只写一句话时是一大片空黑——那张卡就不像「一次表达」了（2026-11-04 截图）。
+   * 先量一次 auto：所以 textarea 的 rows 必须是 1，否则 auto 量到的是 rows 撑出来的高度，永远缩不回去。
+   * 高亮层是 inset:0 的镜像，改完高度要再对一次滚动位置。
+   */
+  const PROMPT_MIN_H = 46;
+  function promptMaxH() {
+    return Math.max(120, Math.min(Math.round(innerHeight * 0.34), 280));
+  }
+  function autosizePrompt() {
+    const el = promptEl;
+    if (!el) return;
+    el.style.height = "auto";
+    const full = el.scrollHeight;
+    const max = promptMaxH();
+    el.style.height = `${Math.max(PROMPT_MIN_H, Math.min(full, max))}px`;
+    el.style.overflowY = full > max ? "auto" : "hidden";
+    syncPromptBg();
+  }
+
   $effect(() => {
     // 内容变了浏览器可能自己挪 textarea 的 scrollTop（插入标签、自动滚到光标），跟着补一次
     void prompt;
-    syncPromptBg();
+    autosizePrompt();
+  });
+
+  $effect(() => {
+    // 上限跟窗口高度走，窗口一矮就得重算（否则长提示词会把卡片顶出弹窗）
+    const onResize = () => autosizePrompt();
+    addEventListener("resize", onResize);
+    return () => removeEventListener("resize", onResize);
   });
 
   /** 换掉 caret 前那段 @xxx，换成引用文本（@图片N 或 <Picture N>），再把焦点和光标放回原处。 */
@@ -1090,7 +1152,7 @@
 
 {#if open}
   <div class="cm-backdrop" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-    <div class="cm-panel" role="dialog" aria-modal="true" aria-label="一键同款" use:modalFocus>
+    <div class="cm-panel" role="dialog" aria-modal="true" aria-label="一键同款" use:modalFocus onscroll={() => (refZoom = null)}>
       <header class="cm-top">
         <div class="cm-top-text">
           <span class="cm-kicker">一键同款</span>
@@ -1187,99 +1249,105 @@
               </section>
             {/if}
 
-            {#if cells.length}
-            <section class="cm-block">
-              <p class="cm-block-title">{mode === "text" ? refNoun : "替换或上传参考"}</p>
-              <!-- 参考区只有一行：几族素材混着排（图片 → 视频 → 音频），末尾一颗不绑族的「+ 参考」。
-                   可访问名管的是整块参考区，「（单图编辑）」这半句挂在那儿，读屏和测试都还拿得到。
-                   只有一族时格子来自 visibleRefCells（已填的 + 一颗空格子），版面与图片一键同款一字不差。 -->
-              <div
-                class="cm-ref-row"
-                role="group"
-                aria-label={rowAria}
-                onpaste={(e) => {
-                  const files = Array.from(e.clipboardData?.files ?? []);
-                  if (files.length) { e.preventDefault(); void importFiles(files, null); }
-                }}
-              >
-                {#each rowCells as item (item.cell.key)}
-                  {@const picked = refs[item.cell.key]}
-                  <div
-                    class="cm-ref-cell"
-                    role="group"
-                    aria-label={item.cell.label}
-                    ondragover={(e) => e.preventDefault()}
-                    ondrop={(e) => {
-                      const files = Array.from(e.dataTransfer?.files ?? []);
-                      if (files.length) { e.preventDefault(); void importFiles(files, item.cell.key); }
-                    }}
-                  >
-                    {#if picked}
-                      <div class="cm-tile media-chip" class:cm-tile-audio={item.kind === "audio"} title={`${item.cell.slotLabel}｜${picked.filename}`}>
-                        <!-- 整块缩略图本身就是「换一份」：那颗小圆钮只有悬停才亮，点画面别处毫无反应，
-                             用户以为参考换不了（真机实测）。圆钮降级成提示，点哪儿都开选择器。 -->
-                        <button class="cm-tile-pick" aria-label={`替换${item.cell.label}`} onclick={() => (pickerSlot = item.cell.key)}>
-                          <img class="cm-tile-img" src={backendUrl(picked.thumbnail_url || picked.original_url!)} alt={picked.filename} />
-                          <span class="cm-tile-swap" aria-hidden="true"><Icon name="swap" size={15} /></span>
-                        </button>
-                        <button class="cm-tile-x" aria-label={`移除${item.cell.label}`} onclick={() => removeRef(item.cell.key)}>
-                          <Icon name="x" size={12} />
-                        </button>
-                      </div>
-                    {:else}
-                      <button class="cm-tile cm-tile-add" aria-label={addLabel(item.kind, item.cell.label)} title={addTitle(item.kind)} onclick={() => (pickerSlot = item.cell.key)}>
-                        <Icon name="plus" size={20} />
-                        <span>{item.kind === "image" ? "参考" : REF_KIND_NAMES[item.kind]}</span>
-                      </button>
-                    {/if}
-                    <span class="cm-ref-caption" class:cm-ref-caption-empty={!picked}>{item.cell.label}</span>
-                  </div>
-                {/each}
-                {#if !singleFamily && openKinds.length}
-                  <!-- 这一颗不绑族：点进去几族一起挑，选到哪一族就落那一族的第一个空位。 -->
-                  <button
-                    class="cm-tile cm-tile-add cm-ref-add"
-                    aria-label="添加参考素材"
-                    title={addAnyTitle}
-                    ondragover={(e) => e.preventDefault()}
-                    ondrop={(e) => {
-                      const files = Array.from(e.dataTransfer?.files ?? []);
-                      if (files.length) { e.preventDefault(); void importFiles(files, null); }
-                    }}
-                    onclick={() => (pickerSlot = ADD_ANY)}
-                  >
-                    <Icon name="plus" size={20} />
-                    <span>参考</span>
-                  </button>
-                {/if}
-              </div>
-              {#if sources && sources.dropped > 0}
-                <!-- 来源里认不出来的那几份要明说：默默少摆一份，用户会以为当初就只喂了这些 -->
-                <p class="cm-note">{cardLabel}当初还用了 {sources.dropped} {refCounter}{refNoun}，已经不在图库里了，重新生成前补上。</p>
-              {:else if lostItsReferences}
-                <!-- 认不出参考素材时，参考位里摆的是被点的这份成图自己（默认就这么填的）。
-                     不说明就是骗人：用户会以为当初只喂了这一份、就是这一份。 -->
-                <p class="cm-note">没找到{cardLabel}当初用的{refNoun}，先放了它自己当参考。要原来那几份，手动换一下。</p>
-              {/if}
-              {#if cardFamilyNote}
-                <p class="cm-note">{cardFamilyNote}</p>
-              {/if}
-            </section>
-            {:else}
-              <!-- 一条参考位都没有（音色描述、指定音色）：整块不摆。摆个空框、再摆一颗
-                   点了不会出东西的「+ 参考」，比不摆更糟。 -->
-              <p class="cm-note">{noRefNote}</p>
-            {/if}
 
             <section class="cm-block">
-              <p class="cm-block-title">{promptBlockTitle || "完整提示词"}</p>
+              <!-- 参考做进这张卡里（2026-11-04 苏醒：像图二那个 composer）：素材、话、按钮是同一次表达，
+                   拆成两块反而看不出「这几张就是要用的参考」。卡上下那两行小标题都撤了——
+                   格子上写着图片1/图片2，末尾那颗写着参考，比「替换或上传参考」直白；
+                   「完整提示词」是工作流给的槽位名，还得说，但缩到卡下面那行灰字里，不配占一整行。 -->
+              <div class="cm-composer">
+              {#if cells.length}
+                <!-- 参考区只有一行：几族素材混着排（图片 → 视频 → 音频），末尾一颗不绑族的「+ 参考」。
+                     可访问名管的是整块参考区，「（单图编辑）」这半句挂在那儿，读屏和测试都还拿得到。
+                     只有一族时格子来自 visibleRefCells（已填的 + 一颗空格子），版面与图片一键同款一字不差。 -->
+                <div
+                  class="cm-ref-row"
+                  role="group"
+                  aria-label={rowAria}
+                  onpaste={(e) => {
+                    const files = Array.from(e.clipboardData?.files ?? []);
+                    if (files.length) { e.preventDefault(); void importFiles(files, null); }
+                  }}
+                >
+                  {#each rowCells as item (item.cell.key)}
+                    {@const picked = refs[item.cell.key]}
+                    <div
+                      class="cm-ref-cell"
+                      role="group"
+                      aria-label={item.cell.label}
+                      onmouseenter={(e) => refZoomFor(e.currentTarget as HTMLElement, picked, item.cell.label)}
+                      onmouseleave={() => (refZoom = null)}
+                      onfocusin={(e) => refZoomFor(e.currentTarget as HTMLElement, picked, item.cell.label)}
+                      onfocusout={() => (refZoom = null)}
+                      ondragover={(e) => e.preventDefault()}
+                      ondrop={(e) => {
+                        const files = Array.from(e.dataTransfer?.files ?? []);
+                        if (files.length) { e.preventDefault(); void importFiles(files, item.cell.key); }
+                      }}
+                    >
+                      {#if picked}
+                        <div class="cm-tile media-chip" class:cm-tile-audio={item.kind === "audio"} title={`${item.cell.slotLabel}｜${picked.filename}`}>
+                          <!-- 整块缩略图本身就是「换一份」：那颗小圆钮只有悬停才亮，点画面别处毫无反应，
+                               用户以为参考换不了（真机实测）。圆钮降级成提示，点哪儿都开选择器。 -->
+                          <button class="cm-tile-pick" aria-label={`替换${item.cell.label}`} onclick={() => (pickerSlot = item.cell.key)}>
+                            <img class="cm-tile-img" src={backendUrl(picked.thumbnail_url || picked.original_url!)} alt={picked.filename} />
+                            <span class="cm-tile-swap" aria-hidden="true"><Icon name="swap" size={15} /></span>
+                          </button>
+                          <button class="cm-tile-x" aria-label={`移除${item.cell.label}`} onclick={() => removeRef(item.cell.key)}>
+                            <Icon name="x" size={12} />
+                          </button>
+                        </div>
+                      {:else}
+                        <button class="cm-tile cm-tile-add" aria-label={addLabel(item.kind, item.cell.label)} title={addTitle(item.kind)} onclick={() => (pickerSlot = item.cell.key)}>
+                          <Icon name="plus" size={20} />
+                          <span>{item.kind === "image" ? "参考" : REF_KIND_NAMES[item.kind]}</span>
+                        </button>
+                      {/if}
+                      <span class="cm-ref-caption" class:cm-ref-caption-empty={!picked}>{item.cell.label}</span>
+                    </div>
+                  {/each}
+                  {#if !singleFamily && openKinds.length}
+                    <!-- 这一颗不绑族：点进去几族一起挑，选到哪一族就落那一族的第一个空位。 -->
+                    <button
+                      class="cm-tile cm-tile-add cm-ref-add"
+                      aria-label="添加参考素材"
+                      title={addAnyTitle}
+                      ondragover={(e) => e.preventDefault()}
+                      ondrop={(e) => {
+                        const files = Array.from(e.dataTransfer?.files ?? []);
+                        if (files.length) { e.preventDefault(); void importFiles(files, null); }
+                      }}
+                      onclick={() => (pickerSlot = ADD_ANY)}
+                    >
+                      <Icon name="plus" size={20} />
+                      <span>参考</span>
+                    </button>
+                  {/if}
+                </div>
+                {#if sources && sources.dropped > 0}
+                  <!-- 来源里认不出来的那几份要明说：默默少摆一份，用户会以为当初就只喂了这些 -->
+                  <p class="cm-note cm-composer-note">{cardLabel}当初还用了 {sources.dropped} {refCounter}{refNoun}，已经不在图库里了，重新生成前补上。</p>
+                {:else if lostItsReferences}
+                  <!-- 认不出参考素材时，参考位里摆的是被点的这份成图自己（默认就这么填的）。
+                       不说明就是骗人：用户会以为当初只喂了这一份、就是这一份。 -->
+                  <p class="cm-note cm-composer-note">没找到{cardLabel}当初用的{refNoun}，先放了它自己当参考。要原来那几份，手动换一下。</p>
+                {/if}
+                {#if cardFamilyNote}
+                  <p class="cm-note cm-composer-note">{cardFamilyNote}</p>
+                {/if}
+              {:else}
+                <!-- 一条参考位都没有（音色描述、指定音色）：整块不摆。摆个空框、再摆一颗
+                     点了不会出东西的「+ 参考」，比不摆更糟。 -->
+                <p class="cm-note cm-composer-note">{noRefNote}</p>
+              {/if}
+
               <div class="cm-prompt-wrap">
                 <div class="cm-prompt-bg" bind:this={promptBg} aria-hidden="true">
                   {#each mentionChunks(prompt) as chunk, i (i)}
                     <span class:cm-mention-hl={chunk.mention}>{chunk.text}</span>
                   {/each}
                 </div>
-                <textarea id="clone-prompt" class="cm-textarea cm-textarea-mirror" bind:this={promptEl} oninput={onPromptInput} onkeydown={onPromptKeydown} onscroll={syncPromptBg} rows="12" aria-label="提示词" placeholder={promptPlaceholder(mediaKind, refNoun, cells.length > 0)} bind:value={prompt}></textarea>
+                <textarea id="clone-prompt" class="cm-textarea cm-textarea-mirror" bind:this={promptEl} oninput={onPromptInput} onkeydown={onPromptKeydown} onscroll={syncPromptBg} rows="1" aria-label="提示词" placeholder={promptPlaceholder(mediaKind, refNoun, cells.length > 0)} bind:value={prompt}></textarea>
                 {#if mentionOpen && mentionOptions.length}
                   <div class="cm-pop-scrim" role="presentation" onclick={() => (mentionOpen = false)}></div>
                   <div class="cm-mention" style="left: {mentionBox.left}px; top: {mentionBox.top}px;" role="listbox" aria-label="引用素材">
@@ -1302,11 +1370,24 @@
                   </div>
                 {/if}
               </div>
-              <div class="cm-field-foot">
-                <span class="cm-note">{promptLoading ? "正在读这张图的提示词…" : (promptOrigin || promptSourceLabel("none"))}</span>
-                {#if shouldOfferWorkflowPrompt(prompt, workflowPrompt)}
-                  <button class="cm-btn" onclick={() => { promptTouched = true; prompt = workflowPrompt; }}>填入工作流内置提示词</button>
+                <!-- 悬停/键盘聚焦某一张参考时放大那一张（图二那种「一眼看清是哪份素材」）。
+                     fixed + 量出来的坐标：弹窗自己会滚，绝对定位的放大图会被裁掉。上面放不下就朝下开。 -->
+                {#if refZoom}
+                  <div class="cm-ref-zoom" style={refZoom.style} aria-hidden="true">
+                    <img class="cm-ref-zoom-img" src={refZoom.src} alt="" />
+                    <p class="cm-ref-zoom-cap"><span>{refZoom.label}</span><span class="cm-ref-zoom-file">{basenameOnly(refZoom.file)}</span></p>
+                  </div>
                 {/if}
+                <div class="cm-field-foot">
+                  <!-- 来源那句与「填入工作流内置提示词」留在卡里当最后一行：素材、话、这句话是同一次表达。
+                       放在卡外面，矮窗口里它会被钉住的坞单独甩到下面，看着像另一块。 -->
+                  <span class="cm-note">
+                    {#if promptBlockTitle && !promptLoading}<span class="cm-note-tag">{promptBlockTitle} ·</span>{/if}
+                    {promptLoading ? "正在读这张图的提示词…" : (promptOrigin || promptSourceLabel("none"))}</span>
+                  {#if shouldOfferWorkflowPrompt(prompt, workflowPrompt)}
+                    <button class="cm-btn" onclick={() => { promptTouched = true; prompt = workflowPrompt; }}>填入工作流内置提示词</button>
+                  {/if}
+                </div>
               </div>
               {#each secondaryGroups as group (group.label)}
                 <p class="cm-block-title cm-sub-prompt-title">{group.label}</p>
@@ -1698,9 +1779,9 @@
 
   /* 参考素材条：方形缩略图 + 悬停出现的替换/关闭，末尾是空的「+ 参考」位。
      横向一条而不是换行铺满：多图工作流最多能给 16 格，铺下去提示词框就被顶出弹窗了。 */
-  .cm-ref-row { display: flex; flex-wrap: nowrap; gap: 10px; overflow-x: auto; padding: 2px 2px 6px; scrollbar-width: thin; scroll-snap-type: x proximity; }
-  .cm-ref-cell { scroll-snap-align: start; flex: none; }
-  .cm-ref-cell { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+  .cm-ref-row { display: flex; flex-wrap: nowrap; gap: 10px; overflow-x: auto; padding: 2px 2px 2px; scrollbar-width: thin; scroll-snap-type: x proximity; }
+  /* 一格 = 一张照片 + 压在照片左下角的编号，所以格子自己就是定位基准。 */
+  .cm-ref-cell { scroll-snap-align: start; flex: none; position: relative; min-width: 0; }
   .cm-tile { position: relative; width: 84px; height: 84px; overflow: hidden; border-radius: 14px; background: #141417; border: 1px solid rgb(255 255 255 / 7%); }
   .cm-tile-img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; }
   .cm-tile-add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 0; font-size: 12.5px; color: #d4d4d8; background: #1a1a1e; cursor: pointer; transition: background-color 140ms ease, border-color 140ms ease; }
@@ -1722,12 +1803,77 @@
   .cm-tile-pick:hover .cm-tile-swap,
   .cm-tile-x:hover { background: rgba(38, 38, 42, 0.95); }
   .cm-tile-x:hover { color: #f87171; }
-  .cm-ref-caption { max-width: 84px; font-size: 11.5px; color: #a1a1aa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .cm-ref-caption { max-width: 84px; font-size: 11.5px; color: #a1a1aa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .cm-ref-caption-empty { color: #6b6b73; }
+  /* 编号压在照片上（图二那一排没有编号，我们得留：提示词里写的是 @图片1，得对得上是谁）。
+     压在图上而不是摆在格子下面：省掉整行高度，卡片贴得住内容。深底＋虚化，跟格子右上角那颗移除键同一套。 */
+  .cm-ref-caption {
+    position: absolute; z-index: 2; left: 5px; bottom: 5px; max-width: calc(100% - 10px);
+    padding: 1px 6px; border-radius: 7px; font-size: 10.5px; line-height: 15px; color: #e8e8ec;
+    background: rgba(14, 14, 16, 0.72); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none;
+  }
+  .cm-ref-caption-empty { color: #8b8b93; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  /* 绑到位的空格子：小牌上已经写着「图片2」，中间那行「参考」是重复的——只留加号。
+     行末那颗不绑族的「+ 参考」不在 .cm-ref-cell 里，它的字照留（那颗没有编号可写）。
+     按钮的可访问名来自 aria-label，藏掉这行字不影响读屏。 */
+  .cm-ref-cell .cm-tile-add span { display: none; }
   /* 合并行末尾那颗「+ 参考」不绑族、也没有编号，所以它不是「一格」：高度跟整行拉平，
      和左边的缩略图＋编号凑成同一块，看着就是「这一排还差一份」而不是多出来的空格子。 */
   .cm-tile.cm-ref-add { width: 96px; height: auto; min-height: 84px; align-self: stretch; }
+
+  /* composer 那张卡：素材、说明、话共用一张卡、一份内边距，卡里只画一层框。
+     提示词框和高亮层自己的边与底色在这里撤掉——两张套一张会看成三个盒子。
+     底色走上浅下深的一层薄光 + 内上沿一道高光，卡片才不像在面板上又贴了一块黑纸。 */
+  .cm-composer {
+    position: relative; display: flex; flex-direction: column; gap: 10px;
+    padding: 12px 12px 9px; border: 1px solid rgb(255 255 255 / 8%); border-radius: 18px;
+    background: linear-gradient(180deg, rgb(255 255 255 / 3%) 0%, rgb(255 255 255 / 1%) 42%, rgb(0 0 0 / 24%) 100%);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%);
+    transition: border-color 160ms ease, box-shadow 160ms ease;
+  }
+  /* 整卡响应聚焦：人在下面打字，上面那几格也还在说「这些就是要用的参考」。
+     描边提亮 + 一层很淡的品牌色外圈，不加底色，免得整块跟着变重。 */
+  .cm-composer:focus-within {
+    border-color: rgb(255 255 255 / 20%);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%), 0 0 0 3px rgb(242 78 78 / 7%);
+  }
+  .cm-composer .cm-textarea, .cm-composer .cm-textarea:focus { border-color: transparent; background: transparent; }
+  .cm-composer .cm-prompt-bg { background: transparent; }
+  /* 高度归 autosizePrompt 管，再留竖向拉伸手柄等于给自己使绊子：一打字就把拖出来的高度冲掉。 */
+  .cm-composer .cm-textarea { resize: none; }
+  /* 素材与话之间的分隔线：画在输入区的伪元素上（top 负值探进 gap），
+     不占布局——占布局就得给输入区加 padding-top，而 @ 菜单的定位是按 textarea 自己量的，会跟着偏。 */
+  .cm-composer .cm-prompt-wrap::before {
+    content: ""; position: absolute; left: 0; right: 0; top: -6px;
+    border-top: 1px solid rgb(255 255 255 / 6%);
+  }
+  .cm-composer-note { padding: 0 2px; }
+  /* 卡里的说明跟着参考条走，不再另起一段左右缩进——它讲的是上面那几格，不是提示词。 */
+
+  /* 格子里按「一张照片」处理：一点投影 + 悬停浮起；末端那颗还没填的走虚线口。
+     浮起挂在格子上而不是照片上——编号小牌是照片的兄弟，只提照片会把小牌丢在原地。 */
+  .cm-tile { box-shadow: 0 6px 16px rgba(0, 0, 0, 0.34); transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease; }
+  .cm-ref-cell:hover .cm-tile { transform: translateY(-2px); border-color: rgb(255 255 255 / 22%); box-shadow: 0 12px 26px rgba(0, 0, 0, 0.46); }
+  .cm-ref-cell:hover .cm-ref-caption { transform: translateY(-2px); }
+  .cm-ref-caption { transition: transform 140ms ease; }
+  .cm-tile-add { border-style: dashed; border-color: rgb(255 255 255 / 12%); background: rgb(255 255 255 / 4%); }
+  .cm-tile-add:hover { border-color: rgb(255 255 255 / 26%); }
+
+  /* 悬停放大的那一张：只负责让人看清是哪份素材。不接点击（pointer-events:none，
+     否则鼠标一移过去就把格子的离开事件吃掉、放大图赖着不走），也不进可访问树——
+     格子的 title 早把「槽位｜文件名」念过一遍了。 */
+  .cm-ref-zoom {
+    position: fixed; z-index: 9; overflow: hidden; border-radius: 14px;
+    border: 1px solid rgb(255 255 255 / 12%); background: #0c0c0e;
+    box-shadow: 0 22px 54px rgba(0, 0, 0, 0.6); pointer-events: none;
+  }
+  /* 宽高由 refZoomFor 按这份素材的真实比例写在行内，所以 cover 不会裁——比例本来就是它算出来的。 */
+  .cm-ref-zoom-img { width: 100%; height: 100%; display: block; object-fit: cover; }
+  .cm-ref-zoom-cap {
+    position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: baseline;
+    justify-content: space-between; gap: 8px; margin: 0; padding: 20px 10px 8px;
+    font-size: 11.5px; color: #e8e8ec; background: linear-gradient(180deg, transparent, rgba(8, 8, 10, 0.88));
+  }
+  .cm-ref-zoom-file { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #9a9aa2; }
 
   /* 标题右边那个只读标签：告诉他现在是哪种生成方式，但它不是按钮。 */
   .cm-form { display: contents; }
@@ -1739,7 +1885,8 @@
   .cm-textarea { position: relative; z-index: 1; background: transparent; border-color: rgb(255 255 255 / 8%); border-radius: 12px; resize: vertical; }
   /* 提示词框跟着窗口高矮走：窗口矮的时候先让提示词框让出高度，而不是把下面那排按钮挤出弹窗 ——
      「生成中」和「取消」看不见、要滚动才点得到的弹窗，不算能用。 */
-  .cm-textarea { height: clamp(112px, 20vh, 224px); }
+  /* 高度不写死了：空着两行、写长了才撑（见 autosizePrompt）。这里只兜住下限，JS 没跑也不至于塌成一条。 */
+  .cm-textarea { min-height: 46px; height: auto; }
   /* 透明字只属于「背后有镜像高亮层」的主框：文字由 .cm-prompt-bg 那层显示。
      这条要是挂回 .cm-textarea，任何复用该类的框都会变成看不见字的盲打框。 */
   .cm-textarea-mirror { color: transparent; caret-color: #f24e4e; }
@@ -1751,6 +1898,9 @@
   /* 高亮只许动颜色和背景：padding / border / font-weight 都会推字节，一改高亮就和光标错位。 */
   .cm-mention-hl { color: #ff6a4d; }
   .cm-field-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 22px; }
+  /* 槽位名（工作流给的，常叫「完整提示词」）压成来源那句前面的浅灰前缀：
+     名字还得说——同一条工作流可能有好几个提示词格——但它不配占卡片上面一整行标题。 */
+  .cm-note-tag { color: #7f7f87; }
   .cm-note { margin: 0; font-size: 11.5px; color: #71717a; }
   .cm-empty { display: flex; flex-direction: column; gap: 10px; padding: 16px; font-size: 12.5px; color: #a1a1aa; background: #1b1b1f; border: 1px dashed #33333a; border-radius: 12px; }
 
@@ -1766,7 +1916,9 @@
     position: sticky; bottom: 0; z-index: 3;
     margin: 0 -22px -20px; padding: 12px 22px 14px;
     border-top: 1px solid rgb(255 255 255 / 6%);
-    background: linear-gradient(to top, rgba(19, 19, 22, 0.98), rgba(19, 19, 22, 0.9));
+    /* 一点都不许透：0.98/0.9 那一版在 538x682 打长提示词时，「完整提示词 · …」那行从坞底下
+       过去，字整个透出来压在按钮上。弹窗自己是 0.86 的毛玻璃，实心这条看不出接缝。 */
+    background: #131316;
   }
   .cm-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
   /* flex-basis 仍旧定死 240px：这一排要不要换行只跟容器宽度有关，跟工作流名字长短无关
@@ -2004,6 +2156,15 @@
     .cm-pop-wf.is-api { width: min(268px, 78vw); }
     .cm-api { grid-template-columns: minmax(0, 1fr); gap: 6px; }
     .cm-api-side { padding-right: 0; padding-bottom: 5px; border-right: 0; border-bottom: 1px solid rgb(255 255 255 / 8%); }
+  }
+
+  /* 窗口一矮（笔记本、半屏）就给预览图砍一档：素材在 composer 里还有小图可认，顶部那张大图只是参照。
+     不砍的话 1478x562 实测整弹窗 573 > 可视 504，钉住的坞直接压在输入区上面，得往下滚才看得见光标。
+     放在 max-width 那条之后：又矮又窄时按矮处理。 */
+  @media (max-height: 720px) {
+    .cm-hero { max-height: 17vh; }
+    .cm-hero-wave { height: clamp(64px, 12vh, 96px); }
+    .cm-hero-empty { min-height: 96px; }
   }
 
   /* ── @ 引用素材菜单：抄图库那套胶囊菜单的版式，只是贴在光标下面。 */

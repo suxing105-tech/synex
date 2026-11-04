@@ -625,6 +625,89 @@ it('竖排不回到左右两栏：弹窗收窄、预览按高度定大小、那�
   expect(dock).toMatch(/background:/);
 });
 
+it('参考做进 composer 那张卡里：素材、话、来源共用一张卡', async () => {
+  // 2026-11-04 苏醒：「把参考做进框里做交互」——素材、话、按钮是同一次表达，拆成两块就看不出
+  // 「这几张就是要用的参考」。这里压的是包住关系：卡里同时装下参考条与提示词框，来源那句也在卡里。
+  routes(baseRoutes());
+  const screen = await ready();
+  const card = screen.container.querySelector('.cm-composer');
+  expect(card, '.cm-composer').toBeTruthy();
+  expect(card!.querySelector('.cm-ref-row')).toBeTruthy();
+  expect(card!.querySelector('textarea.cm-textarea')).toBeTruthy();
+  expect(card!.querySelector('.cm-field-foot')).toBeTruthy();
+  // 卡外不再挂小标题：「完整提示词」是工作流给的槽位名，缩成来源那句前面的前缀，不配占一整行
+  expect(card!.previousElementSibling?.className ?? '').not.toContain('cm-block-title');
+  expect((card!.querySelector('.cm-note-tag') as HTMLElement).textContent).toBe('完整提示词 ·');
+  const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  expect(css).not.toContain('<p class="cm-block-title">{promptBlockTitle');
+});
+
+it('输入区按内容长高：空着只有两行，不再写死一格 224px', async () => {
+  routes(baseRoutes());
+  const screen = await ready();
+  const ta = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  // 量 auto 之前必须收成一行，否则 auto 量到的是 rows 撑出来的高度，永远缩不回去
+  expect(ta.getAttribute('rows')).toBe('1');
+  // 无头环境没有真实排版（scrollHeight=0）→ 正好落在下限，这条同时证明 autosize 真的在跑
+  await vi.waitFor(() => expect(ta.style.height).toBe('46px'));
+  expect(ta.style.overflowY).toBe('hidden');
+  const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  expect(css).toMatch(/\.cm-textarea\s*\{[^}]*min-height:\s*46px/);
+  expect(css).not.toMatch(/\.cm-textarea\s*\{[^}]*height:\s*clamp\(/);
+  // 高度归 JS 管，留着竖向拉伸手柄等于给自己使绊子：一打字就把拖出来的高度冲掉
+  expect(css).toMatch(/\.cm-composer \.cm-textarea\s*\{[^}]*resize:\s*none/);
+});
+
+it('编号压在照片上；空的绑定位不再重复写一遍「参考」', async () => {
+  // 得挑一条有两个图片位的模板，否则第一个位被成图自己填上以后没有空格子，藏字那条就没得压
+  const two = { ...TPL, reference_count: 2, slots: [...TPL.slots, { kind: 'image', node: '564', input: 'image', label: '背景参考' }] };
+  routes({ ...baseRoutes(), '/api/clone/templates': { items: [two] } });
+  const screen = await ready();
+  const cap = screen.getByText('图片1') as HTMLElement;
+  expect(cap.parentElement?.classList.contains('cm-ref-cell')).toBe(true);
+  // 空格子靠小牌说「图片2」，中间那行「参考」是重复的；藏字之后可访问名必须还在
+  expect(screen.getByRole('button', { name: '添加图片2参考图' })).toBeTruthy();
+  const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  expect(css).toMatch(/\.cm-ref-caption\s*\{[^}]*position:\s*absolute/);
+  expect(css).toMatch(/\.cm-ref-cell \.cm-tile-add span\s*\{[^}]*display:\s*none/);
+});
+
+it('悬停放大的那一张按素材自己的比例摆：不是一条黑边裱一张小图', async () => {
+  routes(baseRoutes());
+  const screen = await ready();
+  const img = screen.container.querySelector('.cm-ref-cell .cm-tile-pick img') as HTMLImageElement;
+  expect(img).toBeTruthy();
+  Object.defineProperty(img, 'naturalWidth', { value: 600, configurable: true });
+  Object.defineProperty(img, 'naturalHeight', { value: 1200, configurable: true });
+  await fireEvent.mouseEnter(img.closest('.cm-ref-cell') as Element);
+  const zoom = screen.container.querySelector('.cm-ref-zoom') as HTMLElement;
+  expect(zoom).toBeTruthy();
+  const w = parseFloat(zoom.style.width);
+  const h = parseFloat(zoom.style.height);
+  expect(h).toBeGreaterThan(0);
+  expect(Math.abs(w / h - 0.5)).toBeLessThan(0.01);
+  expect(zoom.querySelector('.cm-ref-zoom-cap')).toBeTruthy();
+  await fireEvent.mouseLeave(img.closest('.cm-ref-cell') as Element);
+  expect(screen.container.querySelector('.cm-ref-zoom')).toBeNull();
+  const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  // 不接点击：否则鼠标一移过去就把格子的离开事件吃掉、放大图赖着不走
+  expect(css).toMatch(/\.cm-ref-zoom\s*\{[^}]*pointer-events:\s*none/);
+  expect(css).toMatch(/\.cm-ref-zoom-img\s*\{[^}]*object-fit:\s*cover/);
+});
+
+it('钉住那条坞不许透字；窗口一矮先给预览图砍一档', () => {
+  const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  const at = css.indexOf('.cm-dock {');
+  const dock = css.slice(at, css.indexOf('}', at));
+  // 0.98/0.9 那版实测会透出底下那行字压在按钮上，所以只许实心色
+  expect(dock).toMatch(/background:\s*#[0-9a-fA-F]{6}/);
+  expect(dock).not.toMatch(/background:[^;]*rgba?\(/);
+  // 又矮又窄时按矮处理：矮那一档必须写在窄那一档之后
+  const shortAt = css.indexOf('@media (max-height: 720px)');
+  expect(shortAt).toBeGreaterThan(css.indexOf('@media (max-width: 900px)'));
+  expect(css.slice(shortAt)).toMatch(/\.cm-hero\s*\{[^}]*max-height:\s*17vh/);
+});
+
 it("窄窗口那一屏不许再撑 452px：面板放不下，两列上下叠、宽度回到 268 那一档", () => {
   // 538px 实测：452px 的弹层贴在胶囊边上，往左长顶穿左边界（左列标题只剩残字），
   // 换成贴右长又顶穿右边界（197..639 > 面板右 518）。这一档的面板内容宽只有 vw-84，

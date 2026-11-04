@@ -32,6 +32,7 @@
     applyMention, caretCoordinates, mentionAddLabel, mentionChunks, mentionInsertText, mentionItems as buildMentionItems, mentionToken,
     audioModeLabel, audioModeTemplates, familyCells, isAudioTemplate, isVideoTemplate, promptGroupPlaceholder,
     workflowMenuRows, workflowDisplayName, cloudMenuGroups, AUDIO_MODE_GROUP_LABEL,
+    CREATION_KIND_ORDER, CREATION_KIND_WORDS, rowsForKind, rowForKindSwitch, tallyByKind,
     referenceCounter, referenceFamilies, referenceNoun,
     REF_KIND_COUNTERS, REF_KIND_NAMES, templateDisplayName, templateMediaKind,
     WF_KIND_WORDS, WF_OUTPUT_WORDS,
@@ -221,6 +222,18 @@
    * 三种出声方式已经有弹窗顶上那排按钮了，清单里再列三条就是让人在两个地方选同一件事。
    */
   const wfRows = $derived(workflowMenuRows(templates, templateId));
+  /**
+   * 这一屏在产出哪一族——**跟着挂上的那份工作流走，不另开一个状态**：底部那颗写着「图片」、
+   * 实际却挂着出声音的配方，是最难查的一种不一致（弹窗的行为本来就跟工作流走，不跟卡片走）。
+   * 一条都没挂上时按被点的那张卡说，至少那颗 pill 不会空着。
+   */
+  const pickedKind = $derived<MediaKind>(template ? templateMediaKind(template) : cardKind);
+  /** 三族各铺了几条路（本机几份 / 云端几条），类型菜单那行末尾报的就是它。 */
+  const kindTally = $derived(tallyByKind(wfRows, templates));
+  /** 「创作类型」那层弹层。与工作流、参数那两层互斥——同一次屏幕上只可能有一层。 */
+  let kindPop = $state(false);
+  /** 三族的图标。音频用波形：这三条是 TTS 说话，不是做音乐。 */
+  const KIND_ICONS: Record<MediaKind, string> = { image: "image", video: "video", audio: "wave" };
   /** 折叠那行悬浮说清它管的是哪三种方式——清单里看不到名字，总得在这儿报到。 */
   const wfGroupTitle = $derived(
     `三种出声方式在弹窗顶上切换：${audioModeTemplates(templates).map((item) => audioModeLabel(item.name)).join(" / ")}`,
@@ -258,14 +271,18 @@
    * 这一屏摆哪几行：本机的配方与云端的 API 分两屏，不再混在一份清单里。
    * 混着摆的时候六行里其实只有两条路，眼睛得先替人做一遍分类。
    */
-  const popRows = $derived(wfRows.filter((row) => rowIsCloud(row) === (wfTab === "cloud")));
+  const popRows = $derived(
+    rowsForKind(wfRows, pickedKind).filter((row) => rowIsCloud(row) === (wfTab === "cloud")),
+  );
   /** 「API」那颗后面的条数：不用点进去也知道这条路铺了几条 API。 */
-  const cloudRowCount = $derived(wfRows.filter((row) => rowIsCloud(row)).length);
+  const cloudRowCount = $derived(rowsForKind(wfRows, pickedKind).filter((row) => rowIsCloud(row)).length);
   /**
    * API 那一屏的左列：一家服务商一行，右列摆它报的那些模型（2026-11-04 苏醒给的图二版式）。
    * 只有后端标了 is_cloud 的条目会进来，所以这一屏不可能摆出一家点不动的假服务商。
    */
-  const apiGroups = $derived(cloudMenuGroups(wfRows.filter((row) => rowIsCloud(row)), templates));
+  const apiGroups = $derived(
+    cloudMenuGroups(rowsForKind(wfRows, pickedKind).filter((row) => rowIsCloud(row)), templates),
+  );
   /** 指针停在哪家：悬停或点左列换它。没停过时回落到第一家；一家都没装时整块不画，走下面那句空态。 */
   let apiVendor = $state("");
   const apiActive = $derived(apiGroups.find((group) => group.key === apiVendor) ?? apiGroups[0] ?? null);
@@ -282,6 +299,7 @@
     wfOpen = !wfOpen;
     if (!wfOpen) return;
     popOpen = false;
+    kindPop = false;
     wfTab = isCloud ? "cloud" : "local";
     void loadCloudStatus();
   }
@@ -713,6 +731,58 @@
     wfOpen = false;
   }
 
+  /** 开类型弹层。顺手把另外两层收掉——三层同时开着，谁盖谁都说不清。 */
+  function toggleKindPop() {
+    kindPop = !kindPop;
+    if (!kindPop) return;
+    wfOpen = false;
+    popOpen = false;
+    void loadCloudStatus();
+  }
+
+  /** 这一族有几个能挑的。本机与云端分开报：云端那是要扣 RH币的另一类东西。 */
+  function kindCountWords(kind: MediaKind): string {
+    const tally = kindTally[kind];
+    const bits: string[] = [];
+    if (tally.local) bits.push(`本机 ${tally.local} 份`);
+    if (tally.cloud) bits.push(`云端 ${tally.cloud} 条`);
+    return bits.length ? bits.join(" / ") : "还没铺路";
+  }
+
+  /** 悬浮那一整句：这族出什么、有几份配方、挑不了的话为什么。 */
+  function kindRowTitle(kind: MediaKind): string {
+    const tally = kindTally[kind];
+    const bits = [CREATION_KIND_WORDS[kind], WF_OUTPUT_WORDS[kind], kindCountWords(kind)];
+    if (kind === pickedKind) bits.push("现在就是这一族");
+    else if (!tally.local && !tally.cloud) bits.push("先加载一份这一族的工作流 JSON，或在设置里配好服务商");
+    else bits.push("换过去会连参考位与参数一起换");
+    return bits.join(" · ");
+  }
+
+  /**
+   * 换创作类型 = 换这一族的那份工作流，走清单里点一行那条现成的路：参考位、参数、附框
+   * 全按新的那份重摆，不留半套旧状态。这一族一条都没铺就不切——切进一份空清单
+   * 只让人以为功能坏了，所以在这儿把话说完。
+   */
+  function pickCreationKind(kind: MediaKind) {
+    kindPop = false;
+    if (kind === pickedKind) return;
+    const row = rowForKindSwitch(wfRows, kind, templates, templateId);
+    if (!row) {
+      error = `${CREATION_KIND_WORDS[kind]}这一族还没铺路：先加载一份这一族的工作流 JSON，或在设置 → 模型API配置里配好服务商。`;
+      return;
+    }
+    pickMenuRow(row);
+    error = "";
+  }
+
+  /** 这一族本机没配方时那句空态。仍然留着下面那颗「加载本地工作流 JSON」，指路得给出路。 */
+  const localEmptyNote = $derived(
+    kindTally[pickedKind].cloud
+      ? `这一族还没有本机工作流。云端那条在「云端API服务」那一屏，或者直接加载一份 JSON。`
+      : `这一族还没有工作流。加载一份这一族的 API 格式 JSON：设置 → ${CLONE_SETTINGS_TAB}。`,
+  );
+
   /**
    * 是不是真的让播放器在放东西。普通 let，不进界面也不进依赖表：
    * 它只是 stopVoiceSample 的闸门——没在放就别去按暂停（effect 一挂载就会调 stop）。
@@ -1135,10 +1205,11 @@
     if (!open || pickerSlot !== null) return;
     if (e.key === "Escape") {
       // 弹出的菜单开着时 Esc 先收菜单，别一下把整个弹窗关掉。
-      if (mentionOpen || popOpen || wfOpen) {
+      if (mentionOpen || popOpen || wfOpen || kindPop) {
         e.preventDefault();
         mentionOpen = false;
         popOpen = false;
+        kindPop = false;
         closeWorkflowPop();
         return;
       }
@@ -1370,24 +1441,23 @@
                   </div>
                 {/if}
               </div>
-                <!-- 悬停/键盘聚焦某一张参考时放大那一张（图二那种「一眼看清是哪份素材」）。
-                     fixed + 量出来的坐标：弹窗自己会滚，绝对定位的放大图会被裁掉。上面放不下就朝下开。 -->
-                {#if refZoom}
-                  <div class="cm-ref-zoom" style={refZoom.style} aria-hidden="true">
-                    <img class="cm-ref-zoom-img" src={refZoom.src} alt="" />
-                    <p class="cm-ref-zoom-cap"><span>{refZoom.label}</span><span class="cm-ref-zoom-file">{basenameOnly(refZoom.file)}</span></p>
-                  </div>
-                {/if}
-                <div class="cm-field-foot">
-                  <!-- 来源那句与「填入工作流内置提示词」留在卡里当最后一行：素材、话、这句话是同一次表达。
-                       放在卡外面，矮窗口里它会被钉住的坞单独甩到下面，看着像另一块。 -->
-                  <span class="cm-note">
-                    {#if promptBlockTitle && !promptLoading}<span class="cm-note-tag">{promptBlockTitle} ·</span>{/if}
-                    {promptLoading ? "正在读这张图的提示词…" : (promptOrigin || promptSourceLabel("none"))}</span>
-                  {#if shouldOfferWorkflowPrompt(prompt, workflowPrompt)}
-                    <button class="cm-btn" onclick={() => { promptTouched = true; prompt = workflowPrompt; }}>填入工作流内置提示词</button>
-                  {/if}
+              <!-- 悬停/键盘聚焦某一张参考时放大那一张（图二那种「一眼看清是哪份素材」）。
+                   fixed + 量出来的坐标：弹窗自己会滚，绝对定位的放大图会被裁掉。上面放不下就朝下开。 -->
+              {#if refZoom}
+                <div class="cm-ref-zoom" style={refZoom.style} aria-hidden="true">
+                  <img class="cm-ref-zoom-img" src={refZoom.src} alt="" />
+                  <p class="cm-ref-zoom-cap"><span>{refZoom.label}</span><span class="cm-ref-zoom-file">{basenameOnly(refZoom.file)}</span></p>
                 </div>
+              {/if}
+              <div class="cm-field-foot">
+                <!-- 来源那句与「填入工作流内置提示词」留在卡里当最后一行：素材、话、这句话是同一次表达。
+                     放在卡外面，矮窗口里它会被钉住的坞单独甩到下面，看着像另一块。 -->
+                <span class="cm-note">
+                  {#if promptBlockTitle && !promptLoading}<span class="cm-note-tag">{promptBlockTitle} ·</span>{/if}
+                  {promptLoading ? "正在读这张图的提示词…" : (promptOrigin || promptSourceLabel("none"))}</span>
+                {#if shouldOfferWorkflowPrompt(prompt, workflowPrompt)}
+                  <button class="cm-btn" onclick={() => { promptTouched = true; prompt = workflowPrompt; }}>填入工作流内置提示词</button>
+                {/if}
               </div>
               {#each secondaryGroups as group (group.label)}
                 <p class="cm-block-title cm-sub-prompt-title">{group.label}</p>
@@ -1398,28 +1468,57 @@
                   <p class="cm-note">{promptGroupHint(group.label)}</p>
                 {/if}
               {/each}
-            </section>
 
-            <!-- 产出缩略图紧跟提示词：底部那条坞钉在弹窗下沿，被缩略图撑高会吃掉整个输入区。 -->
-            {#if outputChips.length}
-              <div class="cm-results">
-                <span class="cm-results-label">本次产出</span>
-                {#each outputChips as out (out.id)}
-                  <!-- 缩略图地址由后端按那一行的 kind 给准：视频的海报帧不是 /api/images/{id}/file。 -->
-                  <button class="cm-chip media-chip" class:cm-chip-video={out.kind !== "image"} title={out.filename}
-                    aria-label={`打开生成的第 ${out.id} ${out.kind === "image" ? "张" : "条"}`} onclick={() => onOpenImage?.(out.id, out.kind)}>
-                    <img src={backendUrl(out.thumbnail_url)} alt="" />
-                    {#if out.kind !== "image"}<span class="cm-chip-play" aria-hidden="true"><Icon name="play" size={12} /></span>{/if}
-                  </button>
-                {/each}
-              </div>
-            {/if}
-            <!-- 底部这条「坞」钉在弹窗下沿（图二那条 composer bar 的感觉）：竖排之后内容比弹窗高，
-                 不钉住的话「生成」和那句价格说明在初始状态下根本看不见。状态行也一起钉着——
-                 生成中要看得见进度，云端那条报没报出价也要一直看得见。 -->
+              <!-- 产出缩略图紧跟提示词：这一排卡底条是 sticky 的，缩略图留在它上面而不是下面，生成完一眼看到结果，不用先滚过一条钉着的按钮。 -->
+              {#if outputChips.length}
+                <div class="cm-results">
+                  <span class="cm-results-label">本次产出</span>
+                  {#each outputChips as out (out.id)}
+                    <!-- 缩略图地址由后端按那一行的 kind 给准：视频的海报帧不是 /api/images/{id}/file。 -->
+                    <button class="cm-chip media-chip" class:cm-chip-video={out.kind !== "image"} title={out.filename}
+                      aria-label={`打开生成的第 ${out.id} ${out.kind === "image" ? "张" : "条"}`} onclick={() => onOpenImage?.(out.id, out.kind)}>
+                      <img src={backendUrl(out.thumbnail_url)} alt="" />
+                      {#if out.kind !== "image"}<span class="cm-chip-play" aria-hidden="true"><Icon name="play" size={12} /></span>{/if}
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+
+              <!-- 这一排是这张卡的底（2026-11-04 苏醒照图一收进同一个框）：族、工作流、参数、生成跟参考和提示词
+                   同属一次表达，框外再摆一条深色的坞就等于把一次输入拆成两件事。
+                   仍然 sticky：卡比弹窗高时它钉在可视区下沿，「生成」和下面那几行状态不用滚动就点得到。 -->
             <div class="cm-dock">
             <div class="cm-foot">
               <div class="cm-foot-left">
+                <div class="cm-pop-wrap">
+                  <!-- 先定这一屏出什么（2026-11-04 苏醒要的）：族定了，下面的工作流清单与云端模型只摆这一族。
+                       以前六行混在一屏，眼睛得先替人做一遍「哪条出图、哪条出片、哪条出声音」的分类。
+                       它显示的是**挂上的那份工作流真正在产出的族**，不是一个会跑偏的独立开关。 -->
+                  <button class="cm-pill cm-pill-kind" class:is-on={kindPop} aria-label="创作类型" aria-haspopup="menu"
+                    aria-expanded={kindPop} disabled={busy}
+                    title={busy ? `生成中不换创作类型，现在出${WF_OUTPUT_WORDS[pickedKind]}` : `现在出${WF_OUTPUT_WORDS[pickedKind]} · ${kindCountWords(pickedKind)}。换一族会连参考位与参数一起换。`}
+                    onclick={toggleKindPop}>
+                    <Icon name={KIND_ICONS[pickedKind]} size={13} />
+                    <span class="cm-pill-text">{CREATION_KIND_WORDS[pickedKind]}</span>
+                    <span class="cm-chevron" class:is-open={kindPop} aria-hidden="true"><Icon name="chevron-down" size={12} /></span>
+                  </button>
+                  {#if kindPop}
+                    <div class="cm-pop-scrim" role="presentation" onclick={() => (kindPop = false)}></div>
+                    <div class="cm-pop cm-pop-kind" role="menu" aria-label="创作类型">
+                      {#each CREATION_KIND_ORDER as kind (kind)}
+                        <!-- 还没铺路的那族照旧可点：点下去那句「这一族还没铺路，先加载 JSON」比一个
+                             不给理由的 disabled 有用得多。 -->
+                        <button class="cm-wf cm-kind-row" role="menuitemradio" aria-checked={kind === pickedKind}
+                          title={kindRowTitle(kind)} onclick={() => pickCreationKind(kind)}>
+                          <span class="cm-kind-icon" aria-hidden="true"><Icon name={KIND_ICONS[kind]} size={15} /></span>
+                          <span class="cm-wf-name">{CREATION_KIND_WORDS[kind]}</span>
+                          <span class="cm-kind-count">{kindCountWords(kind)}</span>
+                          {#if kind === pickedKind}<span class="cm-kind-check" aria-hidden="true"><Icon name="check" size={15} /></span>{/if}
+                        </button>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
                 <div class="cm-pop-wrap cm-fill">
                   <!-- 这一排的顺序：先挑用哪份工作流 / 哪个云端模型，再定它的具体参数（2026-11-04 苏醒）。
                   参数是这份工作流自己的参数，反过来摆会让人先设完参数再发现工作流换了、参数得重来。 -->
@@ -1471,6 +1570,9 @@
                               {/if}
                             </div>
                             {/each}
+                            {#if popRows.length === 0}
+                              <p class="cm-pop-empty">{localEmptyNote}</p>
+                            {/if}
                         </div>
                       {:else if apiActive}
                         <!-- API 这一屏两列摆（2026-11-04 苏醒给的图二）：左列一家服务商一行，图标 + 名字 + 它能干什么；
@@ -1662,28 +1764,33 @@
                 </button>
               </div>
             </div>
-            {#if error}
-              <p class="cm-foot-note cm-error" role="status">{error}</p>
-            {:else if job && job.state === "error"}
-              <p class="cm-foot-note cm-error" role="status">{job.error || job.message}</p>
-            {:else if job && (done || job.state === "cancelled")}
-              <!-- 生成中不再单独显示这一行：那颗按钮本身就是进度（转圈 + 扫光 + 「生成中…」），下面再说一遍是噪声。
-                   跑完之后才需要的信息（已取消 / 已生成 N 张）照旧留着。 -->
-              <p class="cm-foot-note cm-status" role="status">{cloneStatusLabel(job)}</p>
-            {/if}
+                <!-- 状态这几行跟着底部这条一起钉着：生成中的进度、云端那句「价格没取到」和报错
+                     必须一直看得见，不能藏到要往下滚才出现的地方。 -->
+                {#if error}
+                  <p class="cm-foot-note cm-error" role="status">{error}</p>
+                {:else if job && job.state === "error"}
+                  <p class="cm-foot-note cm-error" role="status">{job.error || job.message}</p>
+                {:else if job && (done || job.state === "cancelled")}
+                  <!-- 生成中不再单独显示这一行：那颗按钮本身就是进度（转圈 + 扫光 + 「生成中…」），下面再说一遍是噪声。
+                       跑完之后才需要的信息（已取消 / 已生成 N 张）照旧留着。 -->
+                  <p class="cm-foot-note cm-status" role="status">{cloneStatusLabel(job)}</p>
+                {/if}
 
-            {#if cloudCostLine}
-              <!-- 只报官方预估端点给的数；拿不到就说没取到，绝不显示自己乘出来的价 -->
-              <p class="cm-foot-note cm-status" role="status">{cloudCostLine}</p>
-            {/if}
-            {#if refetchable}
-              <p class="cm-foot-note">
-                <button class="cm-btn" disabled={refetching} onclick={() => void refetchResults()}>
-                  {refetching ? "正在取回…" : "取回结果"}
-                </button>
-              </p>
-            {/if}
+                {#if cloudCostLine}
+                  <!-- 只报官方预估端点给的数；拿不到就说没取到，绝不显示自己乘出来的价 -->
+                  <p class="cm-foot-note cm-status" role="status">{cloudCostLine}</p>
+                {/if}
+                {#if refetchable}
+                  <p class="cm-foot-note">
+                    <button class="cm-btn" disabled={refetching} onclick={() => void refetchResults()}>
+                      {refetching ? "正在取回…" : "取回结果"}
+                    </button>
+                  </p>
+                {/if}
             </div>
+              </div>
+
+            </section>
 
             </div>
           {/if}
@@ -1825,7 +1932,8 @@
      底色走上浅下深的一层薄光 + 内上沿一道高光，卡片才不像在面板上又贴了一块黑纸。 */
   .cm-composer {
     position: relative; display: flex; flex-direction: column; gap: 10px;
-    padding: 12px 12px 9px; border: 1px solid rgb(255 255 255 / 8%); border-radius: 18px;
+    /* 下内边距 0：这条卡最后的卡底条自己带 12px 下内边距，它的下边界就是卡的内边界。留 9px 的话，钉住时那 9px 会留在条下面，滚上去的字从缝里露出来。 */
+    padding: 12px 12px 0; border: 1px solid rgb(255 255 255 / 8%); border-radius: 18px;
     background: linear-gradient(180deg, rgb(255 255 255 / 3%) 0%, rgb(255 255 255 / 1%) 42%, rgb(0 0 0 / 24%) 100%);
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%);
     transition: border-color 160ms ease, box-shadow 160ms ease;
@@ -1840,6 +1948,10 @@
   .cm-composer .cm-prompt-bg { background: transparent; }
   /* 高度归 autosizePrompt 管，再留竖向拉伸手柄等于给自己使绊子：一打字就把拖出来的高度冲掉。 */
   .cm-composer .cm-textarea { resize: none; }
+  /* 附框（参考音频的原话那种）搬进卡里之后，上面那条「卡里的框一律透明」会连它一起吃掉——
+     台词和原话糊成同一片，人就分不清哪一格念什么。给它把底和边要回来（同权重，靠顺序赢）。 */
+  .cm-composer .cm-textarea-sub,
+  .cm-composer .cm-textarea-sub:focus { background: rgba(0, 0, 0, 0.35); border-color: rgb(255 255 255 / 8%); }
   /* 素材与话之间的分隔线：画在输入区的伪元素上（top 负值探进 gap），
      不占布局——占布局就得给输入区加 padding-top，而 @ 菜单的定位是按 textarea 自己量的，会跟着偏。 */
   .cm-composer .cm-prompt-wrap::before {
@@ -1913,12 +2025,26 @@
      滚动时提示词从它底下过去不会糊成一团。状态与价格那几行说明也在坞里：生成中的进度、
      云端「价格没取到」那句必须一直看得见，不能藏在要往下滚才出现的地方。 */
   .cm-dock {
-    position: sticky; bottom: 0; z-index: 3;
-    margin: 0 -22px -20px; padding: 12px 22px 14px;
-    border-top: 1px solid rgb(255 255 255 / 6%);
+    /* bottom 是 -20px，不是 0：Chrome 量 sticky 偏移用的是滚动容器的 **content box**，
+       而弹窗那 20px 下内边距属于可视区（滚动内容会画到里面）。写 0 的话这条的下边界停在
+       content 下沿，底下露出 20px，滚上去的提示词从这条下面露出来（538x682 实测截图）。
+       抬到 -20px 之后这条的下边界正好压在可视区下沿上。 */
+    position: sticky; bottom: -20px; z-index: 3;
+    /* 左右负 margin 只吃**卡片**的内边距（12px）：这一排住在卡里，左右跟卡内边对齐，
+       看起来是框的一部分而不是一块外挂的板。下边不需要负——卡的下内边距已经是 0。 */
+    margin: 2px -12px 0; padding: 10px 12px 12px;
+    /* 卡不能 overflow:hidden（工作流弹层要往卡外冒），所以这条带自己带上卡的下圆角（18px 减 1px 边框）。 */
+    border-radius: 0 0 17px 17px;
     /* 一点都不许透：0.98/0.9 那一版在 538x682 打长提示词时，「完整提示词 · …」那行从坞底下
        过去，字整个透出来压在按钮上。弹窗自己是 0.86 的毛玻璃，实心这条看不出接缝。 */
     background: #131316;
+  }
+  /* 上面那 14px 是一条渐隐，不是分隔线：钉住时滚上来的字在这里淡掉，比被这条的上沿切一刀干净。
+     不占布局、不接点击（pointer-events:none），弹层与按钮都不受影响。 */
+  .cm-dock::before {
+    content: ""; position: absolute; left: 0; right: 0; top: -14px; height: 14px;
+    background: linear-gradient(180deg, rgb(19 19 22 / 0) 0%, #131316 100%);
+    pointer-events: none;
   }
   .cm-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
   /* flex-basis 仍旧定死 240px：这一排要不要换行只跟容器宽度有关，跟工作流名字长短无关
@@ -1956,6 +2082,16 @@
      所以一律贴它左边缘往右长——贴右长会顶穿面板左边界。横排时代它贴着右栏的右边缘，才有 right:0 那条。
      1478×902 实测：本机屏 352..620、API 屏 352..804，面板内容框 351..1127；820/560 宽同样在框里。 */
   .cm-pop-wf { left: 0; right: auto; width: 268px; gap: 3px; }
+  /* 「创作类型」那一层只有三行，收窄；行距与清单同一套，别做出第二种菜单。 */
+  /* 宽度与工作流那层一致（268）：这层窄到 224 时，正在用的那行末尾多一个勾，「图片生成」就被挤成「图…」——行末的数是主角，被挤的却是不该缩的名字。 */
+  .cm-pop-kind { left: 0; right: auto; width: 268px; gap: 3px; padding: 8px; }
+  .cm-kind-row { padding: 9px 10px; border-radius: 10px; }
+  .cm-kind-icon { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; color: #a1a1aa; }
+  .cm-kind-count { flex: none; font-size: 11px; color: #71717a; }
+  .cm-kind-check { flex: none; display: inline-flex; color: #e4e4e7; }
+  /* 三颗里它最窄，也最不能截断——截成「图片生…」没人认得那是干什么的。让位的是工作流那颗的名字。 */
+  .cm-pill-kind { flex: none; }
+  .cm-pill-kind.is-on { background: rgb(255 255 255 / 14%); border-color: rgb(255 255 255 / 16%); }
   /* API 那一屏要装两列（左列 156 + 右列模型清单），宽度只在这一屏放开。
      别写 100%：这块弹层的包含块是那颗胶囊外面那一格（position:relative），100% = 胶囊那么宽。
      452px 是量出来的上限（弹窗收窄到 820 之后内容框 776，这一屏贴左往右长 352..804 仍在框里），
@@ -2150,6 +2286,7 @@
     .cm-hero { max-height: 24vh; }
     .cm-pop { width: min(328px, 78vw); }
     .cm-pop-wf { width: min(268px, 78vw); }
+  .cm-pop-kind { width: min(268px, 78vw); }
     /* 窄窗口这一屏不放两列。这一档的面板内容宽只有 vw-84，而弹层现在贴着胶囊左边缘往右长，
        452px 撑出去就是顶穿右边界（538px 实测过）。所以窄窗口沿用量过的 268px 那一档，
        两列改成上下叠：服务商在上、模型清单在下，一样能挑，只是不再左右两栏。 */

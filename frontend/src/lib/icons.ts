@@ -187,6 +187,9 @@ export const ICON_PATHS: Record<string, string> = {
     '<path d="M3 12a9 9 0 0 0 9 9c2.4 0 4.6-1 6.2-2.6L21 16"/>' +
     '<path d="M21 21v-5h-5"/>',
 
+  // 勾（「创作类型」菜单里现在这一族那一行）
+  check: '<polyline points="20 6 9 17 4 12"/>',
+
   // comfyui 走 PNG 真 logo（品牌识别强），见 Icon.svelte 的 special case；
   // PNG 在 frontend/public/comfyui-logo.png，由 vite 静态托管。
 };

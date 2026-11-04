@@ -83,13 +83,19 @@ it("指路的话不许指向已经不存在的那一页", () => {
   // 页名从目录里撤掉之后，任何还写着旧页名的提示都会把人支去一页不存在的东西，
   // 而这种话散在前端与后端六处，靠眼睛扫是扫不干净的。
   // 仓库里 CRLF 与 LF 混着放，不先把 EOL 统一掉，\n 锚点会整段匹配不上（踩过）
-  const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8').replace(/\r\n/g, '\n');
+  // 有的地方不写死页名，而是引 CLONE_SETTINGS_TAB（上一轮把「一键同款」改成「再次创作」时
+  // 全站只改一处靠的就是它）。这里先把那个常量读出来当页名，否则守护会误报一句其实对的指路。
+  const readRaw = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8').replace(/\r\n/g, '\n');
+  const tabConstant = /export const CLONE_SETTINGS_TAB = "([^"]+)"/.exec(readRaw('../lib/clone.ts'))?.[1] ?? '';
+  expect(tabConstant).not.toBe('');   // 解析不动就等于这条守护悄悄失效了
+  const read = (rel: string) => readRaw(rel).split('${CLONE_SETTINGS_TAB}').join(tabConstant);
   const modal = read('../components/SettingsModal.svelte');
   const block = /const navGroups[\s\S]*?^\s*\];/m.exec(modal)?.[0] ?? '';
   const pages = [...block.matchAll(/label:\s*"([^"]+)"/g)].map((m) => m[1]);
   expect(block).not.toBe(''); // 上面的解析先钉住，别让它悄悄退化成空匹配
   expect(pages).toEqual(expect.arrayContaining(['模型API配置', '反推指令']));
   expect(pages).not.toContain('云端生成');
+  expect(pages).toContain(tabConstant);   // 常量自己指的那一页也必须在目录里
   expect(modal).not.toContain('settings-cloud');
   const files = [
     '../components/SettingsModal.svelte', '../components/CloneModal.svelte',

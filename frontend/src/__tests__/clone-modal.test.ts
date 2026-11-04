@@ -598,7 +598,7 @@ it('上下结构：预览在上、参考与提示词在下，操作那一坞钉�
   expect(dock.parentElement?.lastElementChild).toBe(dock);
 });
 
-it('竖排不回到左右两栏：弹窗收窄、预览按高度定大小、那条坞 sticky 在弹窗下沿', () => {
+it('竖排不回到左右两栏：弹窗收窄、预览按高度定大小、卡底那条 sticky 在可视区下沿', () => {
   const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
   // nth 是第几次出现：.cm-hero 有基类和窄窗口两条，别把窄窗口那条当成基类改了
   const rule = (sel: string, nth = 0) => {
@@ -618,11 +618,30 @@ it('竖排不回到左右两栏：弹窗收窄、预览按高度定大小、那�
   expect(rule('.cm-hero {')).toMatch(/max-height:\s*min\(/);
   const dock = rule('.cm-dock {');
   expect(dock).toMatch(/position:\s*sticky/);
-  expect(dock).toMatch(/bottom:\s*0/);
-  // 负 margin 给弹窗内边距让路（左右 22、下 20），这条要横到弹窗整宽
-  expect(dock).toMatch(/margin:\s*0 -22px -20px/);
-  // 不透明底：滚动时提示词从坞底下过去，不许透出字来
+  // 钉住时这条的下边界要压在弹窗可视区的下沿上。Chrome 量 sticky 偏移用的是滚动容器的
+  // content box，而弹窗那 20px 下内边距是可视的（滚动内容画得进去）——bottom 写 0 就露出
+  // 20px，长提示词从这条下面露出来（538x682 实测）。所以 bottom 必须吃掉那 20px。
+  expect(dock).toMatch(/bottom:\s*-20px/);
+  // 左右负 margin 只吃**卡片**的内边距（12px）：这一排住在卡里，不再横到弹窗整宽。
+  // -22px 是这条还挂在框外、要横到弹窗整宽那个时代的数，回来一次就露一次「框里挂了块板」。
+  expect(dock).toMatch(/margin:\s*2px -12px 0/);
+  expect(dock).not.toMatch(/margin:[^;]*-22px/);
+  // 卡自己的下内边距必须是 0：留着的这几 px 会留在钉住的条下面，字从缝里露出来。
+  expect(rule(".cm-composer {")).toMatch(/padding:\s*12px 12px 0/);
+  // 卡不能 overflow:hidden（工作流弹层要往卡外冒），下圆角只能这条自己带：18px 卡圆角减 1px 边框。
+  expect(dock).toMatch(/border-radius:\s*0 0 17px 17px/);
+  // 这条不再自己画框：上面加一条分隔线就把「一次输入」劈成两块（苏醒要的是一个圆角矩形）。
+  expect(dock).not.toMatch(/border-top/);
+  // 不透明底：滚动时提示词从这条底下过去，不许透出字来
   expect(dock).toMatch(/background:/);
+  // 上沿那 14px 渐隐：滚上来的字在这里淡掉，而不是被这条的上沿切一刀
+  const fade = /\.cm-dock::before\s*\{[^}]*\}/.exec(css)?.[0] ?? "";
+  expect(fade).toMatch(/top:\s*-14px/);
+  expect(fade).toMatch(/pointer-events:\s*none/);
+  // 「创作类型」那层与「同款工作流」那层同宽：窄一档的话，正在用的那行末尾多个勾，
+  // 行末的数把「图片生成」挤成「图…」。
+  expect(rule(".cm-pop-kind {")).toMatch(/width:\s*268px/);
+  expect(css).toMatch(/\.cm-pop-kind\s*\{\s*width:\s*min\(268px,\s*78vw\)/);
 });
 
 it('参考做进 composer 那张卡里：素材、话、来源共用一张卡', async () => {
@@ -640,6 +659,53 @@ it('参考做进 composer 那张卡里：素材、话、来源共用一张卡', 
   expect((card!.querySelector('.cm-note-tag') as HTMLElement).textContent).toBe('完整提示词 ·');
   const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
   expect(css).not.toContain('<p class="cm-block-title">{promptBlockTitle');
+});
+
+it('菜单、提示词、参考收进同一个圆角框：卡底那条是卡的一部分，状态行跟它钉在一起', async () => {
+  // 2026-11-04 苏醒（照图一）：「把菜单、提示词、参考都和图一一样收进一个圆角矩形框里」。
+  // 框外再摆一条深色的坞，等于把一次输入拆成两件事。happy-dom 不跑布局，这里压的是
+  // 「谁包住谁、谁在最后」；贴边用的 bottom / margin 由上面那条 CSS 守卫看着。
+  routes({
+    ...baseRoutes(),
+    '/api/clone/cloud/status': cloudOn(),
+    '/api/clone/generate': {
+      active: true, job_id: 'j1', state: 'error', running: false, message: '生成失败',
+      error: '云端那边等到超时了', engine: 'cloud', media_kind: 'image',
+      recoverable: true, task_row_id: 77, task_id: 'task-77', image_ids: [], outputs: [],
+    },
+    '/api/clone/cloud/tasks/77/refetch': {
+      task_id: 77, image_ids: [88], count: 1, cost_coins: 12,
+      outputs: [{ id: 88, kind: 'image', filename: 'a.png', thumbnail_url: '/api/images/88/file?max=256' }],
+    },
+  });
+  const screen = await ready();
+  const card = screen.container.querySelector('.cm-composer') as HTMLElement;
+  expect(card, '.cm-composer').toBeTruthy();
+  // 框只有这一个：卡外不许再挂着第二条操作排
+  expect(screen.container.querySelectorAll('.cm-dock')).toHaveLength(1);
+  const dock = screen.container.querySelector('.cm-dock') as HTMLElement;
+  expect(dock.closest('.cm-composer')).toBe(card);
+  // 参考、话、三颗胶囊、生成全在这一张卡里
+  expect(card.querySelector('.cm-ref-row')).toBeTruthy();
+  expect(card.querySelector('textarea.cm-textarea')).toBeTruthy();
+  expect(card.querySelector('[aria-label="画面参数"]')).toBeTruthy();
+  expect(dock.querySelector('[aria-label="创作类型"]')).toBeTruthy();
+  expect(dock.querySelector('.cm-go')).toBeTruthy();
+  // 钉住这条必须是卡的最后一块，否则内容会从它下面冒出来，sticky 就成了假话
+  expect(card.lastElementChild).toBe(dock);
+  // 报错与「取回结果」跟着这条一起钉着：说的是这一次生成，要滚动才看见等于没说
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '把这套视觉搬过来' } });
+  await fireEvent.click(screen.getByRole('button', { name: '生成' }));
+  const retry = await screen.findByRole('button', { name: '取回结果' });
+  expect(retry.closest('.cm-dock')).toBeTruthy();
+  const err = screen.container.querySelector('.cm-foot-note.cm-error') as HTMLElement;
+  expect(err && err.closest('.cm-dock')).toBeTruthy();
+  await fireEvent.click(retry);
+  // 产出缩略图也在卡里，且排在钉住那条上面：跑完先看结果，不用先滚过一排按钮
+  const results = await screen.findByText('本次产出');
+  expect(results.closest('.cm-composer')).toBe(card);
+  const inside = Array.from(card.querySelectorAll('*'));
+  expect(inside.indexOf(results as Element)).toBeLessThan(inside.indexOf(dock as Element));
 });
 
 it('输入区按内容长高：空着只有两行，不再写死一格 224px', async () => {
@@ -1315,20 +1381,29 @@ it('出片之后的产出按 kind 取缩略图，点它是「第 N 条」并把 
   expect(onOpenImage).toHaveBeenCalledWith(41, 'video');
 });
 
-it('工作流清单不分家：图片与视频的工作流一起列，各带一个标识', async () => {
+it('先选创作类型：图片卡这一屏只列图片族，视频那条要切了类型才露脸', async () => {
   routes({ ...baseRoutes(), '/api/clone/templates': { items: [TPL, H3] } });
   const screen = await ready();
+  // 那颗报的是这一屏真正在产出的族，不是又一个会跟实际跑偏的开关
+  expect(screen.getByRole('button', { name: '创作类型' }).textContent).toContain('图片生成');
   await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
   await screen.findByRole('menu', { name: '同款工作流' });
-  expect([...document.querySelectorAll('.cm-wf-kind')].map((el) => el.textContent)).toEqual(['图片', '视频']);
+  expect([...document.querySelectorAll('.cm-wf-kind')].map((el) => el.textContent)).toEqual(['图片']);
   // 徽标钉在名字前面：挂在名字后面时它会随名字长短左右漂移，两行的名字对不齐
   const rows = [...document.querySelectorAll('.cm-wf-row > .cm-wf')];
-  expect(rows).toHaveLength(2);
+  expect(rows).toHaveLength(1);
   for (const row of rows) {
     const kids = [...row.children];
     expect(kids[0]?.className).toContain('cm-wf-kind');
     expect(kids[1]?.className).toContain('cm-wf-name');
   }
+  // 换类型 = 换这一族：清单跟着换，挂上的工作流也落到这一族库里标的那条
+  await fireEvent.click(screen.getByRole('button', { name: '创作类型' }));
+  await fireEvent.click(await screen.findByRole('menuitemradio', { name: /视频生成/ }));
+  await vi.waitFor(() => expect(
+    screen.getByRole('button', { name: '同款工作流' }).textContent).toContain('H3'),
+  );
+  expect(screen.getByRole('button', { name: '创作类型' }).textContent).toContain('视频生成');
 });
 
 it('往已经填好的音频位拖一张图片：说清是哪一格要音频，不默默吞掉', async () => {
@@ -1461,14 +1536,19 @@ it('音频工作流的参考行只有一格「音频1」，被点的那段自己
   expect(screen.queryByText(/这张图/)).toBeNull();
 });
 
-it('工作流菜单三族并列：徽标是图片/视频/音频，选哪条就换哪条', async () => {
+it('清单里只剩一族，所以族徽从「分得清」降级成「报到」：这一屏的行全是这一族', async () => {
   routes({ ...audioRoutes(), '/api/clone/templates': { items: [{ ...TPL, is_active: true }, { ...TTS, is_active: true }] } });
   const screen = await ready({ image: AUDIO });
   await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
   const options = await screen.findAllByRole('menuitemradio');
-  // 一张清单不分家，但族徽必须一眼分得清：图片卡挂上出声音的那条，等半天才知道选错
-  expect(options.map((el) => el.querySelector('.cm-wf-kind')?.textContent)).toEqual(['图片', '音频']);
-  expect(options[1].querySelector('.cm-wf-kind')?.classList.contains('cm-wf-kind-audio')).toBe(true);
+  // 音频卡 → 这一屏只有出声音的那条。以前这里并列着图片和音频，靠族徽分家；
+  // 现在族徽仍然留着（同一族里将来可能既有本机配方也有云端模型），但它不再是唯一的防线。
+  expect(options.map((el) => el.querySelector('.cm-wf-kind')?.textContent)).toEqual(['音频']);
+  expect(options[0].querySelector('.cm-wf-kind')?.classList.contains('cm-wf-kind-audio')).toBe(true);
+  // 图片那条要切了类型才看得见
+  await fireEvent.click(screen.getByRole('button', { name: '创作类型' }));
+  await fireEvent.click(await screen.findByRole('menuitemradio', { name: /图片生成/ }));
+  await vi.waitFor(() => expect(screen.getByRole('button', { name: '同款工作流' }).textContent).toContain('Qwen 多图编辑'));
 });
 
 it('产出是音频时 chip 上挂播放角标，点它就地播而不是进图片对比', async () => {
@@ -1549,10 +1629,15 @@ it('只有一格文字位的工作流不摆附框，请求体也不多出 slot_p
 
 it('附框没有镜像层，文字色不能继承主框的 transparent', () => {
   const source = readFileSync('src/components/CloneModal.svelte', 'utf8');
-  const rule = /\.cm-textarea-sub\s*\{[^}]*\}/.exec(source)?.[0] ?? '';
+  const rule = /^\s*\.cm-textarea-sub\s*\{[^}]*\}/m.exec(source)?.[0] ?? '';
   expect(rule).toContain('color: #e4e4e7');
   expect(rule).toContain('background: rgba(0, 0, 0, 0.35)');
   expect(rule).not.toMatch(/color:\s*transparent/);
+  // 附框搬进卡里之后，卡里那句「框一律透明」先按 .cm-textarea 抓到它，聚焦态权重还更高一档：
+  // 不点名 .cm-textarea-sub（含 :focus），台词和原话就糊成同一片，一焦点框整个消失。
+  const scoped = /\.cm-composer \.cm-textarea-sub[\s\S]{0,120}?\}/.exec(source)?.[0] ?? '';
+  expect(scoped).toContain('.cm-composer .cm-textarea-sub:focus');
+  expect(scoped).toContain('background: rgba(0, 0, 0, 0.35)');
   // 附框不带镜像类，靠自身颜色可见
   expect(source).toContain('class="cm-textarea cm-textarea-sub"');
   expect(source).toContain('class="cm-textarea cm-textarea-mirror"');
@@ -1610,9 +1695,10 @@ it('换成别的工作流：当初那句原话不跟着搬过去（搬了后端�
   });
   const screen = await ready({ image: AUDIO });
   await vi.waitFor(() => expect((screen.getByLabelText('参考音频的文本') as HTMLTextAreaElement).value).toBe('当初样本里的原话'));
-  await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
-  await screen.findByRole('menu', { name: '同款工作流' });
-  await fireEvent.click(screen.getByRole('menuitemradio', { name: /图片编辑/ }));
+  // 跨族切换现在只有这一个入口：底部那颗「创作类型」
+  await fireEvent.click(screen.getByRole('button', { name: '创作类型' }));
+  await fireEvent.click(await screen.findByRole('menuitemradio', { name: /图片生成/ }));
+  await vi.waitFor(() => expect(screen.getByRole('button', { name: '同款工作流' }).textContent).toContain('图片编辑'));
   // 图片工作流只有一个文字位：附框整个消失，请求体里也不许留着 45.ref_text
   expect(document.querySelectorAll('textarea.cm-textarea-sub')).toHaveLength(0);
   const go = screen.getByRole('button', { name: '生成' }) as HTMLButtonElement;
@@ -1796,18 +1882,24 @@ it("清单里音频只占一行「闪寻音频」：三种出声方式由弹窗�
   await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
   await screen.findByRole('menu', { name: '同款工作流' });
   const rows = [...document.querySelectorAll('.cm-wf-row > .cm-wf')];
-  // 图片 / 视频 各一行 + 音频一行，不是五行的流水账
-  expect(rows.map((r) => r.querySelector('.cm-wf-name')?.textContent)).toEqual(['Qwen 多图编辑', '闪寻音频']);
-  expect(rows.map((r) => r.querySelector('.cm-wf-kind')?.textContent)).toEqual(['图片', '音频']);
+  // 音频卡这一屏只有音频族：三条出声方式折成一行，不是三行流水账
+  expect(rows.map((r) => r.querySelector('.cm-wf-name')?.textContent)).toEqual(['闪寻音频']);
   // 正在用参考音色 ⇒ 这一行就是「当前」
-  expect(rows[1].querySelector('.cm-wf-tag')?.textContent).toBe('当前');
-  expect(rows[1].getAttribute('aria-checked')).toBe('true');
-  // 折叠行不给删除按钮（背后是三条工作流，删哪条不该由这颗 X 决定），图片那一行的 X 照旧在
-  const dels = [...document.querySelectorAll('.cm-wf-row > .cm-wf-del')];
-  expect(dels).toHaveLength(1);
-  expect(dels[0].getAttribute('aria-label')).toBe('删除工作流 Qwen 多图编辑');
-  expect(rows[1].getAttribute('title')).toContain('三种出声方式在弹窗顶上切换');
-  expect(rows[1].getAttribute('title')).toContain('参考音色 / 音色描述 / 指定音色');
+  expect(rows[0].querySelector('.cm-wf-tag')?.textContent).toBe('当前');
+  expect(rows[0].getAttribute('aria-checked')).toBe('true');
+  // 折叠行不给删除按钮（背后是三条工作流，删哪条不该由这颗 X 决定）
+  expect(document.querySelectorAll('.cm-wf-row > .cm-wf-del')).toHaveLength(0);
+  expect(rows[0].getAttribute('title')).toContain('三种出声方式在弹窗顶上切换');
+  expect(rows[0].getAttribute('title')).toContain('参考音色 / 音色描述 / 指定音色');
+  // 切回图片族才看得见本机那条和它的删除 X
+  await fireEvent.click(screen.getByRole('button', { name: '创作类型' }));
+  await fireEvent.click(await screen.findByRole('menuitemradio', { name: /图片生成/ }));
+  await vi.waitFor(() => expect(
+    screen.getByRole('button', { name: '同款工作流' }).textContent).toContain('Qwen 多图编辑'),
+  );
+  await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
+  await vi.waitFor(() => expect([...document.querySelectorAll('.cm-wf-row > .cm-wf-del')]).toHaveLength(1));
+  expect(document.querySelector('.cm-wf-del')?.getAttribute('aria-label')).toBe('删除工作流 Qwen 多图编辑');
 });
 
 it("已经在出声音时再点「闪寻音频」：只收起弹层，不把人从当前那种模式踢回默认", async () => {
@@ -1831,12 +1923,11 @@ it("已经在出声音时再点「闪寻音频」：只收起弹层，不把人�
   ]);
 });
 
-it("从图片卡点「闪寻音频」：换到音频族库里标的那条，不是随便挑一条", async () => {
+it("从图片卡切到「音频生成」：换到音频族库里标的那条，不是随便挑一条", async () => {
   routes(modeRoutes());
   const screen = await ready();
-  await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
-  const rows = await screen.findAllByRole('menuitemradio');
-  await fireEvent.click(rows[rows.length - 1]);
+  await fireEvent.click(screen.getByRole('button', { name: '创作类型' }));
+  await fireEvent.click(await screen.findByRole('menuitemradio', { name: /音频生成/ }));
   await tick();
   // modeRoutes 里 is_active 的是 A_CLONE——音频族里唯一吃参考音频的那条
   expect(screen.getByRole('group', { name: /^参考音频/ })).toBeTruthy();
@@ -1849,9 +1940,15 @@ it("从图片卡点「闪寻音频」：换到音频族库里标的那条，不�
 it("只有一条音频工作流时不折叠：那时候顶上根本没有模式按钮，藏名字就是让人认错工作流", async () => {
   routes({ ...baseRoutes(), '/api/clone/templates': { items: [TPL, A_CLONE] } });
   const screen = await ready();
+  await fireEvent.click(screen.getByRole('button', { name: '创作类型' }));
+  await fireEvent.click(await screen.findByRole('menuitemradio', { name: /音频生成/ }));
+  await vi.waitFor(() => expect(
+    screen.getByRole('button', { name: '同款工作流' }).textContent).toContain('闪寻参考音色'),
+  );
   await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
   const rows = await screen.findAllByRole('menuitemradio');
-  expect(rows.map((r) => r.querySelector('.cm-wf-name')?.textContent)).toEqual(['Qwen 多图编辑', '闪寻参考音色']);
+  // 这一族只有一条 → 按名字摆出来，不折成「闪寻音频」那种族名
+  expect(rows.map((r) => r.querySelector('.cm-wf-name')?.textContent)).toEqual(['闪寻参考音色']);
 });
 
 /* 跨族/同族换卡时工作流该跟谁。弹窗常驻在 Feed 里，关掉不销毁组件，templateId 会一路带下去。 */
@@ -2371,12 +2468,13 @@ it('云端那条要扣钱：没有「当前」时开弹窗仍走本机那条，�
   expect(screen.getByRole('button', { name: '同款工作流' }).textContent).toContain('Qwen 多图编辑');
 });
 
-it('底部那一排先挑工作流、再定参数：两颗胶囊的左右顺序就是决策顺序', async () => {
-  // 参数是这份工作流自己的参数——先设完参数再换工作流，参数就得重来。所以顺序是：先定用谁，再定它怎么出。
+it('底部那一排的顺序就是决策顺序：先定出什么，再定用谁，最后定它怎么出', async () => {
+  // 参数是这份工作流自己的参数——先设完参数再换工作流，参数就得重来；
+  // 工作流是这一族里的某一份——所以族必须在它左边（2026-11-04 苏醒）。
   routes(baseRoutes());
   const screen = await ready();
   const pills = [...screen.container.querySelectorAll('.cm-foot-left .cm-pill')] as HTMLElement[];
-  expect(pills.map((x) => x.getAttribute('aria-label'))).toEqual(['同款工作流', '画面参数']);
+  expect(pills.map((x) => x.getAttribute('aria-label'))).toEqual(['创作类型', '同款工作流', '画面参数']);
   // 生成和取消仍钉在这一排最右，不参与压缩（上面那条「定宽优先」压的是几何，这里压的是左右次序）
   const actions = screen.container.querySelector('.cm-actions') as HTMLElement;
   expect(pills[1].compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -2487,7 +2585,8 @@ it('左列一家服务商一行：点另一家只换右列那份模型清单，�
   expect(vendors[0].getAttribute('aria-current')).toBe('true');
   expect(vendors[1].getAttribute('aria-current')).toBe('false');
   await vi.waitFor(() => expect(modelRows(screen)).toContain('Seedream v5'));
-  expect(modelRows(screen)).toContain('Seedance 2.0');
+  // 视频模型不摊在这一列：先定了族，右列只摆这一族能出的（2026-11-04 苏醒）
+  expect(modelRows(screen)).not.toContain('Seedance 2.0');
   expect(modelRows(screen)).not.toContain('别家出图');
   await fireEvent.click(vendors[1]);
   await tick();
@@ -2510,10 +2609,67 @@ it('行末三态说实话：没验过的挂「待实测」，后端明说验过�
   const rows = await screen.findAllByRole('menuitemradio');
   const text = rows.map((row: HTMLElement) => row.textContent ?? '');
   expect(text.some((t) => /Seedream v5.*待实测/.test(t))).toBe(true);
-  expect(text.some((t) => /Seedance 2\.0.*已实测/.test(t))).toBe(true);
   expect(text.every((t) => !t.includes('需配置'))).toBe(true);
   // 这一屏整屏都是云端，再挂一枚「云端」是重复四个字，不省也占位
   expect(text.every((t) => !t.includes('云端'))).toBe(true);
+
+  // 「已实测」那条是视频模型：切到视频生成才看得见，不用把三族摊在同一屏里找
+  await fireEvent.click(screen.getByRole('button', { name: '创作类型' }));
+  await fireEvent.click(await screen.findByRole('menuitemradio', { name: /视频生成/ }));
+  await vi.waitFor(() => expect(
+    screen.getByRole('button', { name: '同款工作流' }).textContent).toContain('Seedance 2.0'),
+  );
+  await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
+  await fireEvent.click(await screen.findByRole('button', { name: /^云端API服务/ }));
+  const videoRows = (await screen.findAllByRole('menuitemradio')).map((row: HTMLElement) => row.textContent ?? '');
+  expect(videoRows.some((t) => /Seedance 2\.0.*已实测/.test(t))).toBe(true);
+  expect(videoRows.every((t) => !t.includes('Seedream'))).toBe(true);
+});
+
+it('换创作类型，云端那一屏跟着换族；这一族本机没配方时说得下去', async () => {
+  routes({
+    ...baseRoutes(), '/api/clone/cloud/status': cloudOn(),
+    '/api/clone/templates': { items: [TPL, CLOUD_IMG, CLOUD_VIDEO] },
+    '/api/clone/cloud/estimate': { coins: 3, mode: 'image' },
+  });
+  const screen = await ready();
+  await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
+  await fireEvent.click(await screen.findByRole('button', { name: /^云端API服务/ }));
+  await vi.waitFor(() => expect(modelRows(screen)).toContain('Seedream v5'));
+  expect(modelRows(screen)).not.toContain('Seedance 2.0');
+  // tab 上那个数是这一族的条数，不是全部云端的——写着 2 却只摆 1 行比不写更糟
+  expect(screen.getByRole('button', { name: /^云端API服务/ }).textContent).toContain('1');
+
+  await fireEvent.click(screen.getByRole('button', { name: '创作类型' }));
+  await fireEvent.click(await screen.findByRole('menuitemradio', { name: /视频生成/ }));
+  await vi.waitFor(() => expect(
+    screen.getByRole('button', { name: '同款工作流' }).textContent).toContain('Seedance 2.0'),
+  );
+  await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
+  // 挂上的是云端那条，弹层因此开在云端屏——本机这一屏得点回去看
+  await fireEvent.click(await screen.findByRole('button', { name: /^本地工作流/ }));
+  // 这一族本机没配方：说一句并把出路留在屏上，不摆一块让人以为坏了的空白
+  expect(await screen.findByText(/这一族还没有本机工作流/)).toBeTruthy();
+  expect(screen.getByRole('menuitem', { name: /加载本地工作流 JSON/ })).toBeTruthy();
+  await fireEvent.click(screen.getByRole('button', { name: /^云端API服务/ }));
+  await vi.waitFor(() => expect(modelRows(screen)).toContain('Seedance 2.0'));
+  expect(modelRows(screen)).not.toContain('Seedream');
+});
+
+it('某一族一条都没铺：类型菜单里先说「还没铺路」，点它也不把人切进一份空清单', async () => {
+  routes({ ...baseRoutes(), '/api/clone/templates': { items: [TPL] } });
+  const screen = await ready();
+  await fireEvent.click(screen.getByRole('button', { name: '创作类型' }));
+  const video = await screen.findByRole('menuitemradio', { name: /视频生成/ });
+  expect(video.textContent).toContain('还没铺路');
+  expect(video.getAttribute('aria-checked')).toBe('false');
+  expect(video.getAttribute('title')).toContain('先加载一份这一族的工作流 JSON');
+  await fireEvent.click(video);
+  await tick();
+  // 没切走：挂着的还是图片那条，理由写在弹窗下面那句里
+  expect(screen.getByRole('button', { name: '创作类型' }).textContent).toContain('图片生成');
+  expect(await screen.findByText(/视频生成这一族还没铺路/)).toBeTruthy();
+  expect(screen.getByRole('button', { name: '同款工作流' }).textContent).toContain('Qwen 多图编辑');
 });
 
 it('API 那一屏一条都没装时只给一句话，底部不再挂那颗「设置 Key」', async () => {

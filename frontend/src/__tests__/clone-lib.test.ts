@@ -12,6 +12,7 @@ import {
   defaultPromptGroupValues, primaryPromptGroup, promptGroupHint, promptGroupValues, promptGroups, promptPlaceholder, secondaryPromptGroups,
   audioModeLabel, audioModeTemplates, promptGroupPlaceholder, REFERENCE_TRANSCRIPT_LABEL, VOICE_DESIGN_LABEL, VOICE_STYLE_LABEL,
   workflowMenuRows, workflowDisplayName, AUDIO_MODE_GROUP_LABEL, voiceAvatar, voiceSample,
+  CREATION_KIND_ORDER, CREATION_KIND_WORDS, rowsForKind, rowForKindSwitch, tallyByKind,
   voiceNativeLanguage, isLanguageSlot, languageSlotAmong, languageOptionFor, nativeLanguageOverride,
   firstFreeRefKey, mergedRefCells, openRefKinds, REF_DISPLAY_ORDER, sortByDisplayFamily,
   type CloneMode, type CloneSlot, type CloneTemplate,
@@ -1085,6 +1086,62 @@ describe("本地工作流那一列：音频族收成一条", () => {
   it("名字尾巴上的 .json 不许带进清单（本地导入那类文件名）", () => {
     const rows = workflowMenuRows([wf(8, "我的配音.json", "image")]);
     expect(rows[0].label).toBe("我的配音");
+  });
+});
+
+describe("先按创作类型切一刀（2026-11-04 苏醒：不先分开，选工作流时六行混在一起）", () => {
+  const wf = (id: number, name: string, kind: string, over: Partial<CloneTemplate> = {}): CloneTemplate =>
+    tpl([promptSlot], { id, name, media_kind: kind as CloneTemplate["media_kind"], is_active: false, ...over });
+  const cloud = (id: number, name: string, kind: string): CloneTemplate =>
+    wf(id, name, kind, { engine: "cloud", is_cloud: true });
+  const IMG = wf(1, "闪寻图片", "image", { is_active: true });
+  const IMG2 = wf(2, "另一份图片", "image");
+  const VID = wf(3, "闪寻视频", "video");
+  const A1 = wf(4, "闪寻参考音色", "audio", { is_active: true });
+  const A2 = wf(5, "闪寻指定音色", "audio");
+  const CLOUD_IMG = cloud(6, "图片API", "image");
+  const CLOUD_VIDEO = cloud(7, "视频API", "video");
+  const all = [IMG, IMG2, VID, A1, A2, CLOUD_IMG, CLOUD_VIDEO];
+
+  it("rowsForKind 只留这一族的行，别的族一行都不露", () => {
+    const rows = workflowMenuRows(all);
+    expect(rowsForKind(rows, "image").map((r) => r.label)).toEqual(["闪寻图片", "另一份图片", "图片API"]);
+    expect(rowsForKind(rows, "video").map((r) => r.label)).toEqual(["闪寻视频", "视频API"]);
+    // 音频那两条本来就被折成一行，过滤后仍是那一行——不是两行流水账
+    const audio = rowsForKind(rows, "audio");
+    expect(audio.map((r) => r.label)).toEqual([AUDIO_MODE_GROUP_LABEL]);
+    expect(audio[0].collapsed).toBe(true);
+  });
+
+  it("tallyByKind 把折叠行按背后的条数报，本机与云端分开数", () => {
+    const tally = tallyByKind(workflowMenuRows(all), all);
+    expect(tally.image).toEqual({ local: 2, cloud: 1 });
+    expect(tally.video).toEqual({ local: 1, cloud: 1 });
+    // 三条里两条在这里、另一条也算本机：折叠行报的是「有几份可挑」，不是「清单里有几行」
+    expect(tally.audio).toEqual({ local: 2, cloud: 0 });
+    expect(tallyByKind([], [])).toEqual({
+      image: { local: 0, cloud: 0 }, video: { local: 0, cloud: 0 }, audio: { local: 0, cloud: 0 },
+    });
+  });
+
+  it("rowForKindSwitch：正在用→库里当前→本机的→第一条；一族都没有给 null", () => {
+    const rows = workflowMenuRows(all);
+    // 正在用的那条本来就属这一族：类型按钮不该把人重置到族里另一条
+    expect(rowForKindSwitch(rows, "image", all, IMG2.id)?.targetId).toBe(IMG2.id);
+    // 从图片族切走：视频/音频族落本机那条，不默认落到云端——那是要扣 RH币的
+    expect(rowForKindSwitch(rows, "video", all, IMG.id)?.targetId).toBe(VID.id);
+    expect(rowForKindSwitch(rows, "audio", all, IMG.id)?.targetId).toBe(A1.id);
+    // 这一族只剩云端那条时也只能落它，「差一把 Key」由调用方去说
+    const onlyCloud = [IMG, CLOUD_VIDEO];
+    expect(rowForKindSwitch(workflowMenuRows(onlyCloud), "video", onlyCloud, IMG.id)?.targetId).toBe(CLOUD_VIDEO.id);
+    // 库里查不到条目（列表还没回来）也要给一行，别因为拿不到 is_active 就当没铺路
+    expect(rowForKindSwitch(rows, "video", [], IMG.id)?.targetId).toBe(VID.id);
+    expect(rowForKindSwitch(workflowMenuRows([IMG]), "video", [IMG], IMG.id)).toBeNull();
+  });
+
+  it("那颗摆的三族顺序与说法固定：图片 → 视频 → 音频", () => {
+    expect(CREATION_KIND_ORDER).toEqual(["image", "video", "audio"]);
+    expect(CREATION_KIND_WORDS).toEqual({ image: "图片生成", video: "视频生成", audio: "音频生成" });
   });
 });
 

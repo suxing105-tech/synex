@@ -228,6 +228,91 @@ export function workflowMenuRows(
   return rows;
 }
 
+/** 「创作类型」那颗摆的三族，顺序固定：出图 → 出片 → 出声音。 */
+export const CREATION_KIND_ORDER: MediaKind[] = ["image", "video", "audio"];
+
+/**
+ * 类型菜单里每行叫什么。叫「图片生成」而不是「图片工作流」：这一族既可能是本机配方，
+ * 也可能是云端模型，把工作流三个字写进类型名，选了它就好像排除了云端那条路。
+ */
+export const CREATION_KIND_WORDS: Record<MediaKind, string> = {
+  image: "图片生成",
+  video: "视频生成",
+  audio: "音频生成",
+};
+
+/**
+ * 先按创作类型切一刀：这一族之外的一行都不摆（2026-11-04 苏醒）。
+ *
+ * 之前一份清单里图片、视频、音频（折成一条）混着摆，云端那一屏又把一家的图片/视频/音频
+ * 模型混在右列——眼睛得先替人做一遍分类。类型定了，两屏都只剩这一族。
+ */
+export function rowsForKind(
+  rows: readonly WorkflowMenuRow[],
+  kind: MediaKind,
+): WorkflowMenuRow[] {
+  return rows.filter((row) => row.kind === kind);
+}
+
+/** 一族铺了几条路。本机与云端分开数：云端那是要扣 RH币的，不混进「有几份配方」。 */
+export interface KindTally {
+  local: number;
+  cloud: number;
+}
+
+/**
+ * 三族各铺了几条路，给类型菜单那行末尾报数用。
+ * 折叠那行（闪寻音频）背后是几条就算几条——菜单里那句说的是「这一族有几份可挑」，
+ * 不是「清单里有几行」。
+ */
+export function tallyByKind(
+  rows: readonly WorkflowMenuRow[],
+  templates: readonly CloneTemplate[] | null | undefined,
+): Record<MediaKind, KindTally> {
+  const list = templates ?? [];
+  const out: Record<MediaKind, KindTally> = {
+    image: { local: 0, cloud: 0 },
+    video: { local: 0, cloud: 0 },
+    audio: { local: 0, cloud: 0 },
+  };
+  for (const row of rows) {
+    // 折叠那行背后是几条就算几条；它只可能是本机那三条（云端那条不参与折叠）。
+    const each = row.collapsed ? row.memberIds.length : 1;
+    const cloud = row.memberIds.some((id) => isCloudTemplate(list.find((one) => one.id === id)));
+    out[row.kind][cloud ? "cloud" : "local"] += each;
+  }
+  return out;
+}
+
+/**
+ * 切到某一族时落到哪一行。顺序照「默认用哪份工作流」那套口径走：
+ * 这一族里正在用的那条（同族内部换不该跳走）→ 库里标「当前」的 → 本机的
+ * （云端要扣 RH币，不做没人认领的默认）→ 第一条。
+ *
+ * 这一族一行都没有就返回 null：宁可让人看见「这一族还没铺路」，也不把人切进一份空清单。
+ */
+export function rowForKindSwitch(
+  rows: readonly WorkflowMenuRow[],
+  kind: MediaKind,
+  templates: readonly CloneTemplate[] | null | undefined,
+  currentId?: number | null,
+): WorkflowMenuRow | null {
+  const mine = rowsForKind(rows, kind);
+  if (mine.length === 0) return null;
+  const list = templates ?? [];
+  const isCloudRow = (row: WorkflowMenuRow) =>
+    row.memberIds.some((id) => isCloudTemplate(list.find((one) => one.id === id)));
+  if (currentId != null) {
+    const cur = mine.find((row) => row.memberIds.includes(currentId));
+    if (cur) return cur;
+  }
+  const active = mine.find((row) =>
+    row.memberIds.some((id) => list.find((one) => one.id === id)?.is_active),
+  );
+  if (active) return active;
+  return mine.find((row) => !isCloudRow(row)) ?? mine[0];
+}
+
 /** 级联菜单左列的一家服务商：一行 = 一家，右列摆它报的那些模型。 */
 export interface CloudMenuGroup {
   /** 分组用的稳定 key。后端没标 provider 时兜底成 "cloud"，不让一行掉进 undefined 组里。 */

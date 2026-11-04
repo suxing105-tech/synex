@@ -530,8 +530,79 @@ export const cloneJob = writable<CloneJob>(EMPTY_CLONE_JOB);
  */
 export const cloneOpen = writable<boolean>(false);
 
-/** WS 的 clone_progress 与 REST 的 jobs/current 都走这里；认不出的状态退回空壳。 */
-export function applyCloneProgress(payload: unknown): CloneJob {
+/**
+ * 画布原型（?cm_canvas=1）的批次历史：每跑完一批封存一条，最新那条排最前面，旧的在画布上变淡。
+ *
+ * 为什么挂在 lib/clone.ts 而不是画布组件里：封存点必须在 applyCloneProgress 上。WS 推的进度、
+ * 重开弹窗时 jobs/current 的接手、云端「取回来」补的那批，三条链路全走这一个函数；封存写在
+ * 组件里就得各补一遍入批逻辑（「两条链路两个形状」这个老毛病这个项目栽过一次）。
+ *
+ * 只活过弹窗开关，不活过应用重启：画布是这一轮迭代的工作台，不是文档实体，所以不落盘、不带位置。
+ */
+export interface CloneBatch {
+  /** 一条 job 一批。重开弹窗会照同一个 job_id 再读回一次 done，靠它去重。 */
+  key: string;
+  jobId: string;
+  outputs: CloneOutput[];
+  /** 提交时挑的画面比例；认不出来为 null，画布按 1:1 排卡。 */
+  aspect: { w: number; h: number } | null;
+}
+
+/** 画布上最多留几批：再多就不是「回看上一轮」而是翻相册了，fit 出来每张都小得没法看。 */
+export const CLONE_BATCH_LIMIT = 5;
+
+export const cloneBatches = writable<CloneBatch[]>([]);
+
+/** 产出清单：后端给了 outputs 就照它走；老后端只给 image_ids 时按图片补一份缩略地址。 */
+export function cloneOutputsOf(job: CloneJob | null | undefined): CloneOutput[] {
+  if (!job) return [];
+  if (job.outputs.length) return job.outputs;
+  return job.image_ids.map((id) => ({
+    id, kind: "image", filename: "", thumbnail_url: `/api/images/${id}/file?max=256`,
+  }));
+}
+
+/** 点生成时记下这一批要出的比例——产出清单里不带比例，封存那刻只能提前备着。 */
+let armedAspect: { w: number; h: number } | null = null;
+
+export function armCloneBatchAspect(option: string | null | undefined): void {
+  armedAspect = ratioShape(String(option ?? "")).ratio;
+}
+
+/** 换卡、关弹窗：这一轮迭代结束了，画布上的批次跟着清掉。 */
+export function clearCloneBatches(): void {
+  armedAspect = null;
+  cloneBatches.set([]);
+}
+
+function sealCloneBatch(job: CloneJob): void {
+  const outputs = cloneOutputsOf(job);
+  if (!outputs.length) return;
+  // 一条 job 一批。同一条 job 反复推 done（WS 会补推、重开弹窗会接手、云端还会补取）
+  // 只在原位更新那一条，不把它挪到最前面——挪一次就等于把一批旧结果冒充成刚出的。
+  const key = job.job_id || `out-${outputs[0].id}`;
+  cloneBatches.update((list) => {
+    const at = list.findIndex((b) => b.key === key);
+    if (at >= 0) {
+      const copy = [...list];
+      // 重开弹窗接手时没人在点生成，armedAspect 是空的——别把已经记下的比例擦掉。
+      copy[at] = { key, jobId: job.job_id, outputs, aspect: armedAspect ?? list[at].aspect };
+      return copy;
+    }
+    return [{ key, jobId: job.job_id, outputs, aspect: armedAspect }, ...list].slice(0, CLONE_BATCH_LIMIT);
+  });
+}
+
+
+/**
+ * WS 的 clone_progress 与 REST 的 jobs/current 都走这里；认不出的状态退回空壳。
+ *
+ * `seal:false` 只留给「弹窗打开时那一次接手读」。后端内存里那条 job 可能是上一轮的、
+ * 甚至上一张卡的，界面本来就不认它（那条 derived 只认 running 的或自己提交过的），
+ * 把它封进画布等于往人面前摆一屏本来不打算显示的东西——实拍采到过一次：
+ * 关窗再重开，上一批自己复活成「旧批」，怎么解释都不对。
+ */
+export function applyCloneProgress(payload: unknown, opts: { seal?: boolean } = {}): CloneJob {
   if (!payload || typeof payload !== "object") return EMPTY_CLONE_JOB;
   const raw = payload as Record<string, unknown>;
   const state = String(raw.state ?? "") as CloneState;
@@ -571,6 +642,8 @@ export function applyCloneProgress(payload: unknown): CloneJob {
     recoverable: Boolean(raw.recoverable),
   };
   cloneJob.set(job);
+  // 画布的批次：任何一条 job 走到 done 就封存一份，重复推的那几次由 key 去重兜住。
+  if (job.state === "done" && opts.seal !== false) sealCloneBatch(job);
   return job;
 }
 

@@ -55,8 +55,10 @@ import { hoverPlay } from "../lib/hover-play";
     immersive?: boolean;
     /** 打开设置页的某个分区（再次创作弹窗里没有模板时要去导入工作流）。 */
     onOpenSettings?: (tab: string) => void;
+    /** 再次创作弹窗的上半区走画布原型（?cm_canvas=1，DEV only）。见 CloneModal 的 canvasPrototype。 */
+    cloneCanvas?: boolean;
   }
-  let { selectedId = $bindable(), lightboxOpen = $bindable(), lightboxIndex = $bindable(), overlayOpen = false, immersive = false, onOpenSettings }: Props = $props();
+  let { selectedId = $bindable(), lightboxOpen = $bindable(), lightboxIndex = $bindable(), overlayOpen = false, immersive = false, onOpenSettings, cloneCanvas = false }: Props = $props();
 
   // 右键菜单状态
   let menuOpen = $state(false);
@@ -1345,6 +1347,7 @@ import { hoverPlay } from "../lib/hover-play";
   onClose={() => (cloneTarget = null)}
   {onOpenSettings}
   onOpenImage={(id, kind) => void openCloneResult(id, kind)}
+  canvasPrototype={cloneCanvas}
 />
 
 <FolderPickerModal open={destinationOpen} folders={$folders} title="选择保存文件夹" subtitle="原文件会保留，复制到所选文件夹。" allowNone={false} includeSystem={true} onPick={finishDestination} onClose={() => finishDestination(null)} />

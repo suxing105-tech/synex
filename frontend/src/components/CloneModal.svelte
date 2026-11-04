@@ -19,6 +19,8 @@
   import { modalFocus } from "../lib/modal-focus";
   import Icon from "./Icon.svelte";
   import MediaPickerModal from "./MediaPickerModal.svelte";
+  import CloneCanvas from "./CloneCanvas.svelte";
+  import type { CanvasEscape } from "../lib/clone-canvas";
   import {
     applyCloneProgress, buildGenerateRequest, cloneApi, cloneError, cloneJob, cloneStatusLabel,
     allowsTextMode, controlSlots, controlSummary, defaultControlValues, defaultReferences, latestReversePrompt,
@@ -26,7 +28,7 @@
     primaryPromptGroup, promptGroupHint, promptPlaceholder, promptSlots, promptSourceLabel, secondaryPromptGroups,
     ratioShape, referenceCells, referenceIssues, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, visibleRefCells, voiceAvatar, voiceSample, nativeLanguageOverride,
     firstFreeRefKey, mergedRefCells, openRefKinds, REF_DISPLAY_ORDER,
-    CLONE_SETTINGS_TAB, cloneOpen,
+    CLONE_SETTINGS_TAB, cloneOpen, cloneBatches, clearCloneBatches, armCloneBatchAspect, cloneOutputsOf,
     cloudApi, coinsLabel, isCloudTemplate, mentionsTags, supportsRefFamily,
     type CloudStatus,
     applyMention, caretCoordinates, mentionAddLabel, mentionChunks, mentionInsertText, mentionItems as buildMentionItems, mentionToken,
@@ -50,8 +52,14 @@
     onOpenSettings?: (tab: string) => void;
     /** 点本次产出的缩略图 → 跳到图库里那一份（图片进对比、视频进播放器，由父组件分派） */
     onOpenImage?: (id: number, kind?: string) => void;
+    /**
+     * 画布原型（浏览器加 ?cm_canvas=1，只在 DEV 生效）：跑完之后上半区那一格换成
+     * 一个可缩放的画布，整批铺开、多轮累积。撤掉这个开关就是现在这一格一张张翻的形态，
+     * 两条分支并存着比原地替换好——实拍对比过再决定要不要转正。
+     */
+    canvasPrototype?: boolean;
   }
-  let { open, image, onClose, onOpenSettings, onOpenImage }: Props = $props();
+  let { open, image, onClose, onOpenSettings, onOpenImage, canvasPrototype = false }: Props = $props();
 
   let templates = $state<CloneTemplate[]>([]);
   let templatesLoaded = $state(false);
@@ -455,13 +463,7 @@
    * 产出清单：后端给了 outputs 就照它画（视频的海报帧地址不是 /api/images/{id}/file，
    * 前端硬拼必然拼错）；老后端只回 image_ids 时退回原来的拼法，图片和以前一样。
    */
-  const outputChips = $derived.by<CloneOutput[]>(() => {
-    if (!done || !job) return [];
-    if (job.outputs.length) return job.outputs;
-    return job.image_ids.map((id) => ({
-      id, kind: "image", filename: "", thumbnail_url: `/api/images/${id}/file?max=256`,
-    }));
-  });
+  const outputChips = $derived.by<CloneOutput[]>(() => (done ? cloneOutputsOf(job) : []));
 
   /**
    * 顶部这一格是一条「舞台」，三种状态轮流占（2026-11-04 苏醒照图：「在生成中的状态，做一个
@@ -510,6 +512,14 @@
    * 提交下一批时清空——旧那批已经不是「刚生成的」了。
    */
   let heroOut = $state<number | null>(null);
+  /**
+   * 画布上的批次：跑完一批封存一条，最新那条排最前面，旧的变淡。
+   * 封存点不在这里，在 lib/clone.ts 的 applyCloneProgress——WS 推进度、重开弹窗接手、
+   * 云端「取回来」补的那批全走那一个函数，挂在这里就得三条链路各写一遍。
+   */
+  const canvasBatches = $derived($cloneBatches);
+  /** 画布放大态下 Esc 先退回全览。相机归画布管，这里只拿一个「还在放大吗 / 退回」。 */
+  let canvasEscape = $state<CanvasEscape | null>(null);
   const heroOutput = $derived.by<CloneOutput | null>(() => {
     if (!done || !outputChips.length) return null;
     return outputChips.find((o) => o.id === heroOut) ?? outputChips[0];
@@ -558,6 +568,9 @@
     const firstId = done ? outputChips[0]?.id ?? 0 : 0;
     if (!firstId || firstId === revealedId) return;
     revealedId = firstId;
+    // 画布分支自己会回到全览（见 CloneCanvas 里那条 batches.length 的 effect），
+    // 再去滚面板就是多此一举：画布不靠竖向滚动看东西。
+    if (canvasPrototype) return;
     const el = panelEl;
     if (!el || el.scrollTop < 40) return;
     const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -1077,6 +1090,9 @@
   $effect(() => {
     if (!open || !image) {
       probedThisOpen = false;
+      // 这一轮迭代结束了：换了一张卡或者收了弹窗，画布上那几批不该跟着过去。
+      clearCloneBatches();
+      canvasEscape = null;
       return;
     }
     const id = image.id;
@@ -1133,7 +1149,9 @@
   /** 弹窗重开时接手正在跑的任务：状态在后端内存里，关弹窗不会让它停下。 */
   async function adoptRunningJob() {
     try {
-      const current = applyCloneProgress(await cloneApi.currentJob());
+      // seal:false —— 接手只接状态，不接画布。那条 job 若是上一轮跑完的，界面本来就不显示它
+      // （下面那句只认 running），让它悄悄进画布等于把清掉的历史又放回来。
+      const current = applyCloneProgress(await cloneApi.currentJob(), { seal: false });
       if (current.running) jobId = current.job_id;
     } catch {
       /* 后端没答话就算了，弹窗照样能填 */
@@ -1235,6 +1253,15 @@
     }
   }
 
+  /** 这一批要出的画面比例：从画面参数里挑那颗认得出宽高的；认不出就按方的排。 */
+  function batchAspectOption(): string | null {
+    for (const slot of controlSlots(template)) {
+      const value = controls[slotKey(slot)];
+      if (typeof value === "string" && ratioShape(value).ratio) return value;
+    }
+    return null;
+  }
+
   async function generate() {
     if (!template) return;
     if (issues.length) {
@@ -1245,6 +1272,8 @@
     error = "";
     // 上一批产出马上要让位：先收掉，这一格才能干净地回到「正在生成」那一态
     heroOut = null;
+    // 画布排卡要用比例，而产出清单里不带它——只能在提交这一刻把当前挑的那颗交出去
+    armCloneBatchAspect(batchAspectOption());
     // 提交那一刻收掉两个弹层：不然菜单会盖在跑动的界面上，而且它里面的条目马上要全部禁用
     popOpen = false;
     closeWorkflowPop();
@@ -1352,6 +1381,13 @@
         closeWorkflowPop();
         return;
       }
+      // 画布放大着的时候第一下 Esc 先退回全览：一按就把整个弹窗关掉，
+      // 等于把人刚放大那一份一起收走了（和图库里那层预览同一个口径）。
+      if (canvasEscape?.isZoomed()) {
+        e.preventDefault();
+        canvasEscape.zoomOut();
+        return;
+      }
       e.preventDefault();
       onClose();
     }
@@ -1405,6 +1441,10 @@
                 </p>
               </div>
             </div>
+          {:else if canvasPrototype && done && canvasBatches.length}
+            <!-- 画布分支（?cm_canvas=1）：整批铺开、点哪张看哪张、旧批变淡。
+                 下面那条原样留着——两条分支并存，实拍对比过再决定撤哪条。 -->
+            <CloneCanvas batches={canvasBatches} {onOpenImage} onCamera={(api) => (canvasEscape = api)} />
           {:else if heroOutput}
             {@const out = heroOutput}
             <!-- 生成完直接在这格看新东西（2026-11-04 苏醒：「生成后，这里展示新生成的内容」）。

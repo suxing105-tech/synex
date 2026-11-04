@@ -133,6 +133,9 @@
   // App.svelte 只剩 init 业务逻辑（doInit）+ browser-only 副作用。
   // dev 回放：浏览器里加 ?splash=preview 就演一遍完整启动编排（实现见 splash-gate 注释）。
   const splashPreview = import.meta.env.DEV && /(?:^|[?&])splash=preview(?:&|$)/.test(location.search);
+  // 画布原型：浏览器加 ?cm_canvas=1 让再次创作的上半区走画布那一分支（实现见 CloneCanvas.svelte）。
+  // 和 splash=preview 同一个口径——DEV 里才生效，生产路径永远走现在这一格。
+  const cloneCanvas = import.meta.env.DEV && /(?:^|[?&])cm_canvas=1(?:&|$)/.test(location.search);
   const gate = createSplashGate({ preview: splashPreview });
 
   // 收场那一刻撤掉骨架：四个组件读这一个 store，不逐个传 boot prop。
@@ -319,6 +322,7 @@
         bind:lightboxIndex
         overlayOpen={lightboxOpen || videoPlayerOpen || Boolean($readerItem)}
         immersive={immersive}
+        cloneCanvas={cloneCanvas}
         onOpenSettings={(tab) => { settingsTab = tab; settingsOpen = true; }}
       />
       </div>

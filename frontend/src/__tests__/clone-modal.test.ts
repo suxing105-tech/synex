@@ -396,11 +396,61 @@ it('选了个不是 JSON 的文件，说清楚原因而不是默默什么都不�
   expect(screen.getByRole('heading', { name: 'Qwen 多图编辑' })).toBeTruthy();
 });
 
-it('参考条是一条横向素材带：多图工作流铺 16 格也不该把提示词框顶出弹窗', async () => {
+it('参考是左栏那一摞：栏宽固定、每张露出多少按张数算，十六格也不顶人', async () => {
+  // 2026-11-04 苏醒第二轮：参考从「横向一条」改成「左栏一摞」。老约束没变——素材那一块不许把
+  // 提示词框顶出弹窗，只是换个方向守：栏宽写死 84px，剩下的宽度全归提示词那一侧。
   const source = readFileSync("src/components/CloneModal.svelte", "utf8");
-  const block = source.slice(source.indexOf(".cm-ref-row"), source.indexOf(".cm-tile {"));
-  expect(block).toContain("flex-wrap: nowrap");
-  expect(block).toContain("overflow-x: auto");
+  expect(source).toMatch(/\.cm-input-row \{[^}]*display:\s*flex/);
+  expect(source).toMatch(/\.cm-prompt-col \{[^}]*flex:\s*1 1 auto[^}]*min-width:\s*0/);
+  expect(source).toMatch(/\.cm-ref-stack \{[^}]*flex:\s*none[^}]*width:\s*84px/);
+  // 叠放靠负 margin（露出量 = --step），第一张压在最上面（--z 反着给）→ 每张露的都是下沿那一条，
+  // 编号小牌本来就压在照片左下角，叠着也读得出「图片1／图片2」
+  expect(source).toMatch(/\.cm-ref-stack \.cm-ref-cell \{[^}]*margin-top:\s*calc\(var\(--step\) - 84px\)/);
+  // 露出量上下限：46 是「一眼认得出是谁」，22 以下照片下沿那 20px 的编号就读不到了；
+  // 186px 的总余量分给 n-1 张，整摞最多长到 ~270px，不会无限往下顶
+  expect(source).toMatch(/const refStep = \$derived\(Math\.max\(22, Math\.min\(46,/);
+  expect(source).toMatch(/186 \/ Math\.max\(stackCount - 1, 1\)/);
+});
+
+it('那一摞会动：整摞摊开、指到谁谁抬起来摆正，关动效的人那一摞是静止的', async () => {
+  const source = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  // 鼠标碰到整摞 → 每张再多露 --spread（这个数同样按张数算，十六格那一档只剩 2px，不至于把卡撑得一跳一跳）
+  expect(source).toMatch(/\.cm-ref-stack:hover, \.cm-ref-stack:focus-within \{ --step: calc\(var\(--step-base\) \+ var\(--spread\)\)/);
+  expect(source).toMatch(/const refSpread = \$derived\(Math\.max\(2, Math\.min\(6,/);
+  // 指到的那张从摞里抬出来摆正，并提到最前面（60 > 行内 --z），否则又被上面那张盖回去
+  const lift = /\.cm-ref-stack \.cm-ref-cell:hover[\s\S]{0,160}?\}/.exec(source)?.[0] ?? '';
+  expect(lift).toContain(':focus-within');
+  expect(lift).toMatch(/z-index:\s*60/);
+  expect(lift).toMatch(/rotate\(0deg\)/);
+  // 抬起量 6px 小于两栏之间 14px 的缝：抬起来压不到提示词框
+  expect(lift).toMatch(/translate\(6px, -3px\)/);
+  // 指到谁，其余**照片**压暗；空格子与压在角上的那颗「+」不跟着退场（白圆钮压暗后在深色卡上糊成一块脏灰）
+  const dim = /\.cm-ref-stack:hover \.cm-ref-cell:not\(:hover\)[^{]*\{/.exec(source)?.[0] ?? '';
+  expect(dim).toContain('.cm-tile.media-chip');
+  // 不写 prefers-reduced-motion 的动效等于强迫所有人看：关动效时整摞静止，叠放与编号照旧
+  expect(source).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\n\s*\.cm-ref-cell \{ transition:\s*none;/);
+});
+
+it('只有一张参考时那一摞摆两块：照片 + 压在右下角的「+」，可访问名不缩水', async () => {
+  // 苏醒那张参考图就是这个版式：一张照片，加号压在照片角上，而不是旁边再摆一整格虚线框。
+  const two = { ...TPL, reference_count: 2, slots: [...TPL.slots, { kind: 'image', node: '564', input: 'image', label: '背景参考' }] };
+  routes({ ...baseRoutes(), '/api/clone/templates': { items: [two] } });
+  const screen = await ready();
+  const stack = screen.container.querySelector('.cm-ref-stack') as HTMLElement;
+  expect(stack.classList.contains('is-pair')).toBe(true);
+  expect(stack.querySelectorAll('.cm-ref-cell')).toHaveLength(2);
+  // 圆钮只剩一个加号：「图片2」改由 aria-label 念，格子本身仍在可访问树里
+  expect(screen.getByRole('button', { name: '添加图片2参考图' })).toBeTruthy();
+  expect(screen.getByRole('group', { name: '图片2' })).toBeTruthy();
+  const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  // 圆钮自己 + 它那一格都缩到 32px：留 84px 整格会拿透明的那半截盖住照片下沿，抢走照片的悬停与点击
+  const place = /\.cm-ref-stack\.is-pair \.cm-ref-cell:last-child,[\s\S]{0,220}?\}/.exec(css)?.[0] ?? '';
+  expect(place).toMatch(/width:\s*32px/);
+  expect(place).toMatch(/margin-left:\s*52px/);
+  const badge = /\.cm-ref-stack\.is-pair \.cm-ref-cell:last-child \.cm-tile-add,[\s\S]{0,320}?\}/.exec(css)?.[0] ?? '';
+  expect(badge).toMatch(/width:\s*32px/);
+  expect(badge).toMatch(/border-radius:\s*50%/);
+  expect(css).toMatch(/\.cm-ref-stack\.is-pair \.cm-ref-cell:last-child \.cm-ref-caption[\s\S]{0,80}?\{[^}]*display:\s*none/);
 });
 
 /** 后端说三档都跑得通的工作流：生成方式不再是开关，而是参考图数量的函数。 */
@@ -577,18 +627,27 @@ it('定宽优先：名字长短不许决定这一排的几何，取消和生成�
   expect(css).not.toMatch(/\.cm-pill\s*\{[^}]*flex:\s*none/);
 });
 
-it('上下结构：预览在上、参考与提示词在下，操作那一坞钉在弹窗最底下', async () => {
+it('上下结构 + 卡内左右两栏：预览在上、参考在左、话在右，操作那一坞钉在弹窗最底下', async () => {
   // 2026-11-04 苏醒：像即梦那个 composer——先看素材，再写提示词，最后一排挑来源/参数并按生成。
   // happy-dom 不跑布局，所以这里压的是「谁在谁前面、谁包住谁」；钉住那条 bottom:0 的 CSS 由下面那条守卫看着。
   routes(baseRoutes());
   const screen = await ready();
   const all = Array.from(screen.container.querySelectorAll('*'));
-  const at = ['.cm-hero', '.cm-ref-row', '.cm-textarea', '.cm-dock'].map((sel) => {
+  const at = ['.cm-hero', '.cm-ref-stack', '.cm-textarea', '.cm-dock'].map((sel) => {
     const el = screen.container.querySelector(sel);
     expect(el, sel).toBeTruthy();
     return all.indexOf(el as Element);
   });
   expect(at).toEqual([...at].sort((a, b) => a - b));
+  // 卡内那一行是左右两栏（2026-11-04 苏醒第二轮）：素材在左、话在右，两个是同一行的兄弟，
+  // 摞排在前——DOM 顺序与视觉顺序一致，键盘 Tab 才会先过素材再进提示词框。
+  const stack = screen.container.querySelector('.cm-ref-stack') as HTMLElement;
+  const row = stack.parentElement as HTMLElement;
+  expect(row.classList.contains('cm-input-row')).toBe(true);
+  expect(row.firstElementChild).toBe(stack);
+  const col = (screen.container.querySelector('textarea.cm-textarea') as HTMLElement).closest('.cm-prompt-col') as HTMLElement;
+  expect(col.parentElement).toBe(row);
+  expect(Array.from(row.children).indexOf(stack)).toBeLessThan(Array.from(row.children).indexOf(col));
   // 操作行、状态与价格说明一起装进坞：钉住的是整坞，不是只有按钮那一行
   const dock = screen.container.querySelector('.cm-dock') as HTMLElement;
   expect(dock.querySelector('.cm-foot')).toBeTruthy();
@@ -651,7 +710,7 @@ it('参考做进 composer 那张卡里：素材、话、来源共用一张卡', 
   const screen = await ready();
   const card = screen.container.querySelector('.cm-composer');
   expect(card, '.cm-composer').toBeTruthy();
-  expect(card!.querySelector('.cm-ref-row')).toBeTruthy();
+  expect(card!.querySelector('.cm-ref-stack')).toBeTruthy();
   expect(card!.querySelector('textarea.cm-textarea')).toBeTruthy();
   expect(card!.querySelector('.cm-field-foot')).toBeTruthy();
   // 卡外不再挂小标题：「完整提示词」是工作流给的槽位名，缩成来源那句前面的前缀，不配占一整行
@@ -686,7 +745,7 @@ it('菜单、提示词、参考收进同一个圆角框：卡底那条是卡的�
   const dock = screen.container.querySelector('.cm-dock') as HTMLElement;
   expect(dock.closest('.cm-composer')).toBe(card);
   // 参考、话、三颗胶囊、生成全在这一张卡里
-  expect(card.querySelector('.cm-ref-row')).toBeTruthy();
+  expect(card.querySelector('.cm-ref-stack')).toBeTruthy();
   expect(card.querySelector('textarea.cm-textarea')).toBeTruthy();
   expect(card.querySelector('[aria-label="画面参数"]')).toBeTruthy();
   expect(dock.querySelector('[aria-label="创作类型"]')).toBeTruthy();
@@ -1274,11 +1333,11 @@ it('视频卡点开默认吃出片那条工作流；这一族没有就退回库�
   expect(again.getByRole('heading', { name: 'Qwen 多图编辑' })).toBeTruthy();
 });
 
-it('三族参考合成一行：已填的按 图片→视频→音频 排，末尾只有一颗「+ 参考」', async () => {
+it('三族参考合成一摞：已填的按 图片→视频→音频 排，末尾只有一颗「+ 参考」', async () => {
   routes({ ...videoRoutes(), '/api/clone/templates': { items: [H3] } });
   const screen = await ready({ image: VIDEO_CARD });
-  // 一行，不是一族一行：参考就是一个列表，加素材不必先判断「这算哪一块」
-  expect(document.querySelectorAll('.cm-ref-row')).toHaveLength(1);
+  // 一摞，不是一族一摞：参考就是一个列表，加素材不必先判断「这算哪一块」
+  expect(document.querySelectorAll('.cm-ref-stack')).toHaveLength(1);
   expect(screen.getByRole('group', { name: '参考素材（图生视频）' })).toBeTruthy();
   expect(screen.getByTitle(/^参考视频｜shot\.mp4$/)).toBeTruthy();
   // 空格子不再替每一族各摆一颗：整行末尾就这一颗，而且它不绑族
@@ -1293,10 +1352,10 @@ it('三族参考合成一行：已填的按 图片→视频→音频 排，末�
   expect(document.querySelector('[aria-label="参考素材（文生视频）"]')).toBeTruthy();
 });
 
-it('图片工作流仍只有一行参考位，分组名一个字没改', async () => {
+it('图片工作流仍只有一摞参考位，分组名一个字没改', async () => {
   routes(baseRoutes());
   await ready();
-  expect(document.querySelectorAll('.cm-ref-row')).toHaveLength(1);
+  expect(document.querySelectorAll('.cm-ref-stack')).toHaveLength(1);
   expect(modeNode('单图编辑')).toBeTruthy();
 });
 
@@ -1526,10 +1585,10 @@ it('音频卡的左边是波形加一条播放器：写词的时候能就地听�
   expect(player.getAttribute('src')).toContain('/api/audio/22/file');
 });
 
-it('音频工作流的参考行只有一格「音频1」，被点的那段自己站在里面', async () => {
+it('音频工作流的参考那一摞只有一格「音频1」，被点的那段自己站在里面', async () => {
   routes({ ...audioRoutes(), '/api/clone/templates': { items: [TTS] } });
   const screen = await ready({ image: AUDIO });
-  expect(document.querySelectorAll('.cm-ref-row')).toHaveLength(1);
+  expect(document.querySelectorAll('.cm-ref-stack')).toHaveLength(1);
   expect(document.querySelector('[aria-label="参考音频（参考音色克隆）"]')).toBeTruthy();
   expect(screen.getByTitle(/｜bgm\.mp3$/)).toBeTruthy();
   // 量词与称呼都跟着族走，不冒出「这张图」
@@ -2766,3 +2825,4 @@ it('本机工作流不问云端价：一次 /cloud/estimate 都不发', async ()
   expect(http.mock.calls.some(([path]) => String(path) === '/api/clone/cloud/estimate')).toBe(false);
   expect(screen.queryByText(/云端出一次预计/)).toBeNull();
 });
+

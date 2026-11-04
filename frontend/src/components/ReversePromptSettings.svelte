@@ -6,8 +6,8 @@
   import type { VideoPromptSettings } from "../lib/video-prompts";
 
   /**
-   * 「反推指令」这一页只管两件事：默认模型 + 两套指令怎么说。
-   * 选厂商、填 Key、挑识别模型都在隔壁「模型API配置」——那半动的是服务商与凭据，
+   * 「反推指令」这一页只管两件事：默认服务商 + 两套指令怎么说。
+   * 选厂商、填 Key 都在隔壁「模型API配置」——那半动的是服务商与凭据，
    * 这半动的只是话怎么说。混在一页时每次改个指令都要先滚过一整屏厂商卡片。
    */
   let preferences = $state<ReverseSettings | null>(null);
@@ -39,7 +39,7 @@
   }
   const reloadSettings = () => run(loadAll);
   /**
-   * 隔壁那页也有一颗「设为默认模型」，它存完会把偏好换成新的。
+   * 隔壁那页也有一颗「设为默认服务商」，它存完会把偏好换成新的。
    * 这里两个 select 绑的是本地副本，不接住这一次变化，人就会看见自己刚点的默认没生效。
    * 只认「store 自己变了」：人在这一页改了还没保存时，不许拿旧值把他的选择盖回去。
    */
@@ -59,9 +59,9 @@
     <div class="settings-model-body">
       {#if preferences}
         <fieldset disabled={busy} class="space-y-3">
-          <label>默认模型<select aria-label="默认模型" bind:value={preferences.default_model_id}>
-            <option value={null}>请选择模型</option>
-            {#each $modelConfigs as model}<option value={model.id}>{model.name} · {model.model}</option>{/each}
+          <label>默认服务商<select aria-label="默认服务商" bind:value={preferences.default_model_id}>
+            <option value={null}>请选择服务商</option>
+            {#each $modelConfigs as model}<option value={model.id}>{model.model ? model.name + " · " + model.model : model.name}</option>{/each}
           </select></label>
           <label>反推指令<textarea aria-label="反推指令" rows="5" bind:value={preferences.instruction}></textarea></label>
           <p class="settings-hint">可修改内容和风格偏好，程序始终要求输出中文与英文两个版本。</p>
@@ -72,7 +72,7 @@
     </div>
     {#if preferences}
       <div class="settings-card-footer">
-        <span class="settings-hint">默认模型与指令一起保存</span>
+        <span class="settings-hint">默认服务商与指令一起保存</span>
         <button class="setting-button" onclick={() => { if (preferences) preferences.instruction = preferences.default_instruction; }}>恢复默认（图片指令）</button>
         <button class="setting-button bg-accent text-bg" onclick={() => run(async () => { if (preferences) { preferences = await reverseApi.saveSettings(preferences); await refreshReverseConfig(); notice = "反推偏好已保存"; } })}>保存反推偏好</button>
       </div>
@@ -84,9 +84,9 @@
     <div class="settings-model-body">
       {#if videoPrefs}
         <fieldset disabled={busy} class="space-y-3">
-          <label>默认模型<select aria-label="视频反推默认模型" bind:value={videoPrefs.default_model_id}>
+          <label>默认服务商<select aria-label="视频反推默认服务商" bind:value={videoPrefs.default_model_id}>
             <option value={null}>跟随图片反推默认模型</option>
-            {#each $modelConfigs as model}<option value={model.id}>{model.name} · {model.model}</option>{/each}
+            {#each $modelConfigs as model}<option value={model.id}>{model.model ? model.name + " · " + model.model : model.name}</option>{/each}
           </select></label>
           <div class="grid grid-cols-2 gap-2">
             <label>默认 Seedance 模式<select aria-label="默认 Seedance 模式" bind:value={videoPrefs.default_mode_seedance}>

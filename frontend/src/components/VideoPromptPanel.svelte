@@ -13,6 +13,7 @@
   import type { PromptMode, PromptRun, PromptTarget, PromptUnit, SegmentRecord } from "../lib/video-prompts";
   import type { PromptReference } from "../lib/video-prompts";
   import { copyText } from "../lib/ws";
+  import ModelPicker from "./ModelPicker.svelte";
   import VideoFrameThumb from "./VideoFrameThumb.svelte";
   import { countSlots, overSlots, plannedReferences, refFileTag, SLOT_LABELS, unitFrameAt } from "../lib/video-prompts";
   import { pushToast } from "../lib/toast";
@@ -20,7 +21,8 @@
   let { videoId, filename = "", durationSeconds = null }:
     { videoId: number; filename?: string; durationSeconds?: number | null } = $props();
 
-  let modelId = $state<number | null>(null);
+  let modelId = $state<number | null>(null);   // 哪一家（一条配置 = 一家的地址与 Key）
+  let modelName = $state("");                  // 这一家当前用哪个模型；空串＝还没挑，按钮就不许按
   /** 每种格式各记各的模式：Seedance 换模式不该把 H3 的选择改掉。 */
   let mode = $state<Record<PromptTarget, PromptMode>>({ seedance2: "t2v", h3: "t2va" });
   /** number 输入框绑出来可能是 number，交给 secondsInputToMs 统一处理。 */
@@ -71,6 +73,10 @@
     if (modelId === null || !$modelConfigs.some(m => m.id === modelId)) {
       modelId = prefs?.default_model_id ?? $modelConfigs[0]?.id ?? null;
     }
+  });
+  // 模型跟着这条配置走：它记住哪个就用哪个，图片反推那边换了模型这边也一起跟上。
+  $effect(() => {
+    modelName = $modelConfigs.find(m => m.id === modelId)?.model ?? "";
   });
   $effect(() => {
     if (prefs) mode = { seedance2: prefs.default_mode_seedance, h3: prefs.default_mode_h3 };
@@ -124,10 +130,10 @@
   }
 
   async function buildPlan() {
-    if (!modelId) return;
+    if (!modelId || !modelName) return;
     error = "";
     const plan = await generatePlan(videoId, {
-      model_config_id: modelId,
+      model_config_id: modelId, model: modelName || null,
       sound_note: soundNote.trim() || null,
       start_ms: secondsInputToMs(startText),
       end_ms: secondsInputToMs(endText),
@@ -202,10 +208,10 @@
   }
 
   async function generate(indexes: number[], targets: PromptTarget[], scope: "tab" | "both" | null = null) {
-    if (!run || !modelId) return;
+    if (!run || !modelId || !modelName) return;
     error = ""; allScope = scope;
     const failures = await generateSegments(videoId, run.id, indexes, targets, {
-      modes: mode, model_config_id: modelId,
+      modes: mode, model_config_id: modelId, model: modelName || null,
     });
     await loadHistory(videoId);
     if (failures.length) error = `${failures.length} 段生成失败，可单独重试该段。`;
@@ -257,7 +263,7 @@
     if (shownTranslation[key]) { shownTranslation[key] = false; return; }
     if (translationFor(record)) { shownTranslation[key] = true; return; }  // 已有译文，不再花调用
     const value = await translatePrompt(videoId, run.id, record.segment_index, record.target,
-      { model_config_id: modelId });
+      { model_config_id: modelId, model: modelName || null });
     if (value) shownTranslation[key] = true;
   }
 
@@ -295,12 +301,13 @@
     <p class="text-[10px] text-muted">需要先在「设置 · 模型API配置」里配置一个支持图片输入的模型。</p>
   {:else}
     <div class="space-y-2">
-      <label class="block text-[11px] text-muted">反推模型
-        <select class="vp-field" aria-label="视频反推模型" value={modelId ?? ""} disabled={running}
-          onchange={(e) => modelId = Number((e.currentTarget as HTMLSelectElement).value)}>
-          {#each $modelConfigs as model}<option value={model.id}>{model.name} · {model.model}</option>{/each}
-        </select>
-      </label>
+      <div class="text-[11px] text-muted">反推模型
+        <ModelPicker value={modelId} model={modelName} label="视频反推模型" disabled={running}
+          onpick={(configId, picked) => { modelId = configId; modelName = picked; }} />
+      </div>
+      {#if !modelName}
+        <p class="text-[10px] text-amber-400">还没挑模型：点上面那个下拉，先选服务商、再点它家的模型。</p>
+      {/if}
       <div class="flex gap-2">
         <label class="flex-1 text-[11px] text-muted">起始秒（整数）
           <input class="vp-field" aria-label="反推起始秒" type="number" min="0" step="1" placeholder="0" bind:value={startText} disabled={running} />
@@ -312,7 +319,7 @@
       <label class="block text-[11px] text-muted">听到的声音 / 台词原文（选填，避免猜错口型与配乐）
         <textarea class="vp-field" aria-label="声音与台词" rows="2" placeholder="例：女声普通话说「……」，无背景音乐" bind:value={soundNote} disabled={running}></textarea>
       </label>
-      <button class="vp-button vp-primary" disabled={running || !modelId}
+      <button class="vp-button vp-primary" disabled={running || !modelId || !modelName}
         data-busy={planRunning ? "true" : undefined} onclick={buildPlan}>
         {#if planRunning}<span class="vp-spin vp-spin-sm" aria-hidden="true"></span>{/if}
         {planRunning ? "正在拆分镜方案…" : "反推分镜方案"}
@@ -371,10 +378,10 @@
             <button class="vp-tab" aria-pressed={tab === format} onclick={() => tab = format}>{TARGET_LABELS[format]}</button>
           {/each}
         </div>
-        <button class="vp-button" disabled={running || !units.length || !modelId}
+        <button class="vp-button" disabled={running || !units.length || !modelId || !modelName}
           data-busy={queue && allScope === "tab" ? "true" : undefined}
           onclick={() => generate(units.map(u => u.index), [tab], "tab")}>{#if queue && allScope === "tab"}<span class="vp-spin vp-spin-sm" aria-hidden="true"></span>{/if}全部生成（{TARGET_LABELS[tab]}）</button>
-        <button class="vp-button" disabled={running || !units.length || !modelId}
+        <button class="vp-button" disabled={running || !units.length || !modelId || !modelName}
           data-busy={queue && allScope === "both" ? "true" : undefined}
           onclick={() => generate(units.map(u => u.index), ["seedance2", "h3"], "both")}>{#if queue && allScope === "both"}<span class="vp-spin vp-spin-sm" aria-hidden="true"></span>{/if}全部生成（两种）</button>
         {#if queue && queue.total > 1}
@@ -441,15 +448,15 @@
                 </div>
               </div>
               <div class="flex gap-1 shrink-0">
-                <button class="vp-button" disabled={running || !modelId}
+                <button class="vp-button" disabled={running || !modelId || !modelName}
                   data-busy={busyFor(unit.index, "seedance2") ? "true" : undefined}
                   onclick={() => generate([unit.index], ["seedance2"])}>
                   {#if busyFor(unit.index, "seedance2")}<span class="vp-spin vp-spin-sm" aria-hidden="true"></span>{/if}Seedance</button>
-                <button class="vp-button" disabled={running || !modelId}
+                <button class="vp-button" disabled={running || !modelId || !modelName}
                   data-busy={busyFor(unit.index, "h3") ? "true" : undefined}
                   onclick={() => generate([unit.index], ["h3"])}>
                   {#if busyFor(unit.index, "h3")}<span class="vp-spin vp-spin-sm" aria-hidden="true"></span>{/if}H3</button>
-                <button class="vp-button" disabled={running || !modelId}
+                <button class="vp-button" disabled={running || !modelId || !modelName}
                   data-busy={busyFor(unit.index, "seedance2") || busyFor(unit.index, "h3") ? "true" : undefined}
                   onclick={() => generate([unit.index], ["seedance2", "h3"])}>
                   {#if busyFor(unit.index, "seedance2") || busyFor(unit.index, "h3")}

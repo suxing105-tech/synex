@@ -34,8 +34,8 @@
       { id: "shortcuts", label: "快捷键", keywords: "按键 键盘 组合键 沉浸 全屏 搜索 侧栏 灯箱 对比 所有素材" },
     ] },
     { label: "AI 与集成", items: [
-      { id: "model-api", label: "模型API配置", keywords: "api key 服务商 视觉模型 密钥 清除 key 识别模型 超时 云端 runninghub minimax 收费 扣费 花费 余额 出图 出片 配音 图片api 视频api 音频api 取回 一把走天下 测试连接 模型服务api" },
-      { id: "reverse", label: "反推指令", keywords: "反推 指令 默认模型 图片反推 视频反推 seedance h3 视频提示词 帧数 单元时长 分镜 恢复默认 中英文" },
+      { id: "model-api", label: "模型API配置", keywords: "api key 服务商 视觉模型 密钥 清除 key 检查 超时 云端 runninghub minimax 收费 扣费 花费 余额 出图 出片 配音 图片api 视频api 音频api 取回 一把走天下 测试连接 模型服务api" },
+      { id: "reverse", label: "反推指令", keywords: "反推 指令 默认服务商 选模型 图片反推 视频反推 seedance h3 视频提示词 帧数 单元时长 分镜 恢复默认 中英文" },
       { id: "comfyui", label: "ComfyUI", keywords: "工作流 服务地址 端口 连接 探测 节点" },
       { id: "clone", label: "一键同款", keywords: "工作流 模板 提示词 参考图 生成 一键同款 同款 ComfyUI 出图" },
     ] },

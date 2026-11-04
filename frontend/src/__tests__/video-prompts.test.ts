@@ -312,9 +312,9 @@ describe("译文", () => {
 
   it("按版本 POST 到 translations 并写进 job", async () => {
     call.mockResolvedValue({ ...zh, source: "model" });
-    const value = await translatePrompt(5, 7, 2, "h3", { model_config_id: 4 });
+    const value = await translatePrompt(5, 7, 2, "h3", { model_config_id: 4, model: "b/qwen" });
     expect(call.mock.calls[0][0]).toBe("/api/videos/5/video-prompts/runs/7/segments/2/translations");
-    expect(JSON.parse(call.mock.calls[0][1]!.body as string)).toEqual({ target: "h3", model_config_id: 4 });
+    expect(JSON.parse(call.mock.calls[0][1]!.body as string)).toEqual({ target: "h3", model_config_id: 4, model: "b/qwen" });
     expect(value?.language).toBe("zh");
     expect(get(translationJobs)[translationKey(7, 2, "h3")].value?.text).toBe("中文译文");
   });

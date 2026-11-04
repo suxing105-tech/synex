@@ -460,14 +460,18 @@ def save_settings(*, default_model_id, instruction_plan, instruction_seedance, i
     return settings()
 
 
-def resolve_model_config(model_config_id):
-    """模型解析顺序：请求指定 → 视频反推默认 → 图片反推默认。"""
+def resolve_model_config(model_config_id, model: str | None = None):
+    """模型解析顺序：请求指定 → 视频反推默认 → 图片反推默认；模型本身再看请求带的 → 配置记住的。
+
+    多带一个 model 参数是因为模型与 Key 分家了：配置只保证「这一家的 Key」，
+    用哪个模型是发请求那一刻的选择。都没有就让 with_model 说一句人话，别把空串发给服务商。
+    """
     config_id = model_config_id if model_config_id is not None else settings()["default_model_id"]
     if config_id is None:
         config_id = reverse_prompts.settings()["default_model_id"]
     if config_id is None:
         raise HTTPException(400, "请先配置并选择模型")
-    return reverse_prompts.get_config(config_id)
+    return reverse_prompts.with_model(reverse_prompts.get_config(config_id), model)
 
 
 # ---------- 视频定位与元数据 ----------

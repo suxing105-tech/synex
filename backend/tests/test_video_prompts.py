@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app import db, reverse_prompts
@@ -1408,3 +1408,17 @@ def test_listing_reports_versions_per_segment(client, video_id, monkeypatch):
     assert units[1]["versions"] == {"seedance2": 0, "h3": 1}
 
 
+# ---------- 模型跟着请求走：配置只保证这一家有 Key ----------
+
+
+def test_resolve_model_config_applies_the_request_model(client):
+    """解析顺序：请求带的 → 配置记住的 → 都没有就一句人话，绝不把空 model 发给服务商。"""
+    config = client.post("/api/model-configs", json={
+        "name": "只存了 Key", "base_url": "https://example.com/api/v1", "timeout": 60}).json()
+    assert config["model"] == ""
+    with pytest.raises(HTTPException) as error:
+        service.resolve_model_config(config["id"])
+    assert error.value.status_code == 400 and "还没选模型" in error.value.detail
+    client.patch(f'/api/model-configs/{config["id"]}', json={"model": "remembered"})
+    assert service.resolve_model_config(config["id"])["model"] == "remembered"
+    assert service.resolve_model_config(config["id"], "picked")["model"] == "picked"

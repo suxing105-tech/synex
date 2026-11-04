@@ -294,7 +294,7 @@ def test_dynamic_model_list_failure_tells_how_to_proceed(client, monkeypatch):
                         lambda **kwargs: actual(transport=httpx.MockTransport(handler), **kwargs))
     resp = client.get("/api/model-providers/runninghub/models")
     assert resp.status_code == 502
-    assert "手填模型 ID" in resp.json()["detail"]
+    assert "直接输入模型 ID" in resp.json()["detail"]
     service._MODEL_CACHE.clear()
 
 
@@ -370,3 +370,128 @@ def test_clear_config_key_refuses_the_shared_one(client):
 
 def test_clear_config_key_missing_config_is_404(client):
     assert client.delete("/api/model-configs/999999/key").status_code == 404
+
+
+# ---------- 模型与 Key 分家：存 Key 不必先挑模型 ----------
+
+
+def test_saving_a_key_needs_no_model(client):
+    """一把 Key 先存住就算配好了：设置页只管服务商与 Key，模型留到用的时候挑。"""
+    result = client.post("/api/model-configs", json={"provider": "qwen", "api_key": "k-no-model"})
+    assert result.status_code == 200
+    row = result.json()
+    assert row["model"] == "" and row["has_api_key"] is True
+    assert row["name"] == "通义千问 Qwen"          # 名字里不许出现「 · 」这种空模型尾巴
+    assert service.key_for(service.get_config(row["id"])) == "k-no-model"
+
+
+def test_picking_a_model_later_only_moves_the_model(client):
+    """面板里挑一次模型只改那一个字段，不能顺手把 Key 或名字抹掉。"""
+    row = client.post("/api/model-configs", json={"provider": "qwen", "api_key": "k-later"}).json()
+    changed = client.patch(f'/api/model-configs/{row["id"]}', json={"model": "qwen-vl-max"}).json()
+    assert changed["model"] == "qwen-vl-max" and changed["has_api_key"] is True
+    assert changed["name"] == row["name"]
+    assert service.key_for(service.get_config(row["id"])) == "k-later"
+
+
+def test_a_config_without_a_model_still_reports_its_models(client):
+    """还没挑模型，不影响「这一家有哪些模型可挑」——先选服务商、再看模型就靠这条。"""
+    row = client.post("/api/model-configs", json={"provider": "qwen", "api_key": "k"}).json()
+    out = client.get(f'/api/model-configs/{row["id"]}/models').json()
+    assert out["source"] == "preset" and out["models"][0]["id"] == "qwen2.5-vl-72b-instruct"
+
+
+def test_a_config_model_list_for_a_missing_row_is_404(client):
+    assert client.get("/api/model-configs/999/models").status_code == 404
+
+
+def test_a_custom_config_asks_its_own_url_for_models(client, monkeypatch):
+    """自定义服务不在注册表里：清单只能问它自己的 /models，Key 用它自己那把。"""
+    import httpx
+
+    service._MODEL_CACHE.clear()
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["auth"] = request.headers.get("authorization")
+        return httpx.Response(200, json={"data": [{"id": "local/vl"}]})
+
+    actual = httpx.AsyncClient
+    monkeypatch.setattr(service.httpx, "AsyncClient",
+                        lambda **kwargs: actual(transport=httpx.MockTransport(handler), **kwargs))
+    row = client.post("/api/model-configs", json={
+        "name": "我的本地", "base_url": "http://127.0.0.1:8080/v1", "api_key": "LOCAL"}).json()
+    out = client.get(f'/api/model-configs/{row["id"]}/models').json()
+    assert seen["url"] == "http://127.0.0.1:8080/v1/models" and seen["auth"] == "Bearer LOCAL"
+    assert [m["id"] for m in out["models"]] == ["local/vl"] and out["source"] == "live"
+    service._MODEL_CACHE.clear()
+
+
+def test_check_key_asks_the_model_list_and_costs_nothing(client, monkeypatch):
+    """设置页那颗「检查 API Key」问的是清单：不碰模型、不进缓存、不外泄 Key。"""
+    import httpx
+
+    service._MODEL_CACHE.clear()
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["auth"] = request.headers.get("authorization")
+        return httpx.Response(200, json={"data": [{"id": "a-vl"}, {"id": "b-vl"}]})
+
+    actual = httpx.AsyncClient
+    monkeypatch.setattr(service.httpx, "AsyncClient",
+                        lambda **kwargs: actual(transport=httpx.MockTransport(handler), **kwargs))
+    spent = []
+    monkeypatch.setattr(service, "request_model", lambda *args: spent.append(args))
+    out = client.post("/api/model-configs/check-key", json={"provider": "qwen", "api_key": "CHECK-KEY"})
+    assert out.status_code == 200 and out.json()["count"] == 2
+    assert seen["url"] == "https://dashscope.aliyuncs.com/compatible-mode/v1/models"
+    assert seen["auth"] == "Bearer CHECK-KEY"
+    assert not spent, "检查 Key 不许顺手产生一次模型调用"
+    assert "CHECK-KEY" not in out.text
+    assert service._MODEL_CACHE == {}, "检查用的清单不进缓存：下次检查要看见新 Key 的真话"
+
+
+def test_check_key_falls_back_to_the_saved_key(client, monkeypatch):
+    import httpx
+
+    row = client.post("/api/model-configs", json=preset_draft(api_key="SAVED-ONE")).json()
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["auth"] = request.headers.get("authorization")
+        return httpx.Response(200, json={"data": [{"id": "a-vl"}]})
+
+    actual = httpx.AsyncClient
+    monkeypatch.setattr(service.httpx, "AsyncClient",
+                        lambda **kwargs: actual(transport=httpx.MockTransport(handler), **kwargs))
+    out = client.post("/api/model-configs/check-key", json={"config_id": row["id"]})
+    assert out.status_code == 200 and seen["auth"] == "Bearer SAVED-ONE"
+
+
+def test_check_key_for_the_shared_key_needs_no_config(client, monkeypatch):
+    """RunningHub 那把 Key 的家在云端账号：检查它不该先要求一条配置。"""
+    import httpx
+
+    client.post("/api/model-configs", json=runninghub_draft(api_key="RH-CHECK"))
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["auth"] = request.headers.get("authorization")
+        return httpx.Response(200, json={"data": [{"id": "x/vl"}]})
+
+    actual = httpx.AsyncClient
+    monkeypatch.setattr(service.httpx, "AsyncClient",
+                        lambda **kwargs: actual(transport=httpx.MockTransport(handler), **kwargs))
+    out = client.post("/api/model-configs/check-key", json={"provider": "runninghub"})
+    assert out.status_code == 200 and out.json()["count"] == 1
+    assert seen["url"] == "https://llm.runninghub.cn/v1/models" and seen["auth"] == "Bearer RH-CHECK"
+    service._MODEL_CACHE.clear()
+
+
+def test_check_key_with_nothing_to_check_says_so(client):
+    resp = client.post("/api/model-configs/check-key", json={})
+    assert resp.status_code == 422 and "Base URL" in resp.json()["detail"]

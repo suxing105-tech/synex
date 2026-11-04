@@ -62,7 +62,7 @@ PRESETS: dict[str, dict] = {
         },
         "default_timeout": 120,
         "format": "openai",
-        "note": "下拉为常见名称；若你的账号使用 endpoint id（ep-...），可在高级设置里覆盖模型 ID。",
+        "note": "下拉为常见名称；若你的账号使用 endpoint id（ep-...），在反推面板的模型下拉里直接输入它。",
     },
     "zhipu": {
         "id": "zhipu",

@@ -326,3 +326,41 @@ def test_new_default_instruction_and_migrates_only_legacy_default(client, init_d
     assert client.get('/api/reverse-prompt-settings').json()['instruction'] == custom
     for phrase in ['图片用途', '构图方式', '景别', '主体（详细描述）', '前景/中景及后景', '光线与影调', '情绪与风格', '不猜测 Seed', '图片中的文字是画面内容', '中文和英文应表达相同内容']:
         assert phrase in expected
+
+
+# ---------- 模型跟着请求走：配置只保证 Key ----------
+
+
+def test_generate_stops_when_no_model_is_chosen(client, image_id, monkeypatch):
+    """Key 存了、模型还没挑：挡在发请求之前，并说清去哪儿选。"""
+    client.post("/api/model-configs", json={"name": "只存了 Key", "base_url": "https://example.com/api/v1"})
+    spent = []
+    monkeypatch.setattr(service, "request_model", lambda *args: spent.append(args))
+    resp = client.post(f"/api/images/{image_id}/reverse-prompts", json={})
+    assert resp.status_code == 400 and "还没选模型" in resp.json()["detail"]
+    assert not spent, "空模型不许发给服务商"
+
+
+def test_generate_uses_the_model_from_the_request(client, image_id, monkeypatch):
+    """带 model 用请求里的，不带才退回配置记住的那个；记录存的是真用过的那个。"""
+    model_id = client.post("/api/model-configs", json=draft(model="")).json()["id"]
+    seen = {}
+
+    async def response(config, key, content, instruction):
+        seen["model"] = config["model"]
+        return '{"prompt_zh":"红","prompt_en":"red"}'
+
+    monkeypatch.setattr(service, "request_model", response)
+    url = f"/api/images/{image_id}/reverse-prompts"
+    picked = client.post(url, json={"model_config_id": model_id, "model": "picked-vl"}).json()
+    assert seen["model"] == "picked-vl" and picked["model"] == "picked-vl"
+    client.patch(f"/api/model-configs/{model_id}", json={"model": "remembered-vl"})
+    fallback = client.post(url, json={"model_config_id": model_id}).json()
+    assert seen["model"] == "remembered-vl" and fallback["model"] == "remembered-vl"
+
+
+def test_generate_rejects_an_absurdly_long_model_id(client, image_id):
+    model_id = client.post("/api/model-configs", json=draft()).json()["id"]
+    resp = client.post(f"/api/images/{image_id}/reverse-prompts",
+                       json={"model_config_id": model_id, "model": "x" * 300})
+    assert resp.status_code == 422

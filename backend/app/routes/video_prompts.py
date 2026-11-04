@@ -31,6 +31,7 @@ class SettingsInput(BaseModel):
 class PlanInput(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
     model_config_id: int | None = None
+    model: str | None = Field(default=None, max_length=200)
     sound_note: str | None = Field(default=None, max_length=2000)
     start_ms: int | None = Field(default=None, ge=0)
     end_ms: int | None = Field(default=None, ge=1)
@@ -39,6 +40,8 @@ class PlanInput(BaseModel):
 
 class SegmentInput(BaseModel):
     model_config_id: int | None = None
+    # 这一刻要用的模型；不带就用这条配置记住的那一个
+    model: str | None = Field(default=None, max_length=200)
     target: str
     # 两种目标格式都有模式，只是取值不同；不传就用设置里该格式的默认模式。
     mode: str | None = None
@@ -111,7 +114,7 @@ async def create_plan(video_id: int, payload: PlanInput):
     meta = service.video_meta(video_id)
     start_ms, end_ms = _clamp_range(payload, meta["duration_ms"])
     max_unit_seconds = payload.max_unit_seconds or settings["max_unit_seconds"]
-    config = service.resolve_model_config(payload.model_config_id)
+    config = service.resolve_model_config(payload.model_config_id, payload.model)
     key = reverse_prompts.key_for(config)
     sound_note = (payload.sound_note or "").strip()
     if key:
@@ -165,7 +168,7 @@ async def generate_segment(video_id: int, run_id: int, index: int, payload: Segm
     unit = service.find_unit(run, index)
     settings = service.settings()
     meta = service.video_meta(video_id)
-    config = service.resolve_model_config(payload.model_config_id)
+    config = service.resolve_model_config(payload.model_config_id, payload.model)
     key = reverse_prompts.key_for(config)
     instruction = (settings["instruction_seedance"] if target == "seedance2" else settings["instruction_h3"])
     instruction += service.time_rule(target) + service.mode_rule(target, mode)
@@ -214,6 +217,7 @@ def edit_segment(video_id: int, run_id: int, index: int, payload: EditInput):
 class TranslationInput(BaseModel):
     target: str
     model_config_id: int | None = None
+    model: str | None = Field(default=None, max_length=200)
 
 
 @router.post("/videos/{video_id}/video-prompts/runs/{run_id}/segments/{index}/translations")
@@ -234,7 +238,7 @@ async def translate_segment(video_id: int, run_id: int, index: int, payload: Tra
         return {**service.public_translation(cached), "source": "cache"}
     service.acquire_translation(record["id"])
     try:
-        config = service.resolve_model_config(payload.model_config_id)
+        config = service.resolve_model_config(payload.model_config_id, payload.model)
         key = reverse_prompts.key_for(config)
         instruction = service.TRANSLATION_INSTRUCTION
         if key:

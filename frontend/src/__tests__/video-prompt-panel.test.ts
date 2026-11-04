@@ -444,7 +444,7 @@ describe("视频反推面板", () => {
       return { ...prefs, ...value };
     });
     const panel = render(ReversePromptSettings);
-    await waitFor(() => expect(panel.getByLabelText("视频反推默认模型")).toBeTruthy());
+    await waitFor(() => expect(panel.getByLabelText("视频反推默认服务商")).toBeTruthy());
     expect((panel.getByLabelText("分镜方案指令") as HTMLTextAreaElement).value).toBe("拆分镜");
     await fireEvent.click(panel.getByText("恢复默认（分镜方案）"));
     expect((panel.getByLabelText("分镜方案指令") as HTMLTextAreaElement).value).toBe("默认拆分镜");
@@ -466,7 +466,7 @@ describe("视频反推面板", () => {
   it("拆页之后反推指令页只剩两个模块：保存按钮都在卡片右下角并用主按钮色", async () => {
     modelConfigs.set([model]);
     const panel = render(ReversePromptSettings);
-    await waitFor(() => expect(panel.getByLabelText("视频反推默认模型")).toBeTruthy());
+    await waitFor(() => expect(panel.getByLabelText("视频反推默认服务商")).toBeTruthy());
     expect([...panel.container.querySelectorAll(".settings-group-label")].map((n) => n.textContent)).toEqual([
       "图片反推", "视频反推（Seedance 2.0 / MiniMax H3）",
     ]);

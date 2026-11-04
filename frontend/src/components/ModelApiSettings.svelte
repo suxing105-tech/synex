@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { modelConfigs, reverseSettings, refreshReverseConfig, refreshProviderPresets, providerPresets, reverseApi, errorMessage } from "../lib/reverse-prompts";
-  import type { ModelConfig, ModelDraft, ProviderModel, ProviderPreset } from "../lib/reverse-prompts";
+  import type { ModelConfig, ModelDraft, ProviderPreset } from "../lib/reverse-prompts";
   import { cloudApi, takeCloudKeyEdit } from "../lib/clone";
   const CUSTOM = "custom";
   const blank = (): ModelDraft => ({ name: "", base_url: "", model: "", timeout: 120, provider: CUSTOM });
@@ -13,26 +13,15 @@
   let busy = $state(true);
   let error = $state("");
   let notice = $state("");
-  let testingText = $state("");
   let confirmDelete = $state(false);
   const providers = $derived($providerPresets);
   const isPreset = $derived(!!draft.provider && draft.provider !== CUSTOM);
   const preset = $derived($providerPresets.find(p => p.id === draft.provider));
-  const providerModels = $derived(preset?.models ?? []);
-  /**
-   * RunningHub 这类服务商有两处不一样，界面跟着分叉：
-   * - credential_scope=cloud：Key 的家在云端账号表（gen_accounts）那一行里，这条配置不另存一份；
-   * - models_dynamic：模型清单由服务商自己报，代码里不抄一份会过期的表。
-   */
+  /** RunningHub 这类服务商不一样：Key 的家在云端账号表（gen_accounts）那一行里，这条配置不另存一份。 */
   const sharedKey = $derived(preset?.credential_scope === "cloud");
-  const dynamicModels = $derived(!!preset?.models_dynamic);
   /** 新建那条配置自己还不知道 Key 在不在，这时照服务商清单带回的布尔说。 */
   const keyReady = $derived(sharedKey ? (hasKey || !!preset?.shared_has_key) : hasKey);
   const cloudPreset = $derived($providerPresets.find(p => p.credential_scope === "cloud"));
-  let modelList = $state<ProviderModel[]>([]);
-  let modelListNote = $state("");
-  let modelListError = $state("");
-  let fetchingModels = $state(false);
   let keyInputEl = $state<HTMLInputElement | null>(null);
   /**
    * 服务商选择页。三件事：
@@ -80,8 +69,8 @@
     }
   }
   /**
-   * 「设为默认站点」在我们这儿就是「这条模型是图片反推的默认模型」，点了直接存住。
-   * 默认模型这个值住在偏好里（隔壁「反推指令」那页的 select 也读它），所以这里不再抄一份
+   * 「设为默认服务商」在我们这儿就是「图片反推默认走这一家」，点了直接存住。
+   * 默认值住在偏好里（隔壁「反推指令」那页的 select 也读它），所以这里不再抄一份
    * 本地副本：抄了就有人会拿着旧值把对方刚存的选择盖回去。
    */
   const canSetDefault = $derived(!!editingId && !!$reverseSettings);
@@ -92,7 +81,7 @@
     await run(async () => {
       await reverseApi.saveSettings({ ...current, default_model_id: id });
       await refreshReverseConfig();
-      notice = "已把这条模型设为图片反推的默认模型。";
+      notice = "已把这一家设为图片反推的默认服务商。";
     });
   }
   let workflowKeyInput = $state("");
@@ -106,76 +95,41 @@
     workflowKeyInput = "";
     if (existing) {
       choose(existing);
-      if (providers.find(p => p.id === id)?.models_dynamic) void fetchModels();
     } else {
       choose();
       applyProvider(id);
     }
   }
   const endpoint = $derived((draft.base_url || "").trim().replace(/\/+$/, "").replace(/\/chat\/completions$/, "") + "/chat/completions");
-  const canSave = $derived(!!draft.model?.trim() && (isPreset ? true : !!(draft.name?.trim() && draft.base_url?.trim())));
+  // 存 Key 的门槛只剩「这家是谁、地址在哪」：模型不再是必填项，所以这里不看它。
+  const canSave = $derived(isPreset ? true : !!(draft.name?.trim() && draft.base_url?.trim()));
   // 两份偏好在两张卡片里各自渲染，所以任一半读失败都单独标记，卡片给「重新加载」而不是卡在「正在读取…」。
   async function loadReversePart() {
     await refreshProviderPresets();
     await refreshReverseConfig();
     if (!editingId && draft.provider === CUSTOM && $providerPresets.length) {
       // 落点落在已经配好 Key 的那一家，而不是清单里排第一的 OpenAI：默认摊开一张没配的表单，
-      // 等于每次进来都要重新找自己那家。这里不调 selectProvider——它会顺手去拉模型清单，
-      // 那是拿真 Key 发的外部请求，不该由「打开设置」这个动作替你发。
+      // 等于每次进来都要重新找自己那家。
       const ready = $providerPresets.find((item) => presetReady(item));
       const existing = ready ? configsFor(ready.id)[0] : undefined;
       if (existing) choose(existing);
-      else applyProvider((ready ?? $providerPresets[0]).id, true);
+      else applyProvider((ready ?? $providerPresets[0]).id);
     }
   }
   function loadAll() {
     return loadReversePart();
   }
-  /** 向服务商现拉模型清单。拉不到不编一份：后端那句「可以手填模型 ID」原样说给人听。 */
-  async function fetchModels() {
-    if (!draft.provider) return;
-    fetchingModels = true;
-    modelListError = "";
-    try {
-      const out = await reverseApi.modelList(draft.provider);
-      modelList = out.models;
-      modelListNote = out.reason ?? "";
-      if (!draft.model) draft.model = (out.models.find(m => m.recommended) ?? out.models[0])?.id ?? "";
-    } catch (e) {
-      modelList = []; modelListNote = ""; modelListError = errorMessage(e);
-    } finally {
-      fetchingModels = false;
-    }
-  }
   /**
-   * 识别模型的下拉。清单是服务商自己报的，随时可能拉不到（真机就撞上过一次 APIKEY_USER_NOT_FOUND），
-   * 所以输入框永远允许自己打字，下拉只是帮忙挑，不是唯一入口。
+   * 「检查 API Key」问的是这家自己的模型清单：地址对、Key 对、它真在服务——一次模型调用都不产生。
+   * 它顶掉了原来的「测试图片识别」：那颗按钮没有模型就按不了，可这一页现在只管 Key。
    */
-  let modelOpen = $state(false);
-  let modelBoxEl = $state<HTMLDivElement | null>(null);
-  const modelFiltered = $derived.by(() => {
-    const q = (draft.model ?? "").trim().toLowerCase();
-    // 已经选中清单里某一项时给全量：这时再按当前值过滤，点箭头只会看见自己那一行，等于没法挑
-    if (!q || modelList.some(m => m.id.toLowerCase() === q)) return modelList;
-    return modelList.filter(m => `${m.id} ${m.label}`.toLowerCase().includes(q));
-  });
-  async function toggleModelList() {
-    modelOpen = !modelOpen;
-    // 清单还空着时点箭头 = 顺手去拉一次，省得再找他自己找一颗「拉取清单」
-    if (modelOpen && !modelList.length && !fetchingModels) await fetchModels();
-  }
-  function pickModel(id: string) {
-    draft.model = id;
-    modelOpen = false;
-  }
-  function onModelKeydown(event: KeyboardEvent) {
-    if (event.key === "Escape") modelOpen = false;
-  }
-  function onModelFocusOut(event: FocusEvent) {
-    // 焦点还留在这格里（包括点了清单里的选项）就不关，别和点击抢先后
-    const next = event.relatedTarget as Node | null;
-    if (!modelBoxEl || !next || modelBoxEl.contains(next)) return;
-    modelOpen = false;
+  async function checkKey() {
+    await run(async () => {
+      const out = await reverseApi.checkKey({ ...payload(), config_id: editingId });
+      notice = out.count
+        ? `这把 Key 能用：读到 ${out.count} 个模型。去反推面板那两列里挑一个就行。`
+        : "这把 Key 连上了，但那家没报回模型清单——在反推面板里直接输入模型 ID 也能用。";
+    });
   }
   /** 一键同款 API 那屏的「设置 RunningHub 的 API Key」落到这里：切到共用 Key 那一家，光标停在 Key 那一格。 */
   async function editSharedKey() {
@@ -194,23 +148,18 @@
     busy = true; error = ""; notice = "";
     try { await action(); } catch (e) { error = errorMessage(e); } finally { busy = false; }
   }
-  /** quiet：这家是我们自己替用户选中的落点，不是他点的。现拉清单要拿真 Key 发外部请求，
-      这种请求只由他手上这一下触发，不由「打开设置」替他触发。 */
-  function applyProvider(id: string, quiet = false) {
+  /** 选中一家＝填它自己的地址与超时，名字就用服务商的名字。
+      模型不在这一页挑（那是反推面板那两列的事），所以新配置带着一个空模型进库。 */
+  function applyProvider(id: string) {
     draft.provider = id;
     if (id !== CUSTOM) {
       const p = $providerPresets.find(x => x.id === id);
-      const rec = p?.models.find(m => m.recommended) ?? p?.models[0];
-      draft.model = rec?.id ?? "";
+      draft.model = "";
       draft.base_url = p?.base_url ?? "";
       draft.timeout = p?.default_timeout ?? 120;
-      // 清单要现拉的那几家，一开始没有推荐项：名字先只写服务商，别留一个「· 」在那儿
-      draft.name = p ? (rec ? `${p.name} · ${rec.label}` : p.name) : "";
-      modelList = []; modelListNote = ""; modelListError = ""; modelOpen = false;
-      if (p?.models_dynamic && !quiet) void fetchModels();
+      draft.name = p?.name ?? "";
     } else {
       draft.model = ""; draft.base_url = ""; draft.name = ""; draft.timeout = 120;
-      modelList = []; modelListNote = ""; modelListError = ""; modelOpen = false;
     }
     keyInput = ""; hasKey = false;
   }
@@ -219,13 +168,15 @@
     draft = config ? { name: config.name, base_url: config.base_url, model: config.model, timeout: config.timeout, provider: config.provider ?? CUSTOM } : blank();
     keyInput = ""; hasKey = !!config?.has_api_key;
     workflowKeyInput = "";
-    error = ""; notice = ""; testingText = ""; confirmDelete = false;
-    modelList = []; modelListNote = ""; modelListError = ""; modelOpen = false;
+    error = ""; notice = ""; confirmDelete = false;
   }
   function payload(): ModelDraft {
+    // 没挑过模型就不带这个键：带一个空串过去 PATCH，会把面板里刚挑好的那个模型抹掉。
+    const { model, ...rest } = draft;
     return {
-      ...draft,
+      ...rest,
       provider: draft.provider ?? CUSTOM,
+      ...(model ? { model } : {}),
       // 留空＝这把不换。清除不走这里，走 clearKeyNow() 那两条即时接口：
       // 这一格永远是空的（Key 存在库里，界面从不读回来），把留空当删除，改一次模型名就会把 Key 清掉。
       ...(keyInput ? { api_key: keyInput } : {}),
@@ -301,7 +252,7 @@
             {/if}
             {#if canSetDefault}
               <button class="setting-button setting-button-ghost" disabled={busy || isDefaultModel}
-                onclick={() => void setDefaultModel()}>{isDefaultModel ? "已是默认模型" : "设为默认模型"}</button>
+                onclick={() => void setDefaultModel()}>{isDefaultModel ? "已是默认服务商" : "设为默认服务商"}</button>
             {/if}
             {#if preset?.console_url}
               <a class="setting-button setting-button-ghost api-console" href={preset.console_url}
@@ -359,56 +310,17 @@
         {#if !visiblePresets.length}
           <p class="settings-hint" role="status">这一类目前没有接进来的服务商，切回「全部」看其余几家。</p>
         {/if}
-        {#if isPreset && dynamicModels}
-          <!-- 标签单独一行，不把箭头一起包住：包了以后读屏和测试都会把那颗箭头认成「识别模型」。
-               也没直接用 <input list> + <datalist>：浏览器拿已经填进去的 ID 当过滤词，点箭头
-               只剩当前这一条，反而挑不了别家。自己画一个：能挑、能打字、清空就回到全量。 -->
-          <label for="api-model-id">识别模型</label>
-          <div class="api-model" bind:this={modelBoxEl}>
-            <input id="api-model-id" aria-label="识别模型" bind:value={draft.model} autocomplete="off"
-              placeholder={fetchingModels ? "正在读取模型清单…" : "挑一个，或者直接输入模型 ID"}
-              onkeydown={onModelKeydown} onfocusout={onModelFocusOut} />
-            <button class="api-model-arrow" type="button" aria-expanded={modelOpen}
-              aria-label={modelOpen ? "收起模型清单" : "展开模型清单"} disabled={busy || fetchingModels}
-              onclick={() => void toggleModelList()}>
-              <svg viewBox="0 0 12 8" aria-hidden="true"><path d="M1.5 1.5 6 6 10.5 1.5" /></svg>
-            </button>
-            {#if modelOpen}
-              <div class="api-model-list" role="listbox" aria-label="模型清单">
-                {#each modelFiltered as item (item.id)}
-                  <button class="api-model-option" class:api-model-on={item.id === draft.model} role="option"
-                    aria-selected={item.id === draft.model} onclick={() => pickModel(item.id)}>
-                    {item.label}{item.recommended ? "（推荐）" : ""}
-                  </button>
-                {/each}
-                {#if !modelFiltered.length}
-                  <p class="api-model-empty">{modelListError || modelListNote || "按这个关键词没有匹配的模型，清空输入框看全部"}</p>
-                {/if}
-              </div>
-            {/if}
-          </div>
-          <!-- 清单正常时这一行什么都不写（原来那 29 个胶囊加两句说明整屏都是噪音）。
-               只有拉不到 / 空着的时候才说清为什么，并留一颗重试。 -->
-          {#if modelListError || modelListNote || !modelList.length}
-            <p class="settings-hint" role="status">
-              {modelListError || modelListNote || "模型清单还是空的：直接把模型 ID 打在框里也行。"}
-              <button class="setting-button setting-button-ghost" disabled={busy || fetchingModels}
-                onclick={() => void fetchModels()}>{fetchingModels ? "正在读取…" : "重新拉取清单"}</button>
-            </p>
-          {/if}
-        {:else if isPreset}
-          <label>识别模型
-            <select aria-label="识别模型" bind:value={draft.model}>
-              {#each providerModels as m}<option value={m.id}>{m.label}{m.recommended ? "（推荐）" : ""}</option>{/each}
-            </select>
-          </label>
-          {#if preset?.note}<p class="settings-hint">{preset.note}</p>{/if}
-        {:else}
+        {#if !isPreset}
           <label>配置名称<input aria-label="配置名称" bind:value={draft.name} placeholder="例如：常用视觉模型" /></label>
           <label>Base URL<input aria-label="Base URL" bind:value={draft.base_url} placeholder="https://服务地址/v1" /></label>
           <p class="settings-hint break-all">请求地址：{draft.base_url ? endpoint : "填写 Base URL 后显示"}</p>
-          <label>模型 ID<input aria-label="模型 ID" bind:value={draft.model} placeholder="服务商提供的模型名称" /></label>
+        {:else if preset?.note}
+          <p class="settings-hint">{preset.note}</p>
         {/if}
+        <!-- 这一页不再摆「识别模型」那一格：Key 是这家的入场券，用哪个模型是用的时候挑。
+             挑模型的入口在图片/视频反推面板那两列（先点服务商、再点它报回的模型），
+             那儿还留了一条直接输入模型 ID 的路，所以清单拉不到也不堵。 -->
+        <p class="settings-hint">模型不用在这里选：到图片详情页的反推面板里，先点服务商、再点它家的模型。</p>
         {#if workflowCapable}
           <div class="api-key-section">
             <p class="api-key-title">工作流 API 密钥（消费级-会员）</p>
@@ -468,20 +380,16 @@
       {/if}
     </div>
     <div class="settings-card-footer">
-      <span class="settings-hint">测试会向此服务发送内置测试图，产生一次 API 请求。</span>
+      <span class="settings-hint">「检查」只读这家的模型清单，不产生模型调用费用。</span>
       {#if editingId}<button class="setting-button setting-button-ghost" onclick={() => (confirmDelete = true)}>删除配置</button>{/if}
-      <button class="setting-button" disabled={!canSave} onclick={() => run(async () => {
-        const result = await reverseApi.test({ ...payload(), config_id: editingId });
-        notice = result.message; testingText = result.text;
-      })}>测试图片识别</button>
-      <button class="setting-button bg-accent text-bg" onclick={saveModel} disabled={!canSave}>保存模型</button>
+      <button class="setting-button" disabled={!canSave || busy} onclick={() => void checkKey()}>检查 API Key</button>
+      <button class="setting-button bg-accent text-bg" onclick={saveModel} disabled={!canSave}>保存配置</button>
     </div>
   </div>
 
   {#if busy}<p class="settings-hint" role="status">处理中…</p>{/if}
   {#if error}<p class="model-error" role="alert">{error}</p>{/if}
   {#if notice}<p class="model-notice" role="status">{notice}</p>{/if}
-  {#if testingText}<pre class="model-testing-text">{testingText}</pre>{/if}
 </section>
 
 <style>
@@ -524,27 +432,15 @@
   fieldset:first-child { margin-top: 0; }
   legend { margin-bottom: 10px; font-size: 14px; font-weight: 500; color: #e6e6ea; }
   label { display: block; font-size: 13px; color: #b8b8c3; }
-  /* 这一页没有长文本框（指令都在「反推指令」那一页），所以选择器里不留 textarea。 */
-  input:not([type=checkbox]), select { display: block; width: 100%; margin-top: 6px; padding: 9px 12px; color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 6px; }
+  /* 这一页既没有长文本框（指令都在「反推指令」那一页），也没有下拉了（模型不在这里挑），
+     所以选择器里不留 textarea 和 select。 */
+  input:not([type=checkbox]) { display: block; width: 100%; margin-top: 6px; padding: 9px 12px; color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 6px; }
   button:disabled { opacity: .5; }
   .model-summary { cursor: pointer; }
   .model-confirm { display: flex; align-items: center; gap: 10px; margin-top: 16px; font-size: 12.5px; color: #b8b8c3; flex-wrap: wrap; }
   .model-error { margin-top: 14px; font-size: 13px; color: #fb7185; }
   .model-notice { margin-top: 14px; font-size: 13px; color: #a1a1aa; }
-  .model-testing-text { margin-top: 12px; max-height: 160px; overflow: auto; font-size: 12px; white-space: pre-wrap; color: #a1a1aa; }
   @media (max-width: 860px) { .settings-model-body { padding: 16px; } }
-  /* 识别模型的下拉：箭头压在输入框右端，清单浮在下面。
-     这些规则放在最后——上面那条 input:not([type=checkbox]) 权重和 .api-model input 打平，
-     谁在后面谁说话。 */
-  .api-model { position: relative; margin-top: 6px; }
-  .api-model input { margin-top: 0; padding-right: 34px; }
-  .api-model-arrow { position: absolute; top: 0; right: 2px; width: 30px; height: 100%; padding: 0; display: grid; place-items: center; background: none; border: 0; border-radius: 6px; color: #a1a1aa; cursor: pointer; }
-  .api-model-arrow svg { width: 11px; height: 7px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
-  .api-model-arrow[aria-expanded="true"] svg { transform: rotate(180deg); }
-  .api-model-list { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; right: 0; max-height: 232px; overflow: auto; padding: 4px; display: grid; gap: 2px; background: #141417; border: 1px solid #3f3f46; border-radius: 8px; box-shadow: 0 12px 28px rgb(0 0 0 / 45%); }
-  .api-model-option { display: block; width: 100%; padding: 7px 9px; text-align: left; background: none; border: 0; border-radius: 5px; color: #d4d4d8; font-size: 12.5px; cursor: pointer; }
-  .api-model-option.api-model-on { color: #f87171; background: #1d1416; }
-  .api-model-empty { margin: 0; padding: 8px 9px; font-size: 12px; line-height: 1.6; color: #8b8b94; }
   /* Key 那一格不能是 type=password：Chrome 把它当登录密码，先问你要不要存，下次再自动填一串点进来，
      看着就像「这格里存了一把看不见的 Key」（苏醒就是被这串点骗过一回，键盘删干净以为把 Key 清了）。
      打点交给 CSS，密码管理器就不认它；要删有「清除」那颗，不靠「把框清空」这个假动作。 */

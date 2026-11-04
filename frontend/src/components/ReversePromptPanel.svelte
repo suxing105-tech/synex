@@ -4,8 +4,10 @@
   import type { ReverseRecord } from "../lib/reverse-prompts";
   import { copyText } from "../lib/ws";
   import { pushToast } from "../lib/toast";
+  import ModelPicker from "./ModelPicker.svelte";
   let { imageId }: { imageId: number } = $props();
-  let modelId = $state<number | null>(null);
+  let modelId = $state<number | null>(null);   // 哪一家（一条配置 = 一家的地址与 Key）
+  let modelName = $state("");                  // 这一家当前用哪个模型；空串＝还没挑
   let records = $state<ReverseRecord[]>([]);
   let total = $state(0);
   let loading = $state(false);
@@ -26,6 +28,10 @@
   const current = $derived(records.find(r => r.id === selectedVersion) || records[0]);
   $effect(() => {
     if (!modelId || !$modelConfigs.some(m => m.id === modelId)) modelId = $reverseSettings?.default_model_id ?? $modelConfigs[0]?.id ?? null;
+  });
+  // 模型跟着这条配置走：它记住哪个就用哪个；没记住就空着，让人先挑，绝不拿空串去发请求。
+  $effect(() => {
+    modelName = $modelConfigs.find(m => m.id === modelId)?.model ?? "";
   });
   $effect(() => {
     const id = imageId;
@@ -91,13 +97,16 @@
     <button onclick={() => window.dispatchEvent(new CustomEvent("open-model-settings"))}>配置模型</button>
   {:else}
     <div class="flex gap-2">
-      <select aria-label="反推模型" class="min-w-0 flex-1" bind:value={modelId} disabled={running}>
-        {#each $modelConfigs as model}<option value={model.id}>{model.name}</option>{/each}
-      </select>
-      <button class="generate-reverse" disabled={running || !modelId || editing} onclick={() => { error = ""; selectedVersion = null; if (modelId) void generateReverse(imageId, modelId); }}>
+      <ModelPicker value={modelId} model={modelName} label="反推模型" disabled={running}
+        onpick={(configId, picked) => { modelId = configId; modelName = picked; }} />
+      <button class="generate-reverse" disabled={running || !modelId || !modelName || editing}
+        onclick={() => { error = ""; selectedVersion = null; if (modelId && modelName) void generateReverse(imageId, modelId, modelName); }}>
         {running ? "正在反推…" : current ? "重新反推" : "反推提示词"}
       </button>
     </div>
+    {#if !modelName}
+      <p class="text-[10px] text-amber-400">还没挑模型：点上面那个下拉，先选服务商、再点它家的模型。</p>
+    {/if}
   {/if}
   <p class="text-[10px] text-muted">点击反推会将图片发送至所选 API 服务。结果是画面描述，不保证还原原始提示词。</p>
   {#if error || job?.error}<p class="text-xs text-danger" role="alert">{error || job?.error}</p>{/if}
@@ -150,7 +159,7 @@
 </section>
 
 <style>
-  button, select { font-size: 11px; padding: 5px 8px; border: 1px solid #3f3f46; border-radius: 5px; background: #202024; }
+  button { font-size: 11px; padding: 5px 8px; border: 1px solid #3f3f46; border-radius: 5px; background: #202024; }
   /* 选好模型后（按钮启用），悬停“反推提示词”按钮底色变品牌色 */
   .reverse-panel button.generate-reverse:enabled:hover,
   .reverse-panel button.generate-reverse:enabled:focus-visible {

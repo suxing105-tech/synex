@@ -152,7 +152,7 @@ export interface VideoPromptHistory {
   running: boolean; running_plan: boolean; running_segments: string[];
 }
 export interface PlanRequest {
-  model_config_id?: number | null; sound_note?: string | null;
+  model_config_id?: number | null; model?: string | null; sound_note?: string | null;
   start_ms?: number | null; end_ms?: number | null; max_unit_seconds?: number | null;
 }
 export interface FrameResponse { at: number; duration_ms: number; data_url: string }
@@ -168,7 +168,7 @@ export const videoPromptApi = {
     http<VideoPromptHistory>(`${base(videoId)}?limit=${limit}&offset=${offset}`),
   plan: (videoId: number, body: PlanRequest) => http<PromptRun>(`${base(videoId)}/plans`, json("POST", body)),
   segment: (videoId: number, runId: number, index: number,
-    body: { target: PromptTarget; mode?: PromptMode | null; model_config_id?: number | null }) =>
+    body: { target: PromptTarget; mode?: PromptMode | null; model_config_id?: number | null; model?: string | null }) =>
     http<SegmentRecord>(`${base(videoId)}/runs/${runId}/segments/${index}`, json("POST", body)),
   edit: (videoId: number, runId: number, index: number,
     body: { target: PromptTarget; prompt: string; parent_id?: number | null }) =>
@@ -184,7 +184,7 @@ export const videoPromptApi = {
   referenceFrame: (videoId: number, runId: number, index: number, edge: FrameEdge) =>
     http<ReferenceFrame>(`${base(videoId)}/runs/${runId}/segments/${index}/frame?which=${edge}`),
   translate: (videoId: number, runId: number, index: number,
-    body: { target: PromptTarget; model_config_id?: number | null }) =>
+    body: { target: PromptTarget; model_config_id?: number | null; model?: string | null }) =>
     http<TranslationResponse>(`${base(videoId)}/runs/${runId}/segments/${index}/translations`, json("POST", body)),
 };
 
@@ -270,7 +270,8 @@ export async function generatePlan(videoId: number, body: PlanRequest): Promise<
 /** 阶段二：段正文。串行执行，失败只标记该段，后续继续；返回失败的 key。 */
 export async function generateSegments(
   videoId: number, runId: number, indexes: number[], targets: PromptTarget[],
-  options: { modes?: Partial<Record<PromptTarget, PromptMode>>; model_config_id?: number | null } = {},
+  options: { modes?: Partial<Record<PromptTarget, PromptMode>>; model_config_id?: number | null;
+    model?: string | null } = {},
 ): Promise<string[]> {
   const queue = expandSegments(indexes, targets)
     .filter(job => !active.has(segmentKey(runId, job.index, job.target)));
@@ -296,7 +297,7 @@ export async function generateSegments(
         const result = await videoPromptApi.segment(videoId, runId, job.index, {
           target: job.target,
           mode: options.modes?.[job.target] ?? MODE_DEFAULTS[job.target],
-          model_config_id: options.model_config_id ?? null,
+          model_config_id: options.model_config_id ?? null, model: options.model ?? null,
         });
         setJob(key, { running: false, result });
       } catch (error) {
@@ -372,14 +373,14 @@ export function translationOf(record: SegmentRecord, key: string,
 
 /** 翻译该段该格式的当前版本。服务端按版本缓存，重复点不再花模型调用。 */
 export async function translatePrompt(videoId: number, runId: number, index: number,
-  target: PromptTarget, options: { model_config_id?: number | null } = {}): Promise<PromptTranslation | null> {
+  target: PromptTarget, options: { model_config_id?: number | null; model?: string | null } = {}): Promise<PromptTranslation | null> {
   const key = translationKey(runId, index, target);
   if (activeTranslations.has(key)) return null;
   activeTranslations.add(key);
   translationJobs.update(jobs => ({ ...jobs, [key]: { running: true } }));
   try {
     const result = await videoPromptApi.translate(videoId, runId, index,
-      { target, model_config_id: options.model_config_id ?? null });
+      { target, model_config_id: options.model_config_id ?? null, model: options.model ?? null });
     const value: PromptTranslation = {
       record_id: result.record_id, language: result.language, text: result.text,
       model_name: result.model_name, model: result.model, created_at: result.created_at,

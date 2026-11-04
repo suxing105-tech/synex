@@ -37,7 +37,9 @@ class ModelInput(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
     name: str | None = Field(default=None, min_length=1, max_length=100)
     base_url: str | None = Field(default=None, min_length=1, max_length=2048)
-    model: str = Field(min_length=1, max_length=200)
+    # 存 Key 不需要先挑模型，所以这里可以有名字里没有 model 的配置：空串＝还没选。
+    # 真发请求前一律过 service.with_model()，那里会把「还没选」说成一句人话。
+    model: str = Field(default="", max_length=200)
     timeout: int | None = Field(default=None, ge=10, le=600)
     provider: str | None = Field(default=None, max_length=100)
     api_key: SecretStr | None = None
@@ -82,6 +84,8 @@ class SettingsInput(BaseModel):
 
 class GenerateInput(BaseModel):
     model_config_id: int | None = None
+    # 模型不再写死在配置里，所以请求可以指定用哪一个；不带就退回配置记住的那一个。
+    model: str | None = Field(default=None, max_length=200)
 
 
 class EditInput(BaseModel):
@@ -117,6 +121,50 @@ def list_provider_presets():
 async def list_provider_models(provider_id: str):
     """清单由服务商自己报，代码里不抄一份会过期的表。失败说人话，界面留手填这条路。"""
     return await service.list_models(provider_id)
+
+
+@router.get("/model-configs/{config_id}/models")
+async def list_config_models(config_id: int):
+    """这条配置能用哪些模型：预设照注册表/现拉，自定义打它自己的 /models。
+
+    反推面板那两列（先选服务商、再挑模型）就靠它，所以自定义服务也必须有这条路——
+    它的地址和 Key 都长在自己身上，注册表里查不到。
+    """
+    return await service.list_config_models(config_id)
+
+
+class KeyCheckInput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    provider: str | None = Field(default=None, max_length=100)
+    base_url: str | None = Field(default=None, max_length=2048)
+    api_key: SecretStr | None = None
+    config_id: int | None = None
+
+
+@router.post("/model-configs/check-key")
+async def check_key(payload: KeyCheckInput):
+    """这把 Key 能不能用，问它自己的模型清单就知道——不用先挑模型，也不产生模型调用费用。
+
+    这一条替掉了设置页原来的「测试图片识别」：那一颗按钮要模型才能按，可 Key 与模型
+    已经分家了，设置页只管 Key。清单能读回来＝地址对、Key 对、这家真在服务。
+    """
+    existing = service.get_config(payload.config_id) if payload.config_id is not None else None
+    # 缺的一律不塞键：resolve_draft 用 setdefault 补预设地址，键在但值是 None 会把它让过去
+    wanted = {"provider": payload.provider or (existing or {}).get("provider"),
+              "base_url": payload.base_url or (existing or {}).get("base_url")}
+    values = service.resolve_draft({k: v for k, v in wanted.items() if v})
+    typed = payload.api_key.get_secret_value().strip() if payload.api_key is not None else ""
+    if typed:
+        key = typed
+    elif service.shares_cloud_key(values.get("provider")):
+        key = service.cloud_key()
+    elif existing:
+        key = service.key_for(existing)
+    else:
+        key = ""
+    out = await service.fetch_models(values["base_url"], key)
+    return {"ok": True, "count": len(out["models"]), "models": [m["id"] for m in out["models"][:8]],
+            "source": out["source"]}
 
 
 @router.post("/model-configs")
@@ -199,7 +247,7 @@ async def generate(image_id: int, payload: GenerateInput):
         config_id = payload.model_config_id or settings["default_model_id"]
         if config_id is None:
             raise HTTPException(400, "请先配置并选择模型")
-        config = service.get_config(config_id)
+        config = service.with_model(service.get_config(config_id), payload.model)
         key = service.key_for(config)
         instruction = settings["instruction"]
         if key:

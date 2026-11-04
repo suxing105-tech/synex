@@ -114,6 +114,20 @@ def public_config(row):
     return result
 
 
+def with_model(config, model: str | None):
+    """把「这一刻要用的模型」并回配置：请求带的优先，其次这条配置自己记住的那一个。
+
+    模型和 Key 分开存之后，每个真发请求的入口都得先问这一句。不然最难的 bug 是
+    「Key 通了、地址对了、请求里 model 是空的」——服务商只会回一句含糊的 400。
+    """
+    chosen = (model or config.get("model") or "").strip()
+    if len(chosen) > 200:
+        raise HTTPException(422, "模型 ID 太长了，请核对一下")
+    if not chosen:
+        raise HTTPException(400, "这一家还没选模型：先在模型下拉里挑一个，或直接输入模型 ID")
+    return {**config, "model": chosen}
+
+
 def key_for(row):
     if shares_cloud_key(row.get("provider")):
         return cloud_key()
@@ -154,10 +168,12 @@ def save_config(values: dict, config_id: int | None = None):
         merged.setdefault("timeout", 120)
         if not merged.get("name"):
             raise HTTPException(422, "请填写配置名称")
-    if not merged.get("model"):
-        raise HTTPException(422, "请选择或填写模型 ID")
+    # 存 Key 不该被「先挑一个模型」卡住：Key 是这一家的入场券，用哪个模型是用的时候的事。
+    # 空串＝「这一家还没选模型」；任何真发请求的入口都必须先过 with_model() 这一关。
+    merged["model"] = (merged.get("model") or "").strip()
     if preset and not merged.get("name"):
-        merged["name"] = f"{preset['name']} · {providers.model_label(preset, merged['model'])}"
+        label = providers.model_label(preset, merged["model"]) if merged["model"] else ""
+        merged["name"] = f"{preset['name']} · {label}" if label else preset["name"]
     shared = shares_cloud_key(provider)
     # 工作流那把只有 RunningHub 有，而且必须先拒掉再写：先写模型 Key 再报错，就留下半套改动
     if workflow_key is not None and not shared:
@@ -265,16 +281,47 @@ MODEL_CACHE_SECONDS = 600.0
 _VISION_HINT = re.compile(r"vl|vision|image|4v|omni|multimodal", re.I)
 
 
-async def list_models(provider: str | None) -> dict:
-    """问服务商本身要模型清单（OpenAI 兼容的 GET /models），不在代码里抄一份。
+async def fetch_models(base_url: str, key: str, cache_key: str | None = None) -> dict:
+    """问一家 OpenAI 兼容服务要它自己的模型清单（GET /models），不在代码里抄一份。
 
     为什么值得多这一步：能反推的模型只有那么几个，而账号开着哪些是会变的。
     抄一份进代码，过期后的表现是「我要那个在下拉里选不到」，比手填难查得多。
-    所以：拉到什么列什么；拉不到就回空清单加一句原因，界面让人在高级里手填——不编。
+    所以：拉到什么列什么；拉不到就回一句原因，界面上留一条直接输入模型 ID 的路——不编。
+    cache_key 留空＝不写缓存（「检查这把 Key」要的是一次真话，不是十分钟前的旧清单）。
+    """
+    url = normalize_url(base_url) + "/models"
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
+            response = await client.get(url, headers={"Authorization": f"Bearer {key}"} if key else {})
+        if response.status_code >= 300:
+            raise HTTPException(502, f"模型清单没拿到（HTTP {response.status_code}），可以直接输入模型 ID")
+        ids = [str(item.get("id")) for item in (response.json().get("data") or [])
+               if isinstance(item, dict) and item.get("id")]
+    except HTTPException:
+        raise
+    except httpx.RequestError:
+        raise HTTPException(502, "连不上这家服务商的模型清单，可以直接输入模型 ID") from None
+    except (ValueError, TypeError, AttributeError):
+        raise HTTPException(502, "这家服务商报回来的模型清单读不懂，可以直接输入模型 ID") from None
+    if not ids:
+        return {"models": [], "source": "empty",
+                "reason": "这家服务商没给出模型清单，可以直接输入模型 ID"}
+    recommended = next((mid for mid in ids if _VISION_HINT.search(mid)), "")
+    result = {"models": [{"id": mid, "label": mid, "recommended": mid == recommended} for mid in ids],
+              "source": "live", "reason": ""}
+    if cache_key:
+        _MODEL_CACHE[cache_key] = (time.monotonic(), result)
+    return result
+
+
+async def list_models(provider: str | None) -> dict:
+    """按服务商要清单：注册表里抄得来的直接给，动态那几家去问它自己。
+
+    自定义服务不在这儿——它的地址和 Key 都长在那条配置身上，走 list_config_models。
     """
     preset = providers.get_preset(provider)
     if preset is None:
-        raise HTTPException(422, "自定义服务请在下面直接填写模型 ID")
+        raise HTTPException(422, "自定义服务请按那条配置要模型清单")
     if not preset.get("models_dynamic"):
         return {"models": [
             {"id": mid, "label": info["label"], "recommended": bool(info.get("recommended"))}
@@ -290,26 +337,19 @@ async def list_models(provider: str | None) -> dict:
                     "reason": "这一把 Key 还没存住，先列上次拉到的清单"}
         return {"models": [], "source": "none", "reason": "先保存这把 API Key，才能向它要模型清单"}
 
-    url = normalize_url(preset["base_url"]) + "/models"
-    try:
-        async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
-            response = await client.get(url, headers={"Authorization": f"Bearer {key}"})
-        if response.status_code >= 300:
-            raise HTTPException(502, f"模型清单没拿到（HTTP {response.status_code}），可以在高级里手填模型 ID")
-        ids = [str(item.get("id")) for item in (response.json().get("data") or [])
-               if isinstance(item, dict) and item.get("id")]
-    except HTTPException:
-        raise
-    except (httpx.RequestError, ValueError, TypeError, AttributeError):
-        raise HTTPException(502, "连不上这家服务商的模型清单，可以在高级里手填模型 ID") from None
-    if not ids:
-        return {"models": [], "source": "empty",
-                "reason": "这家服务商没给出模型清单，请在高级里手填模型 ID"}
-    recommended = next((mid for mid in ids if _VISION_HINT.search(mid)), "")
-    result = {"models": [{"id": mid, "label": mid, "recommended": mid == recommended} for mid in ids],
-              "source": "live", "reason": ""}
-    _MODEL_CACHE[cache_key] = (time.monotonic(), result)
-    return result
+    return await fetch_models(preset["base_url"], key, cache_key)
+
+
+async def list_config_models(config_id: int) -> dict:
+    """按一条配置要模型清单：预设那家照服务商说，自定义那条照它自己的 Base URL 问。
+
+    为什么要按配置：自定义服务的地址和 Key 都长在那条配置身上，注册表里根本没有它。
+    反推面板那两列（先点服务商、再看它有哪些模型）要能点到任意一条，就得有这条路。
+    """
+    row = get_config(config_id)
+    if row.get("provider"):
+        return await list_models(row["provider"])
+    return await fetch_models(row["base_url"], key_for(row), f'config|{row["id"]}|{row["base_url"]}')
 
 
 def resolve_draft(values: dict) -> dict:

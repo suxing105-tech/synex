@@ -26,8 +26,8 @@
     primaryPromptGroup, promptGroupHint, promptPlaceholder, promptSlots, promptSourceLabel, secondaryPromptGroups,
     ratioShape, referenceCells, referenceIssues, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, visibleRefCells, voiceAvatar, voiceSample, nativeLanguageOverride,
     firstFreeRefKey, mergedRefCells, openRefKinds, REF_DISPLAY_ORDER,
-    CLONE_SETTINGS_TAB, CLOUD_SETTINGS_TAB,
-    cloudApi, coinsLabel, isCloudTemplate, mentionsTags, requestCloudKeyEdit, supportsRefFamily,
+    CLONE_SETTINGS_TAB,
+    cloudApi, coinsLabel, isCloudTemplate, mentionsTags, supportsRefFamily,
     type CloudStatus,
     applyMention, caretCoordinates, mentionAddLabel, mentionChunks, mentionInsertText, mentionItems as buildMentionItems, mentionToken,
     audioModeLabel, audioModeTemplates, familyCells, isAudioTemplate, isVideoTemplate, promptGroupPlaceholder,
@@ -87,7 +87,7 @@
   let probing = $state(false);
   let popOpen = $state(false);
   let wfOpen = $state(false);
-  /** 弹层顶部那一排的两个屏：本机的配方在「切换工作流」，云端的收费 API 在「API」。 */
+  /** 弹层顶部那一排的两个屏：本机的配方在「本地工作流」，云端的收费模型在「云端API服务」。 */
   let wfTab = $state<"local" | "cloud">("local");
   /**
    * 音色试听：正在放的那一个选项值，"" = 没在放。
@@ -239,12 +239,8 @@
   function rowVerified(row: (typeof wfRows)[number]): boolean {
     return isCloudTemplate(rowTemplate(row)) && rowTemplate(row)?.cloud?.verified === true;
   }
-  /** 左下角那一格报当前那一条挂在哪一家。本机的那条就说「本机」，不假装是云端。 */
-  const currentVendorWord = $derived(
-    isCloud ? String(template?.cloud?.provider_label ?? "").trim() || "云端" : "本机",
-  );
   /**
-   * 打开弹层：当前挂的是云端就开在「API」屏，是本机的就开在「切换工作流」屏。
+   * 打开弹层：当前挂的是云端就开在「云端API服务」屏，是本机的就开在「本地工作流」屏。
    * 每次打开重读一次云端状态（Key 可能刚在设置里填过），读失败不置灰——
    * 读不到不等于云端坏了，真点下去再报错。
    */
@@ -1450,12 +1446,12 @@
                   {#if wfOpen}
                     <div class="cm-pop-scrim" role="presentation" onclick={closeWorkflowPop}></div>
                     <div class="cm-pop cm-pop-wf" class:is-api={wfTab === "cloud" && Boolean(apiActive)} role="menu" aria-label="同款工作流">
-                      <!-- 两屏各摆各的（苏醒要的）：本机的配方在这一屏，云端的收费 API 在那一屏。
+                      <!-- 两屏各摆各的（苏醒要的）：本机的配方在「本地工作流」，云端的收费模型在「云端API服务」。
                            用 aria-pressed 的按钮而不是 tablist：这层容器是 role="menu"，塞 tablist 是错的 ARIA。 -->
                       <div class="cm-pop-tabs">
-                        <button class="cm-pop-tab" aria-pressed={wfTab === "local"} onclick={() => wfTab = "local"}>切换工作流</button>
+                        <button class="cm-pop-tab" aria-pressed={wfTab === "local"} onclick={() => wfTab = "local"}>本地工作流</button>
                         <button class="cm-pop-tab" aria-pressed={wfTab === "cloud"} onclick={() => wfTab = "cloud"}>
-                          API
+                          云端API服务
                           {#if cloudRowCount}<span class="cm-pop-tab-count">{cloudRowCount}</span>{/if}
                         </button>
                       </div>
@@ -1506,14 +1502,6 @@
                                 <span class="cm-api-vendor-arrow" aria-hidden="true"><Icon name="chevron-right" size={12} /></span>
                               </button>
                             {/each}
-                            <!-- 左下角那一格报「现在挂的是哪一条」：这一屏挑的都是还没用的那些，不说清正在跑谁，
-                                 换完人回头就得猜。本机那条也照实说「本机」。 -->
-                            <div class="cm-api-cur">
-                              <span class="cm-wf-kind" class:cm-wf-kind-video={mediaKind === "video"}
-                                class:cm-wf-kind-audio={mediaKind === "audio"}>{WF_KIND_WORDS[mediaKind]}</span>
-                              <span class="cm-wf-name" title={wfFullTitle}>{wfName}</span>
-                              <span class="cm-api-cur-vendor">{currentVendorWord}</span>
-                            </div>
                           </div>
                           <div class="cm-api-main">
                             {#each apiActive.rows as row (row.key)}
@@ -1544,18 +1532,15 @@
                       {:else}
                         <p class="cm-pop-empty">云端这一屏还空着：去设置 → 模型API配置填 RunningHub 的 API Key。</p>
                       {/if}
-                      <div class="cm-pop-sep"></div>
                       {#if wfTab === "local"}
+                        <!-- 分隔线与底部这颗只属于本机这一屏：API 那屏到模型清单就结束（2026-11-04 苏醒圈掉了
+                             「设置 RunningHub 的 API Key」那一行）。Key 在设置 -> 模型API配置里填——空态那句话、
+                             灰行的悬浮提示和行末 X 的说明都指着那一页，不在这里再挂一颗按钮。 -->
+                        <div class="cm-pop-sep"></div>
                         <button class="cm-wf cm-wf-add" role="menuitem" disabled={workflowLoading} onclick={() => wfInput?.click()}>
                           <!-- 占位与上面的族徽同宽，「加载本地工作流 JSON」才跟上面的名字左对齐 -->
                           <span class="cm-wf-lead" aria-hidden="true"><Icon name="plus" size={13} /></span>
                           <span class="cm-wf-name">{workflowLoading ? "正在读取…" : "加载本地工作流 JSON"}</span>
-                        </button>
-                      {:else}
-                        <!-- 底部这颗跟着屏走：本机这屏是「加载 JSON」，API 这屏是去填 Key。 -->
-                        <button class="cm-wf cm-wf-add" role="menuitem" onclick={() => { closeWorkflowPop(); requestCloudKeyEdit(); onOpenSettings?.(CLOUD_SETTINGS_TAB); }}>
-                          <span class="cm-wf-lead" aria-hidden="true"><Icon name="cloud" size={13} /></span>
-                          <span class="cm-wf-name">设置 RunningHub 的 API Key</span>
                         </button>
                       {/if}
                     </div>
@@ -1815,8 +1800,6 @@
   .cm-api-vendor-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; color: #8a8a8e; }
   .cm-api-vendor-arrow { flex: none; display: inline-flex; color: #7f7f87; }
   /* 左下角那一格：族徽 + 当前那条的名字 + 挂在哪一家。顶边一条线把它和上面的清单分开。 */
-  .cm-api-cur { margin-top: auto; display: flex; align-items: center; gap: 6px; padding: 7px 8px 1px; border-top: 1px solid rgb(255 255 255 / 8%); font-size: 11.5px; color: #a1a1aa; }
-  .cm-api-cur-vendor { flex: none; color: #7f7f87; }
   .cm-api-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; overflow: auto; }
   /* 模型名允许折两行：这一屏要的就是「用的哪个模型」，截成「即梦 Seedream v…」等于白改。
      两行是上限——再长就是后端那条 label 该收一收了，全名一直在悬浮提示里。 */

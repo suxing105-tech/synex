@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  AUDIO_MODE_GROUP_LABEL, CLOUD_SETTINGS_TAB, EMPTY_CLONE_JOB, applyCloneProgress, cloneStatusLabel,
+  AUDIO_MODE_GROUP_LABEL, EMPTY_CLONE_JOB, applyCloneProgress, cloneStatusLabel,
   cloudMenuGroups, coinsLabel, controlSummary, defaultControlValues, isCloudTemplate, menuRowLabel,
   mentionInsertText, mentionItems,
   mentionsTags, referenceCells, slotKey, stateLabel, supportsRefFamily, workflowMenuRows,
@@ -30,7 +30,7 @@ const cloudTpl = (over: Partial<CloneTemplate> = {}): CloneTemplate => tpl([], {
 
 const image = (id: number, filename = `n${id}.png`) => ({ id, filename, kind: "image" } as any);
 
-describe("切换工作流清单里的云端条目", () => {
+describe("级联那一屏的数据：一家服务商一行，模型只落在自己那一行里", () => {
   it("云端「音频API」不折进「闪寻音频」：付费通道不能在本机那三种模式里被藏掉", () => {
     const cloudAudio = tpl([], { id: 5, name: "音频API", media_kind: "audio", is_cloud: true, engine: "cloud" });
     expect(isCloudTemplate(cloudAudio)).toBe(true);
@@ -247,10 +247,6 @@ describe("钱与入口的措辞", () => {
     expect(coinsLabel(1.234)).toBe("1.23 RH币");
     expect(coinsLabel(null)).toBe("未实测");
     expect(coinsLabel(undefined)).toBe("未实测");
-  });
-
-  it("云端那张卡不是一整页，是「模型API配置」里的一张卡：弹窗跳转靠这个字符串", () => {
-    expect(CLOUD_SETTINGS_TAB).toBe("模型API配置");
   });
 
   it("参考位键名走 slotKey，云端与本机同一套键（生成时后端按它接线）", () => {

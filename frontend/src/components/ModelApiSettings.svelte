@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount } from "svelte";
   import { modelConfigs, reverseSettings, refreshReverseConfig, refreshProviderPresets, providerPresets, reverseApi, errorMessage } from "../lib/reverse-prompts";
   import type { ModelConfig, ModelDraft, ProviderPreset } from "../lib/reverse-prompts";
-  import { cloudApi, takeCloudKeyEdit } from "../lib/clone";
+  import { cloudApi } from "../lib/clone";
   const CUSTOM = "custom";
   const blank = (): ModelDraft => ({ name: "", base_url: "", model: "", timeout: 120, provider: CUSTOM });
   let draft = $state<ModelDraft>(blank());
@@ -22,7 +22,6 @@
   /** 新建那条配置自己还不知道 Key 在不在，这时照服务商清单带回的布尔说。 */
   const keyReady = $derived(sharedKey ? (hasKey || !!preset?.shared_has_key) : hasKey);
   const cloudPreset = $derived($providerPresets.find(p => p.credential_scope === "cloud"));
-  let keyInputEl = $state<HTMLInputElement | null>(null);
   /**
    * 服务商选择页。三件事：
    * - 按能力过滤：没接的路数后端不报，这里就不会画出一张点进去没用的卡；
@@ -131,19 +130,9 @@
         : "这把 Key 连上了，但那家没报回模型清单——在反推面板里直接输入模型 ID 也能用。";
     });
   }
-  /** 一键同款 API 那屏的「设置 RunningHub 的 API Key」落到这里：切到共用 Key 那一家，光标停在 Key 那一格。 */
-  async function editSharedKey() {
-    if (!cloudPreset) return;
-    // 已经有这一家的配置就改那一条：另起一张空表单会多出一条 RunningHub，之后没人说得清哪条是活的
-    selectProvider(cloudPreset.id);
-    await tick();
-    keyInputEl?.focus();
-    keyInputEl?.scrollIntoView({ block: "center", behavior: "smooth" });
-  }
-  onMount(() => {
-    // 从一键同款那一屏过来时，等服务商清单读回来再跳：cloudPreset 还空着的时候跳等于没跳。
-    void run(loadAll).then(() => { if (takeCloudKeyEdit()) void editSharedKey(); });
-  });
+  // 落点自己挑（已经配好 Key 的那一家）：一键同款那屏不再有跳过来的那颗按钮，
+  // 所以这里不认「来意」，只管把配置读回来。
+  onMount(() => void run(loadAll));
   async function run(action: () => Promise<void>) {
     busy = true; error = ""; notice = "";
     try { await action(); } catch (e) { error = errorMessage(e); } finally { busy = false; }
@@ -351,7 +340,7 @@
           </p>
           <div class="api-key-row">
             <input class="secret" type="text" autocomplete="off" spellcheck="false"
-                   aria-label="API Key" bind:this={keyInputEl} bind:value={keyInput}
+                   aria-label="API Key" bind:value={keyInput}
                    placeholder={keyReady ? "已存过一把：留空就是不换" : "粘贴 API Key"} />
             {#if keyReady}
               <button class="setting-button setting-button-ghost api-key-clear"

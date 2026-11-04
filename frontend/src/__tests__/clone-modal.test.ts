@@ -2256,11 +2256,11 @@ it('API 那一屏两列级联：左列一家服务商一行，右列摆它报的
   await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
   await tick();
   // 两屏各摆各的（苏醒要的）：本机这一屏不该出现要扣 RH币的那一条
-  expect(screen.getByRole('button', { name: '切换工作流' }).getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByRole('button', { name: '本地工作流' }).getAttribute('aria-pressed')).toBe('true');
   expect(screen.queryByRole('menuitemradio', { name: /Seedream v5/ })).toBeNull();
   // 两屏各画各的，不许同时挂在 DOM 里（{:else if} 挂错块时实测过会两块一起出来）
   expect(screen.container.querySelector('.cm-api')).toBeNull();
-  await fireEvent.click(screen.getByRole('button', { name: /^API/ }));
+  await fireEvent.click(screen.getByRole('button', { name: /^云端API服务/ }));
   // 左列：一行一家，名字下面写它能干什么；指针停在那一家就报 aria-current
   const vendor = screen.container.querySelector('.cm-api-vendor') as HTMLElement;
   expect(vendor.textContent).toContain('RunningHub');
@@ -2274,8 +2274,9 @@ it('API 那一屏两列级联：左列一家服务商一行，右列摆它报的
   expect(row.textContent).toContain('需配置');
   expect(row.disabled).toBe(true);
   expect(row.getAttribute('title')).toContain('还没填 RunningHub 的 API Key');
-  // 左下角那一格报「现在挂的是哪一条」：此刻挂的还是本机那条，就照实说「本机」
-  expect(screen.container.querySelector('.cm-api-cur')?.textContent).toContain('本机');
+  // 左下角那一格「现在挂的是哪一条」被苏醒圈掉了：右列那一条自己挂着「当前」，
+  // 底部那颗胶囊也一直在报同一个名字，172px 的窄列里再挤一份只会截成「即梦 …」。
+  expect(screen.container.querySelector('.cm-api-cur')).toBeNull();
   // 本机那一行也不跟着跑到 API 屏上
   expect(screen.queryByRole('menuitemradio', { name: /Qwen 多图编辑/ })).toBeNull();
 });
@@ -2288,14 +2289,14 @@ it('两屏切着换工作流：API 屏点云端那条就换过去，回本机屏
   });
   const screen = await ready();
   await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
-  await fireEvent.click(await screen.findByRole('button', { name: /^API/ }));
+  await fireEvent.click(await screen.findByRole('button', { name: /^云端API服务/ }));
   await fireEvent.click(await screen.findByRole('menuitemradio', { name: /Seedream v5/ }));
   await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Seedream v5' })).toBeTruthy());
   // 现在挂在云端：再开弹层该直接开在 API 屏，不用人再点一次
   await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
   await tick();
-  expect(screen.getByRole('button', { name: /^API/ }).getAttribute('aria-pressed')).toBe('true');
-  await fireEvent.click(screen.getByRole('button', { name: '切换工作流' }));
+  expect(screen.getByRole('button', { name: /^云端API服务/ }).getAttribute('aria-pressed')).toBe('true');
+  await fireEvent.click(screen.getByRole('button', { name: '本地工作流' }));
   await fireEvent.click(await screen.findByRole('menuitemradio', { name: /Qwen 多图编辑/ }));
   await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Qwen 多图编辑' })).toBeTruthy());
 });
@@ -2330,7 +2331,7 @@ it('左列一家服务商一行：点另一家只换右列那份模型清单，�
   });
   const screen = await ready();
   await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
-  await fireEvent.click(await screen.findByRole('button', { name: /^API/ }));
+  await fireEvent.click(await screen.findByRole('button', { name: /^云端API服务/ }));
   const vendors = screen.container.querySelectorAll('.cm-api-vendor');
   expect([...vendors].map((v) => (v as HTMLElement).textContent)).toEqual(
     expect.arrayContaining([expect.stringContaining('RunningHub'), expect.stringContaining('GRSAI')]),
@@ -2357,7 +2358,7 @@ it('行末三态说实话：没验过的挂「待实测」，后端明说验过�
   });
   const screen = await ready();
   await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
-  await fireEvent.click(await screen.findByRole('button', { name: /^API/ }));
+  await fireEvent.click(await screen.findByRole('button', { name: /^云端API服务/ }));
   const rows = await screen.findAllByRole('menuitemradio');
   const text = rows.map((row: HTMLElement) => row.textContent ?? '');
   expect(text.some((t) => /Seedream v5.*待实测/.test(t))).toBe(true);
@@ -2367,17 +2368,32 @@ it('行末三态说实话：没验过的挂「待实测」，后端明说验过�
   expect(text.every((t) => !t.includes('云端'))).toBe(true);
 });
 
-it('API 那一屏一条都没装时给空态，底部那颗改口去设置：清单里点不出没配过的东西', async () => {
+it('API 那一屏一条都没装时只给一句话，底部不再挂那颗「设置 Key」', async () => {
   routes({ ...baseRoutes(), '/api/clone/cloud/status': cloudOn() });
-  const onOpenSettings = vi.fn();
-  const screen = await ready({ onOpenSettings });
+  const screen = await ready();
   await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
-  await fireEvent.click(await screen.findByRole('button', { name: /^API/ }));
+  await fireEvent.click(await screen.findByRole('button', { name: /^云端API服务/ }));
   expect(await screen.findByText(/云端这一屏还空着/)).toBeTruthy();
-  // 底部那颗跟着屏走：API 屏不该给「加载本地工作流 JSON」
+  // 那颗按钮整颗撤了（2026-11-04 苏醒圈的第二个框）：API 这屏既不给「加载本地工作流 JSON」，
+  // 也不给「设置 RunningHub 的 API Key」——Key 在设置 → 模型API配置里填，那句话就写在空态里。
   expect(screen.queryByRole('menuitem', { name: /加载本地工作流 JSON/ })).toBeNull();
-  await fireEvent.click(screen.getByRole('menuitem', { name: /设置 RunningHub 的 API Key/ }));
-  expect(onOpenSettings).toHaveBeenCalledWith('模型API配置');
+  expect(screen.queryByRole('menuitem', { name: /API Key/ })).toBeNull();
+});
+
+it('两屏的名字报的是里面装的东西：本地工作流 / 云端API服务', async () => {
+  routes({
+    ...baseRoutes(), '/api/clone/cloud/status': cloudOn(),
+    '/api/clone/templates': { items: [TPL, CLOUD_IMG] },
+  });
+  const screen = await ready();
+  await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
+  const tabs = screen.container.querySelectorAll('.cm-pop-tab');
+  expect(tabs.length).toBe(2);
+  expect(tabs[0].textContent?.trim()).toBe('本地工作流');
+  // 云端那颗后面还挂着条数，所以只看开头
+  expect((tabs[1].textContent ?? '').trim().startsWith('云端API服务')).toBe(true);
+  // 旧名「切换工作流」是句动词，读不出这一屏装的是本机的还是云端的，不许以任何形式留着
+  expect(screen.container.textContent ?? '').not.toContain('切换工作流');
 });
 
 it('音频卡点开一条只吃图的云端 API：不把音频硬塞进「图1」，并说清为什么没放', async () => {

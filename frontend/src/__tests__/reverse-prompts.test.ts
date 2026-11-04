@@ -6,7 +6,7 @@ import ReversePromptPanel from "../components/ReversePromptPanel.svelte";
 import ModelApiSettings from "../components/ModelApiSettings.svelte";
 import { reverseApi, reverseJobs, modelConfigs, reverseSettings, generateReverse } from "../lib/reverse-prompts";
 import { copyText } from "../lib/ws";
-import { cloudApi, requestCloudKeyEdit } from "../lib/clone";
+import { cloudApi } from "../lib/clone";
 vi.mock("../lib/ws", () => ({ copyText: vi.fn().mockResolvedValue(true) }));
 
 const model = { id: 1, name: "测试视觉", base_url: "https://example.com/v1", model: "vision", timeout: 120, provider: null, has_api_key: true, key_persistence: "encrypted" as const };
@@ -304,29 +304,17 @@ describe("reverse prompts", () => {
     expect(save).not.toHaveBeenCalled();
     expect(await panel.findByText(/图片反推与一键同款同时停用/)).toBeTruthy();
   });
-  it("从一键同款那一屏点「设置 RunningHub 的 API Key」：直接落在 RunningHub 那一格", async () => {
-    // 设置页是按下这颗按钮之后才挂载的，所以来意要留在模块里，由挂载那一次取走
-    vi.mocked(reverseApi.providers).mockResolvedValue([preset, cloudPreset]);
-    requestCloudKeyEdit();
-    const panel = render(ModelApiSettings);
-    await waitForReady(panel);
-    await waitFor(() => expect(pressedCard(panel)).toBe("runninghub"));
-    // 来意只负责把人带到那一格：Key 那一格亮着、能输入，就是这趟路的目的
-    const box = panel.getByLabelText("API Key") as HTMLInputElement;
-    expect(box.value).toBe("");
-    expect(box.disabled).toBe(false);
-  });
-  it("带着来意进来时改的是已有那条 RunningHub 配置，不新建第二条", async () => {
+  it("点 RunningHub 那张服务商卡时改的是已有那条配置，不新建第二条", async () => {
     vi.mocked(reverseApi.providers).mockResolvedValue([preset, { ...cloudPreset, shared_has_key: true }]);
     const existing = { ...model, id: 7, provider: "runninghub", name: "RunningHub",
       base_url: "https://llm.runninghub.cn/v1", model: "y/qwen2.5-vl", has_api_key: true };
     vi.mocked(reverseApi.models).mockResolvedValue([existing]);
     modelConfigs.set([existing]);
     const save = vi.spyOn(reverseApi, "saveModel").mockResolvedValue(existing);
-    requestCloudKeyEdit();
     const panel = render(ModelApiSettings);
     await waitForReady(panel);
-    await waitFor(() => expect(pressedCard(panel)).toBe("runninghub"));
+    await pickProvider(panel, "runninghub");
+    expect(pressedCard(panel)).toBe("runninghub");
     // 这一页不显示模型，配置里那个值原样带回去：不能被空串覆盖，那是面板里刚挑好的
     expect(panel.queryByLabelText("识别模型")).toBeNull();
     await fireEvent.input(panel.getByLabelText("API Key"), { target: { value: "RH-NEW-KEY" } });

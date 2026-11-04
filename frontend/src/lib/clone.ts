@@ -138,11 +138,11 @@ export function audioModeTemplates(
   return (templates ?? []).filter((item) => templateMediaKind(item) === "audio");
 }
 
-/** 音频族在「切换工作流」清单里折叠成一条时用的族名——三种出声方式共用一个入口。 */
+/** 音频族在「本地工作流」清单里折叠成一条时用的族名——三种出声方式共用一个入口。 */
 export const AUDIO_MODE_GROUP_LABEL = "\u95ea\u5bfb\u97f3\u9891";
 
 /**
- * 「切换工作流」那一列的行。图片、视频各列各的；音频族超过一条时**收成一条**（闪寻音频）。
+ * 「本地工作流」那一列的行。图片、视频各列各的；音频族超过一条时**收成一条**（闪寻音频）。
  *
  * 出声音的那几条不是几份可换的配方，是同一件事的三种模式，而模式已经有弹窗顶上那排按钮了——
  * 清单里再列三条，用户就要在两个地方选同一件事，还得先想明白「音色描述」和「指定音色」谁在工作流列表里。
@@ -288,7 +288,7 @@ export function cloudMenuGroups(
 }
 
 /**
- * 弹窗标题与底部那颗胶囊上的名字：当前工作流在「切换工作流」清单里叫什么，这两处就叫什么。
+ * 弹窗标题与底部那颗胶囊上的名字：当前工作流在「本地工作流」清单里叫什么，这两处就叫什么。
  *
  * 清单里三条音频折成一条「闪寻音频」，底下那颗也必须叫「闪寻音频」——同一个弹窗里两种叫法，
  * 用户会以为清单那一行和底部这颗管的是两件事（2026-10-30 苏醒点名：三种模式底下都要同步）。
@@ -1431,24 +1431,6 @@ export interface CloneSources {
 }
 
 export const CLONE_SETTINGS_TAB = "一键同款";
-/**
- * 云端 API Key 所在那一组的名字。它不再是独立一页（第一版是「云端生成」一页三节），
- * 走这条路只要一把 Key，就摆进「模型API配置」——弹窗里「设置 RunningHub 的 API Key」跳的是这儿。
- */
-export const CLOUD_SETTINGS_TAB = "模型API配置";
-
-/**
- * 「一键同款」API 那屏的「设置 RunningHub 的 API Key」按下去时先记一笔。
- * 设置页这时才刚要挂载，用 window 事件会放早了（听的人还没到场），
- * 所以由 ModelApiSettings 在读回配置那一次取走，直接把光标停在 Key 那一格。
- */
-let cloudKeyEditPending = false;
-export function requestCloudKeyEdit(): void { cloudKeyEditPending = true; }
-export function takeCloudKeyEdit(): boolean {
-  const pending = cloudKeyEditPending;
-  cloudKeyEditPending = false;
-  return pending;
-}
 
 // ---------- 接口 ----------
 

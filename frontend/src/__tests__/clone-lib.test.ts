@@ -1043,7 +1043,7 @@ describe("内置音色的试听样本：点一下就能听是谁", () => {
 });
 
 
-describe("切换工作流那一列：音频族收成一条", () => {
+describe("本地工作流那一列：音频族收成一条", () => {
   const wf = (id: number, name: string, kind: string, over: Partial<CloneTemplate> = {}): CloneTemplate =>
     tpl([promptSlot], { id, name, media_kind: kind as CloneTemplate["media_kind"], is_active: false, ...over });
   const IMG = wf(1, "闪寻图片", "image", { is_active: true });

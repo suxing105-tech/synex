@@ -161,6 +161,19 @@ export interface WorkflowMenuRow {
   collapsed: boolean;
 }
 
+/**
+ * 清单里那一行叫什么。**只有一个来源**：底部那颗胶囊、弹窗标题、级联右列都走这里。
+ *
+ * 云端那几条报的是模型名（即梦 Seedream v5 lite / Seedance 2.0…），不是「图片API」这种通道名：
+ * API 那一屏现在按服务商展开成一份模型清单，一行写「图片API」等于把唯一有用的信息省掉。
+ * 后端没给 model_label（老后端、或这条是从设置页恢复回来的裸条目）就退回库里的名字，
+ * 绝不自己编一个。
+ */
+export function menuRowLabel(item: CloneTemplate): string {
+  const model = String(item.cloud?.model_label ?? "").trim();
+  return isCloudTemplate(item) && model ? model : templateDisplayName(item.name);
+}
+
 export function workflowMenuRows(
   templates: readonly CloneTemplate[] | null | undefined,
   currentId?: number | null,
@@ -183,7 +196,7 @@ export function workflowMenuRows(
       rows.push({
         key: String(item.id),
         kind,
-        label: templateDisplayName(item.name),
+        label: menuRowLabel(item),
         memberIds: [item.id as number],
         targetId: item.id as number,
         collapsed: false,
@@ -194,7 +207,7 @@ export function workflowMenuRows(
       rows.push({
         key: String(item.id),
         kind,
-        label: templateDisplayName(item.name),
+        label: menuRowLabel(item),
         memberIds: [item.id as number],
         targetId: item.id as number,
         collapsed: false,
@@ -213,6 +226,65 @@ export function workflowMenuRows(
     });
   }
   return rows;
+}
+
+/** 级联菜单左列的一家服务商：一行 = 一家，右列摆它报的那些模型。 */
+export interface CloudMenuGroup {
+  /** 分组用的稳定 key。后端没标 provider 时兜底成 "cloud"，不让一行掉进 undefined 组里。 */
+  key: string;
+  label: string;
+  /** 名字下面第一行：这一家能干什么（出图/出片/出声音）。 */
+  caps: string;
+  /** 名字下面第二行：怎么扣费。分两行是因为左列只有 172px，拼一句会被截成「按 R…」。 */
+  cost: string;
+  /** 完整一句，只进悬浮提示。 */
+  blurb: string;
+  rows: WorkflowMenuRow[];
+}
+
+/** 后端连 provider_label 都没给时说什么。不编品牌名。 */
+export const CLOUD_PROVIDER_LABEL_FALLBACK = "云端";
+
+/** 云端那一屏的扣费说法。这一屏只有 RH币这一条路，别家接进来时要跟着分组走。 */
+export const CLOUD_COST_WORD = "按 RH币扣费";
+
+/**
+ * API 那一屏的左列：能生成什么由后端报的条目决定，前端一家都不猜。
+ *
+ * 为什么按服务商分组而不是再按图片/视频/音频切一刀：这一屏本来就只有「花钱的模型」一类东西，
+ * 按能力切完每列只剩一行，等于多点一次看同样的东西。哪家能生成什么、哪天多接一家，
+ * 都只跟着条目长，界面上不会出现点不动的假服务商。
+ */
+export function cloudMenuGroups(
+  rows: readonly WorkflowMenuRow[],
+  templates: readonly CloneTemplate[] | null | undefined,
+): CloudMenuGroup[] {
+  const list = templates ?? [];
+  const groups: CloudMenuGroup[] = [];
+  for (const row of rows) {
+    const item = list.find((one) => one.id === row.targetId);
+    if (!isCloudTemplate(item)) continue;
+    const key = String(item?.provider ?? "").trim() || "cloud";
+    let group = groups.find((one) => one.key === key);
+    if (!group) {
+      group = {
+        key,
+        label: String(item?.cloud?.provider_label ?? "").trim() || CLOUD_PROVIDER_LABEL_FALLBACK,
+        caps: "",
+        cost: CLOUD_COST_WORD,
+        blurb: "",
+        rows: [],
+      };
+      groups.push(group);
+    }
+    group.rows.push(row);
+  }
+  for (const group of groups) {
+    const words = group.rows.map((row) => WF_OUTPUT_WORDS[row.kind] ?? row.kind);
+    group.caps = words.join("/");
+    group.blurb = group.caps ? `${group.caps} · ${group.cost}` : group.cost;
+  }
+  return groups;
 }
 
 /**

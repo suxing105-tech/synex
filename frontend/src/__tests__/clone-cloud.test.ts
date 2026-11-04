@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   AUDIO_MODE_GROUP_LABEL, CLOUD_SETTINGS_TAB, EMPTY_CLONE_JOB, applyCloneProgress, cloneStatusLabel,
-  coinsLabel, controlSummary, defaultControlValues, isCloudTemplate, mentionInsertText, mentionItems,
+  cloudMenuGroups, coinsLabel, controlSummary, defaultControlValues, isCloudTemplate, menuRowLabel,
+  mentionInsertText, mentionItems,
   mentionsTags, referenceCells, slotKey, stateLabel, supportsRefFamily, workflowMenuRows,
   type CloneJob, type CloneSlot, type CloneTemplate,
 } from "../lib/clone";
@@ -56,6 +57,60 @@ describe("切换工作流清单里的云端条目", () => {
     ]);
     expect(rows.map((row) => row.label)).toEqual(["闪寻参考音色", "音频API"]);
     expect(rows.every((row) => !row.collapsed)).toBe(true);
+  });
+});
+
+describe("API 那一屏的两列级联", () => {
+  const rowOf = (over: Partial<CloneTemplate> = {}) => {
+    const item = cloudTpl(over);
+    return workflowMenuRows([item]).find((row) => row.targetId === item.id)!;
+  };
+
+  it("行名报模型名：底部那颗、弹窗标题、级联右列同一个来源，不许一处一个叫法", () => {
+    const declared = cloudTpl({ cloud: { model_label: "即梦 Seedream v5 lite" } });
+    expect(menuRowLabel(declared)).toBe("即梦 Seedream v5 lite");
+    expect(workflowMenuRows([declared])[0].label).toBe("即梦 Seedream v5 lite");
+  });
+
+  it("后端没给 model_label 就退回库里的名字：老后端与设置页恢复回来的裸条目都不自己编", () => {
+    expect(menuRowLabel(cloudTpl({}))).toBe("图片API");
+    expect(menuRowLabel(tpl([], { id: 3, name: "本机工作流.json" }))).toBe("本机工作流");
+  });
+
+  it("按 provider 分组：一家一行，模型只落在自己那一行里", () => {
+    const mine = cloudTpl({ id: 90, cloud: { provider_label: "RunningHub", model_label: "Seedream v5" } });
+    const other = cloudTpl({ id: 93, provider: "grsai", cloud: { provider_label: "GRSAI", model_label: "别家出图" } });
+    const local = tpl([promptSlot], { id: 1, name: "本机工作流" });
+    const rows = workflowMenuRows([mine, other, local]);
+    const groups = cloudMenuGroups(rows, [mine, other, local]);
+    expect(groups.map((g) => [g.key, g.label, g.rows.length])).toEqual([
+      ["runninghub", "RunningHub", 1],
+      ["grsai", "GRSAI", 1],
+    ]);
+    expect(groups[0].rows[0].label).toBe("Seedream v5");
+    expect(groups[1].rows[0].label).toBe("别家出图");
+  });
+
+  it("左列那一行分两行说实话：能干什么一行、扣什么钱一行，拼起来那句进悬浮提示", () => {
+    const items = [
+      cloudTpl({ id: 90, cloud: { provider_label: "RunningHub" } }),
+      cloudTpl({ id: 91, name: "视频API", media_kind: "video", model: "video", cloud: { provider_label: "RunningHub" } }),
+      cloudTpl({ id: 92, name: "音频API", media_kind: "audio", model: "audio", cloud: { provider_label: "RunningHub" } }),
+    ];
+    const groups = cloudMenuGroups(workflowMenuRows(items), items);
+    expect(groups).toHaveLength(1);
+    // 左列只有 172px：拼成一句会被截成「按 R…」，所以 caps / cost 分开，blurb 只进 title
+    expect(groups[0].caps).toBe("出图/出片/出声音");
+    expect(groups[0].cost).toBe("按 RH币扣费");
+    expect(groups[0].blurb).toBe("出图/出片/出声音 · 按 RH币扣费");
+  });
+
+  it("本机那条不进左列；provider 没标时兜底成一组，不让一行掉进 undefined 组里", () => {
+    const bare = cloudTpl({ id: 94, cloud: undefined, provider: undefined });
+    const local = tpl([promptSlot], { id: 1, name: "本机工作流" });
+    const groups = cloudMenuGroups(workflowMenuRows([bare, local]), [bare, local]);
+    expect(groups.map((g) => [g.key, g.label])).toEqual([["cloud", "云端"]]);
+    expect(cloudMenuGroups(workflowMenuRows([local]), [local])).toEqual([]);
   });
 });
 

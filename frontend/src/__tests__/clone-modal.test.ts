@@ -571,6 +571,22 @@ it('定宽优先：名字长短不许决定这一排的几何，取消和生成�
   expect(css).not.toMatch(/\.cm-pill\s*\{[^}]*flex:\s*none/);
 });
 
+it("窄窗口那一屏不许再撑 452px：面板放不下，两列上下叠、宽度回到 268 那一档", () => {
+  // 538px 实测：452px 的弹层贴在胶囊边上，往左长顶穿左边界（左列标题只剩残字），
+  // 换成贴右长又顶穿右边界（197..639 > 面板右 518）。这一档的面板内容宽只有 vw-84，
+  // 两列怎么放都出屏，所以窄窗口只留一列：宽度沿用量过的 268px 那一档，服务商在上、模型在下。
+  const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  const at = css.indexOf('@media (max-width: 900px)');
+  expect(at).toBeGreaterThan(0);
+  const narrow = css.slice(at);
+  expect(narrow).toMatch(/\.cm-pop-wf\.is-api\s*\{[^}]*width:\s*min\(268px/);
+  expect(narrow).toMatch(/\.cm-api\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  // 叠成一列后那道竖分隔得撤了，不然横线头上还挂着一截竖线
+  expect(narrow).toMatch(/\.cm-api-side\s*\{[^}]*border-right:\s*0/);
+  // 宽屏那两列不受影响：452px 那条还在，只是被 media query 覆盖
+  expect(css).toMatch(/\.cm-pop-wf\.is-api\s*\{[^}]*width:\s*min\(452px/);
+});
+
 it('静止时先占好「取消」那一格：按下生成，左边那一排不重排', async () => {
   routes(baseRoutes());
   const screen = await ready();
@@ -2227,10 +2243,10 @@ it('用户在设置页把云端那条设成「当前」之后，弹窗就开在�
     '/api/clone/cloud/estimate': { coins: 3, mode: 'image' },
   });
   const screen = await ready();
-  expect(screen.getByRole('button', { name: '同款工作流' }).textContent).toContain('图片API');
+  expect(screen.getByRole('button', { name: '同款工作流' }).textContent).toContain('Seedream v5');
 });
 
-it('云端那一行只在 API 那一屏：本机屏干净，API 屏挂「云端」「待实测」，不能用时灰掉并说出差哪一步', async () => {
+it('API 那一屏两列级联：左列一家服务商一行，右列摆它报的模型；差 Key 时灰掉并说出差哪一步', async () => {
   routes({
     ...baseRoutes(),
     '/api/clone/cloud/status': cloudOn({ availability: { available: false, reason: '还没填 RunningHub 的 API Key' } }),
@@ -2239,15 +2255,27 @@ it('云端那一行只在 API 那一屏：本机屏干净，API 屏挂「云端�
   const screen = await ready();
   await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
   await tick();
-  // 两屏各摆各的（苏醒要的）：本机这一屏不该出现要扣 RH币的那一行
+  // 两屏各摆各的（苏醒要的）：本机这一屏不该出现要扣 RH币的那一条
   expect(screen.getByRole('button', { name: '切换工作流' }).getAttribute('aria-pressed')).toBe('true');
-  expect(screen.queryByRole('menuitemradio', { name: /图片API/ })).toBeNull();
+  expect(screen.queryByRole('menuitemradio', { name: /Seedream v5/ })).toBeNull();
+  // 两屏各画各的，不许同时挂在 DOM 里（{:else if} 挂错块时实测过会两块一起出来）
+  expect(screen.container.querySelector('.cm-api')).toBeNull();
   await fireEvent.click(screen.getByRole('button', { name: /^API/ }));
-  const row = (await screen.findByRole('menuitemradio', { name: /图片API/ })) as HTMLButtonElement;
-  expect(row.textContent).toContain('云端');
+  // 左列：一行一家，名字下面写它能干什么；指针停在那一家就报 aria-current
+  const vendor = screen.container.querySelector('.cm-api-vendor') as HTMLElement;
+  expect(vendor.textContent).toContain('RunningHub');
+  expect(vendor.textContent).toContain('出图');
+  expect(vendor.getAttribute('aria-current')).toBe('true');
+  // 右列：那一行叫模型名，不叫「图片API」。差 Key 是整条云端路的事，所以灰掉的是行、说的是「需配置」。
+  // 换到 API 屏之后，本机那一屏那一列必须整块撤掉，不是藏起来
+  expect(screen.container.querySelector('.cm-pop-list')).toBeNull();
+  const row = (await screen.findByRole('menuitemradio', { name: /Seedream v5/ })) as HTMLButtonElement;
   expect(row.textContent).toContain('待实测');
+  expect(row.textContent).toContain('需配置');
   expect(row.disabled).toBe(true);
   expect(row.getAttribute('title')).toContain('还没填 RunningHub 的 API Key');
+  // 左下角那一格报「现在挂的是哪一条」：此刻挂的还是本机那条，就照实说「本机」
+  expect(screen.container.querySelector('.cm-api-cur')?.textContent).toContain('本机');
   // 本机那一行也不跟着跑到 API 屏上
   expect(screen.queryByRole('menuitemradio', { name: /Qwen 多图编辑/ })).toBeNull();
 });
@@ -2261,8 +2289,8 @@ it('两屏切着换工作流：API 屏点云端那条就换过去，回本机屏
   const screen = await ready();
   await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
   await fireEvent.click(await screen.findByRole('button', { name: /^API/ }));
-  await fireEvent.click(await screen.findByRole('menuitemradio', { name: /图片API/ }));
-  await vi.waitFor(() => expect(screen.getByRole('heading', { name: '图片API' })).toBeTruthy());
+  await fireEvent.click(await screen.findByRole('menuitemradio', { name: /Seedream v5/ }));
+  await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Seedream v5' })).toBeTruthy());
   // 现在挂在云端：再开弹层该直接开在 API 屏，不用人再点一次
   await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
   await tick();
@@ -2270,6 +2298,73 @@ it('两屏切着换工作流：API 屏点云端那条就换过去，回本机屏
   await fireEvent.click(screen.getByRole('button', { name: '切换工作流' }));
   await fireEvent.click(await screen.findByRole('menuitemradio', { name: /Qwen 多图编辑/ }));
   await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Qwen 多图编辑' })).toBeTruthy());
+});
+
+/** 另一家出片模型：verified=true，用来钉「已实测」这一态。 */
+const CLOUD_VIDEO = {
+  id: 92, name: '视频API', is_active: false, media_kind: 'video',
+  engine: 'cloud', is_cloud: true, provider: 'runninghub', model: 'video',
+  created_at: '', updated_at: '', node_count: 0, prompt_count: 1, reference_count: 1, control_count: 0,
+  default_prompt: '',
+  slots: [{ kind: 'prompt', node: 'model', input: 'prompt', label: '完整提示词' }],
+  cloud: { model_label: 'Seedance 2.0', provider_label: 'RunningHub', verified: true, notes: [] },
+};
+/** 第二家服务商：级联左列不能把服务商写死成只有 RunningHub。 */
+const CLOUD_OTHER = {
+  id: 93, name: '图片API·别家', is_active: false, media_kind: 'image',
+  engine: 'cloud', is_cloud: true, provider: 'grsai', model: 'grs-image',
+  created_at: '', updated_at: '', node_count: 0, prompt_count: 1, reference_count: 0, control_count: 0,
+  default_prompt: '',
+  slots: [{ kind: 'prompt', node: 'model', input: 'prompt', label: '完整提示词' }],
+  cloud: { model_label: '别家出图 1.0', provider_label: 'GRSAI', verified: false, notes: [] },
+};
+
+const modelRows = (screen: any) =>
+  screen.getAllByRole('menuitemradio').map((row: HTMLElement) => row.textContent ?? '').join('|');
+
+it('左列一家服务商一行：点另一家只换右列那份模型清单，不把两家的模型摊在一起', async () => {
+  routes({
+    ...baseRoutes(), '/api/clone/cloud/status': cloudOn(),
+    '/api/clone/templates': { items: [TPL, CLOUD_IMG, CLOUD_VIDEO, CLOUD_OTHER] },
+    '/api/clone/cloud/estimate': { coins: 3, mode: 'image' },
+  });
+  const screen = await ready();
+  await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
+  await fireEvent.click(await screen.findByRole('button', { name: /^API/ }));
+  const vendors = screen.container.querySelectorAll('.cm-api-vendor');
+  expect([...vendors].map((v) => (v as HTMLElement).textContent)).toEqual(
+    expect.arrayContaining([expect.stringContaining('RunningHub'), expect.stringContaining('GRSAI')]),
+  );
+  expect(vendors[0].getAttribute('aria-current')).toBe('true');
+  expect(vendors[1].getAttribute('aria-current')).toBe('false');
+  await vi.waitFor(() => expect(modelRows(screen)).toContain('Seedream v5'));
+  expect(modelRows(screen)).toContain('Seedance 2.0');
+  expect(modelRows(screen)).not.toContain('别家出图');
+  await fireEvent.click(vendors[1]);
+  await tick();
+  expect(modelRows(screen)).toContain('别家出图 1.0');
+  expect(modelRows(screen)).not.toContain('Seedream v5');
+  expect(screen.container.querySelectorAll('.cm-api-vendor')[1].getAttribute('aria-current')).toBe('true');
+  // 换看的这一家不等于换用哪一条：没点模型之前，挂着的还是原来那条
+  expect(screen.getByRole('button', { name: '同款工作流' }).textContent).toContain('Qwen 多图编辑');
+});
+
+it('行末三态说实话：没验过的挂「待实测」，后端明说验过的挂「已实测」，Key 齐了不再喊「需配置」', async () => {
+  routes({
+    ...baseRoutes(), '/api/clone/cloud/status': cloudOn(),
+    '/api/clone/templates': { items: [TPL, CLOUD_IMG, CLOUD_VIDEO] },
+    '/api/clone/cloud/estimate': { coins: 3, mode: 'image' },
+  });
+  const screen = await ready();
+  await fireEvent.click(screen.getByRole('button', { name: '同款工作流' }));
+  await fireEvent.click(await screen.findByRole('button', { name: /^API/ }));
+  const rows = await screen.findAllByRole('menuitemradio');
+  const text = rows.map((row: HTMLElement) => row.textContent ?? '');
+  expect(text.some((t) => /Seedream v5.*待实测/.test(t))).toBe(true);
+  expect(text.some((t) => /Seedance 2\.0.*已实测/.test(t))).toBe(true);
+  expect(text.every((t) => !t.includes('需配置'))).toBe(true);
+  // 这一屏整屏都是云端，再挂一枚「云端」是重复四个字，不省也占位
+  expect(text.every((t) => !t.includes('云端'))).toBe(true);
 });
 
 it('API 那一屏一条都没装时给空态，底部那颗改口去设置：清单里点不出没配过的东西', async () => {

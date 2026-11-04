@@ -31,7 +31,7 @@
     type CloudStatus,
     applyMention, caretCoordinates, mentionAddLabel, mentionChunks, mentionInsertText, mentionItems as buildMentionItems, mentionToken,
     audioModeLabel, audioModeTemplates, familyCells, isAudioTemplate, isVideoTemplate, promptGroupPlaceholder,
-    workflowMenuRows, workflowDisplayName, AUDIO_MODE_GROUP_LABEL,
+    workflowMenuRows, workflowDisplayName, cloudMenuGroups, AUDIO_MODE_GROUP_LABEL,
     referenceCounter, referenceFamilies, referenceNoun,
     REF_KIND_COUNTERS, REF_KIND_NAMES, templateDisplayName, templateMediaKind,
     WF_KIND_WORDS, WF_OUTPUT_WORDS,
@@ -227,6 +227,22 @@
   const popRows = $derived(wfRows.filter((row) => rowIsCloud(row) === (wfTab === "cloud")));
   /** 「API」那颗后面的条数：不用点进去也知道这条路铺了几条 API。 */
   const cloudRowCount = $derived(wfRows.filter((row) => rowIsCloud(row)).length);
+  /**
+   * API 那一屏的左列：一家服务商一行，右列摆它报的那些模型（2026-11-04 苏醒给的图二版式）。
+   * 只有后端标了 is_cloud 的条目会进来，所以这一屏不可能摆出一家点不动的假服务商。
+   */
+  const apiGroups = $derived(cloudMenuGroups(wfRows.filter((row) => rowIsCloud(row)), templates));
+  /** 指针停在哪家：悬停或点左列换它。没停过时回落到第一家；一家都没装时整块不画，走下面那句空态。 */
+  let apiVendor = $state("");
+  const apiActive = $derived(apiGroups.find((group) => group.key === apiVendor) ?? apiGroups[0] ?? null);
+  /** 「已实测」只说后端明说 verified=true 的那几条；没说过的一句都不讲。 */
+  function rowVerified(row: (typeof wfRows)[number]): boolean {
+    return isCloudTemplate(rowTemplate(row)) && rowTemplate(row)?.cloud?.verified === true;
+  }
+  /** 左下角那一格报当前那一条挂在哪一家。本机的那条就说「本机」，不假装是云端。 */
+  const currentVendorWord = $derived(
+    isCloud ? String(template?.cloud?.provider_label ?? "").trim() || "云端" : "本机",
+  );
   /**
    * 打开弹层：当前挂的是云端就开在「API」屏，是本机的就开在「切换工作流」屏。
    * 每次打开重读一次云端状态（Key 可能刚在设置里填过），读失败不置灰——
@@ -1433,7 +1449,7 @@
                   </button>
                   {#if wfOpen}
                     <div class="cm-pop-scrim" role="presentation" onclick={closeWorkflowPop}></div>
-                    <div class="cm-pop cm-pop-wf" role="menu" aria-label="同款工作流">
+                    <div class="cm-pop cm-pop-wf" class:is-api={wfTab === "cloud" && Boolean(apiActive)} role="menu" aria-label="同款工作流">
                       <!-- 两屏各摆各的（苏醒要的）：本机的配方在这一屏，云端的收费 API 在那一屏。
                            用 aria-pressed 的按钮而不是 tablist：这层容器是 role="menu"，塞 tablist 是错的 ARIA。 -->
                       <div class="cm-pop-tabs">
@@ -1443,32 +1459,89 @@
                           {#if cloudRowCount}<span class="cm-pop-tab-count">{cloudRowCount}</span>{/if}
                         </button>
                       </div>
-                      {#each popRows as row (row.key)}
-                        {@const isOn = row.memberIds.includes(templateId ?? -1)}
-                        <div class="cm-wf-row">
-                          <button class="cm-wf" role="menuitemradio" aria-checked={isOn} disabled={busy || rowBlocked(row)}
-                            title={row.collapsed ? `${AUDIO_MODE_GROUP_LABEL} · ${wfGroupTitle}` : wfRowTitle(row)}
-                            onclick={() => pickMenuRow(row)}>
-                            <!-- 图片和视频的工作流同列一份清单（用户要的「不分家」），但出片还是出图必须一眼分得清，
-                                 否则图片卡挂上一条 H3 视频工作流，等十分钟出一段片子才知道选错。
-                                 徽标钉在名字前面：跟在名字后面时它会随名字长短左右漂移，两行对不齐。 -->
-                            <span class="cm-wf-kind" class:cm-wf-kind-video={row.kind === "video"}
-                              class:cm-wf-kind-audio={row.kind === "audio"}>{WF_KIND_WORDS[row.kind]}</span>
-                            <span class="cm-wf-name">{row.label}</span>
-                            {#if rowIsCloud(row)}<span class="cm-wf-tag">云端</span>{/if}
-                            {#if rowUnverified(row)}<span class="cm-wf-tag">待实测</span>{/if}
-                            {#if isOn}<span class="cm-wf-tag">当前</span>{/if}
-                          </button>
-                          {#if !row.collapsed}
-                            <!-- 折叠那行不给删：一条「闪寻音频」背后是三条工作流，删哪条不该由这颗 X 临场决定。 -->
-                            <button class="cm-wf-del" aria-label={`删除工作流 ${row.label}`} title="删除这个工作流"
-                              disabled={busy || wfDeleting} onclick={() => void removeTemplate(row.targetId)}>
-                              <Icon name="x" size={13} />
-                            </button>
-                          {/if}
+                      {#if wfTab === "local"}
+                        <div class="cm-pop-list">
+                            {#each popRows as row (row.key)}
+                            {@const isOn = row.memberIds.includes(templateId ?? -1)}
+                            <div class="cm-wf-row">
+                              <button class="cm-wf" role="menuitemradio" aria-checked={isOn} disabled={busy || rowBlocked(row)}
+                                title={row.collapsed ? `${AUDIO_MODE_GROUP_LABEL} · ${wfGroupTitle}` : wfRowTitle(row)}
+                                onclick={() => pickMenuRow(row)}>
+                                <!-- 图片和视频的工作流同列一份清单（用户要的「不分家」），但出片还是出图必须一眼分得清，
+                                     否则图片卡挂上一条 H3 视频工作流，等十分钟出一段片子才知道选错。
+                                     徽标钉在名字前面：跟在名字后面时它会随名字长短左右漂移，两行对不齐。 -->
+                                <span class="cm-wf-kind" class:cm-wf-kind-video={row.kind === "video"}
+                                  class:cm-wf-kind-audio={row.kind === "audio"}>{WF_KIND_WORDS[row.kind]}</span>
+                                <span class="cm-wf-name">{row.label}</span>
+                                {#if isOn}<span class="cm-wf-tag">当前</span>{/if}
+                              </button>
+                              {#if !row.collapsed}
+                                <!-- 折叠那行不给删：一条「闪寻音频」背后是三条工作流，删哪条不该由这颗 X 临场决定。 -->
+                                <button class="cm-wf-del" aria-label={`删除工作流 ${row.label}`} title="删除这个工作流"
+                                  disabled={busy || wfDeleting} onclick={() => void removeTemplate(row.targetId)}>
+                                  <Icon name="x" size={13} />
+                                </button>
+                              {/if}
+                            </div>
+                            {/each}
                         </div>
-                      {/each}
-                      {#if wfTab === "cloud" && !popRows.length}
+                      {:else if apiActive}
+                        <!-- API 这一屏两列摆（2026-11-04 苏醒给的图二）：左列一家服务商一行，图标 + 名字 + 它能干什么；
+                             右列是这一家能点的模型。为什么不在这屏再按图片/视频/音频切一刀：这一屏本来就只有
+                             「花钱的模型」一类东西，切完每列只剩一行，等于多点一次看同样的东西。
+                             行名用的是模型名，口径在 clone.ts 的 menuRowLabel——与底部那颗胶囊、弹窗标题同一个来源。 -->
+                        <div class="cm-api">
+                          <div class="cm-api-side">
+                            <p class="cm-api-cap">服务商</p>
+                            {#each apiGroups as group (group.key)}
+                              <button class="cm-api-vendor" role="menuitem" type="button"
+                                aria-current={group.key === apiActive.key} title={`${group.label} · ${group.blurb}`}
+                                onmouseenter={() => apiVendor = group.key} onclick={() => apiVendor = group.key}>
+                                <span class="cm-api-vendor-mark" aria-hidden="true"><Icon name="cloud" size={14} /></span>
+                                <span class="cm-api-vendor-text">
+                                  <span class="cm-wf-name cm-api-vendor-name">{group.label}</span>
+                                  <span class="cm-api-vendor-sub">{group.caps}</span>
+                                  <span class="cm-api-vendor-sub">{group.cost}</span>
+                                </span>
+                                <span class="cm-api-vendor-arrow" aria-hidden="true"><Icon name="chevron-right" size={12} /></span>
+                              </button>
+                            {/each}
+                            <!-- 左下角那一格报「现在挂的是哪一条」：这一屏挑的都是还没用的那些，不说清正在跑谁，
+                                 换完人回头就得猜。本机那条也照实说「本机」。 -->
+                            <div class="cm-api-cur">
+                              <span class="cm-wf-kind" class:cm-wf-kind-video={mediaKind === "video"}
+                                class:cm-wf-kind-audio={mediaKind === "audio"}>{WF_KIND_WORDS[mediaKind]}</span>
+                              <span class="cm-wf-name" title={wfFullTitle}>{wfName}</span>
+                              <span class="cm-api-cur-vendor">{currentVendorWord}</span>
+                            </div>
+                          </div>
+                          <div class="cm-api-main">
+                            {#each apiActive.rows as row (row.key)}
+                              {@const isOn = row.memberIds.includes(templateId ?? -1)}
+                              <div class="cm-wf-row cm-api-row">
+                                <button class="cm-wf cm-api-model" role="menuitemradio" aria-checked={isOn}
+                                  disabled={busy || rowBlocked(row)} title={wfRowTitle(row)}
+                                  onclick={() => pickMenuRow(row)}>
+                                  <span class="cm-wf-kind" class:cm-wf-kind-video={row.kind === "video"}
+                                    class:cm-wf-kind-audio={row.kind === "audio"}>{WF_KIND_WORDS[row.kind]}</span>
+                                  <span class="cm-wf-name">{row.label}</span>
+                                  <!-- 状态钉在行末同一个位置。黄的是「整条云端路差一把 Key」——灰的是路，不是这一行坏了。 -->
+                                  {#if rowBlocked(row)}<span class="cm-wf-tag cm-wf-tag-warn">需配置</span>{/if}
+                                  {#if rowUnverified(row)}<span class="cm-wf-tag">待实测</span>{/if}
+                                  {#if rowVerified(row)}<span class="cm-wf-tag cm-wf-tag-ok">已实测</span>{/if}
+                                  {#if isOn}<span class="cm-wf-tag cm-wf-tag-cur">当前</span>{/if}
+                                </button>
+                                {#if !row.collapsed}
+                                  <button class="cm-wf-del" aria-label={`删除工作流 ${row.label}`} title="删除这个工作流"
+                                    disabled={busy || wfDeleting} onclick={() => void removeTemplate(row.targetId)}>
+                                    <Icon name="x" size={13} />
+                                  </button>
+                                {/if}
+                              </div>
+                            {/each}
+                          </div>
+                        </div>
+                      {:else}
                         <p class="cm-pop-empty">云端这一屏还空着：去设置 → 模型API配置填 RunningHub 的 API Key。</p>
                       {/if}
                       <div class="cm-pop-sep"></div>
@@ -1722,6 +1795,40 @@
   .cm-pop-title { margin: 2px 0 0; font-size: 12.5px; color: #a1a1aa; }
   /* 这颗胶囊靠着右列的右边缘，弹层左对齐会被顶出弹窗（窄窗口实测错位）。贴着胶囊右边往左长才稳。 */
   .cm-pop-wf { left: auto; right: 0; width: 268px; gap: 3px; }
+  /* API 那一屏要装两列（左列 156 + 右列模型清单），宽度只在这一屏放开。
+     别写 100%：这块弹层的包含块是那颗胶囊外面那一格（position:relative），100% = 胶囊那么宽。
+     452px 是量出来的上限（弹窗右列 minmax(340px, 470px)），另一头按视口收：
+     弹窗左右各 20px 留白 + 面板内边距 22px×2，窄窗口下才不会被 .cm-panel 的 overflow 裁掉左边。 */
+  .cm-pop-wf.is-api { width: min(452px, calc(100vw - 96px)); max-height: min(58vh, 430px); }
+  /* 本机那一屏那一列行。包一层是为了让 else 挂在外层 if 上（见模板那三条注释），所以行距自己守。 */
+  .cm-pop-list { display: flex; flex-direction: column; gap: 3px; }
+  .cm-api { display: grid; grid-template-columns: 172px minmax(0, 1fr); gap: 10px; min-height: 0; }
+  .cm-api-side { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding-right: 10px; border-right: 1px solid rgb(255 255 255 / 8%); }
+  .cm-api-cap { margin: 2px 0 0; padding: 0 6px; font-size: 10.5px; color: #7f7f87; }
+  /* 服务商那一行：图标方块 + 名字 + 一句「能干什么」+ 右箭头。选中态走 aria-current，不走 aria-pressed——
+     全局 .fill-interactions 会把 pressed 的按钮整颗刷成品牌红底黑字（0.2.34 那轮在设置页栽过一次）。 */
+  .cm-api-vendor { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 8px; text-align: left; color: #d4d4d8; background: transparent; border-radius: 10px; cursor: pointer; }
+  .cm-api-vendor:hover, .cm-api-vendor[aria-current="true"] { color: #fafafa; background: rgb(255 255 255 / 7%); }
+  .cm-api-vendor-mark { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; color: #93c5fd; background: rgb(59 130 246 / 14%); }
+  .cm-api-vendor-text { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; }
+  .cm-api-vendor-name { font-size: 12.5px; }
+  .cm-api-vendor-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; color: #8a8a8e; }
+  .cm-api-vendor-arrow { flex: none; display: inline-flex; color: #7f7f87; }
+  /* 左下角那一格：族徽 + 当前那条的名字 + 挂在哪一家。顶边一条线把它和上面的清单分开。 */
+  .cm-api-cur { margin-top: auto; display: flex; align-items: center; gap: 6px; padding: 7px 8px 1px; border-top: 1px solid rgb(255 255 255 / 8%); font-size: 11.5px; color: #a1a1aa; }
+  .cm-api-cur-vendor { flex: none; color: #7f7f87; }
+  .cm-api-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; overflow: auto; }
+  /* 模型名允许折两行：这一屏要的就是「用的哪个模型」，截成「即梦 Seedream v…」等于白改。
+     两行是上限——再长就是后端那条 label 该收一收了，全名一直在悬浮提示里。 */
+  .cm-api-model { align-items: flex-start; padding-top: 7px; padding-bottom: 7px; }
+  .cm-api-model .cm-wf-kind { margin-top: 1px; }
+  .cm-api-model .cm-wf-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; overflow: hidden; line-height: 1.3; }
+  .cm-api-model .cm-wf-tag { margin-top: 1px; }
+  /* 行末三态：中性说的是「当前」，黄的是差一步配置，红的才是「没验过」。
+     别把三态刷成同一个红——那等于把「还没验」和「还没配」说成一件事。 */
+  .cm-wf-tag-warn { color: #fbbf24; background: rgb(245 158 11 / 16%); }
+  .cm-wf-tag-ok { color: #4ade80; background: rgb(34 197 94 / 16%); }
+  .cm-wf-tag-cur { color: #e4e4e7; background: rgb(255 255 255 / 12%); }
   /* 弹层顶部那两屏：像同一颗胶囊里的两段，选中那段提亮，不额外占一行标题 */
   .cm-pop-tabs { display: flex; gap: 4px; padding: 2px; margin-bottom: 2px; background: rgb(255 255 255 / 4%); border-radius: 10px; }
   .cm-pop-tab {
@@ -1885,6 +1992,13 @@
     .cm-hero { max-height: 40vh; }
     .cm-pop { width: min(328px, 78vw); }
     .cm-pop-wf { width: min(268px, 78vw); }
+    /* 窄窗口这一屏不放两列。这一档的面板内容宽只有 vw-84，452px 弹层贴在胶囊边上，
+       往左长顶穿左边界、往右长顶穿右边界（538px 两种都实测过），怎么贴都出屏。
+       所以窄窗口沿用原来那一档宽度（贴右往左长是量过安全的），两列改成上下叠：
+       服务商在上、模型清单在下，一样能挑，只是不再左右两栏。 */
+    .cm-pop-wf.is-api { width: min(268px, 78vw); }
+    .cm-api { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+    .cm-api-side { padding-right: 0; padding-bottom: 5px; border-right: 0; border-bottom: 1px solid rgb(255 255 255 / 8%); }
   }
 
   /* ── @ 引用素材菜单：抄图库那套胶囊菜单的版式，只是贴在光标下面。 */

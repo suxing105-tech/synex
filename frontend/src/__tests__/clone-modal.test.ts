@@ -104,7 +104,7 @@ it('参考位显示成「图片N」并带节点标题，提示词先留空但一
   expect(screen.getByRole('button', { name: '替换图片1' })).toBeTruthy();
   expect(screen.getByRole('button', { name: '移除图片1' })).toBeTruthy();
   expect((screen.getByLabelText('提示词') as HTMLTextAreaElement).value).toBe('');
-  await fireEvent.click(screen.getByRole('button', { name: '填入工作流内置提示词' }));
+  await fireEvent.click(screen.getByRole('button', { name: '载入工作流内置提示词' }));
   expect((screen.getByLabelText('提示词') as HTMLTextAreaElement).value).toBe('工作流里写的那句');
 });
 
@@ -199,18 +199,18 @@ it('认不出当初的参考图时明说「先放了它自己」，换一张参�
   });
   const screen = await ready();
   // 参考位里那是被点的这张成图自己，不说明就会让人以为当初只喂了这一张
-  expect(screen.getByText(/没找到这张图当初用的参考图/)).toBeTruthy();
+  expect(screen.container.querySelector('.cm-composer')!.getAttribute('title')).toContain('先放了它自己当参考');
   await fireEvent.click(screen.getByRole('button', { name: '替换图片1' }));
   await fireEvent.click(await screen.findByRole('button', { name: 'ref.png' }));
   await vi.waitFor(() => expect(screen.getByTitle(/^人物参考｜ref\.png$/)).toBeTruthy());
-  expect(screen.queryByText(/没找到这张图当初用的参考图/)).toBeNull();
+  expect(screen.container.querySelector('.cm-composer')!.getAttribute('title')).not.toContain('先放了它自己当参考');
 });
 
 it('普通导入的图片不解释来源：没带 workflow 就不该冒出一句「当初没记下参考图」', async () => {
   routes(baseRoutes());
   const screen = await ready();
-  expect(screen.queryByText(/没找到这张图当初用的参考图/)).toBeNull();
-  expect(screen.queryByText(/已经不在图库里了/)).toBeNull();
+  expect(screen.container.querySelector('.cm-composer')!.getAttribute('title')).not.toContain('先放了它自己当参考');
+  expect(screen.container.querySelector('.cm-composer')!.getAttribute('title')).not.toContain('已经不在图库里了');
 });
 
 it('还没有模板时不是一句空提示，而是直接把人带去设置导入', async () => {
@@ -705,21 +705,78 @@ it('竖排不回到左右两栏：弹窗收窄、预览按高度定大小、卡�
   expect(css).toMatch(/\.cm-pop-kind\s*\{\s*width:\s*min\(268px,\s*78vw\)/);
 });
 
-it('参考做进 composer 那张卡里：素材、话、来源共用一张卡', async () => {
-  // 2026-11-04 苏醒：「把参考做进框里做交互」——素材、话、按钮是同一次表达，拆成两块就看不出
-  // 「这几张就是要用的参考」。这里压的是包住关系：卡里同时装下参考条与提示词框，来源那句也在卡里。
+it('参考做进 composer 那张卡里：素材与话共用一张卡，卡里不摆灰字小注', async () => {
+  // 2026-11-04 苏醒：「把参考做进框里做交互」＋「这种小字提示也删掉」——素材、话、按钮是同一次
+  // 表达，拆成两块就看不出「这几张就是要用的参考」；而说明性的小字一律不占版面。
   routes(baseRoutes());
   const screen = await ready();
   const card = screen.container.querySelector('.cm-composer');
   expect(card, '.cm-composer').toBeTruthy();
   expect(card!.querySelector('.cm-ref-stack')).toBeTruthy();
   expect(card!.querySelector('textarea.cm-textarea')).toBeTruthy();
-  expect(card!.querySelector('.cm-field-foot')).toBeTruthy();
-  // 卡外不再挂小标题：「完整提示词」是工作流给的槽位名，缩成来源那句前面的前缀，不配占一整行
+  // 卡外不挂小标题：槽位名不占版面，附框上方自己有名字
   expect(card!.previousElementSibling?.className ?? '').not.toContain('cm-block-title');
-  expect((card!.querySelector('.cm-note-tag') as HTMLElement).textContent).toBe('完整提示词 ·');
   const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
   expect(css).not.toContain('<p class="cm-block-title">{promptBlockTitle');
+});
+
+it('提示词框下面不摆灰字小注：来源那句挂到框的悬停提示上', async () => {
+  // 2026-11-04 苏醒（圈掉「完整提示词 · 已带上这张图自己的提示词」）：「这种小字提示也删掉」
+  routes({
+    ...baseRoutes(),
+    // 只用图片自带那句：工作流没有内置提示词，右上角那颗不该出现，来源才轮得到图片自带
+    '/api/clone/templates': { items: [{ ...TPL, default_prompt: '' }] },
+    '/api/images/7': { id: 7, filename: 'source.png', positive_prompt: '图里自带的那句' },
+  });
+  const screen = await ready();
+  const card = screen.container.querySelector('.cm-composer')!;
+  expect(card.querySelector('.cm-field-foot'), '提示词框下面不该再有那一行').toBeNull();
+  expect(card.querySelectorAll('.cm-note').length, 'composer 卡里不该有灰字小注').toBe(0);
+  const box = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  expect(box.getAttribute('title')).toBe('已带上这张图自己的提示词');
+});
+
+it('载入模板收成圆角框右上角那颗半透明图标：用得上才出现，点一下填进提示词框', async () => {
+  // 2026-11-04 苏醒（圈掉「填入工作流内置提示词」那颗文字按钮）：「做成半透明图标，鼠标滑过展示，
+  // 功能变成加载提示词模板，放在矩形圆框右上角」
+  routes(baseRoutes());
+  const screen = await ready();
+  const wand = screen.getByRole('button', { name: '载入工作流内置提示词' }) as HTMLButtonElement;
+  expect(wand.textContent?.trim()).toBe('');
+  expect(wand.querySelector('svg'), '图标本身要画出来').toBeTruthy();
+  await fireEvent.click(wand);
+  expect((screen.getByLabelText('提示词') as HTMLTextAreaElement).value).toBe('工作流里写的那句');
+  // 填上之后没有下一级模板可填了就该收掉，别留一颗点了没反应的钮
+  expect(screen.queryByRole('button', { name: '载入工作流内置提示词' })).toBeNull();
+  // 工作流没有内置提示词 → 根本不摆这颗
+  cleanup();
+  routes({ ...baseRoutes(), '/api/clone/templates': { items: [{ ...TPL, default_prompt: '' }] } });
+  const s2 = await ready();
+  expect(s2.queryByRole('button', { name: '载入工作流内置提示词' })).toBeNull();
+  // 挂在圆角框右上角：绝对定位 + 上/右贴边、静止时半透明，且压得过左边那一摞参考
+  const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  const rule = css.slice(css.indexOf('.cm-wand {'), css.indexOf('.cm-wand:hover'));
+  expect(rule).toMatch(/position:\s*absolute/);
+  expect(rule).toMatch(/top:\s*10px/);
+  expect(rule).toMatch(/right:\s*10px/);
+  expect(rule).toMatch(/opacity:\s*\.55/);
+  const stack = css.slice(css.indexOf('.cm-ref-stack {'), css.indexOf('.cm-ref-stack:hover'));
+  const zc = Number((stack.match(/z-index:\s*(\d+)/) ?? [0, '0'])[1]);
+  expect(Number((rule.match(/z-index:\s*(\d+)/) ?? [0, '0'])[1])).toBeGreaterThan(zc);
+});
+
+it('版面里一条小字提示都不剩：丢参考、混族、不吃参考全收进悬停提示', async () => {
+  // 2026-11-04 苏醒（圈掉「这张图当初还用了 1 张参考图，已经不在图库里了」）：「这种小字提示也删掉」
+  routes({
+    ...baseRoutes(),
+    '/api/clone/sources/7': { references: [], template_id: null, source_image_id: null, dropped: 1, origin: "db" },
+  });
+  const screen = await ready();
+  const card = screen.container.querySelector('.cm-composer')!;
+  expect(card.querySelectorAll('.cm-note').length).toBe(0);
+  expect(card.querySelector('.cm-composer-note')).toBeNull();
+  expect(screen.container.textContent ?? '').not.toContain('已经不在图库里了');
+  expect(card.getAttribute('title')).toContain('当初还用了 1 张参考图');
 });
 
 it('菜单、提示词、参考收进同一个圆角框：卡底那条是卡的一部分，状态行跟它钉在一起', async () => {
@@ -1202,7 +1259,9 @@ it('来源里那张已经不在了：明说还缺一张，不能默默少摆', a
   routes({ ...baseRoutes(), '/api/clone/sources/7': sourcesOf([REF_A], 1) });
   const screen = await ready();
   expect(screen.getByTitle(/^人物参考｜甲\.png$/)).toBeTruthy();
-  expect(await screen.findByText(/还用了 1 张参考图/)).toBeTruthy();
+  // 那句「还用了 1 张参考图」不再摆成一行灰字，挂在卡的悬停提示上（2026-11-04 苏醒：小字提示删掉）
+  const card = screen.container.querySelector('.cm-composer')!;
+  expect(card.getAttribute('title')).toContain('还用了 1 张参考图');
 });
 
 it('提交时按当初的顺序把两张参考图交回去', async () => {
@@ -1649,7 +1708,8 @@ it('音色克隆的台词与原话分两格：附框预填工作流里那句原�
   // 主框还是台词，不能被原话顶掉；出声音的工作流也不该问「要生成什么画面」
   expect((screen.getByLabelText('提示词') as HTMLTextAreaElement).value).toBe('');
   expect(screen.getByLabelText('提示词').getAttribute('placeholder')).toContain('念');
-  expect(screen.getByText(/音色会明显跑偏/)).toBeTruthy();
+  // 那句「填错了音色会跑偏」不再摆成一行灰字，挂在这个框的悬停提示上（2026-11-04 苏醒：小字提示删掉）
+  expect((screen.getByLabelText('参考音频的文本') as HTMLTextAreaElement).getAttribute('title')).toContain('音色会明显跑偏');
 });
 
 it('改附框不碰台词，提交时两段各交各的', async () => {
@@ -1722,7 +1782,7 @@ it('音频带不走提示词：台词与原话从来源记录里回到各自的�
   await vi.waitFor(() => expect((screen.getByLabelText('提示词') as HTMLTextAreaElement).value).toBe('当初要念的那句'));
   expect((screen.getByLabelText('参考音频的文本') as HTMLTextAreaElement).value).toBe('当初样本里的原话');
   // 说清这句是从哪来的：不是「这张图自带的」，也不是「工作流里内置的」
-  expect(screen.getByText('已带上当初生成时用的提示词')).toBeTruthy();
+  expect((screen.getByLabelText('提示词') as HTMLTextAreaElement).getAttribute('title')).toBe('已带上当初生成时用的提示词');
 });
 
 it('来源那句还在路上，用户先打了字：迟到那句不许盖掉用户敲的', async () => {
@@ -1889,7 +1949,7 @@ it('点「音色描述」换到那条工作流：参考那一整块消失、附�
   await tick();
   // 这份工作流一个参考位都没有：空参考区 + 一颗点了不会出东西的「+ 参考」比不摆更糟
   expect(screen.queryByRole('group', { name: /参考/ })).toBeNull();
-  expect(screen.getByText('这一种不用参考音频：想要什么样的声音写在下面的文字格与参数里。')).toBeTruthy();
+  expect(screen.container.querySelector('.cm-composer')!.getAttribute('title')).toContain('这一种不用参考音频');
   const box = (await screen.findByLabelText('音色描述')) as HTMLTextAreaElement;
   expect(box.value).toBe('年轻女性，温柔');
   expect(box.getAttribute('placeholder')).toContain('必填');
@@ -2767,7 +2827,7 @@ it('两屏的名字报的是里面装的东西：本地工作流 / 云端API服�
 it('音频卡点开一条只吃图的云端 API：不把音频硬塞进「图1」，并说清为什么没放', async () => {
   routes({ ...baseRoutes(), '/api/clone/cloud/status': cloudOn(), '/api/clone/templates': { items: [CLOUD_IMG] } });
   const screen = await ready({ image: AUDIO_CARD });
-  expect(screen.getByText(/不吃音频参考/)).toBeTruthy();
+  expect(screen.container.querySelector('.cm-composer')!.getAttribute('title')).toContain('不吃音频参考');
   // 没放进去 = 那一格根本没有素材，不该出现「替换图1」
   expect(screen.queryByRole('button', { name: '替换图1' })).toBeNull();
 });

@@ -32,6 +32,12 @@ export const ICON_PATHS: Record<string, string> = {
     '<rect x="3" y="5" width="18" height="14" rx="2"/>' +
     '<path d="m10 9 5 3-5 3z"/>',
 
+  // 魔法棒：载入工作流内置的提示词模板（45° 一棍 + 两颗四角星）
+  wand:
+    '<line x1="4" y1="20" x2="14.5" y2="9.5"/>' +
+    '<path d="M17 3.5l1 2.5 2.5 1-2.5 1-1 2.5-1-2.5L13.5 7l2.5-1z"/>' +
+    '<path d="M6.5 3l.7 1.8 1.8.7-1.8.7L6.5 8l-.7-1.8L4 5.5l1.8-.7z"/>',
+
   // 文本文档
   text:
     '<rect x="4" y="3" width="16" height="18" rx="2"/>' +

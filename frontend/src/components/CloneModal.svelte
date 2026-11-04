@@ -196,7 +196,7 @@
       ? cloudStatus.availability?.reason || "云端现在还不能用"
       : "",
   );
-  /** 被点那一族这条 API 根本不吃：明说没放进去，别让人以为素材凭空消失了。 */
+  /** 被点那一族这条 API 根本不吃：说清没放进去，这句挂在卡的悬停提示里。 */
   const cardFamilyNote = $derived(
     isCloud && cells.length > 0 && !supportsRefFamily(template, cardKind)
       ? `这条云端 API 不吃${REF_KIND_NAMES[cardKind]}参考，${cardLabel}没放进去。要喂素材就点下面的参考位。`
@@ -303,7 +303,7 @@
     wfTab = isCloud ? "cloud" : "local";
     void loadCloudStatus();
   }
-  /** 没有参考位那条工作流该说一句什么：说清声音/画面从哪儿来，别留一块莫名其妙的空白。 */
+  /** 这条工作流一个参考位都不吃时该说一句什么：不摆进版面，挂到卡的悬停提示上。 */
   const noRefNote = $derived(
     mediaKind === "audio"
       ? "这一种不用参考音频：想要什么样的声音写在下面的文字格与参数里。"
@@ -311,8 +311,12 @@
   );
   /** 主框下面还要多摆几个框（参考音频的原话那种）。没有就一个都不摆。 */
   const secondaryGroups = $derived(secondaryPromptGroups(template));
-  /** 提示词那块的标题跟着主框的标签走：工作流自己管它叫什么就叫什么（空则用通用名字）。 */
-  const promptBlockTitle = $derived(primaryPromptGroup(template)?.label ?? "");
+  /**
+   * 提示词框下面不再摆那行灰字（2026-11-04 苏醒：「这种小字提示也删掉」）。提示词来源挂到框的
+   * title 上：鼠标悬停才说，版面不占。没有来源可说时不给 title，让框自己的 placeholder
+   * （@ 可以引用哪份素材）照常显示。
+   */
+  const promptFoot = $derived(promptLoading ? "正在读这张图的提示词…" : promptOrigin);
   /** 没有来源记录时，被点的这张卡该站的那一格：图片卡＝图片1，视频卡＝视频1。 */
   const homeKey = $derived((familyCells(cells, cardKind)[0] ?? cells[0])?.key ?? "");
 
@@ -323,6 +327,20 @@
   const lostItsReferences = $derived(
     !!sources && !sources.references.length && sources.origin === "unrecorded"
     && Boolean(homeKey) && refs[homeKey]?.id === image?.id,
+  );
+  /**
+   * 卡底那几行灰字合并成的一句提示，挂在 composer 卡的 title 上（2026-11-04 苏醒：「这种小字提示
+   * 也删掉」）。丢了几份、被点这一族没被吃进去、这条工作流本来不吃参考——命中哪个说哪个；
+   * 版面不占，悬停才看得到。
+   */
+  const composerNote = $derived(
+    cells.length === 0
+      ? noRefNote
+      : sources && sources.dropped > 0
+        ? `${cardLabel}当初还用了 ${sources.dropped} ${refCounter}${refNoun}，已经不在图库里了，重新生成前补上。`
+        : lostItsReferences
+          ? `没找到${cardLabel}当初用的${refNoun}，先放了它自己当参考。要原来那几份，点参考位换一下。`
+          : cardFamilyNote,
   );
   const refCount = $derived(cells.filter((cell) => refs[cell.key]).length);
   // 生成方式是参考素材数量的函数，不是一个开关：0 份文生 / 1 份单参考 / 2 份以上多参考。
@@ -1341,8 +1359,20 @@
               <!-- composer 那张卡（2026-11-04 苏醒：像图二那个 composer）：素材、话、按钮是同一次表达，
                    拆成两块反而看不出「这几张就是要用的参考」。卡上下那两行小标题都撤了——
                    格子上写着图片1/图片2，末尾那颗写着参考，比「替换或上传参考」直白；
-                   「完整提示词」是工作流给的槽位名，还得说，但缩到卡下面那行灰字里，不配占一整行。 -->
-              <div class="cm-composer">
+                   「完整提示词」是工作流给的槽位名，鼠标悬停提示词框时才说，不占版面。 -->
+              <div class="cm-composer" title={composerNote}>
+              {#if shouldOfferWorkflowPrompt(prompt, workflowPrompt)}
+                <!-- 工作流自带提示词、这一格还空着才有这颗（2026-11-04 苏醒照图圈）：半透明挂在
+                     圆角框右上角，鼠标滑过才亮起来，点一下把内置那句填进提示词框。
+                     z-index 压过左边那一摞参考（格子给到 1..n）；mention 弹层在卡内更靠后，仍盖得住它。 -->
+                <button
+                  class="cm-wand"
+                  type="button"
+                  aria-label="载入工作流内置提示词"
+                  title="载入工作流内置的提示词"
+                  onclick={() => { promptTouched = true; prompt = workflowPrompt; }}
+                ><Icon name="wand" size={16} /></button>
+              {/if}
                 <!-- 素材在左、话在右（2026-11-04 苏醒第二轮，照那张即梦的输入台）：这一屏的主语是话，
                      素材是话的宾语，并排摆，眼睛先落哪儿就对了；上下摞的时候「写完的话」要滚到素材下面才看得见。
                      一条参考位都没有（纯文生图、只填音色描述）时左边那一摞整块不摆，话独占这一行。 -->
@@ -1432,7 +1462,7 @@
                           <span class:cm-mention-hl={chunk.mention}>{chunk.text}</span>
                         {/each}
                       </div>
-                      <textarea id="clone-prompt" class="cm-textarea cm-textarea-mirror" bind:this={promptEl} oninput={onPromptInput} onkeydown={onPromptKeydown} onscroll={syncPromptBg} rows="1" aria-label="提示词" placeholder={promptPlaceholder(mediaKind, refNoun, cells.length > 0)} bind:value={prompt}></textarea>
+                      <textarea id="clone-prompt" class="cm-textarea cm-textarea-mirror" bind:this={promptEl} oninput={onPromptInput} onkeydown={onPromptKeydown} onscroll={syncPromptBg} rows="1" aria-label="提示词" placeholder={promptPlaceholder(mediaKind, refNoun, cells.length > 0)} title={promptFoot} bind:value={prompt}></textarea>
                       {#if mentionOpen && mentionOptions.length}
                         <div class="cm-pop-scrim" role="presentation" onclick={() => (mentionOpen = false)}></div>
                         <div class="cm-mention" style="left: {mentionBox.left}px; top: {mentionBox.top}px;" role="listbox" aria-label="引用素材">
@@ -1455,36 +1485,15 @@
                         </div>
                       {/if}
                     </div>
-                    <div class="cm-field-foot">
-                      <!-- 来源那句与「填入工作流内置提示词」跟在话后面：素材、话、这句话是同一次表达。
-                           放在卡外面，矮窗口里它会被钉住的坞单独甩到下面，看着像另一块。 -->
-                      <span class="cm-note">
-                        {#if promptBlockTitle && !promptLoading}<span class="cm-note-tag">{promptBlockTitle} ·</span>{/if}
-                        {promptLoading ? "正在读这张图的提示词…" : (promptOrigin || promptSourceLabel("none"))}</span>
-                      {#if shouldOfferWorkflowPrompt(prompt, workflowPrompt)}
-                        <button class="cm-btn" onclick={() => { promptTouched = true; prompt = workflowPrompt; }}>填入工作流内置提示词</button>
-                      {/if}
-                    </div>
+                    <!-- 提示词框下面不再摆那行灰字，也不再摆那颗文字按钮（2026-11-04 苏醒：
+                         「这种小字提示也删掉」＋「做成半透明图标，放在圆角框右上角」）。
+                         槽位名与提示词来源挂到提示词框的 title 上，鼠标悬停才说，不占版面。 -->
                   </div>
                 </div>
 
-                {#if cells.length}
-                  {#if sources && sources.dropped > 0}
-                    <!-- 来源里认不出来的那几份要明说：默默少摆一份，用户会以为当初就只喂了这些 -->
-                    <p class="cm-note cm-composer-note">{cardLabel}当初还用了 {sources.dropped} {refCounter}{refNoun}，已经不在图库里了，重新生成前补上。</p>
-                  {:else if lostItsReferences}
-                    <!-- 认不出参考素材时，参考位里摆的是被点的这份成图自己（默认就这么填的）。
-                         不说明就是骗人：用户会以为当初只喂了这一份、就是这一份。 -->
-                    <p class="cm-note cm-composer-note">没找到{cardLabel}当初用的{refNoun}，先放了它自己当参考。要原来那几份，手动换一下。</p>
-                  {/if}
-                  {#if cardFamilyNote}
-                    <p class="cm-note cm-composer-note">{cardFamilyNote}</p>
-                  {/if}
-                {:else}
-                  <!-- 一条参考位都没有（音色描述、指定音色）：整块不摆。摆个空框、再摆一颗
-                       点了不会出东西的「+ 参考」，比不摆更糟。 -->
-                  <p class="cm-note cm-composer-note">{noRefNote}</p>
-                {/if}
+                <!-- 卡底那几行灰字全撤了（2026-11-04 苏醒：「这种小字提示也删掉」）。
+                     还想知道「当初那几份参考没认出来」「被点这一族没被吃进去」「这条工作流不吃参考」，
+                     鼠标悬停这张卡看提示：几种情况合成一句挂在卡的 title 上，不占版面。 -->
 
               <!-- 悬停/键盘聚焦某一张参考时放大那一张（图二那种「一眼看清是哪份素材」）。
                    fixed + 量出来的坐标：弹窗自己会滚，绝对定位的放大图会被裁掉。上面放不下就朝下开。 -->
@@ -1497,12 +1506,9 @@
 
               {#each secondaryGroups as group (group.label)}
                 <p class="cm-block-title cm-sub-prompt-title">{group.label}</p>
-                <textarea class="cm-textarea cm-textarea-sub" rows="3" aria-label={group.label}
+                <textarea class="cm-textarea cm-textarea-sub" rows="3" aria-label={group.label} title={promptGroupHint(group.label)}
                   placeholder={promptGroupPlaceholder(group.label)} value={extraPrompts[group.keys[0]] ?? ""}
                   oninput={(e) => setPromptGroup(group, (e.target as HTMLTextAreaElement).value)}></textarea>
-                {#if promptGroupHint(group.label)}
-                  <p class="cm-note">{promptGroupHint(group.label)}</p>
-                {/if}
               {/each}
               <!-- 产出缩略图紧跟提示词：这一排卡底条是 sticky 的，缩略图留在它上面而不是下面，生成完一眼看到结果，不用先滚过一条钉着的按钮。 -->
               {#if outputChips.length}
@@ -2054,8 +2060,8 @@
   .cm-composer .cm-textarea-sub:focus { background: rgba(0, 0, 0, 0.35); border-color: rgb(255 255 255 / 8%); }
   /* 素材与话之间不再画那条分隔线（2026-11-04 第二轮改成左右之后）：一边是一摞照片、一边是正文，
      中间 14px 的缝自己就把两件事分开了。再画一条线反而把照片框成「另一块区域」。 */
-  .cm-composer-note { padding: 0 2px; }
-  /* 卡里的说明跟着参考条走，不再另起一段左右缩进——它讲的是上面那几格，不是提示词。 */
+  /* 卡底那几行灰字撤了（2026-11-04 苏醒：「这种小字提示也删掉」）：说明不再另起一段摆进版面，
+     「丢了几份参考」「这一族没被吃进去」「这条工作流不吃参考」合成一句挂到卡的悬停提示上。 */
 
   /* 格子里按「一张照片」处理：一点投影 + 描边提亮；末端那颗还没填的走虚线口。
      抬起、摆正整块挂在 .cm-ref-cell 上（上面那一摞那一段）——编号小牌是照片的兄弟，
@@ -2108,10 +2114,20 @@
   .cm-sub-prompt-title { margin-top: 12px; }
   /* 高亮只许动颜色和背景：padding / border / font-weight 都会推字节，一改高亮就和光标错位。 */
   .cm-mention-hl { color: #ff6a4d; }
-  .cm-field-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 22px; }
-  /* 槽位名（工作流给的，常叫「完整提示词」）压成来源那句前面的浅灰前缀：
-     名字还得说——同一条工作流可能有好几个提示词格——但它不配占卡片上面一整行标题。 */
-  .cm-note-tag { color: #7f7f87; }
+  /* 载入模板那颗：半透明挂在圆角框右上角，滑过才亮（2026-11-04 苏醒：「做成半透明图标，鼠标滑过
+     展示，功能变成加载提示词模板，放在矩形圆框右上角」）。它是卡里唯一的悬浮件，z-index 必须高过
+     左边那一摞参考（格子里给到 1..n）——上一轮菜单就是被这一摞糊掉的，别再犯。
+     键盘走 :focus-visible 也亮起来，读屏拿 aria-label，不靠文字。 */
+  .cm-wand {
+    position: absolute; top: 10px; right: 10px; z-index: 6;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; padding: 0; border-radius: 50%;
+    border: 1px solid rgb(255 255 255 / 12%); background: rgb(20 20 24 / 55%);
+    color: rgb(255 255 255 / 62%); cursor: pointer;
+    opacity: .55; backdrop-filter: blur(6px);
+    transition: opacity 140ms ease, color 140ms ease, border-color 140ms ease, background 140ms ease;
+  }
+  .cm-wand:hover, .cm-wand:focus-visible { opacity: 1; color: #ff6a4d; border-color: rgb(255 106 77 / 45%); background: rgb(24 24 28 / 82%); }
   .cm-note { margin: 0; font-size: 11.5px; color: #71717a; }
   .cm-empty { display: flex; flex-direction: column; gap: 10px; padding: 16px; font-size: 12.5px; color: #a1a1aa; background: #1b1b1f; border: 1px dashed #33333a; border-radius: 12px; }
 

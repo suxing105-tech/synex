@@ -553,13 +553,15 @@ it('定宽优先：名字长短不许决定这一排的几何，取消和生成�
   // （Round 28：靠右 packing 时参数胶囊前面空出一截，读着像漏了一块）。
   expect(css).toMatch(/\.cm-fill \.cm-pill\s*\{[^}]*max-width:\s*100%/);
   expect(css).toMatch(/\.cm-foot-left\s*\{[^}]*justify-content:\s*flex-start/);
-  // 宽屏那档弹层仍贴着胶囊右边往左长（1478px 实测在面板内容框里）
-  expect(css).toMatch(/\.cm-pop-wf\s*\{[^}]*left:\s*auto/);
-  expect(css).toMatch(/\.cm-pop-wf\s*\{[^}]*right:\s*0/);
-  // 但窄窗口反过来贴左：这颗胶囊在这一排的最左边，贴右长会顶穿左边界（798px 实测 -106..162）
+  // 弹层锚点跟着胶囊在这一排里的位置走：竖排（上下结构）之后这颗恒在行首，
+  // 所以宽窄窗口一律贴左往右长。横排时代它贴着右栏右边缘，才有 right:0 那条——
+  // 谁再把锚点翻回 right:0，1478×902 实测会顶穿面板左边界。
+  expect(css).toMatch(/\.cm-pop-wf\s*\{[^}]*left:\s*0/);
+  expect(css).toMatch(/\.cm-pop-wf\s*\{[^}]*right:\s*auto/);
+  expect(css).not.toMatch(/\.cm-pop-wf\s*\{[^}]*right:\s*0/);
   const at = css.indexOf('@media (max-width: 900px)');
   expect(at).toBeGreaterThan(0);
-  expect(css.slice(at)).toMatch(/\.cm-pop-wf\s*\{\s*left:\s*0;\s*right:\s*auto/);
+  expect(css.slice(at)).not.toMatch(/\.cm-pop-wf\s*\{[^}]*right:\s*0/);
   expect(css).toMatch(/\.cm-actions\s*\{[^}]*flex:\s*none/);
   expect(css).toMatch(/\.cm-actions\s*\{[^}]*z-index:\s*6/);
   expect(css).toMatch(/\.cm-pop-wrap\s*\{[^}]*min-width:\s*0/);
@@ -573,6 +575,54 @@ it('定宽优先：名字长短不许决定这一排的几何，取消和生成�
   expect(css).toMatch(/class="cm-btn cm-btn-quiet cm-cancel-slot" aria-hidden="true"/);
   // 胶囊自己不能再写 flex:none —— 那正是长名字把「取消」顶穿的原因（苏醒 Round 15 截图）
   expect(css).not.toMatch(/\.cm-pill\s*\{[^}]*flex:\s*none/);
+});
+
+it('上下结构：预览在上、参考与提示词在下，操作那一坞钉在弹窗最底下', async () => {
+  // 2026-11-04 苏醒：像即梦那个 composer——先看素材，再写提示词，最后一排挑来源/参数并按生成。
+  // happy-dom 不跑布局，所以这里压的是「谁在谁前面、谁包住谁」；钉住那条 bottom:0 的 CSS 由下面那条守卫看着。
+  routes(baseRoutes());
+  const screen = await ready();
+  const all = Array.from(screen.container.querySelectorAll('*'));
+  const at = ['.cm-hero', '.cm-ref-row', '.cm-textarea', '.cm-dock'].map((sel) => {
+    const el = screen.container.querySelector(sel);
+    expect(el, sel).toBeTruthy();
+    return all.indexOf(el as Element);
+  });
+  expect(at).toEqual([...at].sort((a, b) => a - b));
+  // 操作行、状态与价格说明一起装进坞：钉住的是整坞，不是只有按钮那一行
+  const dock = screen.container.querySelector('.cm-dock') as HTMLElement;
+  expect(dock.querySelector('.cm-foot')).toBeTruthy();
+  expect(dock.querySelector('[aria-label="同款工作流"]')).toBeTruthy();
+  expect(dock.querySelector('[aria-label="画面参数"]')).toBeTruthy();
+  // 坞必须是它那一格的最后一块：sticky bottom:0 靠这一点才不会被内容顶上去
+  expect(dock.parentElement?.lastElementChild).toBe(dock);
+});
+
+it('竖排不回到左右两栏：弹窗收窄、预览按高度定大小、那条坞 sticky 在弹窗下沿', () => {
+  const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  // nth 是第几次出现：.cm-hero 有基类和窄窗口两条，别把窄窗口那条当成基类改了
+  const rule = (sel: string, nth = 0) => {
+    let from = -1;
+    for (let k = 0; k <= nth; k++) {
+      from = css.indexOf(sel, from + 1);
+      expect(from, sel).toBeGreaterThan(-1);
+    }
+    return css.slice(from, css.indexOf('}', from));
+  };
+  // 宽度不再是预览图的需求（820：读提示词的行宽 + 452 那屏仍放得下）
+  expect(rule('.cm-panel {')).toMatch(/width:\s*min\(820px/);
+  const body = rule('.cm-body {');
+  expect(body).toMatch(/flex-direction:\s*column/);
+  expect(body).not.toMatch(/grid-template-columns/);
+  // 预览图由高度定大小：宽图不摊满整行，竖图不冲出弹窗
+  expect(rule('.cm-hero {')).toMatch(/max-height:\s*min\(/);
+  const dock = rule('.cm-dock {');
+  expect(dock).toMatch(/position:\s*sticky/);
+  expect(dock).toMatch(/bottom:\s*0/);
+  // 负 margin 给弹窗内边距让路（左右 22、下 20），这条要横到弹窗整宽
+  expect(dock).toMatch(/margin:\s*0 -22px -20px/);
+  // 不透明底：滚动时提示词从坞底下过去，不许透出字来
+  expect(dock).toMatch(/background:/);
 });
 
 it("窄窗口那一屏不许再撑 452px：面板放不下，两列上下叠、宽度回到 268 那一档", () => {

@@ -1319,6 +1319,24 @@
               {/each}
             </section>
 
+            <!-- 产出缩略图紧跟提示词：底部那条坞钉在弹窗下沿，被缩略图撑高会吃掉整个输入区。 -->
+            {#if outputChips.length}
+              <div class="cm-results">
+                <span class="cm-results-label">本次产出</span>
+                {#each outputChips as out (out.id)}
+                  <!-- 缩略图地址由后端按那一行的 kind 给准：视频的海报帧不是 /api/images/{id}/file。 -->
+                  <button class="cm-chip media-chip" class:cm-chip-video={out.kind !== "image"} title={out.filename}
+                    aria-label={`打开生成的第 ${out.id} ${out.kind === "image" ? "张" : "条"}`} onclick={() => onOpenImage?.(out.id, out.kind)}>
+                    <img src={backendUrl(out.thumbnail_url)} alt="" />
+                    {#if out.kind !== "image"}<span class="cm-chip-play" aria-hidden="true"><Icon name="play" size={12} /></span>{/if}
+                  </button>
+                {/each}
+              </div>
+            {/if}
+            <!-- 底部这条「坞」钉在弹窗下沿（图二那条 composer bar 的感觉）：竖排之后内容比弹窗高，
+                 不钉住的话「生成」和那句价格说明在初始状态下根本看不见。状态行也一起钉着——
+                 生成中要看得见进度，云端那条报没报出价也要一直看得见。 -->
+            <div class="cm-dock">
             <div class="cm-foot">
               <div class="cm-foot-left">
                 <div class="cm-pop-wrap cm-fill">
@@ -1584,20 +1602,8 @@
                 </button>
               </p>
             {/if}
+            </div>
 
-            {#if outputChips.length}
-              <div class="cm-results">
-                <span class="cm-results-label">本次产出</span>
-                {#each outputChips as out (out.id)}
-                  <!-- 缩略图地址由后端按那一行的 kind 给准：视频的海报帧不是 /api/images/{id}/file。 -->
-                  <button class="cm-chip media-chip" class:cm-chip-video={out.kind !== "image"} title={out.filename}
-                    aria-label={`打开生成的第 ${out.id} ${out.kind === "image" ? "张" : "条"}`} onclick={() => onOpenImage?.(out.id, out.kind)}>
-                    <img src={backendUrl(out.thumbnail_url)} alt="" />
-                    {#if out.kind !== "image"}<span class="cm-chip-play" aria-hidden="true"><Icon name="play" size={12} /></span>{/if}
-                  </button>
-                {/each}
-              </div>
-            {/if}
             </div>
           {/if}
         </div>
@@ -1658,7 +1664,7 @@
     backdrop-filter: blur(22px) saturate(112%);
   }
   .cm-panel {
-    position: relative; width: min(1080px, 100%); max-height: 88vh; overflow: auto; padding: 20px 22px;
+    position: relative; width: min(820px, 100%); max-height: 90vh; overflow: auto; padding: 20px 22px;
     border: 1px solid rgb(255 255 255 / 8%); border-radius: 20px;
     background: rgba(19, 19, 22, 0.86);
     -webkit-backdrop-filter: blur(36px); backdrop-filter: blur(36px);
@@ -1674,13 +1680,16 @@
 
   .cm-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; padding: 9px 12px; font-size: 12.5px; color: #f7d9a8; background: #2a2318; border: 1px solid #4a3c22; border-radius: 10px; }
 
-  .cm-body { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(340px, 470px); gap: 22px; align-items: start; }
-  .cm-left { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-  .cm-hero { width: 100%; max-height: 74vh; object-fit: contain; border-radius: 16px; background: #0c0c0e; }
+  /* 上下结构（2026-11-04 苏醒：像即梦那个 composer，素材在上、提示词在下）。原来是左右两栏：
+     预览图占了半屏，提示词只剩 470px 一条——写提示词才是这件事的主体，预览只是参照。 */
+  .cm-body { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .cm-left { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
+  /* 竖排之后预览图由高度定大小（横排时是栏宽撑着的）：限高、等比、居中。宽图不摊满整行，竖图不冲出弹窗。 */
+  .cm-hero { width: auto; max-width: 100%; max-height: min(26vh, 300px); object-fit: contain; border-radius: 16px; background: #0c0c0e; }
   /* 波形是一张扁的后端 PNG：照搬 cm-hero 的 contain 会把它拉成一大块模糊，这里锁住高度。 */
-  .cm-hero-wave { width: 100%; height: clamp(88px, 18vh, 148px); object-fit: cover; }
-  .cm-hero-audio { width: 100%; margin-top: 10px; height: 36px; }
-  .cm-hero-empty { display: flex; align-items: center; justify-content: center; min-height: 220px; font-size: 12.5px; color: #71717a; }
+  .cm-hero-wave { width: min(100%, 560px); height: clamp(88px, 18vh, 148px); object-fit: cover; }
+  .cm-hero-audio { width: min(100%, 560px); margin-top: 10px; height: 36px; }
+  .cm-hero-empty { display: flex; align-items: center; justify-content: center; min-height: 140px; font-size: 12.5px; color: #71717a; }
   .cm-hero-name { margin: 0; font-size: 12px; color: #8a8a8e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   .cm-right { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
@@ -1730,7 +1739,7 @@
   .cm-textarea { position: relative; z-index: 1; background: transparent; border-color: rgb(255 255 255 / 8%); border-radius: 12px; resize: vertical; }
   /* 提示词框跟着窗口高矮走：窗口矮的时候先让提示词框让出高度，而不是把下面那排按钮挤出弹窗 ——
      「生成中」和「取消」看不见、要滚动才点得到的弹窗，不算能用。 */
-  .cm-textarea { height: clamp(132px, 24vh, 264px); }
+  .cm-textarea { height: clamp(112px, 20vh, 224px); }
   /* 透明字只属于「背后有镜像高亮层」的主框：文字由 .cm-prompt-bg 那层显示。
      这条要是挂回 .cm-textarea，任何复用该类的框都会变成看不见字的盲打框。 */
   .cm-textarea-mirror { color: transparent; caret-color: #f24e4e; }
@@ -1748,6 +1757,17 @@
   /* 让位顺序写死在这一行：右边按钮组不参与压缩（「取消」那一格连静止时都提前占好，按下生成的一瞬间
      右边宽度不变），左边每一格 min-width:0 可以被压缩；容器真装不下就整排换行，让位的永远是左边
      那排胶囊，不是右边的「取消」和「生成」（苏醒 Round 15 截图）。 */
+  /* 底部这条「坞」钉在弹窗下沿（图二那条 composer bar 就是这么放的）：竖排之后内容比弹窗高，
+     不钉住的话「生成」在初始状态下根本看不见——没钉之前实测 1478×902 那一排在 919..955，弹窗下沿只有 857。
+     负 margin 是给弹窗内边距让路的（左右 22、下 20），让这条横到弹窗整宽；压一层不透明底，
+     滚动时提示词从它底下过去不会糊成一团。状态与价格那几行说明也在坞里：生成中的进度、
+     云端「价格没取到」那句必须一直看得见，不能藏在要往下滚才出现的地方。 */
+  .cm-dock {
+    position: sticky; bottom: 0; z-index: 3;
+    margin: 0 -22px -20px; padding: 12px 22px 14px;
+    border-top: 1px solid rgb(255 255 255 / 6%);
+    background: linear-gradient(to top, rgba(19, 19, 22, 0.98), rgba(19, 19, 22, 0.9));
+  }
   .cm-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
   /* flex-basis 仍旧定死 240px：这一排要不要换行只跟容器宽度有关，跟工作流名字长短无关
      （名字一长就把「生成」顶到第二行，是苏醒 Round 15 截图里那个毛病）。
@@ -1780,14 +1800,13 @@
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
   }
   .cm-pop-title { margin: 2px 0 0; font-size: 12.5px; color: #a1a1aa; }
-  /* 这颗胶囊靠着右列的右边缘，弹层左对齐会被顶出弹窗（窄窗口实测错位）。贴着胶囊右边往左长才稳。 */
-  /* 宽屏贴右往左长（1478px 实测：本机屏 637..905、API 屏 453..905，都在面板内容 221..1257 里）。
-     窄窗口反过来：2026-11-04 把这颗挪到这一排的最左边之后，胶囊自己就贴着面板左边，
-     再贴右长会顶穿左边界（798px 实测 -106..162）。这一档改成贴左往右长，见下面那条 media。 */
-  .cm-pop-wf { left: auto; right: 0; width: 268px; gap: 3px; }
+  /* 弹层锚点跟着胶囊在这一排里的位置走。竖排之后这颗恒在底部那一排的最左边（先挑来源、再定参数），
+     所以一律贴它左边缘往右长——贴右长会顶穿面板左边界。横排时代它贴着右栏的右边缘，才有 right:0 那条。
+     1478×902 实测：本机屏 352..620、API 屏 352..804，面板内容框 351..1127；820/560 宽同样在框里。 */
+  .cm-pop-wf { left: 0; right: auto; width: 268px; gap: 3px; }
   /* API 那一屏要装两列（左列 156 + 右列模型清单），宽度只在这一屏放开。
      别写 100%：这块弹层的包含块是那颗胶囊外面那一格（position:relative），100% = 胶囊那么宽。
-     452px 是量出来的上限（弹窗右列 minmax(340px, 470px)），另一头按视口收：
+     452px 是量出来的上限（弹窗收窄到 820 之后内容框 776，这一屏贴左往右长 352..804 仍在框里），
      弹窗左右各 20px 留白 + 面板内边距 22px×2，窄窗口下才不会被 .cm-panel 的 overflow 裁掉左边。 */
   .cm-pop-wf.is-api { width: min(452px, calc(100vw - 96px)); max-height: min(58vh, 430px); }
   /* 本机那一屏那一列行。包一层是为了让 else 挂在外层 if 上（见模板那三条注释），所以行距自己守。 */
@@ -1976,20 +1995,15 @@
   .cm-chip-play { position: absolute; right: 4px; bottom: 4px; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; color: #fafafa; background: rgb(18 18 20 / 80%); }
 
   @media (max-width: 900px) {
-    .cm-body { grid-template-columns: 1fr; }
-    .cm-hero { max-height: 40vh; }
+    .cm-hero { max-height: 24vh; }
     .cm-pop { width: min(328px, 78vw); }
     .cm-pop-wf { width: min(268px, 78vw); }
-    /* 窄窗口这一屏不放两列。这一档的面板内容宽只有 vw-84，452px 弹层贴在胶囊边上，
-       往左长顶穿左边界、往右长顶穿右边界（538px 两种都实测过），怎么贴都出屏。
-       所以窄窗口沿用原来那一档宽度（贴右往左长是量过安全的），两列改成上下叠：
-       服务商在上、模型清单在下，一样能挑，只是不再左右两栏。 */
+    /* 窄窗口这一屏不放两列。这一档的面板内容宽只有 vw-84，而弹层现在贴着胶囊左边缘往右长，
+       452px 撑出去就是顶穿右边界（538px 实测过）。所以窄窗口沿用量过的 268px 那一档，
+       两列改成上下叠：服务商在上、模型清单在下，一样能挑，只是不再左右两栏。 */
     .cm-pop-wf.is-api { width: min(268px, 78vw); }
     .cm-api { grid-template-columns: minmax(0, 1fr); gap: 6px; }
     .cm-api-side { padding-right: 0; padding-bottom: 5px; border-right: 0; border-bottom: 1px solid rgb(255 255 255 / 8%); }
-    /* 这一排里这颗排在最左（先挑工作流/云端模型，再定参数），所以弹层贴它左边缘往右长：
-       798px 实测 43..311、538px 实测 42..310，都在面板内容框里。 */
-    .cm-pop-wf { left: 0; right: auto; }
   }
 
   /* ── @ 引用素材菜单：抄图库那套胶囊菜单的版式，只是贴在光标下面。 */

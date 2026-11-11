@@ -11,7 +11,7 @@
   import CloneTemplates from "./CloneTemplates.svelte";
   import UpdatePanel from "./UpdatePanel.svelte";
   import SettingsRow from "./SettingsRow.svelte";
-  import { cardTitleMode } from "../lib/card-title";
+  import { cardTitleMode, setCardTitleMode } from "../lib/card-title";
   import { isTypingTarget } from "../lib/modal-focus";
   import wechatContact from "../assets/about/wechat-contact.png";
   import rewardQr from "../assets/about/reward-qr.png";
@@ -440,11 +440,11 @@
 
               <h4 class="settings-group-label">卡片</h4>
               <div class="settings-card">
-                <SettingsRow title="第一行显示" description="默认显示提示词开头那一句：挑图要读的是「这张是什么」，文件名多半是 AnimateDiff_00001.png 这种机器名。切回文件名能一眼分清 .png 和 .psd；文件名没走，鼠标停在卡片上就在。">
+                <SettingsRow title="第一行显示" description="默认文件名：瀑布流里认的还是那张文件本身，扩展名也一眼分得清 .png 和 .psd。切到提示词则显示这张提示词开头那一句，想按「这是什么」扫图时用；没提示词的照样显示文件名。提示词全文在详情栏和灯箱里。">
                   {#snippet control()}
                     <div class="settings-seg" role="group" aria-label="卡片第一行显示内容">
-                      <button type="button" aria-pressed={$cardTitleMode === "prompt"} onclick={() => cardTitleMode.set("prompt")}>提示词</button>
-                      <button type="button" aria-pressed={$cardTitleMode === "filename"} onclick={() => cardTitleMode.set("filename")}>文件名</button>
+                      <button type="button" aria-pressed={$cardTitleMode === "filename"} onclick={() => setCardTitleMode("filename")}>文件名</button>
+                      <button type="button" aria-pressed={$cardTitleMode === "prompt"} onclick={() => setCardTitleMode("prompt")}>提示词</button>
                     </div>
                   {/snippet}
                 </SettingsRow>

@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import Feed from '../components/Feed.svelte';
@@ -6,7 +6,7 @@ import { cardTitleMode } from '../lib/card-title';
 import { feedItems, feedLoading, targetColumns } from '../lib/stores';
 
 /**
- * 卡片页脚的接线（不只是 lib 里的纯函数）：第一行显示后端洗好的提示词、
+ * 卡片页脚的接线（不只是 lib 里的纯函数）：提示词档第一行显示后端洗好的那句、
  * 没提示词退回文件名，第二行是模型徽标 + 元信息，文件名挂在第一行的 title 上没走。
  */
 
@@ -29,6 +29,11 @@ function imageItem(over: Record<string, unknown>) {
     ...over,
   };
 }
+
+// 默认档现在是文件名（lib/card-title.ts），这一批钉的是页脚本身，先把第一行按在提示词档
+beforeEach(() => {
+  cardTitleMode.set('prompt');
+});
 
 afterEach(() => {
   cleanup();

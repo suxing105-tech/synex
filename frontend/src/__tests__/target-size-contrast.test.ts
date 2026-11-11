@@ -111,6 +111,45 @@ it("点击目标够 WCAG 2.5.8 的 24×24：类型 chips、分组加号、列数
   expect(px(decl(feed, ".columns-slider::-webkit-slider-runnable-track", "height"))).toBe(4);
 });
 
+/** 同一个选择器可能有多条规则（.cm-tile-x 一条管外观、一条管尺寸），合起来看 */
+function declAll(source: string, selector: string, prop: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const blocks = [...source.matchAll(new RegExp("(?:^|\\n)[ \\t]*" + escaped + "\\s*\\{([^}]*)\\}", "g"))];
+  if (!blocks.length) throw new Error("找不到规则块 " + selector);
+  for (const b of blocks) {
+    const hit = b[1].match(new RegExp("(?<![-\\w])" + prop + ":\\s*([^;]+);"));
+    if (hit) return hit[1].trim();
+  }
+  throw new Error(selector + " 里没有 " + prop);
+}
+
+it("点击目标够 24×24 第二批：详情栏页签、两处文字按钮、侧栏行内菜单、快捷键清除、内置厂商筛选、参考格移除", () => {
+  // 这六处是 design-QA 那轮在浏览器里按 getBoundingClientRect 实测挑出来的：
+  // 数值都在 16~20px 之间，肉眼在暗色面板上看不出毛病，量出来全部够不着 WCAG 2.5.8。
+  const detail = readFileSync("src/components/DetailPanel.svelte", "utf8");
+  expect(px(decl(detail, ".detail-tab", "min-width"))).toBeGreaterThanOrEqual(24);
+  // 两处 11px 的文字按钮走 Tailwind 的 min-h-6（=1.5rem=24px，根字号 16px）。
+  // 必须配 items-center：不然字贴在 24 高盒子上沿，看着就是往上跳了一截
+  const detailTag = readFileSync("src/components/DetailPanel.svelte", "utf8");
+  expect(detailTag).toMatch(/class="text-\[11px\][^"]*inline-flex min-h-6 items-center/);
+  const meta = readFileSync("src/components/MetadataCard.svelte", "utf8");
+  expect(meta).toMatch(/class="ml-auto inline-flex min-h-6 items-center/);
+
+  const tree = readFileSync("src/components/FolderTree.svelte", "utf8");
+  expect(px(decl(tree, ":global(.folder-item .menu-btn)", "min-height"))).toBeGreaterThanOrEqual(24);
+
+  const shortcuts = readFileSync("src/components/ShortcutSettings.svelte", "utf8");
+  expect(px(decl(shortcuts, ".shortcut-clear", "min-height"))).toBeGreaterThanOrEqual(24);
+
+  // 那颗方框只有 13×13，原生外观不该放大：label 包着方框和文字，整行才是命中区
+  const api = readFileSync("src/components/ModelApiSettings.svelte", "utf8");
+  expect(px(decl(api, ".api-filter-builtin", "min-height"))).toBeGreaterThanOrEqual(24);
+
+  const clone = readFileSync("src/components/CloneModal.svelte", "utf8");
+  expect(px(declAll(clone, ".cm-tile-x", "width"))).toBeGreaterThanOrEqual(24);
+  expect(px(declAll(clone, ".cm-tile-x", "height"))).toBeGreaterThanOrEqual(24);
+});
+
 it("尺子本身也在水位线上：--ctl-sm 不许低到 24 以下", () => {
   expect(px(tokenValue("--ctl-sm"))).toBeGreaterThanOrEqual(24);
 });

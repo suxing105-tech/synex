@@ -21,7 +21,7 @@ vi.mock('../lib/api', () => ({
 }));
 
 const NOW = Math.floor(Date.now() / 1000);
-const item = { id: 1, item_type: 'media', kind: 'image', filename: 'original.jpg', path: 'D:/original.jpg', original_url: '/api/images/1/file?max=1024', thumbnail_url: '/api/images/1/thumb', width: 1600, height: 900, mtime: NOW - 60, size_bytes: 1000, duration_seconds: null, playable: true, tags: [], folder_ids: [] };
+const item = { id: 1, item_type: 'media', kind: 'image', filename: 'original.jpg', path: 'D:/original.jpg', original_url: '/api/images/1/file?max=1024', thumbnail_url: '/api/images/1/thumb', width: 1600, height: 900, mtime: NOW - 60, size_bytes: 1000, prompt_snippet: '一只白猫坐在窗台上', duration_seconds: null, playable: true, tags: [], folder_ids: [] };
 
 beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(900);
@@ -58,6 +58,25 @@ it('一张卡只有一个键盘停留点：卡片本身是按钮，卡里的文�
   expect(name.getAttribute('aria-label')).toBeNull();
   // 文件名得能从卡片本身读出来：卡里的可见文字就是它
   expect(card.textContent).toContain('original.jpg');
+});
+
+it('卡片可访问名＝看得见的标题：页脚徽标和角标的话不许混进名字里', async () => {
+  const { container } = feed();
+  await waitFor(() => expect(container.querySelector('.media-card')).toBeTruthy());
+  const card = container.querySelector('.media-card') as HTMLElement;
+  // headless 量 AX 名实测：不写 aria-label 时读屏念成
+  // 「original.jpg original.jpg inbox 5 分前 用当前工作流再生成一张」——文件名两遍，
+  // 页脚徽标、时间和角标那句全糊在名字里。
+  expect(card.getAttribute('aria-label')).toBe('original.jpg');
+  expect(card.getAttribute('aria-label')).not.toMatch(/再生成|分前/);
+
+  // 切成提示词标题模式：名字必须跟着眼睛看到的走，不能还硬报文件名
+  // （硬写 filename 会让念的和看到的不是一串，那是 2.5.3 的另一类错）
+  cardTitleMode.set('prompt');
+  await waitFor(() => expect(card.getAttribute('aria-label')).toBe('一只白猫坐在窗台上'));
+  expect(card.getAttribute('aria-label')).toBe(
+    (container.querySelector('.media-card-name') as HTMLElement).textContent?.trim(),
+  );
 });
 
 it('卡片选中态对读屏可读：aria-pressed 与 is-selected 同步', async () => {

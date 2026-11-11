@@ -129,7 +129,7 @@ describe("裸 hex 棘轮：只许降，不许升", () => {
   // VideoPromptPanel）。往下改组件时顺手把这个数调小，别调大。
   // 2026-11-11 无障碍那轮把低对比灰收进 token，降到 726；同日「再次创作」那轮撤掉顶栏小字和
   // 云端左列那两行小字（连同它们的 #8a8a8e 一起），再降到 724。
-  const BASELINE = 724;
+  const BASELINE = 722;
 
   it("全站 token 之外的裸 hex 不超过基线", () => {
     const now = countRawHex();

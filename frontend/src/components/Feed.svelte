@@ -1205,11 +1205,16 @@ import { hoverPlay } from "../lib/hover-play";
                   <p class="text-excerpt">{it.excerpt || "（空文档）"}</p>
                 </button>
               {:else}
+              <!-- 无障碍：aria-label 取眼睛看到的那一串（标题模式可能是提示词首句，硬写
+                   filename 会让念的和看到的不是一回事）。2026-11-11 design-QA 在浏览器里量过：
+                   不写的时候读屏把这张卡念成「文件名 文件名 inbox 5 分前 用当前工作流再生成一张」
+                   ——文件名两遍，页脚徽标、时间和角标那句全糊在名字里。 -->
               <button
                 type="button"
                 class="thumb media-card {footerTier === 0 ? 'media-card--compact' : ''} {it.kind === 'audio' ? 'is-audio ' : ''}{(it.kind === 'image' || it.kind === 'video' || it.kind === 'audio') && footerTier > 0 ? 'is-cloneable ' : ''}text-left {$multiSelectedIds.has(it.id) ? 'is-selected' : ''} {$playingAudio?.id === it.id && it.kind === 'audio' ? 'is-playing' : ''}"
                 style="--card-footer-h: {footerHeightFor(columnWidth)}px"
                 aria-pressed={$multiSelectedIds.has(it.id)}
+                aria-label={footerTitleFor(it, $cardTitleMode)}
                 title={it.filename}
                 onclick={(e) => { if (draggedOriginal) { draggedOriginal = false; return; } if (renamingId === it.id) return; onThumbClick(e, it); }}
                 onpointerdown={(e) => pointerOnImage(e, it)}

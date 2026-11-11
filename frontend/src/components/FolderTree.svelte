@@ -698,11 +698,15 @@
     opacity: 0;
     background: transparent;
     border: none;
-    color: #8a8a8e;
+    color: var(--text-3);
     cursor: pointer;
     padding: 1px 6px;
     border-radius: 4px;
     font-size: 13px;
+    /* 无障碍：命中区抬到 24 高（WCAG 2.5.8）。文件夹行本身 32 高，够放，行高不变 */
+    min-height: 24px;
+    display: inline-flex;
+    align-items: center;
   }
   :global(.folder-item:hover .menu-btn),
   :global(.folder-item:focus-within .menu-btn) {

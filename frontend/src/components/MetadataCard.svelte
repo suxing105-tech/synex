@@ -102,7 +102,7 @@
       <span>所属文件夹</span>
       <button
         type="button"
-        class="ml-auto normal-case text-[11px] text-muted hover:text-zinc-200"
+        class="ml-auto inline-flex min-h-6 items-center normal-case text-[11px] text-muted hover:text-zinc-200"
         onclick={() => onSwitchFolder?.()}
       >
         切换

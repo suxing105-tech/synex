@@ -642,7 +642,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
             <h4 class="text-[11px] uppercase text-muted tracking-wider">元数据</h4>
             <button
               type="button"
-              class="text-[11px] text-muted hover:text-zinc-200 inline-flex items-center gap-1"
+              class="text-[11px] text-muted hover:text-zinc-200 inline-flex min-h-6 items-center gap-1"
               onclick={() => (showTagInput = !showTagInput)}
             >
               <Icon name="plus" size={12} />标签
@@ -938,6 +938,8 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
     align-items: center;
     gap: 5px;
     padding: 0;
+    /* 无障碍：点击目标 24×24 起（WCAG 2.5.8）。页签之间本来空着 14px，宽出这 1px 碰不到邻位 */
+    min-width: 24px;
     border: 0;
     border-bottom: 2px solid transparent;
     margin-bottom: -1px; /* 压住容器那条 hairline，选中的下划线才不会浮在半空 */

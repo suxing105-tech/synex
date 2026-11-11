@@ -391,7 +391,9 @@
   /* 服务商卡片区：一厂商一卡，状态写在卡上。清单长度不由我们决定，所以给它一个会滚的筐。 */
   .api-filter { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
   .api-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
-  .api-filter-builtin { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #a1a1aa; }
+  /* 无障碍：那颗方框只有 13×13，够不着 24（WCAG 2.5.8）。label 包着方框和文字，
+     整行都是命中区，所以把整行抬到 24 高，方框本身的大小不动。 */
+  .api-filter-builtin { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; font-size: 12.5px; color: #a1a1aa; }
   .api-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 8px; max-height: 272px; overflow: auto; }
   .api-card { display: flex; align-items: center; gap: 10px; padding: 10px 12px; text-align: left; border: 1px solid #2a2a30; border-radius: 10px; background: #17171b; color: #e6e6ea; cursor: pointer; }
   .api-card:hover:not(:disabled) { border-color: #3f3f46; }

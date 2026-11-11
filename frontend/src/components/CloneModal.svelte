@@ -2537,7 +2537,9 @@
   .cm-tile-swap,
   .cm-tile-x { position: absolute; display: flex; align-items: center; justify-content: center; color: #fafafa; background: rgba(18, 18, 20, 0.78); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); opacity: 0; transition: opacity 140ms ease, background-color 140ms ease; cursor: pointer; }
   .cm-tile-swap { left: 50%; top: 50%; width: 30px; height: 30px; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
-  .cm-tile-x { top: 5px; right: 5px; width: 20px; height: 20px; border-radius: 50%; }
+  /* 无障碍：20×20 够不着 24（WCAG 2.5.8）。抬到 24 的同时把偏移收 2px，
+     圆心还在原来的位置，看着只是那颗稍微实了一点点。 */
+  .cm-tile-x { top: 3px; right: 3px; width: 24px; height: 24px; border-radius: 50%; }
   .cm-tile:hover .cm-tile-swap,
   .cm-tile:hover .cm-tile-x,
   .cm-tile:focus-within .cm-tile-swap,

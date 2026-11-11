@@ -4,6 +4,92 @@
 
 :root {
   color-scheme: dark;
+
+  /* ============================================================
+     设计 token —— 全站颜色的唯一来源（2026-11-06 · 方案 3 第一批）
+     ------------------------------------------------------------
+     为什么要这一层：改之前全站 823 处裸 hex、251 个不同值，同一个「面板底」
+     有 #18181b / #16161a / #131317 三种写法，调一次整体氛围要改几十个文件。
+     从现在起：新增界面不许再写新 hex，一律引这里的变量。
+     tailwind.config.js 的 theme.colors 指的是同一批 var()，
+     所以 bg-surface / text-muted / border-border 这些既有 class 自动跟着走。
+
+     带 -rgb 后缀的是同值的 R G B 通道写法，只给需要透明度的场合用：
+     tailwind 的 bg-accent/20 这类写法要 rgb(var(--accent-rgb) / 0.2) 才算得出来。
+     两份值必须一致，由 src/__tests__/design-tokens.test.ts 锁死。
+     ============================================================ */
+
+  /* 墨阶：全站只有这 6 级底色。数字越大越靠上层、越亮。 */
+  --ink-0: #0e0e10;      /* 应用底、瀑布流画布 */
+  --ink-1: #141418;      /* 面板底：侧栏、详情栏 */
+  --ink-2: #1d1d22;      /* 抬起面：输入框、prompt 框、卡片页脚 */
+  --ink-3: #28282e;      /* 控件底、选中底 */
+  --ink-4: #34343b;      /* 悬停、按下 */
+  --ink-5: #3f3f46;      /* 强分隔、开关轨道、描边按钮的框 */
+  --ink-rgb-0: 14 14 16;
+  --ink-rgb-1: 20 20 24;
+  --ink-rgb-2: 29 29 34;
+  --ink-rgb-3: 40 40 46;
+  --ink-rgb-4: 52 52 59;
+  --ink-rgb-5: 63 63 70;
+
+  /* 分隔线：默认比控件底暗一档，弱分隔更暗，强分隔就是 ink-5 */
+  --line: #2e2e33;
+  --line-soft: #26262b;
+  --line-strong: #3f3f46;
+  --line-rgb: 46 46 51;
+  --line-soft-rgb: 38 38 43;
+
+  /* 文本 3 档。text-3 是下限——再暗对比度就掉到 4.5:1 以下，别拿它写正文。 */
+  --text-1: #f4f4f5;
+  --text-2: #a1a1aa;
+  --text-3: #8a8a8e;
+  --text-1-rgb: 244 244 245;
+  --text-2-rgb: 161 161 170;
+  --text-3-rgb: 138 138 142;
+
+  /* 语义色：朱红 + 暖黑是产品身份，这轮没动色相，只是把它收成变量 */
+  --accent: #f24e4e;
+  --accent-strong: #ff7070;     /* 红底按钮 hover */
+  --accent-ink: #0e0e10;        /* 红底上的字，永远用墨底不用白字 */
+  --accent-2: #f472b6;
+  --danger: #fb7185;
+  --success: #34d399;
+  --warn: #fbbf24;
+  --info: #93c5fd;
+  --accent-rgb: 242 78 78;
+  --accent-2-rgb: 244 114 182;
+  --danger-rgb: 251 113 133;
+  --success-rgb: 52 211 153;
+  --warn-rgb: 251 191 36;
+  --info-rgb: 147 197 253;
+
+  /* 海拔：要「比所在面亮一点」用这个，别再新造 hex */
+  --raise-1: rgb(255 255 255 / 4%);
+  --raise-2: rgb(255 255 255 / 7%);
+  --raise-3: rgb(255 255 255 / 11%);
+  --raise-4: rgb(255 255 255 / 18%);
+  --shade-1: rgb(0 0 0 / 35%);
+  --shade-2: rgb(0 0 0 / 50%);
+
+  /* 圆角 4 档 */
+  --r-1: 6px;
+  --r-2: 10px;
+  --r-3: 14px;
+  --r-pill: 999px;
+
+  /* 字号 6 档 */
+  --fs-2xs: 10.5px;
+  --fs-xs: 11.5px;
+  --fs-sm: 12.5px;
+  --fs-base: 13.5px;
+  --fs-md: 15px;
+  --fs-lg: 18px;
+
+  /* 控件高度 3 档：同一排控件必须同高，差 2px 就会看着像没对齐 */
+  --ctl-sm: 26px;
+  --ctl-md: 32px;
+  --ctl-lg: 38px;
 }
 
 html,
@@ -18,11 +104,11 @@ body,
   height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #27272a;
+  background: var(--ink-2);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #323237;
+  background: var(--ink-3);
 }
 
 
@@ -34,7 +120,7 @@ body,
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #f24e4e;
+  background: var(--accent);
 }
 .live-dot.on {
   animation: livePulse 1.4s ease-in-out infinite;
@@ -50,13 +136,13 @@ body,
   --thumb-radius: 10px;
   --thumb-gap: 10px;
   /* 页脚（也就是卡片露出来的那一点底色）要比画面明显暗，文字才像是压在
-     图下面的信息条上，而不是画面自己的暗部。原来 #27272a 太接近卡面高亮。 */
-  --thumb-bg: #1c1c20;
-  --thumb-media-bg: #1a1a1d;
-  --thumb-ring: #d4d4d4;
-  --thumb-name: #eaeaea;
-  --thumb-meta: #8a8a8e;
-  --thumb-accent: #f24e4e;
+     图下面的信息条上，而不是画面自己的暗部。原来的 #27272a 太接近卡面高亮。 */
+  --thumb-bg: var(--ink-2);
+  --thumb-media-bg: var(--ink-1);
+  --thumb-ring: var(--text-1);
+  --thumb-name: var(--text-1);
+  --thumb-meta: var(--text-3);
+  --thumb-accent: var(--accent);
 }
 
 .media-card {
@@ -149,7 +235,7 @@ body,
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(100deg, #1a1a1d 30%, #212125 50%, #1a1a1d 70%);
+  background: linear-gradient(100deg, var(--ink-2) 30%, var(--ink-3) 50%, var(--ink-2) 70%);
   background-size: 220% 100%;
   animation: thumbShimmer 1.2s ease-in-out infinite;
 }
@@ -215,7 +301,7 @@ body,
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--text-1);
   cursor: pointer;
   z-index: 2;
   /* 白字 + 投影：缩略图有亮有暗，跟着主题变色会在那张白底产品图上直接看不见 */
@@ -318,8 +404,8 @@ body,
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
-  background: #27272a;
-  border: 1px solid #2e2e33;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px 16px;
   font-size: 13px;
@@ -350,22 +436,22 @@ body,
 
 .fill-interactions button:enabled:hover,
 .fill-interactions button:enabled:focus-visible {
-  background-color: #323237;
-  color: #fafafa;
+  background-color: var(--ink-3);
+  color: var(--text-1);
 }
 
 .fill-interactions button[aria-pressed="true"],
 .fill-interactions button.bg-accent {
-  background-color: #f24e4e;
-  color: #0e0e10;
+  background-color: var(--accent);
+  color: var(--ink-0);
 }
 
 .fill-interactions button[aria-pressed="true"]:enabled:hover,
 .fill-interactions button[aria-pressed="true"]:enabled:focus-visible,
 .fill-interactions button.bg-accent:enabled:hover,
 .fill-interactions button.bg-accent:enabled:focus-visible {
-  background-color: #ff7070;
-  color: #0e0e10;
+  background-color: var(--accent-strong);
+  color: var(--ink-0);
 }
 
 .fill-interactions button:focus-visible {
@@ -375,11 +461,11 @@ body,
 }
 
 .fill-interactions :is(input:not([type="checkbox"]), textarea, select):enabled:hover {
-  background-color: #27272a;
+  background-color: var(--ink-2);
 }
 
 .fill-interactions :is(input:not([type="checkbox"]), textarea, select):enabled:focus {
-  background-color: #323237;
+  background-color: var(--ink-3);
   outline: none;
 }
 
@@ -391,11 +477,11 @@ body,
 
 .fill-interactions label:has(input[type="checkbox"]:enabled):hover,
 .fill-interactions label:has(input[type="checkbox"]:focus-visible) {
-  background-color: #323237;
+  background-color: var(--ink-3);
 }
 
 .fill-interactions input[type="checkbox"] {
-  accent-color: #f24e4e;
+  accent-color: var(--accent);
 }
 
 .fill-interactions input[type="checkbox"]:focus-visible {
@@ -415,8 +501,8 @@ body,
 /* 设置返回入口使用醒目的品牌底色。 */
 .fill-interactions button.settings-return:enabled:hover,
 .fill-interactions button.settings-return:enabled:focus-visible {
-  background-color: #f24e4e;
-  color: #0e0e10;
+  background-color: var(--accent);
+  color: var(--ink-0);
 }
 
 /* ── 设置页版式：卡片 + 行 ──────────────────────────────────────────────
@@ -424,9 +510,9 @@ body,
    这些样式放在全局，因为 SettingsModal、ShortcutSettings、UpdatePanel 都要共用同一套行。 */
 .settings-card {
   overflow: hidden;
-  border: 1px solid #26262b;
+  border: 1px solid var(--line-soft);
   border-radius: 12px;
-  background: #16161a;
+  background: var(--ink-1);
 }
 
 .settings-card + .settings-card {
@@ -434,7 +520,7 @@ body,
 }
 
 .settings-card .setting-row + .setting-row {
-  border-top: 1px solid #26262b;
+  border-top: 1px solid var(--line-soft);
 }
 
 .settings-card-body {
@@ -470,14 +556,14 @@ body,
 .setting-row-title {
   font-size: 14px;
   font-weight: 500;
-  color: #e6e6ea;
+  color: var(--text-1);
 }
 
 .setting-row-desc {
   max-width: 88ch; /* 说明文字不跟着卡片无限加宽，宽窗口下仍保持可读行长 */
   font-size: 12.5px;
   line-height: 1.7;
-  color: #8a8a8e;
+  color: var(--text-3);
 }
 
 .setting-row-side {
@@ -490,7 +576,7 @@ body,
      长状态文字会把左边的标题列挤成一个字宽（0.2.23 之后的版式踩过）。 */
   max-width: 320px;
   font-size: 12px;
-  color: #a1a1aa;
+  color: var(--text-2);
 }
 
 .setting-row-side input,
@@ -499,9 +585,9 @@ body,
   min-height: 34px;
   padding: 6px 10px;
   font-size: 12.5px;
-  color: #e4e4e7;
-  background: #101013;
-  border: 1px solid #3f3f46;
+  color: var(--text-1);
+  background: var(--ink-1);
+  border: 1px solid var(--ink-5);
   border-radius: 7px;
 }
 /* 地址、路径这类输入框要有可读宽度，否则值会被截成一个词。 */
@@ -519,7 +605,7 @@ body,
 .setting-row-mono {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 12px;
-  color: #a1a1aa;
+  color: var(--text-2);
 }
 
 .settings-subrow {
@@ -528,7 +614,7 @@ body,
   gap: 12px;
   min-height: 40px;
   padding: 6px 0 6px 12px;
-  border-left: 2px solid #2e2e33;
+  border-left: 2px solid var(--line);
 }
 
 .settings-subpath {
@@ -536,7 +622,7 @@ body,
   min-width: 0;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 12px;
-  color: #b8b8c3;
+  color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -544,7 +630,7 @@ body,
 
 .settings-subempty {
   font-size: 12.5px;
-  color: #71717a;
+  color: var(--text-3);
 }
 
 .settings-addrow {
@@ -559,9 +645,9 @@ body,
   min-height: 36px;
   padding: 6px 12px;
   font-size: 12.5px;
-  color: #e4e4e7;
-  background: #101013;
-  border: 1px solid #3f3f46;
+  color: var(--text-1);
+  background: var(--ink-1);
+  border: 1px solid var(--ink-5);
   border-radius: 7px;
 }
 
@@ -571,15 +657,15 @@ body,
   justify-content: flex-end;
   gap: 12px;
   padding: 12px 20px;
-  border-top: 1px solid #26262b;
-  background: #131317;
+  border-top: 1px solid var(--line-soft);
+  background: var(--ink-1);
 }
 
 .settings-hint {
   max-width: 88ch;
   font-size: 12px;
   line-height: 1.7;
-  color: #71717a;
+  color: var(--text-3);
 }
 
 .settings-group-label {
@@ -587,7 +673,7 @@ body,
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
-  color: #7d7d85;
+  color: var(--text-3);
 }
 
 .settings-group-label:first-of-type {
@@ -597,7 +683,7 @@ body,
 .settings-empty {
   padding: 40px 0;
   font-size: 13px;
-  color: #8a8a8e;
+  color: var(--text-3);
 }
 
 /* 开关：语义还是 checkbox，只是换成胶囊外观，键盘焦点仍然看得见。 */
@@ -622,7 +708,7 @@ body,
   width: 40px;
   height: 23px;
   border-radius: 999px;
-  background: #3f3f46;
+  background: var(--ink-5);
   transition: background-color 140ms ease;
 }
 
@@ -634,20 +720,20 @@ body,
   width: 17px;
   height: 17px;
   border-radius: 50%;
-  background: #fafafa;
+  background: var(--text-1);
   transition: transform 140ms ease;
 }
 
 .settings-switch input:checked + .switch-track {
-  background: #f24e4e;
+  background: var(--accent);
 }
 
 .settings-switch input:enabled:hover + .switch-track {
-  background: #4b4b54;
+  background: var(--ink-5);
 }
 
 .settings-switch input:checked:enabled:hover + .switch-track {
-  background: #ff7070;
+  background: var(--accent-strong);
 }
 
 .settings-switch input:checked + .switch-track::after {
@@ -655,7 +741,7 @@ body,
 }
 
 .settings-switch input:focus-visible + .switch-track {
-  outline: 2px solid #f24e4e;
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
 
@@ -688,7 +774,7 @@ body,
   justify-content: center;
   min-height: 34px;
   padding: 7px 13px;
-  border: 1px solid #3f3f46;
+  border: 1px solid var(--ink-5);
   border-radius: 7px;
   font-size: 12.5px;
   white-space: nowrap;
@@ -702,7 +788,7 @@ body,
   min-height: 28px;
   padding: 4px 10px;
   font-size: 12px;
-  color: #a1a1aa;
+  color: var(--text-2);
 }
 
 .status-dot {
@@ -742,26 +828,26 @@ body,
   width: 30px;
   height: 30px;
   border-radius: 8px;
-  color: #c9c9cf;
+  color: var(--text-2);
   cursor: pointer;
   transition: background-color 140ms ease, color 140ms ease;
 }
 
 .viewer-icon-btn:enabled:hover,
 .viewer-icon-btn:enabled:focus-visible {
-  background-color: #323237;
-  color: #fafafa;
+  background-color: var(--ink-3);
+  color: var(--text-1);
 }
 
 .viewer-icon-btn[aria-pressed="true"] {
-  background-color: #f24e4e;
-  color: #0e0e10;
+  background-color: var(--accent);
+  color: var(--ink-0);
 }
 
 .viewer-icon-btn[aria-pressed="true"]:enabled:hover,
 .viewer-icon-btn[aria-pressed="true"]:enabled:focus-visible {
-  background-color: #ff7070;
-  color: #0e0e10;
+  background-color: var(--accent-strong);
+  color: var(--ink-0);
 }
 
 /* 图标按钮没有字可以划线：共享交互的焦点口径是「底色 + 下划线」，
@@ -777,6 +863,6 @@ body,
   text-align: right;
   font-variant-numeric: tabular-nums;
   font-size: 12px;
-  color: #8a8a92;
+  color: var(--text-3);
 }
 

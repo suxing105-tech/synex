@@ -437,105 +437,20 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
         {/if}
       </div>
 
-      <div class="shrink-0 flex items-center gap-1" data-menu-root>
-        {#if d.kind === "video"}
-          <button
-            type="button"
-            class="p-1.5 rounded border border-border hover:bg-surface-3 transition-colors"
-            title="播放视频"
-            aria-label="播放视频"
-            onclick={playVideo}
-          >
-            <Icon name="play" size={14} />
-          </button>
-        {/if}
+      {#if d.kind === "video"}
+      <!-- 头部只管「这是哪一张」+ 预览这一张。ComfyUI 与其余动作下到底部操作条（见 detail-dock）。 -->
+      <div class="shrink-0 flex items-center gap-1">
         <button
           type="button"
-          class="p-1.5 rounded border border-border hover:bg-surface-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-          title={d.workflow ? "在 ComfyUI 中打开工作流" : noWorkflowText(d.kind)}
-          aria-label="在 ComfyUI 中打开工作流"
-          disabled={!d.workflow}
-          onclick={openInComfyui}
+          class="p-1.5 rounded border border-border hover:bg-surface-3 transition-colors"
+          title="播放视频"
+          aria-label="播放视频"
+          onclick={playVideo}
         >
-          <Icon name="comfyui" size={14} />
+          <Icon name="play" size={14} />
         </button>
-        <div class="relative">
-          <button
-            type="button"
-            class="p-1.5 rounded border border-border hover:bg-surface-3 transition-colors"
-            class:!border-accent={menuOpen}
-            title="更多操作"
-            aria-label="更多操作"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            onclick={toggleMenu}
-          >
-            <Icon name="more-vertical" size={14} />
-          </button>
-          {#if menuOpen}
-            <div
-              class="absolute right-0 top-full mt-1 z-30 bg-surface-2 border border-border rounded-md py-1 min-w-[180px] shadow-lg"
-              role="menu"
-            >
-              {#if d.kind === "image"}
-              <button
-                type="button"
-                class="w-full text-left px-3 py-1.5 text-[12px] hover:bg-surface-3 flex items-center gap-2"
-                role="menuitem"
-                onclick={() => { copy(d.positive_prompt, "正向 Prompt"); closeMenu(); }}
-              >
-                <Icon name="copy" size={11} />复制正向 Prompt
-              </button>
-              <button
-                type="button"
-                class="w-full text-left px-3 py-1.5 text-[12px] hover:bg-surface-3 flex items-center gap-2"
-                role="menuitem"
-                onclick={() => { copy(d.negative_prompt, "反向 Prompt"); closeMenu(); }}
-              >
-                <Icon name="copy" size={11} />复制反向 Prompt
-              </button>
-              {#if d.seed !== null}
-                <button
-                  type="button"
-                  class="w-full text-left px-3 py-1.5 text-[12px] hover:bg-surface-3 flex items-center gap-2"
-                  role="menuitem"
-                  onclick={() => { copy(String(d.seed), "Seed"); closeMenu(); }}
-                >
-                  <Icon name="hash" size={11} />复制 Seed
-                </button>
-              {/if}
-              <button
-                type="button"
-                class="w-full text-left px-3 py-1.5 text-[12px] hover:bg-surface-3 flex items-center gap-2"
-                role="menuitem"
-                onclick={() => { copy(allParamsText(d), "全部参数"); closeMenu(); }}
-              >
-                <Icon name="code" size={11} />复制全部参数
-              </button>
-              <div class="border-t border-border my-1"></div>
-              {/if}
-              <button
-                type="button"
-                class="w-full text-left px-3 py-1.5 text-[12px] hover:bg-surface-3 flex items-center gap-2"
-                role="menuitem"
-                onclick={() => { copy(d.path, "路径"); closeMenu(); }}
-              >
-                <Icon name="external-link" size={11} />复制绝对路径
-              </button>
-              {#if d.kind === "image"}
-              <button
-                type="button"
-                class="w-full text-left px-3 py-1.5 text-[12px] hover:bg-surface-3 flex items-center gap-2"
-                role="menuitem"
-                onclick={() => { showTagInput = true; closeMenu(); }}
-              >
-                <Icon name="tag" size={11} />编辑标签…
-              </button>
-              {/if}
-            </div>
-          {/if}
-        </div>
       </div>
+      {/if}
     </header>
 
     <!-- ============== Body ============== -->
@@ -736,6 +651,107 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
       {/if}
     </div>
 
+    <!-- ============== 操作条（常驻底部） ==============
+         这三件事原来挤在头部右上角三颗 30px 图标里：「在 ComfyUI 中打开工作流」
+         是整条链路最该被看见的动作，却和「复制路径」同一个视觉份量，
+         而且面板一滚、头部内容一多就只能靠 hover 的 title 认。
+         方案 3 把它按「头部说这是哪一张 / 中间是数据 / 底下才是能做的事」分开：
+         操作条不跟着 body 滚，选任何一张，手都落在同一个位置。
+         hover 仍然只改底色，不高亮边框——详情面板的交互件统一走这条规则。 -->
+    <footer class="detail-dock" data-menu-root>
+      <button
+        type="button"
+        class="dock-primary flex items-center gap-1.5 hover:bg-[var(--accent-strong)] transition-colors disabled:cursor-not-allowed"
+        title={d.workflow ? "在 ComfyUI 中打开工作流" : noWorkflowText(d.kind)}
+        aria-label="在 ComfyUI 中打开工作流"
+        disabled={!d.workflow}
+        onclick={openInComfyui}
+      >
+        <Icon name="comfyui" size={13} />
+        <span>在 ComfyUI 打开</span>
+      </button>
+      {#if d.kind === "image"}
+        <button
+          type="button"
+          class="dock-btn flex items-center gap-1.5 hover:bg-surface-3 transition-colors"
+          title="采样、步数、种子、模型、LoRA 一次全复制走"
+          aria-label="复制全部参数"
+          onclick={() => copy(allParamsText(d), "全部参数")}
+        >
+          <Icon name="code" size={12} />
+          <span>全部参数</span>
+        </button>
+      {/if}
+      <div class="relative ml-auto">
+        <button
+          type="button"
+          class="dock-btn flex items-center gap-1 hover:bg-surface-3 transition-colors"
+          class:!border-accent={menuOpen}
+          title="更多操作"
+          aria-label="更多操作"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onclick={toggleMenu}
+        >
+          <Icon name="more-vertical" size={14} />
+        </button>
+        {#if menuOpen}
+          <div
+            class="dock-menu bg-surface-2 border border-border rounded-md py-1 min-w-[180px] shadow-lg"
+            role="menu"
+          >
+            {#if d.kind === "image"}
+            <button
+              type="button"
+              class="w-full text-left px-3 py-1.5 text-[12px] hover:bg-surface-3 flex items-center gap-2"
+              role="menuitem"
+              onclick={() => { copy(d.positive_prompt, "正向 Prompt"); closeMenu(); }}
+            >
+              <Icon name="copy" size={11} />复制正向 Prompt
+            </button>
+            <button
+              type="button"
+              class="w-full text-left px-3 py-1.5 text-[12px] hover:bg-surface-3 flex items-center gap-2"
+              role="menuitem"
+              onclick={() => { copy(d.negative_prompt, "反向 Prompt"); closeMenu(); }}
+            >
+              <Icon name="copy" size={11} />复制反向 Prompt
+            </button>
+            {#if d.seed !== null}
+              <button
+                type="button"
+                class="w-full text-left px-3 py-1.5 text-[12px] hover:bg-surface-3 flex items-center gap-2"
+                role="menuitem"
+                onclick={() => { copy(String(d.seed), "Seed"); closeMenu(); }}
+              >
+                <Icon name="hash" size={11} />复制 Seed
+              </button>
+            {/if}
+            <div class="border-t border-border my-1"></div>
+            {/if}
+            <button
+              type="button"
+              class="w-full text-left px-3 py-1.5 text-[12px] hover:bg-surface-3 flex items-center gap-2"
+              role="menuitem"
+              onclick={() => { copy(d.path, "路径"); closeMenu(); }}
+            >
+              <Icon name="external-link" size={11} />复制绝对路径
+            </button>
+            {#if d.kind === "image"}
+            <button
+              type="button"
+              class="w-full text-left px-3 py-1.5 text-[12px] hover:bg-surface-3 flex items-center gap-2"
+              role="menuitem"
+              onclick={() => { showTagInput = true; closeMenu(); }}
+            >
+              <Icon name="tag" size={11} />编辑标签…
+            </button>
+            {/if}
+          </div>
+        {/if}
+      </div>
+    </footer>
+
     <VideoCoverModal bind:open={coverModalOpen} video={d} onCoverChange={refreshAfterCoverChange} />
   </div>
 {/if}
@@ -752,12 +768,62 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
 
 
 <style>
+  /* ---------- 底部操作条 ---------- */
+  .detail-dock {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-top: 1px solid var(--line);
+    background: var(--ink-1);
+  }
+  /* 主按钮：红底配墨底字，不用白字——白字压在 #f24e4e 上只有 3.1:1，
+     墨底字是 12:1。全站红底按钮同一套（--accent-ink）。 */
+  .dock-primary {
+    height: var(--ctl-md);
+    padding: 0 12px;
+    border: 1px solid transparent;
+    border-radius: var(--r-1);
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  /* 没有工作流时别把红底按钮褪成四成——那看着像控件坏了。
+     退成中性描边，读作「这一张没有可打开的工作流」，手仍然落在同一个位置。 */
+  .dock-primary:disabled {
+    background: transparent;
+    border-color: var(--line);
+    color: var(--text-3);
+  }
+
+  .dock-btn {
+    height: var(--ctl-md);
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-1);
+    background: transparent;
+    color: var(--text-2);
+    font-size: var(--fs-sm);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  /* 菜单往上开：操作条贴着视口底边，再往下就掉出屏幕了。 */
+  .dock-menu {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 6px);
+  }
+
   /* 面板里的缩略图只借共用形状（圆角、无常态描边），hover 仍旧只改底色：
      详情面板的交互件统一「底色变化」是用户定过的规则，不吃主网格那圈描边。 */
   /* 启动期详情骨架：一个头块 + 两条文字 + 一块方形占位 */
   .detail-skeleton { display: flex; flex-direction: column; gap: 10px; padding: 16px; }
   .detail-skeleton span {
-    display: block; border-radius: 6px; background: #1f1f23;
+    display: block; border-radius: var(--r-1); background: var(--ink-2);
     animation: ds-in 260ms ease-out both;
     animation-delay: calc(var(--i, 0) * 55ms);
   }

@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import postcss from "postcss";
+import { tokenValue } from "./fixtures/css-tokens";
 
 /**
  * 全站缩略图的形状语言钉在这里：常态无框、hover 只放大画面、选中才有那一圈描边。
@@ -102,8 +103,16 @@ it("NEW 从呼吸角标退成名字前的红点，动画已删干净", () => {
 it("页脚底色是压暗的那一档，不能悄悄漂回亮灰", () => {
   // 用户反馈 #27272a 太亮，文字条压不住画面；定在 #1c1c20，比图区底色 #1a1a1d 略亮一档，
   // letterbox 与页脚还分得开。改值必须同时改这里。
-  const root: Record<string, string> = {};
-  css.walkRules(":root", (rule) => { rule.walkDecls((d) => { root[d.prop] = d.value; }); });
-  expect(root["--thumb-bg"]).toBe("#1c1c20");
-  expect(root["--thumb-media-bg"]).toBe("#1a1a1d");
+  // 2026-11-06：这两个值收进 :root token（--thumb-bg / --thumb-media-bg），所以比的是
+  // 解出来的真值，不是源码字面量。#1c1c20 → #1d1d22（ink-2，肉眼同级），
+  // #1a1a1d → #141418（ink-1，图区底压深一档，页脚与 letterbox 反而分得更开）。
+  expect(tokenValue("--thumb-bg")).toBe("#1d1d22");
+  expect(tokenValue("--thumb-media-bg")).toBe("#141418");
+  // 关系比数值更该守：页脚必须比图区底暗得住、又不能亮回原本被嫌弃的那档灰。
+  const lum = (hex: string) => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  expect(lum(tokenValue("--thumb-bg"))).toBeGreaterThan(lum(tokenValue("--thumb-media-bg")));
+  expect(lum(tokenValue("--thumb-bg"))).toBeLessThan(lum("#27272a"));
 });

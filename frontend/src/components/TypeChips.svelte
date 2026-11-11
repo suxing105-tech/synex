@@ -51,14 +51,36 @@
 {/if}
 
 <style>
-  /* 宽度不够时 chips 自己换行，而不是撑破工具栏被详情面板裁掉 */
-  .type-chips { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
-  .chip {
-    display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px;
-    border: 0; border-radius: 7px; background: #ffffff08; color: #9a9aa0;
-    font-size: 11.5px; cursor: pointer; white-space: nowrap;
+  /* 分段控件（方案 3 · 2026-11-06）：五颗原来是散着的小胶囊，读起来像五个
+     各自独立的按钮，看不出「这是同一组里选一个」。收进一条轨道之后，
+     单选语义写在形状上，不用靠颜色去猜。
+     选中仍然是品牌红的一层薄底 + 一圈同色细描边，跟侧栏当前项同一套语言。
+     flex-wrap 必须留着：窄屏时 chips 自己换行，而不是撑破工具栏被详情面板裁掉。 */
+  .type-chips {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    min-width: 0;
+    padding: 2px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-1);
+    background: var(--ink-2);
   }
-  .chip:hover, .chip:focus-visible { background: #ffffff14; color: #e6e6ea; }
-  .chip.on { background: #f24e4e1f; color: #f2a0a0; }
-  .chip .n { font-variant-numeric: tabular-nums; opacity: .75; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px;
+    border: 0; border-radius: 4px; background: transparent; color: var(--text-2);
+    font-size: var(--fs-2xs); cursor: pointer; white-space: nowrap;
+    transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+  }
+  .chip:hover, .chip:focus-visible { background: var(--raise-2); color: var(--text-1); }
+  .chip.on {
+    background: rgb(var(--accent-rgb) / 14%);
+    color: var(--text-1);
+    box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 38%);
+  }
+  .chip .n { font-variant-numeric: tabular-nums; opacity: .7; }
+  .chip.on .n { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) {
+    .chip { transition: none; }
+  }
 </style>

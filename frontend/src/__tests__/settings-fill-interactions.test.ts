@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import postcss from "postcss";
+import { resolveCssVar } from "./fixtures/css-tokens";
 
 const read = (path: string) => readFileSync(resolve(process.cwd(), "src", path), "utf8");
 const css = postcss.parse(read("app.css"));
@@ -56,7 +57,8 @@ describe("设置与反推使用底色交互", () => {
     css.walkRules(rule => {
       if (!rule.selector.includes('button.settings-return')) return;
       states.push(rule.selector);
-      expect(rule.nodes.some(n => n.type === 'decl' && n.prop === 'background-color' && n.value === '#f24e4e')).toBe(true);
+      // 底色从 app.css 挪进了 :root token（--accent），所以比的是解出来的真值，不是源码字面量。
+      expect(rule.nodes.some(n => n.type === 'decl' && n.prop === 'background-color' && resolveCssVar(n.value) === '#f24e4e')).toBe(true);
     });
     expect(states.join()).toContain(':enabled:hover');
     expect(states.join()).toContain(':enabled:focus-visible');
@@ -86,8 +88,12 @@ describe("设置与反推使用底色交互", () => {
       rule.walkDecls(d => { declarations[d.prop] = d.value; });
       rules[rule.selector] = declarations;
     });
-    expect(Object.entries(rules).some(([s, d]) => s.includes('button[aria-pressed="true"]') && d["background-color"] === "#f24e4e")).toBe(true);
-    expect(Object.entries(rules).some(([s, d]) => s.includes("button:enabled:hover") && d["background-color"] === "#323237")).toBe(true);
+    // 同上：这两个底色现在写的是 var(--accent) / var(--ink-3)，解出来仍是具体颜色才算守住。
+    const filled = (d: Record<string, string>) => resolveCssVar(d["background-color"]);
+    expect(Object.entries(rules).some(([s, d]) => s.includes('button[aria-pressed="true"]') && filled(d) === "#f24e4e")).toBe(true);
+    // 悬停底 #323237 → ink-3 #28282e：整组中性灰随 6 级墨阶收档，跟控件底
+    // bg-surface-2（ink-2 #1d1d22）仍然差着一档，跟原来 #27272a→#323237 的落差一致。
+    expect(Object.entries(rules).some(([s, d]) => s.includes("button:enabled:hover") && filled(d) === "#28282e")).toBe(true);
     expect(rules[".fill-interactions button:focus-visible"]["text-decoration"]).toBe("underline");
     expect(rules[".fill-interactions button:focus-visible"].outline).toBe("none");
   });

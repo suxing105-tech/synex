@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import postcss from "postcss";
+import { tokenValue } from "./fixtures/css-tokens";
 
 it("选中缩略图用 1px 贴合描边 + 外阴影，且这是唯一的描边状态", () => {
   // 描边从 outline 2px（显粗、离卡片 2px）改成 1px box-shadow 贴边画。
@@ -26,5 +27,9 @@ it("选中缩略图用 1px 贴合描边 + 外阴影，且这是唯一的描边�
   css.walkRules(":root", rule => {
     rule.walkDecls(decl => { root[decl.prop] = decl.value; });
   });
-  expect(root["--thumb-ring"]).toBe("#d4d4d4");
+  // 2026-11-06 起环色引 --text-1：#d4d4d4 → #f4f4f5，亮一档但仍是中性白，
+  // 没有改成强调色（下面这条就是钉住这件事的）。
+  expect(root["--thumb-ring"]).toBe("var(--text-1)");
+  expect(tokenValue("--thumb-ring")).toBe("#f4f4f5");
+  expect(tokenValue("--thumb-ring")).not.toBe(tokenValue("--accent"));
 });

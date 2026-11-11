@@ -12,7 +12,7 @@
   import UpdatePanel from "./UpdatePanel.svelte";
   import SettingsRow from "./SettingsRow.svelte";
   import { cardTitleMode, setCardTitleMode } from "../lib/card-title";
-  import { isTypingTarget } from "../lib/modal-focus";
+  import { isTypingTarget, modalFocus } from "../lib/modal-focus";
   import wechatContact from "../assets/about/wechat-contact.png";
   import rewardQr from "../assets/about/reward-qr.png";
   import { pushToast } from "../lib/toast";
@@ -343,7 +343,9 @@
 </script>
 
 {#if open}
-  <div class="fixed inset-0 z-[60] bg-bg" role="dialog" aria-modal="true" aria-label="设置" data-settings-dialog>
+  <!-- tabindex + modalFocus：这句 aria-modal 以前是假话——设置打开后焦点还留在侧栏那颗 ⚙ 上，
+       按 Tab 走进的是背后的搜索框和类型 chips。现在打开即聚焦、Tab 锁在页内、关掉还给触发它的那颗按钮。 -->
+  <div class="fixed inset-0 z-[60] bg-bg" role="dialog" aria-modal="true" aria-label="设置" data-settings-dialog tabindex="-1" use:modalFocus>
     <div class="settings-shell w-full h-full">
       <aside class="settings-rail">
         <div class="settings-rail-head">
@@ -630,7 +632,7 @@
       </div>
     </div>
     {#if qr}
-      <div class="about-zoom" role="dialog" aria-modal="true" aria-label={qrLabel} tabindex="-1" onclick={() => (qr = null)}
+      <div class="about-zoom" role="dialog" aria-modal="true" aria-label={qrLabel} tabindex="-1" use:modalFocus onclick={() => (qr = null)}
         onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") qr = null; }}>
         <figure class="about-zoom-figure">
           <img src={qrImage} alt={qrLabel} />

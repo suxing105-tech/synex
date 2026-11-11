@@ -393,7 +393,9 @@ import { basenameOnly } from '../lib/media-format';
 </script>
 
 {#if open}
-<section class="inline-viewer absolute inset-0 z-20 flex flex-col bg-bg overflow-hidden fill-interactions" aria-label="文本阅读">
+<!-- tabindex + modalFocus：这一层是中间栏唯一的「打开态」，背后整块网格已经 inert。
+     焦点不主动收进来的话，打开预览后 activeElement 还是 <body>，键盘用户等于站在门外。 -->
+<section class="inline-viewer absolute inset-0 z-20 flex flex-col bg-bg overflow-hidden fill-interactions" aria-label="文本阅读" tabindex="-1" use:modalFocus>
   <header class="reader-header flex items-center gap-2 px-4 py-3 shrink-0 border-b border-border bg-surface">
     <button class="rounded-lg px-3 py-2 text-xs" onclick={() => void close()} title="返回缩略图（Esc）">← 返回</button>
     <span class="flex-1 min-w-0 truncate text-xs text-muted" title={current?.detail.path || item?.path || ''}>{current?.detail.filename || item?.filename || ''}</span>

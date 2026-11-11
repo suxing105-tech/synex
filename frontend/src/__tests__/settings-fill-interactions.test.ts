@@ -63,7 +63,7 @@ describe("设置与反推使用底色交互", () => {
     expect(states.join()).toContain(':enabled:hover');
     expect(states.join()).toContain(':enabled:focus-visible');
   });
-  it.each(["SettingsModal", "ModelApiSettings", "ReversePromptSettings", "ReversePromptPanel", "UpdatePanel", "HeaderBar"])(
+  it.each(["SettingsModal", "ModelApiSettings", "ReversePromptSettings", "ReversePromptPanel", "UpdatePanel"])(
     "%s 不引入悬停或选中的高亮边框", (name) => {
       const source = read(`components/${name}.svelte`);
       expect(source).not.toMatch(/(?:hover|focus|focus-visible):border-(?:accent|danger)|class:!?border-accent/);

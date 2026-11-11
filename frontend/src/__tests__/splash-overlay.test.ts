@@ -162,8 +162,11 @@ describe("启动引导页（画廊成形 · 品牌段）", () => {
     expect(src).toMatch(/\.rule-glow \{ opacity: 0; \}/);
     // 全屏遮罩不吃点击：淡出那 340ms 底下已经是可用界面
     expect(src).toMatch(/\.is-leaving\s*\{[\s\S]{0,80}pointer-events:\s*none/);
-    const header = readFileSync(resolve("src/components/HeaderBar.svelte"), "utf8");
-    expect(header).not.toContain("<span>苏醒图库</span>");
-    expect(header).toContain('src="/logo.png"');
+    // 品牌只在真顶栏上（桌面标题栏）：LOGO + 现名，不再写死旧产品名。
+    // 旧的 components/HeaderBar.svelte 已经整块删掉（真顶栏是它 + Feed 的 .gallery-toolbar），
+    // 所以这条断言改指 DesktopTitlebar，别对着不存在的文件空转。
+    const titlebar = readFileSync(resolve("src/components/DesktopTitlebar.svelte"), "utf8");
+    expect(titlebar).toContain('src="/logo.png"');
+    expect(titlebar).not.toContain("<span>苏醒图库</span>");
   });
 });

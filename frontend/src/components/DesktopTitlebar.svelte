@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+import Icon from "./Icon.svelte";
   import { pushToast } from '../lib/toast';
   import { appBooting } from '../lib/stores';
 
@@ -34,15 +35,13 @@
   </div>
   <div class="window-controls">
     <button aria-label="最小化窗口" title="最小化" onclick={() => windowAction('minimize')}>
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><path d="M3 8h10" /></svg>
+      <Icon name="window-minimize" size={14} />
     </button>
     <button aria-label={maximized ? '还原窗口' : '最大化窗口'} title={maximized ? '还原' : '最大化'} onclick={() => windowAction('toggleMaximize')}>
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true">
-        {#if maximized}<path d="M5 5V3h8v8h-2" /><rect x="3" y="5" width="8" height="8" />{:else}<rect x="3" y="3" width="10" height="10" />{/if}
-      </svg>
+      <Icon name={maximized ? "window-restore" : "window-maximize"} size={14} />
     </button>
     <button class="window-close" aria-label="关闭窗口" title="关闭" onclick={() => windowAction('close')}>
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="m3 3 10 10M13 3 3 13" /></svg>
+      <Icon name="x" size={14} />
     </button>
   </div>
 </header>

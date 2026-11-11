@@ -1,5 +1,6 @@
 <script lang="ts">
   import { foldersApi, settingsApi, comfyuiApi, healthApi } from "../lib/api";
+import Icon from "./Icon.svelte";
   import { describeMediaTools } from "../lib/media-tools";
   import { comfyuiStatus } from "../lib/stores";
   import { updateStatus } from "../lib/updates";
@@ -49,17 +50,21 @@
   ];
   const navItems: NavItem[] = navGroups.flatMap((group) => group.items);
   // 目录字形：只用 path 描述，省得为每个条目再引一套图标组件。
-  const navIcons: Record<string, string[]> = {
-    general: ["M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0", "M16 4v4M10 10v4M18 16v4"],
-    archived: ["M3 7h18v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7Z", "M2 4h20v3H2Z", "M10 11h4"],
-    shortcuts: ["M3 6h18v12H3z", "M7 10h.01M11 10h.01M15 10h.01M8 14h8"],
-    "model-api": ["M12 3l1.7 4.3L18 9l-4.3 1.7L12 15l-1.7-4.3L6 9l4.3-1.7Z", "M18 15l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8Z"],
-    reverse: ["M4 5h16v10H9l-5 5V5Z", "M8 9h8M8 12h5"],
-    comfyui: ["M9 2v6M15 2v6", "M6 8h12v3a6 6 0 0 1-12 0V8Z", "M12 17v5"],
-    clone: ["M8 3h9a3 3 0 0 1 3 3v9", "M6 8h9a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-7a3 3 0 0 1 3-3Z"],
-    media: ["M3 5h18v14H3z", "M7 5v14M17 5v14M3 12h18"],
-    update: ["M12 3v11", "m8 10 4 4 4-4", "M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"],
-    about: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z", "M12 11v5M12 8h.01"],
+  /**
+   * 左栏每一项用哪个图标。形状本身在 lib/icons.ts（2026-11-11 图标统一那轮搬过去的），
+   * 这里只剩「哪一节能看到哪个图标」这一层映射 —— 组件不再自己拼 svg。
+   */
+  const navIcons: Record<string, string> = {
+    general: "nav-general",
+    archived: "nav-archived",
+    shortcuts: "nav-shortcuts",
+    "model-api": "nav-model-api",
+    reverse: "nav-reverse",
+    comfyui: "nav-comfyui",
+    clone: "nav-clone",
+    media: "nav-media",
+    update: "nav-update",
+    about: "nav-about",
   };
 
   // 后台答话之前正文用的是这个空壳：cfg 始终是个完整对象，开关才能直接 bind；
@@ -350,16 +355,16 @@
       <aside class="settings-rail">
         <div class="settings-rail-head">
           <button class="settings-return" aria-label="返回图库" title="返回图库" onclick={() => (open = false)}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 5-7 7 7 7M3 12h18" /></svg>
+            <Icon name="arrow-left" size={20} />
           </button>
           <h2>设置</h2>
         </div>
         <div class="settings-search">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+          <Icon name="search" size={14} />
           <input type="search" aria-label="搜索设置" placeholder="搜索设置" autocomplete="off" bind:value={filter} />
           {#if filter}
             <button class="settings-search-clear" aria-label="清除搜索" onclick={() => (filter = "")}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+              <Icon name="x" size={14} />
             </button>
           {/if}
         </div>
@@ -371,9 +376,7 @@
             <p class="settings-nav-group">{group.label}</p>
             {#each group.items as section}
               <button class="settings-nav-item" aria-current={activeId === section.id ? "location" : undefined} aria-controls={`settings-${section.id}`} onclick={() => goToSection(section.label)}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  {#each navIcons[section.id] ?? [] as d}<path {d} />{/each}
-                </svg>
+                <Icon name={navIcons[section.id] ?? ""} size={14} />
                 <span>{section.label}</span>
               </button>
             {/each}
@@ -651,7 +654,7 @@
   .settings-rail-head h2 { font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
   .settings-return { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; color: #a1a1aa; }
   .settings-search { position: relative; display: flex; align-items: center; margin: 0 4px 10px; }
-  .settings-search > svg { position: absolute; left: 11px; color: var(--text-3); pointer-events: none; }
+  .settings-search > :global(svg) { position: absolute; left: 11px; color: var(--text-3); pointer-events: none; }
   .settings-search input { width: 100%; height: 34px; padding: 0 30px 0 32px; font-size: 13px; color: #e4e4e7; background: #101013; border: 1px solid #2b2b30; border-radius: 8px; }
   .settings-search input::placeholder { color: var(--text-3); }
   .settings-search input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
@@ -661,10 +664,10 @@
   .settings-nav-group { margin: 14px 0 4px; padding: 0 10px; font-size: 11px; letter-spacing: .06em; color: var(--text-3); }
   .settings-nav-group:first-child { margin-top: 2px; }
   .settings-nav-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border-radius: 8px; text-align: left; font-size: 13px; line-height: 1.4; color: #a1a1aa; }
-  .settings-nav-item svg { flex-shrink: 0; opacity: .7; }
+  .settings-nav-item :global(svg) { flex-shrink: 0; opacity: .7; }
   .settings-nav-item:hover { color: #e4e4e7; }
   .settings-nav-item[aria-current="location"] { color: #fafafa; background: #27272a; }
-  .settings-nav-item[aria-current="location"] svg { color: #f24e4e; opacity: 1; }
+  .settings-nav-item[aria-current="location"] :global(svg) { color: var(--accent); opacity: 1; }
   .settings-nav-empty { padding: 10px; font-size: 12.5px; color: #71717a; }
   .settings-nav-item:focus-visible { outline: none; background: #323237; text-decoration: underline; text-underline-offset: 4px; }
   .settings-content { min-height: 0; background: #0e0e10; overscroll-behavior: contain; scrollbar-gutter: stable; }

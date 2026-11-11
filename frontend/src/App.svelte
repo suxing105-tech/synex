@@ -1,5 +1,6 @@
 <script lang="ts">
   import { startUpdates } from "./lib/updates";
+import Icon from "./components/Icon.svelte";
   import { onMount, onDestroy } from "svelte";
   import { connectEvents, disconnectEvents } from "./lib/ws";
   import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, mediaItems, tag, folderId, query, selectedDetail, appBooting } from "./lib/stores";
@@ -304,7 +305,7 @@
       {/if}
       <div class="sidebar-actions fill-interactions flex items-center mt-auto pt-4 pb-2 shrink-0" class:justify-center={sidebarCollapsed} class:px-4={!sidebarCollapsed} class:collapsed-actions={sidebarCollapsed}>
         <button class="w-10 h-10 flex items-center justify-center rounded-lg text-muted" aria-label="设置" title="设置" onclick={() => settingsOpen = true}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="m12 2 9 5v10l-9 5-9-5V7z" /><circle cx="12" cy="12" r="4" /></svg>
+          <Icon name="brand" size={20} />
         </button>
         <SidebarUpdateButton />
       </div>
@@ -347,14 +348,14 @@
     >
       {#if detailCollapsed}
         <button class="sidebar-expand" title="展开右侧栏" aria-label="展开右侧栏" onclick={() => (detailCollapsed = false)}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16m-4-11-3 3 3 3"/></svg>
+          <Icon name="panel-right-expand" size={20} />
         </button>
       {:else}
         <div class="flex items-center justify-between px-3 py-[10px] border-b border-border shrink-0">
           <!-- 这一栏现在有四页，标题再写「详情」就会在看队列那一页说一句假话 -->
           <span class="text-[11px] uppercase text-muted tracking-wider">工作台</span>
           <button class="collapse-sidebar" onclick={() => (detailCollapsed = true)} title="收起右侧栏" aria-label="收起右侧栏">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16m-7-11 3 3-3 3"/></svg>
+            <Icon name="panel-right-collapse" size={20} />
           </button>
         </div>
         <div class="flex-1 min-h-0">

@@ -9,6 +9,7 @@
    * 清单是服务商自己报的，随时可能拉不到，所以右列底下永远留一条直接输入模型 ID 的路。
    */
   import { reverseApi, errorMessage, modelConfigs, rememberConfigModel } from "../lib/reverse-prompts";
+import Icon from "./Icon.svelte";
   import type { ProviderModel } from "../lib/reverse-prompts";
 
   type List = { items: ProviderModel[]; reason: string; error: string; loading: boolean };
@@ -138,7 +139,7 @@
   <button bind:this={trigger} class="mp-trigger" type="button" {disabled} aria-label={label}
           aria-haspopup="dialog" aria-expanded={open} {title} onclick={() => void toggle()}>
     <span class="mp-text">{text}</span>
-    <svg class="mp-arrow" viewBox="0 0 12 8" aria-hidden="true"><path d="M1.5 1.5 6 6 10.5 1.5" /></svg>
+    <span class="mp-arrow"><Icon name="chevron-down" size={12} /></span>
   </button>
   {#if open}
     <div class="mp-pop" role="dialog" aria-label="选择服务商与模型" style={popStyle}>
@@ -198,7 +199,7 @@
   }
   .mp-trigger:disabled { opacity: .5; cursor: default; }
   .mp-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mp-arrow { width: 10px; height: 7px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; }
+  .mp-arrow { display: inline-flex; flex: none; }
   /* fixed + 由 JS 定坐标：外层面板是 overflow 滚动容器，absolute 的浮层会被裁掉半截。 */
   .mp-pop {
     position: fixed; z-index: 60; background: #18181b; border: 1px solid #3f3f46; border-radius: 8px;

@@ -21,7 +21,7 @@
 
 <nav class="collapsed-nav" aria-label="内容导航">
   <button class="expand" title="展开左侧栏" aria-label="展开左侧栏" onclick={onexpand}>
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16m4-11 3 3-3 3"/></svg>
+    <Icon name="panel-left-expand" size={20} />
   </button>
   {#each entries as entry (entry.scope)}
     <button

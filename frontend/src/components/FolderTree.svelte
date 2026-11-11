@@ -376,7 +376,7 @@
 <div class="px-[14px] pt-[14px] pb-[8px] flex items-center justify-between">
   <h3 class="folder-title">文件夹</h3>
   <button class="collapse-sidebar" onclick={oncollapse} title="收起左侧栏" aria-label="收起左侧栏">
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16m7-11-3 3 3 3"/></svg>
+    <Icon name="panel-left-collapse" size={20} />
   </button>
 </div>
 <div bind:this={sidebarRegion} class:external-hover={externalHover > 0} class="folder-scroll flex-1 overflow-y-auto px-2 pb-3" role="presentation" oncontextmenu={openBlankMenu}>
@@ -667,8 +667,8 @@
     color: #a2a2ab;
     flex-shrink: 0;
   }
-  /* 图标统一降到 1.7 描边：14–15px 下比默认 2 更细，密度接近 Codex 侧栏 */
-  :global(.folder-item .icon svg) { stroke-width: 1.7; }
+  /* 描边不再在这一层单独调：小尺寸那一档（≤16 → 1.75）现在由 lib/icons.ts 的
+     iconStroke 统一给，密度和当初定的 1.7 基本一样，但只剩一处真源。 */
   :global(.folder-item .label) {
     flex: 1;
     overflow: hidden;

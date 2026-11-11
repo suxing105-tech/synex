@@ -197,6 +197,20 @@ export const ICON_PATHS: Record<string, string> = {
     '<path d="M3 12a9 9 0 0 0 9 9c2.4 0 4.6-1 6.2-2.6L21 16"/>' +
     '<path d="M21 21v-5h-5"/>',
 
+  // 设置页左栏那一组：形状原来写在 SettingsModal.svelte 的 navIcons 表里，
+  // 由组件自己拼 <svg>/<path> —— 那是全站唯一一处「图标路径不在图标库里」。
+  // 搬进来之后设置页也只走 <Icon>。
+  "nav-general": '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/>' +'<path d="M16 4v4M10 10v4M18 16v4"/>',
+  "nav-archived": '<path d="M3 7h18v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7Z"/>' +'<path d="M2 4h20v3H2Z"/>' +'<path d="M10 11h4"/>',
+  "nav-shortcuts": '<path d="M3 6h18v12H3z"/>' +'<path d="M7 10h.01M11 10h.01M15 10h.01M8 14h8"/>',
+  "nav-model-api": '<path d="M12 3l1.7 4.3L18 9l-4.3 1.7L12 15l-1.7-4.3L6 9l4.3-1.7Z"/>' +'<path d="M18 15l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8Z"/>',
+  "nav-reverse": '<path d="M4 5h16v10H9l-5 5V5Z"/>' +'<path d="M8 9h8M8 12h5"/>',
+  "nav-comfyui": '<path d="M9 2v6M15 2v6"/>' +'<path d="M6 8h12v3a6 6 0 0 1-12 0V8Z"/>' +'<path d="M12 17v5"/>',
+  "nav-clone": '<path d="M8 3h9a3 3 0 0 1 3 3v9"/>' +'<path d="M6 8h9a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-7a3 3 0 0 1 3-3Z"/>',
+  "nav-media": '<path d="M3 5h18v14H3z"/>' +'<path d="M7 5v14M17 5v14M3 12h18"/>',
+  "nav-update": '<path d="M12 3v11"/>' +'<path d="m8 10 4 4 4-4"/>' +'<path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>',
+  "nav-about": '<path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"/>' +'<path d="M12 11v5M12 8h.01"/>',
+
   // 勾（「创作类型」菜单里现在这一族那一行）
   check: '<polyline points="20 6 9 17 4 12"/>',
 

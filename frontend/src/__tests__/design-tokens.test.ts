@@ -127,7 +127,7 @@ describe("token 是颜色的唯一来源", () => {
 describe("裸 hex 棘轮：只许降，不许升", () => {
   // 2026-11-06 方案 3 第一批落地后的存量（大头在 CloneModal / TextWorkspace /
   // VideoPromptPanel）。往下改组件时顺手把这个数调小，别调大。
-  const BASELINE = 731;
+  const BASELINE = 730;
 
   it("全站 token 之外的裸 hex 不超过基线", () => {
     const now = countRawHex();

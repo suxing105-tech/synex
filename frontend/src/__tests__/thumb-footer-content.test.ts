@@ -4,12 +4,13 @@ import {
   basenameOnly,
   footerMetaBits,
   footerTimeLabel,
-  modelFamilyLabel,
+  parentFolderLabel,
+  parentFolderPath,
 } from "../lib/media-format";
 
 /**
  * 卡片页脚显示什么（方案 3「生产力工作台」第二批）。
- * 第一行默认文件名（lib/card-title.ts 里可切成提示词开头那一句），第二行是模型徽标 + 元信息，
+ * 第一行默认文件名（lib/card-title.ts 里可切成提示词开头那一句），第二行是所属文件夹徽标 + 元信息，
  * 这里钉住第二行的三条口径：按类型给字段、窄卡先撤尺寸、时间越近越具体。
  */
 
@@ -38,40 +39,37 @@ describe("第一行的退回值：带扩展名的文件名", () => {
   });
 });
 
-describe("模型徽标：把真实 model 字段收成家族名", () => {
-  // 样例全是本机库里实际存在的取值（400 条素材实际只有 12 种模型）
-  it("带目录的取目录名——那是用户自己起的家族名", () => {
-    expect(modelFamilyLabel("Krea2\\krea2_turbo_bf16.safetensors")).toBe("Krea2");
-    expect(modelFamilyLabel("MinimaxH3\\minimax_h3_hybrid_fl2va_ref2va_b25-49-int8.safetensors")).toBe("MinimaxH3");
-    expect(modelFamilyLabel("Qwen-image-2.1\\qwen_image_2.1_bf16.safetensors")).toBe("Qwen-image-2.1");
-    expect(modelFamilyLabel("MOSS\\moss_image_sft_bf16.safetensors")).toBe("MOSS");
-    expect(modelFamilyLabel("flux-2-klein\\flux-2-klein-9b-fp8.safetensors")).toBe("flux-2-klein");
+describe("文件夹徽标：取素材所在文件夹的名字", () => {
+  it("取倒数第二段——那是他自己组织素材的单位，不再是模型", () => {
+    expect(parentFolderLabel("D:/AI/ComfyUI/output/krea2/AnimateDiff_00001.png")).toBe("krea2");
+    expect(parentFolderLabel("D:/AI/ComfyUI/output/MiniMaxH3/自我介绍/影驰数字人_H3__00017-audio.mp4")).toBe("自我介绍");
+    expect(parentFolderLabel("D:\\AI\\ComfyUI\\output\\video\\vlog_00001.mp4")).toBe("video");
   });
 
-  it("裸文件名取最靠前的那个词，整条文件名上卡片会把第二行占满", () => {
-    expect(modelFamilyLabel("minimax_h3_hybrid_fl2va_ref2va_b25-49-int8")).toBe("minimax");
-    expect(modelFamilyLabel("Cobijada_H3_Hybrid精炼int8")).toBe("Cobijada");
-    expect(modelFamilyLabel("wan2.1-i2v-14b-480p-Q8_0")).toBe("wan2.1");
+  it("正斜杠、反斜杠、混着写都算，中文目录名原样给", () => {
+    expect(parentFolderLabel("D:/素材/旁白.mp3")).toBe("素材");
+    expect(parentFolderLabel("D:/a\\b/旁白.mp3")).toBe("b");
+    expect(parentFolderLabel("C:/素材/影驰5080HOF详情页/KV/KV_01.png")).toBe("KV");
   });
 
-  it("只削真正的模型文件后缀，不把型号里的点当后缀", () => {
-    // 按最后一个点切的话 wan2.1-i2v… 会被削成 wan2
-    expect(modelFamilyLabel("wan2.1-i2v-14b-480p-Q8_0")).not.toBe("wan2");
-    expect(modelFamilyLabel("svd_xt_1_1.safetensors")).toBe("svd");
+  it("没有上层文件夹就不给徽标，不摆个盘符或斜杠上去", () => {
+    expect(parentFolderLabel("无目录.png")).toBeNull();
+    expect(parentFolderLabel("")).toBeNull();
+    expect(parentFolderLabel(null)).toBeNull();
+    expect(parentFolderLabel(undefined)).toBeNull();
+    expect(parentFolderLabel("/无上级.mp4")).toBeNull();
   });
 
-  it("没有模型就不给徽标（库里 400 条里有 37 条是空的）", () => {
-    expect(modelFamilyLabel(null)).toBeNull();
-    expect(modelFamilyLabel(undefined)).toBeNull();
-    expect(modelFamilyLabel("")).toBeNull();
-    expect(modelFamilyLabel("   ")).toBeNull();
-  });
-
-  it("整段绝对路径也不撑破页脚：取最后一个目录段并截断", () => {
-    const long = modelFamilyLabel("D:\\comfy\\models\\checkpoints\\" + "超长模型目录名".repeat(6) + "\\x.safetensors");
-    expect(long).not.toBeNull();
+  it("超长目录名截进徽标预算，不撑破页脚", () => {
+    const long = parentFolderLabel("D:/素材/" + "超长文件夹名字".repeat(6) + "/x.png");
     expect((long ?? "").length).toBeLessThanOrEqual(25);
-    expect((long ?? "").startsWith("超长模型目录名")).toBe(true);
+    expect((long ?? "").startsWith("超长文件夹名字")).toBe(true);
+  });
+
+  it("hover 用的 title 给整条上层目录，不是截断后的那截", () => {
+    expect(parentFolderPath("D:/AI/ComfyUI/output/krea2/x.png")).toBe("D:/AI/ComfyUI/output/krea2");
+    expect(parentFolderPath("D:\\AI\\krea2\\x.png")).toBe("D:\\AI\\krea2");
+    expect(parentFolderPath("x.png")).toBe("");
   });
 });
 
@@ -103,9 +101,9 @@ describe("元信息按类型给，窄卡先撤尺寸", () => {
   it("图片：宽卡给尺寸 + 时间，窄卡只剩时间", () => {
     const wide = footerMetaBits({
       kind: "image", width: 1920, height: 1080,
-      model: "Krea2\\krea2_turbo_bf16.safetensors", mtime: ago(600), now: NOW, columnWidth: 240,
+      path: "D:/AI/ComfyUI/output/krea2/AnimateDiff_00001.png", mtime: ago(600), now: NOW, columnWidth: 240,
     });
-    expect(wide.model).toBe("Krea2");
+    expect(wide.folder).toBe("krea2");
     expect(wide.bits).toEqual(["1920×1080", "10 分前"]);
     const narrow = footerMetaBits({ kind: "image", width: 1920, height: 1080, mtime: ago(600), now: NOW, columnWidth: 202 });
     expect(narrow.bits).toEqual(["10 分前"]);

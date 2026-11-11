@@ -105,38 +105,28 @@ export function basenameOnly(filename: string): string {
 }
 
 /**
- * 模型家族徽标：`Krea2\krea2_turbo_bf16.safetensors` → `Krea2`，
- * `wan2.1-i2v-14b-480p-Q8_0` → `wan2.1`。
+ * 卡片页脚那颗徽标：素材**所在文件夹的名字**。
+ * `D:/…/output/MiniMaxH3/自我介绍/x.mp4` → `自我介绍`，直接躺在 `krea2` 里的图 → `krea2`。
  *
- * 为什么要缩写：本机 400 条素材实际只有 12 种模型，但 model 存的是整条文件名，
- * 原样摆到 200px 宽的卡片上，第二行会被它一个字占满。规则只有两条，都不发明新名字：
- * 带目录的（ComfyUI models 下的子目录）取最后一个目录段——那是用户自己起的家族名；
- * 裸文件名的取最靠前的那个词，下划线切和连字符切都试一遍取更短的，
- * 于是 `minimax_h3_hybrid_…` → `minimax`、`wan2.1-i2v-…` → `wan2.1`。
- * 代价要知道：同一个模型两种存法（`MinimaxH3\x.safetensors` 和裸的 `minimax_h3_…`）
- * 会显示成两个徽标。视频那一路以前被解析器削过目录，正是这种存法，2026-11-11 已修
- * （parser._video_model_name 不再削 + 回填门控 v4 覆写老数据）；剩下的才是素材库自己的
- * 分组差异，宁可原样反映，也不替用户编一张映射表。
+ * 为什么这里不放模型名：2026-11-11 苏醒明确说卡片不需要告诉他这是哪个模型出的，他要看的
+ * 是这张东西放在哪个文件夹里——那才是他自己组织素材的单位。换成路径还有个实打实的好处：
+ * 路径本来就在手上，图片/视频/音频/文本四类一律取得到，不再出现「这条没解析出元数据就是空」
+ * （本机 148 条视频里有 7 条是那样空着的）。截断沿用徽标原来的预算，24 字加省略号；
+ * 没有上层文件夹（只剩文件名）返回 null，宁可不显示也不摆个盘符或斜杠上去。
  */
-const MODEL_FILE_EXT = /\.(safetensors|ckpt|pt|pth|bin|gguf|ggml|onnx|engine)$/i;
+export function parentFolderLabel(path: string | null | undefined): string | null {
+  const segments = (path ?? "").split(/[\\/]+/).filter(Boolean);
+  if (segments.length < 2) return null;
+  const folder = (segments[segments.length - 2] ?? "").trim();
+  if (!folder) return null;
+  return folder.length > 24 ? folder.slice(0, 24) + "…" : folder;
+}
 
-export function modelFamilyLabel(model: string | null | undefined): string | null {
-  const raw = (model ?? "").trim();
-  if (!raw) return null;
-  const segments = raw.split(/[\\/]+/).filter(Boolean);
-  if (!segments.length) return null;
-  let family: string;
-  if (segments.length > 1) {
-    // 最后一个目录段：Krea2\file.safetensors → Krea2；绝对路径也不会退化成盘符
-    family = segments[segments.length - 2] || segments[0];
-  } else {
-    const base = segments[0].replace(MODEL_FILE_EXT, "");
-    const cuts = [base.split("_")[0], base.split("-")[0]].filter((c) => (c ?? "").length >= 3);
-    family = cuts.length ? cuts.reduce((a, b) => (b.length < a.length ? b : a)) : base;
-  }
-  family = family.trim();
-  if (!family) return null;
-  return family.length > 24 ? family.slice(0, 24) + "…" : family;
+/** `path` 的上层目录，原样给徽标的 title 用（hover 看全路径）；没有上层目录给空串。 */
+export function parentFolderPath(path: string | null | undefined): string {
+  const raw = (path ?? "").trim();
+  const cut = Math.max(raw.lastIndexOf("/"), raw.lastIndexOf("\\"));
+  return cut > 0 ? raw.slice(0, cut) : "";
 }
 
 /**
@@ -173,7 +163,8 @@ export interface FooterMetaInput {
   width: number | null;
   height: number | null;
   durationSeconds?: number | null;
-  model?: string | null;
+  /** 素材完整路径：第二行那颗徽标取它的上层文件夹名 */
+  path?: string | null;
   mtime?: number | null;
   /** 秒级时间戳的「现在」，单测用；界面上不传 */
   now?: number;
@@ -182,17 +173,17 @@ export interface FooterMetaInput {
 }
 
 /**
- * 页脚第二行的内容：一个模型徽标 + 几段元信息。
+ * 页脚第二行的内容：所属文件夹徽标 + 几段元信息。
  *
  * 三件事要交代清楚：
  * 1. 尺寸按类型给，不再不分类型地拼 width×height。音频的 width/height 存的是
  *    波形画布尺寸（840×360），以前就这么大剌剌地摆在音频卡上，是个 bug，顺手修掉。
  * 2. 尺寸在窄卡上不露面（<${FOOTER_BITS_DIMS_MIN_WIDTH}px）。徽标和时间才是这张卡
- *    「什么模型、什么时候做的」，尺寸缩略图自己已经说明了高宽比，细节在详情栏看。
+ *    「在哪个文件夹、什么时候做的」，尺寸缩略图自己已经说明了高宽比，细节在详情栏看。
  *    不做这个梯子，四列布局（约 202px）第二行必然溢出一串省略号。
  * 3. 文件大小从卡片上撤了：扫描时没人靠字节数挑图，详情栏和 Lightbox 都还在。
  */
-export function footerMetaBits(input: FooterMetaInput): { model: string | null; bits: string[] } {
+export function footerMetaBits(input: FooterMetaInput): { folder: string | null; bits: string[] } {
   const bits: string[] = [];
   const wide = typeof input.columnWidth !== "number" || input.columnWidth >= FOOTER_BITS_DIMS_MIN_WIDTH;
   const dims = input.width && input.height ? `${input.width}×${input.height}` : "";
@@ -208,7 +199,7 @@ export function footerMetaBits(input: FooterMetaInput): { model: string | null; 
   }
   const time = footerTimeLabel(input.mtime ?? null, input.now);
   if (time) bits.push(time);
-  return { model: modelFamilyLabel(input.model ?? null), bits };
+  return { folder: parentFolderLabel(input.path ?? null), bits };
 }
 
 /** 时长统一写成 `m:ss`（超过一小时也继续累加分钟，和视频页/详情面板同一口径）。 */

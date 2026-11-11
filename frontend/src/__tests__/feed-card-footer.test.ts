@@ -7,7 +7,7 @@ import { feedItems, feedLoading, targetColumns } from '../lib/stores';
 
 /**
  * 卡片页脚的接线（不只是 lib 里的纯函数）：提示词档第一行显示后端洗好的那句、
- * 没提示词退回文件名，第二行是模型徽标 + 元信息，文件名挂在第一行的 title 上没走。
+ * 没提示词退回文件名，第二行是所属文件夹徽标 + 元信息，文件名挂在第一行的 title 上没走。
  */
 
 vi.mock('../lib/api', () => ({
@@ -21,7 +21,7 @@ const NOW = Math.floor(Date.now() / 1000);
 function imageItem(over: Record<string, unknown>) {
   return {
     id: 1, item_type: 'media', kind: 'image', filename: 'AnimateDiff_00001.png',
-    path: 'D:/lib/AnimateDiff_00001.png', original_url: '/api/images/1/file?max=1024',
+    path: 'D:/AI/ComfyUI/output/krea2/AnimateDiff_00001.png', original_url: '/api/images/1/file?max=1024',
     thumbnail_url: '/api/images/1/thumb', width: 1920, height: 1080, mtime: NOW - 600,
     size_bytes: 5_500_000, duration_seconds: null, playable: true,
     model: 'Krea2\\krea2_turbo_bf16.safetensors', tags: [], folder_ids: [],
@@ -57,8 +57,10 @@ it('第一行显示提示词那句，文件名退到 title 里', async () => {
   expect((name.closest('.media-card') as HTMLElement).getAttribute('title')).toBe('AnimateDiff_00001.png');
   expect(name.hasAttribute('title')).toBe(false);
 
-  const badge = container.querySelector('.media-card-model') as HTMLElement;
-  expect(badge.textContent).toBe('Krea2');
+  const badge = container.querySelector('.media-card-folder') as HTMLElement;
+  expect(badge.textContent).toBe('krea2');
+  // 徽标只截断显示，hover 给整条上层目录
+  expect(badge.getAttribute('title')).toBe('D:/AI/ComfyUI/output/krea2');
   const bits = container.querySelector('.media-card-bits') as HTMLElement;
   expect(bits.textContent).toBe('1920×1080 · 10 分前');
   // 文件大小从卡片撤了
@@ -74,7 +76,7 @@ it('窄一点的卡先撤尺寸，徽标和时间留着', async () => {
   await tick();
   const bits = container.querySelector('.media-card-bits') as HTMLElement;
   expect(bits.textContent).toBe('10 分前');
-  expect(container.querySelector('.media-card-model')?.textContent).toBe('Krea2');
+  expect(container.querySelector('.media-card-folder')?.textContent).toBe('krea2');
 });
 
 it('没提示词的退回文件名；音频卡不许显示波形画布的 840×360', async () => {
@@ -84,7 +86,8 @@ it('没提示词的退回文件名；音频卡不许显示波形画布的 840×3
   feedItems.set([
     imageItem({ prompt_snippet: '' }),
     imageItem({
-      id: 2, kind: 'audio', filename: '旁白.mp3', original_url: '/api/audio/2/file',
+      id: 2, kind: 'audio', filename: '旁白.mp3', path: 'D:/AI/ComfyUI/output/Audio/旁白.mp3',
+      original_url: '/api/audio/2/file',
       thumbnail_url: '/api/audio/2/wave', width: 840, height: 360, duration_seconds: 95,
       model: null, prompt_snippet: '', mtime: NOW - 3 * 86400,
     }),
@@ -95,10 +98,10 @@ it('没提示词的退回文件名；音频卡不许显示波形画布的 840×3
   expect(names).toEqual(['AnimateDiff_00001.png', '旁白.mp3']);
   const allBits = [...container.querySelectorAll('.media-card-bits')].map((n) => n.textContent);
   expect(allBits.join('|')).not.toContain('840×360');
-  // 音频给时长，没有模型的就不给徽标
+  // 徽标改取路径里的文件夹，和元数据无关：model 为空的音频卡照样有徽标
   // 音频给时长 + 时间；时间距今三天，落在月日那一档（不写死今天减三天的日期，避免跨月误报）
   expect(allBits[1]).toMatch(/^1:35 · \d{2}\/\d{2}$/);
-  expect(container.querySelectorAll('.media-card-model')).toHaveLength(1);
+  expect([...container.querySelectorAll('.media-card-folder')].map((n) => n.textContent)).toEqual(['krea2', 'Audio']);
 });
 
 it('设置里切回文件名，瀑布流立刻跟着换', async () => {

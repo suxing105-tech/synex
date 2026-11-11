@@ -330,7 +330,7 @@ body,
   outline: none;
 }
 
-/* 页脚第二行 = 模型徽标 + 元信息。整行不折行：放不下让徽标自己缩（见下），
+/* 页脚第二行 = 所属文件夹徽标 + 元信息。整行不折行：放不下让徽标自己缩（见下），
    尺寸/时长/时间都是数字，切一半就没法读了。 */
 .media-card-meta {
   display: flex;
@@ -349,10 +349,10 @@ body,
   flex: none;
 }
 
-/* 模型徽标：「这张是哪个模型出的」是工作台视图第二行的主角，所以给它一块比页脚亮一档的
+/* 文件夹徽标：「这张在哪个文件夹里」是工作台视图第二行的主角，所以给它一块比页脚亮一档的
    底（--raise-2），不新造 hex。flex 0 1 auto + min-width: 0 是这行的降级梯子：
    整行挤不下时只有徽标会被切成「Qwen-im…」，数字段一个都不许切。 */
-.media-card-model {
+.media-card-folder {
   flex: 0 1 auto;
   min-width: 0;
   display: inline-flex;

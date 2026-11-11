@@ -9,7 +9,7 @@
   import FeedSkeleton from "./FeedSkeleton.svelte";
   import TypeChips from "./TypeChips.svelte";
   import { copyOriginalImage } from "../lib/image-clipboard";
-  import { footerHeightFor, footerMetaBits, footerTierFor, isAcceptedMediaFile, THUMB_GAP, isPsdFilename, mediaKindOfFilename, thumbnailAspectRatio, thumbnailHeightToWidthRatio, thumbnailObjectFit } from "../lib/media-format";
+  import { footerHeightFor, footerMetaBits, footerTierFor, parentFolderPath, isAcceptedMediaFile, THUMB_GAP, isPsdFilename, mediaKindOfFilename, thumbnailAspectRatio, thumbnailHeightToWidthRatio, thumbnailObjectFit } from "../lib/media-format";
   import { mediaSummary, selectionSummary } from "../lib/counts";
   import { isTextItem, itemUid, kindsIn } from "../lib/items";
   import { matchesAction, shortcutBlocked } from "../lib/shortcut-settings";
@@ -529,14 +529,14 @@ import { hoverPlay } from "../lib/hover-play";
     void checkMissing(it.id, image);
   }
 
-  /** 页脚第二行：模型徽标 + 尺寸/时长 + 时间。尺寸在窄卡上不露面，梯子见 footerMetaBits。 */
-  function metaFor(it: MediaFeedItem): { model: string | null; bits: string[] } {
+  /** 页脚第二行：所属文件夹徽标 + 尺寸/时长 + 时间。尺寸在窄卡上不露面，梯子见 footerMetaBits。 */
+  function metaFor(it: MediaFeedItem): { folder: string | null; bits: string[] } {
     return footerMetaBits({
       kind: it.kind,
       width: it.width,
       height: it.height,
       durationSeconds: it.duration_seconds,
-      model: it.model,
+      path: it.path,
       mtime: it.mtime,
       columnWidth,
     });
@@ -1274,7 +1274,7 @@ import { hoverPlay } from "../lib/hover-play";
                     {#if footerTier === 2}
                       {@const meta = metaFor(it)}
                       <span class="media-card-meta">
-                        {#if meta.model}<span class="media-card-model" title={it.model ?? ""}>{meta.model}</span>{/if}
+                        {#if meta.folder}<span class="media-card-folder" title={parentFolderPath(it.path)}>{meta.folder}</span>{/if}
                         {#if meta.bits.length}<span class="media-card-bits">{meta.bits.join(" · ")}</span>{/if}
                       </span>
                     {/if}

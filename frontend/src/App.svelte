@@ -46,7 +46,6 @@
   import VideoPlayer from "./components/VideoPlayer.svelte";
   import SettingsModal from "./components/SettingsModal.svelte";
   import ScanProgressBar from "./components/ScanProgressBar.svelte";
-  import StatusBar from "./components/StatusBar.svelte";
   import AudioEngine from "./components/AudioEngine.svelte";
   import SplashOverlay from "./components/SplashOverlay.svelte";
   import Toast from "./components/Toast.svelte";
@@ -377,8 +376,6 @@
     </button>
   {/if}
 
-  <!-- 沉浸满屏是「只看这一张」，环境状态栏一起退场，别在底下留一条 28px 的杂讯。 -->
-  {#if !immersive}<StatusBar />{/if}
 </div>
 
 

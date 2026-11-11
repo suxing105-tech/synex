@@ -18,13 +18,17 @@ vi.mock("../lib/api", () => ({
   settingsApi: { get: vi.fn(async () => ({ watch_dirs: ["D:/AI/ComfyUI/output"] })) },
   scanApi: { importDirectory: vi.fn(async (path: string) => ({ ok: true, path })) },
 }));
-vi.mock("../lib/stores", () => ({
-  appBooting: writable(false), folders: writable([]), folderId: writable(null), scope: writable("all"),
+vi.mock("../lib/stores", () => {
+  // 真 store 的 selectFolder 除了选中还要把口径落回统一流；这里只替到「选中即换 folderId」
+  const folderId = writable<number | null>(null);
+  return {
+  appBooting: writable(false), folders: writable([]), folderId, scope: writable("all"),
   query: writable(""), tag: writable(null),
-  textMode: writable(false), switchContent: vi.fn(),
+  textMode: writable(false), switchContent: vi.fn(), selectFolder: (id: number) => folderId.set(id),
   stats: writable({ total_images: 0, total_videos: 0, total_audio: 0, total_texts: 0, folders: 0 }),
   refreshFolders: vi.fn(), refreshFeed: vi.fn(), refreshStats: vi.fn(),
-}));
+  };
+});
 
 const messages = () => get(toasts).map((t) => t.message);
 

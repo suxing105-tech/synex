@@ -29,7 +29,8 @@ import Icon from "./components/Icon.svelte";
   import { applyFocusStage, nextFocusStage, windowIsMaximized, type FocusStage } from './lib/window-focus';
   import { focusGallerySearch, registerSearchFocusShortcut } from './lib/search-focus';
   import { pushToast } from './lib/toast';
-  onMount(() => registerContentShortcuts(type => switchContent(type, false, true), shortcutsPaused));
+  // 快捷键改的是「这一屏看哪一类」：在文件夹里就只换右上角菜单，别把文件夹顶掉
+  onMount(() => registerContentShortcuts(switchType, shortcutsPaused));
   // F = 沉浸循环（在输入框里打字不算），Ctrl+F = 光标进搜索框（正在打字时也能按）。
   onMount(() => registerShortcuts([{ key: "f", action: "focusMode", handler: () => cycleFocusMode() }]));
   onMount(() => registerSearchFocusShortcut(() => {
@@ -38,7 +39,7 @@ import Icon from "./components/Icon.svelte";
     if (focusStage === "fullscreen") leaveFocusMode();
     void focusGallerySearch();
   }));
-  import { switchContent, readerItem, readerTerm } from './lib/stores';
+  import { switchType, readerItem, readerTerm } from './lib/stores';
   import Feed from "./components/Feed.svelte";
   import TextReader from "./components/TextReader.svelte";
   import DetailPanel from "./components/DetailPanel.svelte";

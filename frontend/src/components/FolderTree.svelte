@@ -4,7 +4,7 @@
   import { subscribeFileDrop } from '../lib/native-drop';
   import { pushToast } from "../lib/toast";
   import { backendUrl } from "../lib/backend-url";
-  import { associateTextPaths, folders, folderId, stats, query, tag, scope, switchContent, appBooting } from "../lib/stores";
+  import { associateTextPaths, folders, folderId, selectFolder, stats, query, tag, scope, switchContent, appBooting } from "../lib/stores";
   import { isTextFilePath } from "../lib/text-reading";
   import { countBreakdown, countFor, formatCount, scopeCaption } from "../lib/counts";
   import type { FolderCounts, Scope } from "../lib/types";
@@ -27,7 +27,7 @@
       const result = await foldersApi.importDirectories(paths);
       await refreshFolders();
       if (result.copied.length) {
-        folderId.set(result.copied[0].id);
+        selectFolder(result.copied[0].id);
         await Promise.all([refreshFeed(), refreshStats()]);
         pushToast(`已复制 ${result.copied.length} 个文件夹到我的文件夹（保留原文件）`);
       }
@@ -70,7 +70,8 @@
   let saving = $state(false);
 
   function pickFolder(f: FolderNode) {
-    folderId.set(f.id);
+    // 走 selectFolder：进了文件夹就把类型轴交给工具栏菜单，菜单才不会整条消失
+    selectFolder(f.id);
     const next = new Set(collapsed);
     if (next.has(f.id)) next.delete(f.id);
     else next.add(f.id);
@@ -313,7 +314,7 @@
       newFolderFor = null;
       newFolderName = "";
       await refreshFolders();
-      folderId.set(result.id);
+      selectFolder(result.id);
     } catch (error) {
       pushToast(`创建失败：${error instanceof Error ? error.message : error}`, { kind: "error" });
     } finally { saving = false; }

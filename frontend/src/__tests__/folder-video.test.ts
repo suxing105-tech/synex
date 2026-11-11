@@ -15,10 +15,11 @@ foldersApi: {
 }));
 vi.mock("../lib/stores", async () => {
   const { writable } = await import("svelte/store");
+  const folderId = writable<number | null>(null);
   return {
-    appBooting: writable(false), folders: writable([]), folderId: writable(null), scope: writable("image"),
+    appBooting: writable(false), folders: writable([]), folderId, scope: writable("image"),
     query: writable(""), tag: writable(null), textMode: writable(false),
-    switchContent: vi.fn(),
+    switchContent: vi.fn(), selectFolder: (id: number) => folderId.set(id),
     stats: writable({ total_images: 12, total_videos: 5, total_audio: 3, total_texts: 40, folders: 0 }),
     refreshFolders: vi.fn(), refreshFeed: vi.fn(), refreshStats: vi.fn(),
   };

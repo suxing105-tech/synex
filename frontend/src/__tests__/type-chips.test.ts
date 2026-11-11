@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { get } from "svelte/store";
 import TypeChips from "../components/TypeChips.svelte";
-import { ALL_KINDS, feedCounts, kindFilter, scope, selectKind } from "../lib/stores";
+import { ALL_KINDS, feedCounts, folderId, kindFilter, scope, selectKind } from "../lib/stores";
 import type { ItemKind } from "../lib/types";
 import { ICON_PATHS } from "../lib/icons";
 
@@ -42,6 +42,7 @@ function pressedChips(container: HTMLElement): string[] {
 beforeEach(() => {
   localStorage.clear();
   scope.set("all");
+  folderId.set(null);
   feedCounts.set({ image: 40, video: 11, audio: 3, text: 40 });
   kindFilter.set("all");
 });
@@ -49,18 +50,19 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   scope.set("all");
+  folderId.set(null);
   kindFilter.set("all");
   localStorage.clear();
 });
 
-describe("TypeChips 只在「所有素材」出现", () => {
+describe("菜单什么时候出现", () => {
   it("scope=all 时渲染五个 chip", () => {
     const { container } = render(TypeChips);
     const labels = [...container.querySelectorAll(".chip .label")].map((el) => el.textContent);
     expect(labels).toEqual(["全部", "图片", "视频", "音频", "文本"]);
   });
 
-  it("切到单一类型就不渲染：导航已经交给侧栏，同屏不该有两套类型控件", async () => {
+  it("没选文件夹时切到单一类型就不渲染：那种屏的类型控件就是侧栏那五行", async () => {
     const { container } = render(TypeChips);
     for (const next of ALL) {
       scope.set(next);
@@ -70,6 +72,34 @@ describe("TypeChips 只在「所有素材」出现", () => {
     scope.set("all");
     await tick();
     expect(container.querySelectorAll(".chip")).toHaveLength(5);
+  });
+
+  it("选了文件夹就一定出现，哪怕口径停在单一类型（2026-11-11 苏醒报的现象）", async () => {
+    const { container } = render(TypeChips);
+    for (const next of ALL) {
+      scope.set(next);
+      folderId.set(7);
+      await tick();
+      expect(container.querySelectorAll(".chip")).toHaveLength(5);
+    }
+  });
+
+  it("混合态下高亮跟着网格走：口径是图片、kindFilter 还是「全部」时亮的是图片", async () => {
+    scope.set("image");
+    folderId.set(7);
+    const { container } = render(TypeChips);
+    await tick();
+    expect(pressedChips(container)).toEqual(["图片"]);
+  });
+
+  it("单一口径里点菜单会把口径落回统一流，不留「亮着却没用」的死控件", async () => {
+    scope.set("image");
+    folderId.set(7);
+    const { container } = render(TypeChips);
+    await fireEvent.click(chipByText(container, "视频"));
+    expect(get(scope)).toBe("all");
+    expect(get(kindFilter)).toBe("video");
+    expect(pressedChips(container)).toEqual(["视频"]);
   });
 });
 

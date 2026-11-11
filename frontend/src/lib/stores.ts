@@ -107,8 +107,26 @@ function readStoredKindFilter(): KindFilter {
 
 export const kindFilter = writable<KindFilter>(readStoredKindFilter());
 
-/** 单选：再点已选中的那一类不取消 —— 过滤条件为空没有意义。 */
+/**
+ * 这一屏到底在看哪一类：单一口径（侧栏那五行）由 scope 说了算，
+ * 统一流（scope=all，文件夹视图一定走这条）由 chips 说了算。
+ *
+ * chips 的高亮必须读这个，不能直接读 kindFilter：否则「侧栏停在全部图片 +
+ * 选了某个文件夹」这种组合下，网格里只有图片、chips 却亮着「全部」。
+ */
+export const activeKind = derived([scope, kindFilter], ([$scope, $kind]) =>
+  $scope === "all" ? $kind : $scope,
+);
+
+/**
+ * 单选：再点已选中的那一类不取消 —— 过滤条件为空没有意义。
+ *
+ * chips 是统一流的类型轴，所以点它一定把口径落回统一流：还停在单一口径时
+ * 只改 kindFilter 的话，「只看视频」亮着、网格却仍是图片口径的东西 ——
+ * 点了没反应的控件比没有控件更糟。
+ */
 export function selectKind(next: KindFilter): void {
+  if (get(scope) !== "all") scope.set("all");
   kindFilter.set(next);
   try {
     localStorage.setItem(KIND_STORAGE_KEY, next);
@@ -120,6 +138,36 @@ export function selectKind(next: KindFilter): void {
 /** 发给 /api/items 的 kinds：「全部」= 四类全带上，与后端 counts 口径一致。 */
 export function kindsOfFilter(value: KindFilter): ItemKind[] {
   return value === "all" ? [...ALL_KINDS] : [value];
+}
+
+/**
+ * 选文件夹 = 只换范围，不换类型。
+ *
+ * 这里原来只有 folderId.set()，口径留在原地：先在侧栏点「全部图片」再点自己的
+ * 文件夹，就落进「单一口径 + 文件夹」的混合态，而类型菜单按老规矩只在 scope=all
+ * 出现 —— 同一个文件夹点进去有没有菜单，全看上一次点的是侧栏哪一行（2026-11-11
+ * 苏醒：只要选了文件夹，菜单就得在）。现在收成一条：文件夹里浏览走的都是统一流，
+ * 类型交给菜单，而类型本身（activeKind）不因「点开一个文件夹」这件事被改掉。
+ */
+export function selectFolder(id: number): void {
+  const kind = get(activeKind);
+  scope.set("all");
+  if (kind !== get(kindFilter)) selectKind(kind);
+  folderId.set(id);
+}
+
+/**
+ * 快捷键 0/Q/A/I/V/T：在文件夹里就换菜单，别把文件夹顶掉。
+ *
+ * 原来一律 switchContent(kind, false, true)（换口径 + 保住文件夹），
+ * 那正是上面那个混合态的另一个入口。
+ */
+export function switchType(next: KindFilter): void {
+  if (get(folderId) !== null) {
+    selectKind(next);
+    return;
+  }
+  switchContent(next, false, true);
 }
 
 export const targetColumns = writable<number>(5);

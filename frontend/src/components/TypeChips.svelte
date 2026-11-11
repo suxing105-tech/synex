@@ -1,13 +1,17 @@
 <script lang="ts">
   /**
-   * 「所有素材」的类型过滤：**单选**。
+   * 类型过滤：**单选**，这一屏看哪一类就看它。
    *
-   * 导航（切口径）已经交给侧栏，这里只在混排流里挑一类来看；默认「全部」。
-   * 所以它只在 scope === 'all' 时出现，切到单一类型就不渲染 —— 同屏两套类型控件
-   * 只会让人搞不清哪个说了算。再点已选中的那一类不取消：空过滤没有意义。
+   * 出现条件：统一流（scope === 'all'），或者选了任意文件夹（来源目录 / 我的文件夹都算）。
+   * 老规矩是只在 scope === 'all' 出现，理由是「同屏不该有两套类型控件」；代价是侧栏
+   * 停在「全部图片」时点开自己的文件夹，菜单整条消失，同一个文件夹有时有、有时没有
+   * （2026-11-11 苏醒：只要选了文件夹，菜单就得在）。现在文件夹视图一定带菜单，
+   * 只有「没选文件夹的纯全库口径」才继续让位给侧栏那五行。
+   * 高亮读 activeKind（不是 kindFilter）：混合态下网格由口径决定，菜单得跟着网格走。
+   * 再点已选中的那一类不取消：空过滤没有意义。
    */
   import Icon from "./Icon.svelte";
-  import { feedCounts, kindFilter, scope, selectKind } from "../lib/stores";
+  import { activeKind, feedCounts, folderId, scope, selectKind } from "../lib/stores";
   import type { ItemKind } from "../lib/types";
 
   type Choice = ItemKind | "all";
@@ -30,10 +34,10 @@
   }
 </script>
 
-{#if $scope === "all"}
+{#if $scope === "all" || $folderId !== null}
   <nav class="type-chips" aria-label="素材类型过滤">
     {#each chips as chip (chip.kind)}
-      {@const on = $kindFilter === chip.kind}
+      {@const on = $activeKind === chip.kind}
       <button
         class="chip"
         class:on={on}

@@ -685,13 +685,13 @@
     padding: 1px 6px;
     border-radius: 7px;
     background: #ffffff0a;
-    color: #7d7d86;
+    color: var(--text-3);
   }
   :global(.folder-item .count.zero) {
     opacity: .4;
   }
   :global(.folder-item.active .count) {
-    color: #f24e4e;
+    color: var(--accent-strong);
     background: #f24e4e1f;
   }
   :global(.folder-item .menu-btn) {
@@ -772,8 +772,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
     border: 0;
     border-radius: 6px;
     background: transparent;
@@ -785,7 +785,7 @@
   .scope-caption {
     font-size: 10.5px;
     font-weight: 500;
-    color: #6f6f76;
+    color: var(--text-3);
   }
   .folder-title {
     font-size: 12px;
@@ -793,8 +793,8 @@
     letter-spacing: .04em;
     color: #7f7f88;
   }
-  .folder-hint { font-size: 10.5px; color: #6f6f76; padding: 4px 10px 10px; line-height: 1.7; }
-  .folder-caret { width: 12px; height: 14px; display: flex; align-items: center; flex-shrink: 0; color: #6f6f76; }
+  .folder-hint { font-size: 10.5px; color: var(--text-3); padding: 4px 10px 10px; line-height: 1.7; }
+  .folder-caret { width: 12px; height: 14px; display: flex; align-items: center; flex-shrink: 0; color: var(--text-3); }
   :global(.folder-item:focus-visible) { outline: none; background: #ffffff12; }
   :global(.folder-item.dragging) { opacity: .45; cursor: grabbing; }
   :global(.folder-item.drop-before) { box-shadow: 0 -2px #f24e4e; }

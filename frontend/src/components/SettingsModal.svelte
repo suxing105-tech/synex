@@ -651,14 +651,14 @@
   .settings-rail-head h2 { font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
   .settings-return { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; color: #a1a1aa; }
   .settings-search { position: relative; display: flex; align-items: center; margin: 0 4px 10px; }
-  .settings-search > svg { position: absolute; left: 11px; color: #6d6d75; pointer-events: none; }
+  .settings-search > svg { position: absolute; left: 11px; color: var(--text-3); pointer-events: none; }
   .settings-search input { width: 100%; height: 34px; padding: 0 30px 0 32px; font-size: 13px; color: #e4e4e7; background: #101013; border: 1px solid #2b2b30; border-radius: 8px; }
-  .settings-search input::placeholder { color: #6d6d75; }
+  .settings-search input::placeholder { color: var(--text-3); }
   .settings-search input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
   .settings-search input:focus { border-color: #3f3f46; background: #191920; outline: none; }
   .settings-search-clear { position: absolute; right: 5px; display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 6px; color: #8a8a8e; }
   .settings-nav { display: flex; flex-direction: column; gap: 2px; min-height: 0; overflow-y: auto; }
-  .settings-nav-group { margin: 14px 0 4px; padding: 0 10px; font-size: 11px; letter-spacing: .06em; color: #6d6d75; }
+  .settings-nav-group { margin: 14px 0 4px; padding: 0 10px; font-size: 11px; letter-spacing: .06em; color: var(--text-3); }
   .settings-nav-group:first-child { margin-top: 2px; }
   .settings-nav-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border-radius: 8px; text-align: left; font-size: 13px; line-height: 1.4; color: #a1a1aa; }
   .settings-nav-item svg { flex-shrink: 0; opacity: .7; }

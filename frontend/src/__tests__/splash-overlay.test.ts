@@ -47,9 +47,12 @@ describe("启动引导页（画廊成形 · 品牌段）", () => {
     expect(rule, "找不到 .splash-rule 样式块").toBeTruthy();
     expect(rule![0]).toMatch(/position:\s*relative/);
     expect(rule![0]).toMatch(/height:\s*14px/);
-    // 细轨 4px / 静止色 / 圆头 14px + 2px 底色内环：四条都跟 Feed 那枚滑块同值
-    expect(feed).toMatch(/\.columns-slider \{[\s\S]*?height: 4px;[\s\S]*?rgb\(50 50 55\)/);
-    expect(feed).toMatch(/::-webkit-slider-thumb \{[\s\S]*?width: 14px;[\s\S]*?border: 2px solid rgb\(24 24 27\)/);
+    // 细轨 4px / 静止色 / 圆头 14px + 2px 底色内环：四条都跟 Feed 那枚滑块同值。
+    // 2026-11-11 无障碍那轮把 Feed 那枚的命中区抬到 24px，4px 只剩轨道伪元素，
+    // 所以这里分开钉两处（原来一条懒正则跨块匹配，改完照样过，等于没在管）。
+    expect(feed).toMatch(/\.columns-slider \{[^}]*height: 24px;[^}]*\}/);
+    expect(feed).toMatch(/::-webkit-slider-runnable-track \{[^}]*height: 4px;[^}]*rgb\(50 50 55\)/);
+    expect(feed).toMatch(/::-webkit-slider-thumb \{[^}]*width: 14px;[^}]*border: 2px solid rgb\(24 24 27\)/);
     const track = src.match(/\.rule-track \{[\s\S]*?\}/);
     expect(track![0]).toContain("#323237");
     expect(src).toMatch(/height:\s*4px;\n\s*border-radius:\s*2px;/);

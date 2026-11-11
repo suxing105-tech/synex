@@ -1643,18 +1643,25 @@ import { hoverPlay } from "../lib/hover-play";
   .columns-slider {
     -webkit-appearance: none;
     appearance: none;
+    /* 2026-11-11 无障碍那轮：input 自己抬到 24px 高当命中区（WCAG 2.5.8 最小 24×24——
+       原来整只控件只有 4px 高，用鼠标去够等于逼人去瞄一条 4 像素的线）。
+       4px 那条细轨改画在 ::-webkit-slider-runnable-track 上，视觉一寸没动。 */
+    height: 24px;
+    background: transparent;
+    outline: none;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+  }
+  .columns-slider::-webkit-slider-runnable-track {
     height: 4px;
     border-radius: 2px;
     background: linear-gradient(
       to right,
-      rgb(242 78 78) 0%,
-      rgb(242 78 78) calc((var(--value) - 4) * 100% / 8),
+      rgb(var(--accent-rgb)) 0%,
+      rgb(var(--accent-rgb)) calc((var(--value) - 4) * 100% / 8),
       rgb(50 50 55) calc((var(--value) - 4) * 100% / 8),
       rgb(50 50 55) 100%
     );
-    outline: none;
-    cursor: pointer;
-    transition: opacity 0.15s ease;
   }
   .columns-slider:hover { opacity: 0.92; }
   .columns-slider::-webkit-slider-thumb {
@@ -1662,8 +1669,10 @@ import { hoverPlay } from "../lib/hover-play";
     appearance: none;
     width: 14px;
     height: 14px;
+    /* 轨道 4px、thumb 14px：Chrome 把 thumb 顶边贴在轨道顶边上，(4-14)/2 才居中 */
+    margin-top: -5px;
     border-radius: 50%;
-    background: rgb(242 78 78);
+    background: rgb(var(--accent-rgb));
     border: 2px solid rgb(24 24 27);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(242, 78, 78, 0.4);
     cursor: grab;
@@ -1681,7 +1690,7 @@ import { hoverPlay } from "../lib/hover-play";
     width: 14px;
     height: 14px;
     border-radius: 50%;
-    background: rgb(242 78 78);
+    background: rgb(var(--accent-rgb));
     border: 2px solid rgb(24 24 27);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(242, 78, 78, 0.4);
     cursor: grab;
@@ -1690,6 +1699,12 @@ import { hoverPlay } from "../lib/hover-play";
     height: 4px;
     border-radius: 2px;
     background: rgb(50 50 55);
+  }
+  /* Firefox 不跑那条 calc 渐变，已走的部分交给它自己的 progress 伪元素 */
+  .columns-slider::-moz-range-progress {
+    height: 4px;
+    border-radius: 2px;
+    background: rgb(var(--accent-rgb));
   }
   .columns-slider:focus-visible::-webkit-slider-thumb {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 0 4px rgba(242, 78, 78, 0.35);

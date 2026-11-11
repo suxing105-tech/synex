@@ -1621,7 +1621,7 @@
               <img class="cm-hero cm-hero-new" src={backendUrl(heroOutSrc(out))}
                 alt={out.kind === "image" ? "刚生成的画面" : ""} draggable="false" />
               {#if out.kind !== "image"}
-                <span class="cm-hero-out-play" aria-hidden="true"><Icon name="play" size={22} /></span>
+                <span class="cm-hero-out-play" aria-hidden="true"><Icon name="play" size={20} /></span>
               {/if}
               <span class="cm-hero-out-hint" aria-hidden="true"><Icon name="external-link" size={12} />在图库中打开</span>
             </button>
@@ -1776,7 +1776,7 @@
                                    用户以为参考换不了（真机实测）。圆钮降级成提示，点哪儿都开选择器。 -->
                               <button class="cm-tile-pick" aria-label={`替换${item.cell.label}`} onclick={() => (pickerSlot = item.cell.key)}>
                                 <img class="cm-tile-img" src={backendUrl(picked.thumbnail_url || picked.original_url!)} alt={picked.filename} />
-                                <span class="cm-tile-swap" aria-hidden="true"><Icon name="swap" size={15} /></span>
+                                <span class="cm-tile-swap" aria-hidden="true"><Icon name="swap" size={14} /></span>
                               </button>
                               <button class="cm-tile-x" aria-label={`移除${item.cell.label}`} onclick={() => removeRef(item.cell.key)}>
                                 <Icon name="x" size={12} />
@@ -1844,7 +1844,7 @@
                                 {#if item.thumb && !item.add}
                                   <img class="cm-mention-thumb" src={backendUrl(item.thumb)} alt="" />
                                 {:else}
-                                  <Icon name={item.add ? "plus" : "image"} size={13} />
+                                  <Icon name={item.add ? "plus" : "image"} size={14} />
                                 {/if}
                               </span>
                               <span class="cm-mention-label">{item.add ? mentionAddLabel(item.kind) : item.label}</span>
@@ -1897,7 +1897,7 @@
                     aria-expanded={kindPop} disabled={busy}
                     title={busy ? `生成中不换创作类型，现在出${WF_OUTPUT_WORDS[pickedKind]}` : `现在出${WF_OUTPUT_WORDS[pickedKind]} · ${kindCountWords(pickedKind)}。换一族会连参考位与参数一起换。`}
                     onclick={toggleKindPop}>
-                    <Icon name={KIND_ICONS[pickedKind]} size={13} />
+                    <Icon name={KIND_ICONS[pickedKind]} size={14} />
                     <span class="cm-pill-text">{CREATION_KIND_WORDS[pickedKind]}</span>
                     <span class="cm-chevron" class:is-open={kindPop} aria-hidden="true"><Icon name="chevron-down" size={12} /></span>
                   </button>
@@ -1909,12 +1909,12 @@
                              不给理由的 disabled 有用得多。 -->
                         <button class="cm-wf cm-kind-row" role="menuitemradio" aria-checked={kind === pickedKind}
                           title={kindRowTitle(kind)} onclick={() => pickCreationKind(kind)}>
-                          <span class="cm-kind-icon" aria-hidden="true"><Icon name={KIND_ICONS[kind]} size={15} /></span>
+                          <span class="cm-kind-icon" aria-hidden="true"><Icon name={KIND_ICONS[kind]} size={14} /></span>
                           <span class="cm-wf-name">{CREATION_KIND_WORDS[kind]}</span>
                           <!-- 行末那串「本机 N 份 / 云端 N 条」撤了（2026-11-10 苏醒照图圈掉）：三行灰字并排，
                                眼睛先读到的是数而不是「选哪一族」，菜单最该有的那件事被挤成了配角。
                                数没消失：悬停这一行照样报，名字下面不再有第二排字。 -->
-                          {#if kind === pickedKind}<span class="cm-kind-check" aria-hidden="true"><Icon name="check" size={15} /></span>{/if}
+                          {#if kind === pickedKind}<span class="cm-kind-check" aria-hidden="true"><Icon name="check" size={14} /></span>{/if}
                         </button>
                       {/each}
                     </div>
@@ -1930,7 +1930,7 @@
                   <button class="cm-pill" class:is-busy={busy} aria-label="工作流" aria-haspopup="menu" aria-expanded={wfOpen}
                     disabled={busy} title={busy ? `生成中，等这张图画完再换工作流：${wfFullTitle}` : wfFullTitle}
                     onclick={toggleWorkflowPop}>
-                    <Icon name="layers" size={13} />
+                    <Icon name="layers" size={14} />
                     <span class="cm-pill-text">{wfName}</span>
                     <span class="cm-chevron" class:is-open={wfOpen} aria-hidden="true"><Icon name="chevron-down" size={12} /></span>
                   </button>
@@ -1966,7 +1966,7 @@
                                 <!-- 折叠那行不给删：一条「闪寻音频」背后是三条工作流，删哪条不该由这颗 X 临场决定。 -->
                                 <button class="cm-wf-del" aria-label={`删除工作流 ${row.label}`} title="删除这个工作流"
                                   disabled={busy || wfDeleting} onclick={() => void removeTemplate(row.targetId)}>
-                                  <Icon name="x" size={13} />
+                                  <Icon name="x" size={14} />
                                 </button>
                               {/if}
                             </div>
@@ -2016,7 +2016,7 @@
                                 {#if !row.collapsed}
                                   <button class="cm-wf-del" aria-label={`删除工作流 ${row.label}`} title="删除这个工作流"
                                     disabled={busy || wfDeleting} onclick={() => void removeTemplate(row.targetId)}>
-                                    <Icon name="x" size={13} />
+                                    <Icon name="x" size={14} />
                                   </button>
                                 {/if}
                               </div>
@@ -2033,7 +2033,7 @@
                         <div class="cm-pop-sep"></div>
                         <button class="cm-wf cm-wf-add" role="menuitem" disabled={workflowLoading} onclick={() => wfInput?.click()}>
                           <!-- 占位与上面的族徽同宽，「加载本地工作流 JSON」才跟上面的名字左对齐 -->
-                          <span class="cm-wf-lead" aria-hidden="true"><Icon name="plus" size={13} /></span>
+                          <span class="cm-wf-lead" aria-hidden="true"><Icon name="plus" size={14} /></span>
                           <span class="cm-wf-name">{workflowLoading ? "正在读取…" : "加载本地工作流 JSON"}</span>
                         </button>
                       {/if}

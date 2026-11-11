@@ -62,7 +62,7 @@
   <h4 class="text-[11px] uppercase text-muted mb-1.5 tracking-wider">Workflow JSON</h4>
   <details class="bg-surface-2 border border-border rounded-md">
     <summary class="cursor-pointer text-[12px] text-muted hover:text-zinc-200 px-2 py-1.5 flex items-center gap-2 select-none">
-      <Icon name="chevron-right" size={11} />
+      <Icon name="chevron-right" size={12} />
       <span class="flex-1">
         {nodeCount > 0 ? `${nodeCount} 节点` : "查看"}
         {#if bytes > 0}
@@ -76,21 +76,21 @@
         class="text-[11px] px-2 py-0.5 rounded border border-border hover:bg-surface-3 inline-flex items-center gap-1"
         onclick={() => copy(workflow, "Workflow JSON")}
       >
-        <Icon name="copy" size={10} />复制
+        <Icon name="copy" size={12} />复制
       </button>
       <button
         type="button"
         class="text-[11px] px-2 py-0.5 rounded border border-border hover:bg-surface-3 inline-flex items-center gap-1"
         onclick={copyFormatted}
       >
-        <Icon name="code" size={10} />格式化并复制
+        <Icon name="code" size={12} />格式化并复制
       </button>
       <button
         type="button"
         class="text-[11px] px-2 py-0.5 rounded border border-border hover:bg-surface-3 inline-flex items-center gap-1"
         onclick={download}
       >
-        <Icon name="download" size={10} />下载
+        <Icon name="download" size={12} />下载
       </button>
     </div>
     <pre class="prompt-box border-t border-border p-2 max-h-48 overflow-y-auto">{workflow}</pre>

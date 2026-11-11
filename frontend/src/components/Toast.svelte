@@ -58,7 +58,7 @@
         aria-label="关闭"
         onclick={() => dismissToast(t.id)}
       >
-        <Icon name="x" size={11} />
+        <Icon name="x" size={12} />
       </button>
     </div>
   {/each}
@@ -74,7 +74,7 @@
         onmouseleave={() => resumeToast(t.id)}
       >
         {#if t.icon}
-          <Icon name={t.icon} size={15} />
+          <Icon name={t.icon} size={14} />
         {/if}
         <span class="toast-pill-text">{t.message}</span>
         {#if t.actions}
@@ -91,7 +91,7 @@
           {/each}
         {/if}
         <button type="button" class="pill-close" aria-label="关闭" onclick={() => dismissToast(t.id)}>
-          <Icon name="x" size={13} />
+          <Icon name="x" size={14} />
         </button>
       </div>
     {/each}

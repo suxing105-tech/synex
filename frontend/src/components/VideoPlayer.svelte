@@ -249,7 +249,7 @@
         <button type="button" class="rounded-lg px-3 py-2 text-xs" title="对比选中的两个视频" aria-label="对比视频" onclick={() => { compareOn = true; }}>对比</button>
       {/if}
       <button type="button" class="viewer-icon-btn" aria-label="用系统播放器打开" title="用系统播放器打开" onclick={() => void openInSystem()}>
-        <Icon name="external-link" size={15} />
+        <Icon name="external-link" size={14} />
       </button>
       {#if !comparing && current.playable}
         <!-- 与图片预览同一组按钮、同一个组件；必须排在顶栏所有按钮之后（Svelte 5 事件委托） -->

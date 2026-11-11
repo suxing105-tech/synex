@@ -1290,7 +1290,7 @@ import { hoverPlay } from "../lib/hover-play";
                       onclick={(e) => { e.stopPropagation(); e.preventDefault(); openInComfyui(it); }}
                       onmousedown={(e) => e.stopPropagation()}
                     >
-                      <Icon name="comfyui" size={15} />
+                      <Icon name="comfyui" size={14} />
                     </div>
                   {/if}
                   <!-- 音频卡不放播放角标：整张卡就是播放控件（点一下播、再点停），

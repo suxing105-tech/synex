@@ -90,7 +90,7 @@
                   aria-label="复制 seed"
                   onclick={() => copy(v)}
                 >
-                  <Icon name="copy" size={11} />
+                  <Icon name="copy" size={12} />
                 </button>
               </dd>
             {:else}

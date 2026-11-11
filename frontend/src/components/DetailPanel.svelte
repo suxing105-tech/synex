@@ -494,7 +494,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
         </div>
         {#if d.kind === "image" && d.seed !== null}
           <div class="text-[11px] mt-0.5 flex items-center gap-1 text-muted">
-            <Icon name="hash" size={10} />
+            <Icon name="hash" size={12} />
             <span class="font-mono truncate" title={String(d.seed)}>{String(d.seed)}</span>
             <button
               type="button"
@@ -503,7 +503,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
               aria-label="复制 seed"
               onclick={() => copy(String(d.seed), "Seed")}
             >
-              <Icon name="copy" size={10} />
+              <Icon name="copy" size={12} />
             </button>
           </div>
         {/if}
@@ -585,7 +585,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
                 onerror={() => (waveFailed = true)}
               />
             {:else}
-              <Icon name="music" size={34} />
+              <Icon name="music" size={36} />
             {/if}
           </div>
           <div class="p-3 flex items-center gap-2">
@@ -595,7 +595,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
               title={$playingAudio?.id === d.id ? "暂停音频" : "播放音频"}
               onclick={toggleSelectedAudio}
             >
-              <Icon name={$playingAudio?.id === d.id ? "pause" : "play"} size={11} />{$playingAudio?.id === d.id ? "暂停" : "播放"}
+              <Icon name={$playingAudio?.id === d.id ? "pause" : "play"} size={12} />{$playingAudio?.id === d.id ? "暂停" : "播放"}
             </button>
             <button
               type="button"
@@ -645,7 +645,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
               class="text-[11px] text-muted hover:text-zinc-200 inline-flex items-center gap-1"
               onclick={() => (showTagInput = !showTagInput)}
             >
-              <Icon name="plus" size={10} />标签
+              <Icon name="plus" size={12} />标签
             </button>
           </div>
           {#if showTagInput}
@@ -752,7 +752,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
         disabled={!d.workflow}
         onclick={openInComfyui}
       >
-        <Icon name="comfyui" size={13} />
+        <Icon name="comfyui" size={14} />
         <span>在 ComfyUI 打开</span>
       </button>
       {#if d.kind === "image"}
@@ -792,7 +792,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
               role="menuitem"
               onclick={() => { copy(d.positive_prompt, "正向 Prompt"); closeMenu(); }}
             >
-              <Icon name="copy" size={11} />复制正向 Prompt
+              <Icon name="copy" size={12} />复制正向 Prompt
             </button>
             <button
               type="button"
@@ -800,7 +800,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
               role="menuitem"
               onclick={() => { copy(d.negative_prompt, "反向 Prompt"); closeMenu(); }}
             >
-              <Icon name="copy" size={11} />复制反向 Prompt
+              <Icon name="copy" size={12} />复制反向 Prompt
             </button>
             {#if d.seed !== null}
               <button
@@ -809,7 +809,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
                 role="menuitem"
                 onclick={() => { copy(String(d.seed), "Seed"); closeMenu(); }}
               >
-                <Icon name="hash" size={11} />复制 Seed
+                <Icon name="hash" size={12} />复制 Seed
               </button>
             {/if}
             <div class="border-t border-border my-1"></div>
@@ -820,7 +820,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
               role="menuitem"
               onclick={() => { copy(d.path, "路径"); closeMenu(); }}
             >
-              <Icon name="external-link" size={11} />复制绝对路径
+              <Icon name="external-link" size={12} />复制绝对路径
             </button>
             {#if d.kind === "image"}
             <button
@@ -829,7 +829,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
               role="menuitem"
               onclick={() => { openTagEditor(); closeMenu(); }}
             >
-              <Icon name="tag" size={11} />编辑标签…
+              <Icon name="tag" size={12} />编辑标签…
             </button>
             {/if}
           </div>

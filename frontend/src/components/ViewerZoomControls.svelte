@@ -18,9 +18,9 @@
 </script>
 
 <button type="button" class="viewer-icon-btn" aria-label="适应窗口" aria-pressed={zoom.mode === "fit"} title="适应窗口（按画面比例缩到画布内）" onclick={() => zoom.setFit()}>
-  <Icon name="fit-screen" size={15} />
+  <Icon name="fit-screen" size={14} />
 </button>
 <button type="button" class="viewer-icon-btn" aria-label="100%" aria-pressed={zoom.mode === "zoom"} title="原始像素显示（100%），可拖动查看细节" onclick={() => zoom.setZoom100()}>
-  <Icon name="actual-size" size={15} />
+  <Icon name="actual-size" size={14} />
 </button>
 <span class="viewer-zoom-readout">{zoom.percent}%</span>

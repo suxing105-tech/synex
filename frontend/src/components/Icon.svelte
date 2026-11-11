@@ -4,11 +4,14 @@
    * 实际 inner-SVG 路径抽到 lib/icons.ts，方便纯函数测试 + 跨组件复用。
    * 用法：<Icon name="folder" size={14} />
    *
+   * 尺寸只取 lib/icons.ts 的 ICON_SIZES 档位，描边由 iconStroke(size) 给：
+   * 组件里不要再写 width/height/stroke-width，也不要再手画 <svg>。
+   *
    * 特殊处理：``name="comfyui"`` 走 PNG 真 logo（ComfyUI 官方品牌识别强，
    * 自己手画 SVG 会被认成仿冒）。PNG 在 ``frontend/public/comfyui-logo.png``，
    * vite 静态托管。
    */
-  import { ICON_PATHS } from "../lib/icons";
+  import { ICON_PATHS, iconStroke } from "../lib/icons";
 
   interface Props {
     name: string;
@@ -37,7 +40,7 @@
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    stroke-width="2"
+    stroke-width={iconStroke(size)}
     stroke-linecap="round"
     stroke-linejoin="round"
     class={cls}

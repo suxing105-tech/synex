@@ -63,7 +63,7 @@
   <!-- 标签 -->
   <div>
     <div class="text-[11px] uppercase text-muted tracking-wider mb-1.5 flex items-center gap-1">
-      <Icon name="tag" size={11} />
+      <Icon name="tag" size={12} />
       <span>标签</span>
     </div>
     {#if tags.length === 0}
@@ -87,7 +87,7 @@
               aria-label={`删除标签 ${t}`}
               onclick={() => onRemoveTag?.(t)}
             >
-              <Icon name="x" size={10} />
+              <Icon name="x" size={12} />
             </button>
           </span>
         {/each}
@@ -98,7 +98,7 @@
   <!-- 文件夹 -->
   <div>
     <div class="text-[11px] uppercase text-muted tracking-wider mb-1.5 flex items-center gap-1">
-      <Icon name="folder" size={11} />
+      <Icon name="folder" size={12} />
       <span>所属文件夹</span>
       <button
         type="button"
@@ -117,7 +117,7 @@
           aria-label="打开所在文件夹"
           onclick={() => onRevealLocation?.()}
         >
-          <Icon name="folder" size={10} />
+          <Icon name="folder" size={12} />
           <span class="truncate">{locationText}</span>
         </button>
         <button
@@ -127,7 +127,7 @@
           aria-label="复制文件夹路径"
           onclick={() => onCopyLocation?.()}
         >
-          <Icon name="copy" size={10} />
+          <Icon name="copy" size={12} />
         </button>
       </div>
     {:else if folderNodes.length === 0}
@@ -139,7 +139,7 @@
             class="inline-flex items-center gap-1 bg-surface-2 border border-border rounded px-2 py-0.5 text-[11px]"
             title={breadcrumb(node)}
           >
-            <Icon name="folder" size={10} />
+            <Icon name="folder" size={12} />
             <span class="truncate max-w-[200px]">{node.name}</span>
           </span>
         {/each}

@@ -219,7 +219,7 @@
                 onclick={() => onOpenImage?.(card.output.id, card.output.kind)}
                 onkeydown={(e) => onCardKeydown(card, e)}>
                 <img src={srcFor(card)} alt="" draggable="false" />
-                <span class="cc-play" aria-hidden="true"><Icon name="play" size={22} /></span>
+                <span class="cc-play" aria-hidden="true"><Icon name="play" size={20} /></span>
               </button>
             {/if}
           </div>

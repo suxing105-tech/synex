@@ -66,7 +66,7 @@
         title="复制"
         aria-label={`复制 ${title}`}
       >
-        <Icon name="copy" size={11} />
+        <Icon name="copy" size={12} />
         <span>复制</span>
       </button>
     </span>

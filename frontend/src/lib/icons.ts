@@ -200,9 +200,65 @@ export const ICON_PATHS: Record<string, string> = {
   // 勾（「创作类型」菜单里现在这一族那一行）
   check: '<polyline points="20 6 9 17 4 12"/>',
 
+  // 放大镜：搜索框三处（主搜索 / 设置页搜索 / 选文件夹弹窗）原来是三份手写的圆 + 斜杠，
+  // 半径一个 7 一个 8、斜杠一个用 line 一个用 path，12px 下粗细肉眼可辨
+  search:
+    '<circle cx="11" cy="11" r="7"/>' +
+    '<path d="m21 21-4.3-4.3"/>',
+
+  // 品牌六边形：左栏底部「设置」那颗（也是 logo 的形状）
+  brand:
+    '<path d="m12 2 9 5v10l-9 5-9-5V7z"/>' +
+    '<circle cx="12" cy="12" r="4"/>',
+
+  // 左右栏展开/收起：同一条规矩 —— 竖线画在栏的那一侧，箭头朝栏=收起、离栏=展开。
+  // 收进图标库之前，这四个形状散在 App / CollapsedSidebar / FolderTree 里各画一遍。
+  "panel-left-collapse":
+    '<rect x="3" y="4" width="18" height="16" rx="3"/>' +
+    '<path d="M9 4v16m7-11-3 3 3 3"/>',
+  "panel-left-expand":
+    '<rect x="3" y="4" width="18" height="16" rx="3"/>' +
+    '<path d="M9 4v16m4-11 3 3-3 3"/>',
+  "panel-right-collapse":
+    '<rect x="3" y="4" width="18" height="16" rx="3"/>' +
+    '<path d="M15 4v16m-7-11 3 3-3 3"/>',
+  "panel-right-expand":
+    '<rect x="3" y="4" width="18" height="16" rx="3"/>' +
+    '<path d="M15 4v16m-4-11-3 3 3 3"/>',
+
+  // 窗口三键：原来画在 16 的格子里（和全站 24 的格子混着用），现在统一到 24
+  "window-minimize": '<path d="M5 12h14"/>',
+  "window-maximize": '<rect x="5" y="5" width="14" height="14" rx="1"/>',
+  "window-restore":
+    '<path d="M8 8V5h11v11h-3"/>' +
+    '<rect x="5" y="8" width="11" height="11" rx="1"/>',
+  // 关闭 = 已有的 x，不再另起一个名字
+
   // comfyui 走 PNG 真 logo（品牌识别强），见 Icon.svelte 的 special case；
   // PNG 在 frontend/public/comfyui-logo.png，由 vite 静态托管。
 };
 
 /** 列出所有支持图标名（用于代码生成 / 测试 / 帮助页）。 */
 export const ICON_NAMES = Object.keys(ICON_PATHS);
+
+/**
+ * 图标尺寸档位 —— 全站唯一一把尺子（无障碍与视觉统一那轮定的，2026-11-11）。
+ *
+ * 定档之前 <Icon size> 用了 10/11/12/13/14/15/16/18/20/22/24/34/36/56 共 14 档，
+ * 差 1px 的两个尺寸并排摆着只会显得手抖。新图标请从这几档里挑，别再加新档：
+ *   12 徽标 / 行内小箭头   14 列表与工具栏主力   16 侧栏
+ *   20 大控件、阅读层      24 空态与大按钮        36/56 启动屏与品牌位
+ */
+export const ICON_SIZES = [12, 14, 16, 20, 24, 36, 56] as const;
+export type IconSize = (typeof ICON_SIZES)[number];
+
+/**
+ * 描边尺子：小图标（≤16）1.75，大图标（≥20）2。
+ *
+ * 为什么不是所有尺寸一个值：24 格子里 2 的描边缩到 12px 会糊成一团，
+ * 侧栏 2026-11-06 就是这么定到 1.7 的。差别只留两档，且只有 Icon.svelte 读它 ——
+ * 组件里再写 stroke-width 就是破坏统一（护栏测试 target-size-contrast 同一批管）。
+ */
+export function iconStroke(size: number): number {
+  return size <= 16 ? 1.75 : 2;
+}

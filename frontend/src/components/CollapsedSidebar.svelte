@@ -32,7 +32,7 @@
       aria-current={active(entry.scope) ? 'page' : undefined}
       onclick={() => switchContent(entry.scope, true)}
     >
-      <Icon name={entry.icon} size={18} />
+      <Icon name={entry.icon} size={20} />
     </button>
   {/each}
 </nav>

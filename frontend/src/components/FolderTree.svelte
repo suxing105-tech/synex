@@ -399,7 +399,7 @@
       onkeydown={(e) => { if (e.key === "Enter") switchContent(row.scope, true); }}
     >
       <span class="caret-spacer"></span>
-      <span class="icon"><Icon name={row.icon} size={13} /></span>
+      <span class="icon"><Icon name={row.icon} size={14} /></span>
       <span class="label">{row.label}</span>
       <!-- 启动期计数还没回来，显示 0 是假话：压成等待条，尺寸位置都不动 -->
       <span class="count" class:zero={row.count === 0} class:pending={$appBooting} title={row.detail}>{formatCount(row.count)}</span>
@@ -421,7 +421,7 @@
       aria-label="添加来源目录"
       onclick={(e) => { e.stopPropagation(); void addSource(); }}
     >
-      <Icon name="plus" size={13} />
+      <Icon name="plus" size={14} />
     </button>
   </div>
   {#if $appBooting}
@@ -450,7 +450,7 @@
       title="新建文件夹"
       aria-label="新建文件夹"
     >
-      <Icon name="plus" size={13} />
+      <Icon name="plus" size={14} />
     </button>
   </div>
 
@@ -572,7 +572,7 @@
         <Icon name={collapsed.has(folder.id) ? 'chevron-right' : 'chevron-down'} size={12} />
       {/if}
     </span>
-    <span class="icon"><Icon name="folder-solid" size={15} /></span>
+    <span class="icon"><Icon name="folder-solid" size={14} /></span>
     {#if renameFor === folder.id}
       <input class="folder-name-input" aria-label="文件夹名称" bind:value={renameValue}
         maxlength={64} readonly={saving} use:focusRename
@@ -606,7 +606,7 @@
 
 {#snippet newFolderInput(depth: number)}
   <div class="folder-item" style="margin-left: {depth * 14}px" onclick={(e) => e.stopPropagation()} role="presentation">
-    <span class="folder-caret"></span><Icon name="folder-solid" size={15} />
+    <span class="folder-caret"></span><Icon name="folder-solid" size={14} />
     <input class="folder-name-input" aria-label="新建文件夹名称" bind:value={newFolderName}
       maxlength={64} readonly={saving} use:focusRename onblur={submitNewFolder}
       onkeydown={(e) => {

@@ -145,7 +145,7 @@
           {/each}
         </div>
       {/if}
-      <button type="button" class="queue-cancel" onclick={cancel}><Icon name="x" size={11} />停止等待</button>
+      <button type="button" class="queue-cancel" onclick={cancel}><Icon name="x" size={12} />停止等待</button>
     </section>
   {:else if attention}
     <section class="queue-card is-bad" aria-label="上一条需要你处理的生成">
@@ -153,7 +153,7 @@
       {#if job.error}<p class="queue-msg">{job.error}</p>{/if}
       {#if job.recoverable && job.task_row_id}
         <button type="button" class="queue-btn" onclick={() => void refetch(job.task_row_id as number)}>
-          <Icon name="download" size={11} />取回结果
+          <Icon name="download" size={12} />取回结果
         </button>
       {/if}
     </section>
@@ -170,7 +170,7 @@
             <span class="queue-row-sub">{task.cost_coins === null ? "花费未实测" : "已花 " + coinsLabel(task.cost_coins)}</span>
           </div>
           <button type="button" class="queue-btn" disabled={refetching === task.id} onclick={() => void refetch(task.id)}>
-            <Icon name="download" size={11} />{refetching === task.id ? "取回中…" : "取回结果"}
+            <Icon name="download" size={12} />{refetching === task.id ? "取回中…" : "取回结果"}
           </button>
         </div>
       {/each}

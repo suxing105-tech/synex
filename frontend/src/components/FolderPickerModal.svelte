@@ -132,7 +132,7 @@
           class="fp-item w-full text-left px-3 py-2 rounded-md {selectedIdx === 0 ? 'active' : ''}"
           onclick={pickNone}
         >
-          <span class="fp-icon"><Icon name="circle-slash" size={13} /></span>
+          <span class="fp-icon"><Icon name="circle-slash" size={14} /></span>
           <span class="fp-label">不分配 / 从文件夹移出</span>
         </button>
         {/if}
@@ -146,7 +146,7 @@
             onclick={() => pickItem(i)}
           >
             <span class="fp-spacer" style="width: {item.depth * 14}px"></span>
-            <span class="fp-icon"><Icon name="folder" size={13} /></span>
+            <span class="fp-icon"><Icon name="folder" size={14} /></span>
             <span class="fp-label">{item.name}</span>
           </button>
         {/each}

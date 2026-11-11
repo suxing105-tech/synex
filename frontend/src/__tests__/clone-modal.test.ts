@@ -3275,6 +3275,37 @@ it('两栏还是竖列看面板自己的宽度：980 以下收进 is-stacked，�
   cleanup();
 });
 
+it('竖排那一档不靠挑一个 vh：整列锁进面板可视区，展示图先让、打字框后让', () => {
+  // 2026-11-11 实测：把 --cm-hero-h 从 46vh 压到 32vh 只省 112px，1440x900 竖排 + 竖构图 + 一千字提示词
+  // 那一档还是 809 > 可视 732，钉住那条 sticky 仍压着打字框 65px（框 758..1031、可视下沿 754）。
+  // 一个数除不干净，所以不挑数，改成让高：面板变 flex 列 → .cm-body 拿到确定高度 →
+  // 第一行吃剩余（地板 120），第二行 auto 先给够输入卡；让完还装不下才轮到打字框让（promptFitH）。
+  const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  // 只有竖排那一档换 display：两栏那条判据不挂 .is-stacked，本文件不碰它
+  expect(css).toMatch(/<div class="cm-panel" class:is-grabbing=\{promptGripping\} class:is-stacked=\{stacked\}/);
+  expect(css).toMatch(/\.cm-panel\.is-stacked \{ display: flex; flex-direction: column; \}/);
+  const stacked = (css.match(/\.cm-body\.is-stacked \{[^}]*\}/g) ?? []).join("\n");
+  expect(stacked).toMatch(/grid-template-columns: minmax\(0, 1fr\)/);   // 收回单列这条还在
+  expect(stacked).toMatch(/flex:\s*1 1 auto/);
+  expect(stacked).toMatch(/min-height:\s*0/);
+  expect(stacked).toMatch(/grid-template-rows:\s*minmax\(120px, 1fr\) auto/);
+  // 那个地板 120 全文件只许出现这一次：漂出第二个数，两处就会各让各的
+  expect(css.match(/minmax\(120px, 1fr\)/g)?.length).toBe(1);
+  // 图是替换元素、等待台带 fixed height：不写 min-height:0 就顶着内容高不让缩，压不动等于白写
+  expect(css).toMatch(/\.cm-body\.is-stacked \.cm-left \{ min-height: 0; \}/);
+  expect(css).toMatch(/\.cm-body\.is-stacked \.cm-hero, \.cm-body\.is-stacked \.cm-stage \{ min-height: 0; \}/);
+  // 两栏那一档的天花板没动（本轮没改任何 --cm-hero-h 的数）
+  expect(css).toMatch(/\.cm-body:not\(\.is-stacked\) \{ --cm-hero-h: min\(74vh, 1080px\); \}/);
+  // 第二层让位：图让到地板还不够，才从「没拖过」那一档里扣
+  const fit = /function promptFitH[\s\S]*?\n {2}\}/.exec(css)?.[0] ?? "";
+  expect(fit).toContain("panel.scrollHeight");
+  expect(fit).toMatch(/if \(taH <= 0 \|\| rest <= 0\) return h;/);        // 量不到就原样交回，别把单测摁塌
+  expect(fit).toMatch(/return Math\.max\(PROMPT_MIN_H, left\);/);          // 让到底板为止，不塌成 0
+  expect(css).toMatch(/if \(!userSet\) \{\s*const allow = promptFitH\(el, h\);/);
+  // 人自己拖出来的那一档不参与让位：拖到哪就是哪，装不下就照旧滚动（那是人自己选的）
+  expect(css).toMatch(/let h = promptUserH === null[\s\S]{0,220}?const userSet = promptUserH !== null;/);
+});
+
 it('展示图确实放大了，等待台的动效也有降级：CSS 三条钉住', () => {
   const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
   // 这一格的高度只有一个来源：基类 46vh/480（竖排那一版量出来的），两栏那一档回到旧版那条 74vh。

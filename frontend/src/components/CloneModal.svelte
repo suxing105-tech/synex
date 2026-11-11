@@ -758,15 +758,43 @@
     return Math.max(PROMPT_MIN_H, Math.min(promptUserH ?? PROMPT_MIN_H, promptHardMaxH()));
   }
 
+  /**
+   * 还剩多少给这一档：弹窗可视高，减去「除了打字框以外的全部内容」。
+   * 让位顺序是写死的：上面那格（展示图/等待台）先让，让到它的地板 120（见 .cm-body.is-stacked
+   * 那条），还装不下才轮到打字框让，两者都到底才让弹窗自己滚。为什么要有这第二层——
+   * 2026-11-11 实测 1440x900 竖排 + 竖构图 + 一千字提示词：图已经压到 120，整弹窗还是 809 > 可视 732，
+   * 钉在卡底那条 sticky 仍然压着打字框 65px，静止时看不见光标落点。
+   * 只在「没拖过」这条路上起作用：人自己拖出来的那一档不许被这里的量反推掉（promptUserClamp 管它）。
+   * 量不到就原样交回：无头环境里 rect 与 scrollHeight 全是 0，动一下就把整份单测摁塌。
+   */
+  function promptFitH(el: HTMLTextAreaElement, h: number): number {
+    const panel = panelEl;
+    if (!panel) return h;
+    const taH = Math.round(el.getBoundingClientRect().height);
+    const rest = panel.scrollHeight - taH;
+    if (taH <= 0 || rest <= 0) return h;
+    const left = panel.clientHeight - rest;
+    if (left >= h) return h;
+    return Math.max(PROMPT_MIN_H, left);
+  }
+
   function autosizePrompt() {
     const el = promptEl;
     if (!el) return;
     el.style.height = "auto";
     const full = el.scrollHeight;
     // 拖过就照那一档；没拖过才跟着内容长（撑到自动上限，再长就自己滚）
-    const h = promptUserH === null
+    let h = promptUserH === null
       ? Math.max(PROMPT_MIN_H, Math.min(full, promptMaxH()))
       : promptUserClamp();
+    const userSet = promptUserH !== null;
+    el.style.height = `${h}px`;
+    // 先落一次高度再量：promptFitH 要问的是「这样排下去弹窗总共多高」，高度没落上去量不准
+    if (h < full) el.style.overflowY = "auto";
+    if (!userSet) {
+      const allow = promptFitH(el, h);
+      if (allow < h) h = allow;
+    }
     el.style.height = `${h}px`;
     el.style.overflowY = full > h ? "auto" : "hidden";
     if (promptShownH !== h) promptShownH = h;
@@ -1536,7 +1564,7 @@
        侧栏和右侧详情栏因此还在外面——aria-modal 那句假话撤了，role=dialog 留着
        （App / 搜索框 / 侧栏那几处全局快捷键判重认的就是它）。 -->
   <div class="cm-backdrop" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-    <div class="cm-panel" class:is-grabbing={promptGripping} bind:this={panelEl} role="dialog" aria-label="再次创作" use:modalFocus onscroll={() => (refZoom = null)}>
+    <div class="cm-panel" class:is-grabbing={promptGripping} class:is-stacked={stacked} bind:this={panelEl} role="dialog" aria-label="再次创作" use:modalFocus onscroll={() => (refZoom = null)}>
       <!-- 标题两行照旧图放回来（2026-11-10 苏醒：「改回类似之前的这种版式」）：小字说这是哪件事，
            大字直接报当前挂的是哪条工作流 / 哪个模型。底部那颗胶囊管「点进去换一条」，顶栏这一行管
            「我正在用哪一条」，两件事不一样，不再算讲两遍。role=dialog 的 aria-label 照留。 -->
@@ -2273,11 +2301,32 @@
   /* 中间那一列窄到放不下两栏时收回上下结构。判宽的是面板自己，不是窗口——侧栏折展、详情栏开关改的
      都是这一列的宽度；门槛与推导见脚本里 stacked 那条注释。 */
   .cm-body.is-stacked { grid-template-columns: minmax(0, 1fr); }
+  /* 竖排那一档把整列锁在面板可视区里，剩余高度归上面那格，输入卡始终完整可见（2026-11-11 实测）。
+     先说为什么要让面板自己变 flex 列：.cm-body 得拿到「可视区还剩多少」这个确定高度，1fr 才有得算。
+     不锁高度时它的高等于内容高——1440x900（可视 1418x802）实测面板可视 732、内容 1104，
+     只能滚；而卡底那条是 sticky，静止（scrollTop=0）时提示词框整格在可视区以下：框 758..1031，
+     可视下沿 754，一条都不露，要往下滚 372 才够得着打字的地方。这不是「图太大」一个数的事：
+     图按 46vh 换成 32vh 只省 112，同一档还差 260——除不干净，所以不再靠挑一个 vh。
+     现在换成让高：第一行吃剩余、地板 120（图再怎么让也不缩没），
+     那一行的 minmax 全文件只许出现一次，漂出第二个数两处就会各让各的（有测试钉住），
+     第二行 auto 是「先给够输入卡」——卡里最矮也得能打字，所以让高的是图那一格。
+     两栏那一档不受这条影响（判据都挂在 .is-stacked 上），面板不换 display、轨道不重写。
+     真让不动了（人自己把提示词框拉到很高、窗口矮到 120+卡都装不下）照旧溢出、照旧滚动，
+     sticky 那条仍然兜得住——那是人自己选的，不是布局替他决定的。 */
+  .cm-panel.is-stacked { display: flex; flex-direction: column; }
+  .cm-body.is-stacked { flex: 1 1 auto; min-height: 0; grid-template-rows: minmax(120px, 1fr) auto; align-items: stretch; }
+  /* 住进 1fr 那一行就得允许被压：flex 子项的自动最小尺寸是内容尺寸，图又是替换元素，
+     不写 min-height:0 它顶着 intrinsic 高度不让缩，压不动就变成溢出，等于这条白写。 */
+  .cm-body.is-stacked .cm-left { min-height: 0; }
+  .cm-body.is-stacked .cm-hero, .cm-body.is-stacked .cm-stage { min-height: 0; }
+  .cm-body.is-stacked .cm-hero-name { flex: none; }
   /* 这一格的高度只有 --cm-hero-h 一个来源（展示图、等待台、画布都只读它：同一格轮流占，各自写一个数
      就会在换状态时把输入卡顶一下、坠一下，1478x562 踩过）。
      两栏那一档整列高度归它，取旧版那条 74vh：图是等比的，真正的上限其实是左列宽度（上一条定），74vh 只在
      横构图和超高屏上兜底；1080 封顶（再高就整屏只剩图，字对比难受）。
-     竖排那一档抬不得——1440x900 实测图 577 + 输入卡 190 时弹窗 857 > 可视 734，得滚才看得见卡底。 */
+     竖排那一档这条只是天花板，不是占位：竖排时上面那一格吃的是「可视区剩下的」，见下面 .cm-body.is-stacked。
+     所以这里的数往下调并不会让弹窗不滚（1440x900 实测 46vh→32vh 只省 112，同一档还差 260），
+     它只决定高屏上让完之后还剩多少给图。 */
   .cm-body:not(.is-stacked) { --cm-hero-h: min(74vh, 1080px); }
   .cm-left { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
   /* 竖排之后展示图由高度定大小（横排时是栏宽撑着的）：限高、等比、居中。

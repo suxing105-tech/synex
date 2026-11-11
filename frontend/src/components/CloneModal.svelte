@@ -236,7 +236,7 @@
    * 一条都没挂上时按被点的那张卡说，至少那颗 pill 不会空着。
    */
   const pickedKind = $derived<MediaKind>(template ? templateMediaKind(template) : cardKind);
-  /** 三族各铺了几条路（本机几份 / 云端几条），类型菜单那行末尾报的就是它。 */
+  /** 三族各铺了几条路（本机几份 / 云端几条）。行末那串小字 2026-11-10 撤了，这数只在悬停提示里说。 */
   const kindTally = $derived(tallyByKind(wfRows, templates));
   /** 「创作类型」那层弹层。与工作流、参数那两层互斥——同一次屏幕上只可能有一层。 */
   let kindPop = $state(false);
@@ -378,16 +378,7 @@
    * 叠放的错位量、悬停时摊开多少，CSS 自己数不到 DOM，全从这一个数算出来。
    */
   const stackCount = $derived(rowCells.length + (!singleFamily && openKinds.length ? 1 : 0));
-  /**
-   * 每张照片往下露出多少 px：一张 84，尽量多露，但整摞不许长过 ~270px。
-   *
-   * 参考条以前是横向一条，为的就是十六格那种配方不把提示词框顶出弹窗；换成竖摞之后同一条约束
-   * 还在，只是换个方向守（并且因为它只在左栏里长，提示词框这一侧本来就不跟着动）。
-   * 到 22px 为止不能再挤：编号小牌就压在照片下沿那 20px 里，再挤就读不出「图片2」是谁了。
-   */
-  const refStep = $derived(Math.max(22, Math.min(46, Math.round(186 / Math.max(stackCount - 1, 1)))));
-  /** 鼠标移到整摞上时每张再多露一点：整摞最多摊开 24px，十六格那一档只剩 2px，不至于把卡撑得一跳一跳。 */
-  const refSpread = $derived(Math.max(2, Math.min(6, Math.round(24 / Math.max(stackCount - 1, 1)))));
+  /* 每张照片露多少、悬停再多露一点那两个数撤了（2026-11-10 参考改回横排）：横排不叠，用不着算露多少。 */
   /** 这一族最多吃几份：悬浮说明按族报上限，各族不互相借量词。 */
   function familyTotal(kind: RefKind): number {
     return kind === "audio" ? audioCells.length : kind === "video" ? videoCells.length : imageCells.length;
@@ -525,6 +516,11 @@
     return outputChips.find((o) => o.id === heroOut) ?? outputChips[0];
   });
   const heroOutIndex = $derived(heroOutput ? outputChips.findIndex((o) => o.id === heroOutput.id) : -1);
+  /* 展示图下面那行名字跟着这一格真正摆的东西走：跑完报刚出来的那份，还没跑报手上这份。生成中不报——
+     那一格是等待台，报文件名等于骗人说图已经出来了。 */
+  const heroCaption = $derived(heroOutput ? heroOutput.filename : busy ? "" : image?.filename ?? "");
+  /* 提示词那一格的小标题用工作流给的槽位名（台词 / 正向提示词…），没名字才退回「完整提示词」。 */
+  const promptBlockTitle = $derived(primaryPromptGroup(template)?.label ?? "");
   /** 图片取 1024 那张预览（后端缩好并落盘缓存）；视频与音频只认后端给的地址，前端硬拼必错。 */
   function heroOutSrc(out: CloneOutput): string {
     return out.kind === "image" ? `/api/images/${out.id}/file?max=1024` : out.thumbnail_url;
@@ -541,6 +537,8 @@
      会改变这一列的宽度，ResizeObserver 让它跟着走。
      别改成 container query：container-type 会给 .cm-panel 加 contain:layout，
      面板里那两条 position:fixed（参考图悬停放大预览、弹层那张整屏兜底遮罩）会跟着错位。 */
+  // 中间那一列窄到放不下两栏时收回上下结构（CSS 见 .cm-body.is-stacked）。
+  let stacked = $state(false);
   $effect(() => {
     if (!open) return;
     const host = panelEl;
@@ -553,6 +551,21 @@
         ? pill.offsetParent.getBoundingClientRect().left
         : box.left + 22;
       host.style.setProperty("--cm-pop-max", `${Math.max(240, Math.round(box.right - 24 - anchorLeft))}px`);
+      // 同一把尺再量一份「往左长还剩多少」：画面参数那层贴胶囊右边缘往左长（见 .cm-pop-params），
+      // 余量在左边——那颗右边缘到面板左内沿（22 内边距 + 1 描边）。窗口一窄胶囊被压扁，这一档
+      // 跟着缩，不至于从左边被面板切第二次。弹层的外裹那一格就是胶囊自己的盒子，量同一只盒子。
+      const paramsPill = host.querySelector<HTMLElement>('.cm-pill[aria-label="画面参数"]');
+      const paramsBox = paramsPill?.closest<HTMLElement>(".cm-pop-wrap") ?? paramsPill;
+      host.style.setProperty(
+        "--cm-pop-left",
+        `${Math.max(240, Math.round((paramsBox ? paramsBox.getBoundingClientRect().right : box.right) - box.left - 23))}px`,
+      );
+      // 同一把尺顺手量「这一列放不放得下两栏」。980 是量出来的下限，不是凑的整数：
+      // 底部那一排要单行放得下：实测右列 524（净宽 498）时三颗胶囊 109+109+108 + 两颗间距 20 = 346，
+      // 右边那颗 99 + 间隙 8 → 494 ≤ 498，三颗名字都不截。右列 524 + 缝 22 + 展示图那列至少 390 → 面板 980。
+      // 1440x900 实测过踩这以下的样子：面板 792、输入卡 399，那颗「闪寻图片」被压成「闪…」。
+      // happy-dom 里 rect 全是 0：量不到就别写，没有布局可判，写一次就把整份单测摁成竖列。
+      if (box.width) stacked = box.width < 980;
     };
     writePopMax();
     if (typeof ResizeObserver !== "function") return; // 单测环境（happy-dom）没有 RO：写一次就够
@@ -695,20 +708,136 @@
    * 写死 224px 的框在只写一句话时是一大片空黑——那张卡就不像「一次表达」了（2026-11-04 截图）。
    * 先量一次 auto：所以 textarea 的 rows 必须是 1，否则 auto 量到的是 rows 撑出来的高度，永远缩不回去。
    * 高亮层是 inset:0 的镜像，改完高度要再对一次滚动位置。
+   * 一旦拖过（promptUserH 有值）就不再看内容：那一档就是那一档，打字、粘贴都不许改它。
    */
   const PROMPT_MIN_H = 46;
+  /** 自动长高的天花板：这一段只该占屏幕三分之一上下，超了就自己滚（见 autosizePrompt）。 */
   function promptMaxH() {
     return Math.max(120, Math.min(Math.round(innerHeight * 0.34), 280));
   }
+  /** 手动拉高的天花板：比自动那档宽裕得多（要的就是「一次看全一整段」），但仍按视口收，
+   *  窗口一矮就跟着降——不然「取消」「生成」会被顶出弹窗。 */
+  function promptHardMaxH() {
+    return Math.max(140, Math.min(Math.round(innerHeight * 0.62), 900));
+  }
+  /**
+   * 用户自己拖出来的那一档高度（px）：拖到哪就是哪，上下都跟手，打字也不改它。
+   * 为什么要单独记一档——高度归 autosizePrompt 管，直接改 textarea 自己的 height（原生 resize: vertical
+   * 就是干这个的）一打字就被下一次重算冲回去，看着像框在跟人抢方向盘。
+   * null = 从没拖过：那时才跟着内容长，空着两行、写长了才撑，撑到自动上限再自己滚。
+   * 存 localStorage：弹窗每开一次都是新实例，不记住就得每轮重拖一遍。
+   */
+  const PROMPT_H_KEY = "suxing.clonePromptH";
+  let promptUserH = $state<number | null>(readPromptUserH());
+  /** 上一次算出来的实际框高：拖动的起点、aria 报的数都用它，不去问 layout（无头环境量不到）。 */
+  let promptShownH = $state(PROMPT_MIN_H);
+  /** 正在拖：手柄亮一档，整块面板换成拉高光标并锁掉选字。 */
+  let promptGripping = $state(false);
+  let gripPointer = -1, gripStartY = 0, gripStartH = 0, gripWasAuto = false;
+
+  function readPromptUserH(): number | null {
+    try {
+      const raw = Number(localStorage.getItem(PROMPT_H_KEY));
+      return Number.isFinite(raw) && raw >= PROMPT_MIN_H ? Math.round(raw) : null;
+    } catch {
+      return null; /* 无痕模式禁了存储：这次照样能拖，只是记不住 */
+    }
+  }
+
+  function savePromptUserH(h: number | null) {
+    try {
+      if (h === null) localStorage.removeItem(PROMPT_H_KEY);
+      else localStorage.setItem(PROMPT_H_KEY, String(h));
+    } catch {
+      /* 同上 */
+    }
+  }
+
+  /** 拖出来那档每次用之前先按当前窗口钳一遍：窗口变矮，不许还顶着一个够不着的高度。 */
+  function promptUserClamp(): number {
+    return Math.max(PROMPT_MIN_H, Math.min(promptUserH ?? PROMPT_MIN_H, promptHardMaxH()));
+  }
+
   function autosizePrompt() {
     const el = promptEl;
     if (!el) return;
     el.style.height = "auto";
     const full = el.scrollHeight;
-    const max = promptMaxH();
-    el.style.height = `${Math.max(PROMPT_MIN_H, Math.min(full, max))}px`;
-    el.style.overflowY = full > max ? "auto" : "hidden";
+    // 拖过就照那一档；没拖过才跟着内容长（撑到自动上限，再长就自己滚）
+    const h = promptUserH === null
+      ? Math.max(PROMPT_MIN_H, Math.min(full, promptMaxH()))
+      : promptUserClamp();
+    el.style.height = `${h}px`;
+    el.style.overflowY = full > h ? "auto" : "hidden";
+    if (promptShownH !== h) promptShownH = h;
     syncPromptBg();
+  }
+
+  /* ── 提示词框右下角那颗拉高手柄：监听怎么挂，照文本列表那根分隔线（TextListSplitter）的规矩来 ──
+     pointermove/up 挂 svelte:window：指针一路跑出手柄、跑到弹窗外也跟得住，
+     而且弹窗一卸载这些监听器自己就没了，不留悬空回调。 */
+
+  /** 一次拖动的起点：已经拖过就从那一档接着走，没拖过就从现在的实测高度走，不会跳一格。 */
+  function promptGripBase(): number {
+    return promptUserH ?? promptShownH;
+  }
+
+  function clampPromptH(n: number): number {
+    return Math.round(Math.max(PROMPT_MIN_H, Math.min(promptHardMaxH(), n)));
+  }
+
+  function onPromptGripDown(e: PointerEvent) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    gripPointer = e.pointerId;
+    gripStartY = e.clientY;
+    gripStartH = promptGripBase();
+    gripWasAuto = promptUserH === null;
+    promptGripping = true;
+    (e.currentTarget as HTMLElement).focus();
+  }
+
+  function onPromptGripMove(e: PointerEvent) {
+    if (!promptGripping || e.pointerId !== gripPointer) return;
+    e.preventDefault();
+    promptUserH = clampPromptH(gripStartH + (e.clientY - gripStartY));
+    // 高度还是交给 autosizePrompt 落盘：绕过它直接写 style，下一行字就把拖出来的高度冲掉
+    autosizePrompt();
+  }
+
+  function onPromptGripFinish() {
+    if (!promptGripping) return;
+    promptGripping = false;
+    savePromptUserH(promptUserH);
+  }
+
+  /** 拖到一半松手不算数（pointercancel）：回到起手那一档，别留个半途的高度。 */
+  function onPromptGripCancel() {
+    if (!promptGripping) return;
+    promptUserH = gripWasAuto ? null : gripStartH;
+    promptGripping = false;
+    autosizePrompt();
+  }
+
+  /** 回到「跟着内容长」：双击手柄走这里，键盘按 Home 也走这里。 */
+  function resetPromptHeight() {
+    promptUserH = null;
+    savePromptUserH(null);
+    autosizePrompt();
+  }
+
+  /** 键盘那条路：上下 ±24 调，Home 复位。用不了鼠标的人不该只有「用不了」这一个选项。 */
+  function onPromptGripKey(e: KeyboardEvent) {
+    if (e.key === "Home") {
+      e.preventDefault();
+      resetPromptHeight();
+      return;
+    }
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    e.preventDefault();
+    promptUserH = clampPromptH(promptGripBase() + (e.key === "ArrowDown" ? 24 : -24));
+    autosizePrompt();
+    savePromptUserH(promptUserH);
   }
 
   $effect(() => {
@@ -889,7 +1018,10 @@
     void loadCloudStatus();
   }
 
-  /** 这一族有几个能挑的。本机与云端分开报：云端那是要扣 RH币的另一类东西。 */
+  /**
+   * 这一族有几个能挑的。本机与云端分开报：云端那是要扣 RH币的另一类东西。
+   * 只出现在悬停提示里（菜单行末那串灰字 2026-11-10 照图撤了），所以这函数不能删。
+   */
   function kindCountWords(kind: MediaKind): string {
     const tally = kindTally[kind];
     const bits: string[] = [];
@@ -1394,7 +1526,9 @@
   }
 </script>
 
-<svelte:window onkeydown={onKey} />
+  <svelte:window onkeydown={onKey}
+    onpointermove={onPromptGripMove} onpointerup={onPromptGripFinish}
+    onpointercancel={onPromptGripCancel} onblur={onPromptGripFinish} />
 
 {#if open}
   <!-- 这一层不再糊掉整个窗口（2026-11-04 苏醒：「和放大功能一样，收进缩略图区域，不要模糊背景了，
@@ -1402,11 +1536,15 @@
        侧栏和右侧详情栏因此还在外面——aria-modal 那句假话撤了，role=dialog 留着
        （App / 搜索框 / 侧栏那几处全局快捷键判重认的就是它）。 -->
   <div class="cm-backdrop" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-    <div class="cm-panel" bind:this={panelEl} role="dialog" aria-label="再次创作" use:modalFocus onscroll={() => (refZoom = null)}>
-      <!-- 顶栏那两行字撤了（2026-11-04 苏醒照图把它圈出来说「删除」）：「再次创作」是这弹窗的可访问名，
-           role=dialog 的 aria-label 还在，读屏照样报得出这是什么；工作流名字底部那颗胶囊本来就报同一份，
-           顶栏再说一遍只是把一件事讲两次。这一条只剩右上角那颗关闭，让出来的竖向空间归展示图。 -->
+    <div class="cm-panel" class:is-grabbing={promptGripping} bind:this={panelEl} role="dialog" aria-label="再次创作" use:modalFocus onscroll={() => (refZoom = null)}>
+      <!-- 标题两行照旧图放回来（2026-11-10 苏醒：「改回类似之前的这种版式」）：小字说这是哪件事，
+           大字直接报当前挂的是哪条工作流 / 哪个模型。底部那颗胶囊管「点进去换一条」，顶栏这一行管
+           「我正在用哪一条」，两件事不一样，不再算讲两遍。role=dialog 的 aria-label 照留。 -->
       <header class="cm-top">
+        <div class="cm-heading">
+          <p class="cm-kicker">再次创作</p>
+          <p class="cm-title">{wfDetail || "未选工作流"}</p>
+        </div>
         <button class="cm-close" aria-label="关闭再次创作" onclick={onClose}><Icon name="x" size={16} /></button>
       </header>
 
@@ -1417,7 +1555,7 @@
         </div>
       {/if}
 
-      <div class="cm-body">
+      <div class="cm-body" class:is-stacked={stacked}>
         <div class="cm-left">
           {#if busy && job}
             <!-- 生成中：这一格不再摆一张静止的旧图。底图慢慢呼吸、一条光带慢慢扫过去，中间那张卡说清三件
@@ -1506,6 +1644,10 @@
                 <div class="cm-hero cm-hero-empty">没有预览</div>
               {/if}
           {/if}
+          {#if heroCaption}
+            <!-- 文件名回到展示图下面（旧图那一版有）：一次出几份、或者从这一格跳回图库时，认的就是它。 -->
+            <p class="cm-hero-name" title={heroCaption}>{heroCaption}</p>
+          {/if}
         </div>
 
         <div class="cm-right">
@@ -1545,10 +1687,9 @@
 
 
             <section class="cm-block">
-              <!-- composer 那张卡（2026-11-04 苏醒：像图二那个 composer）：素材、话、按钮是同一次表达，
-                   拆成两块反而看不出「这几张就是要用的参考」。卡上下那两行小标题都撤了——
-                   格子上写着图片1/图片2，末尾那颗写着参考，比「替换或上传参考」直白；
-                   「完整提示词」是工作流给的槽位名，鼠标悬停提示词框时才说，不占版面。 -->
+              <!-- composer 那张卡：素材、话、按钮是同一次表达，共用一张卡、一份内边距（2026-11-04 苏醒：像图二
+                 那个 composer）。卡里那两行小标题 11-04 撤过一轮，2026-11-10 照旧图放回来——
+                 上下排之后每块上面没名字就不成组了；「完整提示词」用的是工作流给的槽位名。 -->
               <div class="cm-composer" title={composerNote}>
               {#if shouldOfferWorkflowPrompt(prompt, workflowPrompt)}
                 <!-- 工作流自带提示词、这一格还空着才有这颗（2026-11-04 苏醒照图圈）：半透明挂在
@@ -1562,23 +1703,21 @@
                   onclick={() => { promptTouched = true; prompt = workflowPrompt; }}
                 ><Icon name="wand" size={16} /></button>
               {/if}
-                <!-- 素材在左、话在右（2026-11-04 苏醒第二轮，照那张即梦的输入台）：这一屏的主语是话，
-                     素材是话的宾语，并排摆，眼睛先落哪儿就对了；上下摞的时候「写完的话」要滚到素材下面才看得见。
-                     一条参考位都没有（纯文生图、只填音色描述）时左边那一摞整块不摆，话独占这一行。 -->
+                <!-- 参考在上、话在下（2026-11-10 照旧图改回来）：两块各带一行小标题，上下排读着是一件事的
+                 两步——先给素材，再写话。一条参考位都没有（纯文生图、只填音色描述）时上面那一排
+                 整块不摆，话独占这张卡。 -->
                 <div class="cm-input-row">
                   {#if cells.length}
-                    <!-- 左边这一摞是参考素材：几族混着放（图片 → 视频 → 音频），末尾一颗不绑族的「+ 参考」。
-                         叠着摆是一摞斜压的照片：--step 是每张露出多少、--spread 是整摞被鼠标碰到时再多露多少，
-                         --z 顺着给（后挂上来的压在前面那张上头，苏醒 2026-11-04 点名），所以每张露出来的都是
-                         上沿那一条，编号小牌跟着挪到照片左上角，叠着也读得出「图片1／图片2」；
-                         末尾那颗「+ 参考」压在全摞最上面——它是下一个要动的地方，该最抢眼。
-                         鼠标移到哪张哪张摊平抬起来（提到最前面，才不被后面那张盖回去），其余压暗（CSS 那一段）。
-                         可访问名管的是整块参考区，「（单图编辑）」这半句挂在那儿，读屏和测试都还拿得到。
-                         只有一族时格子来自 visibleRefCells（已填的 + 一颗空格子），版面与图片再次创作一字不差。 -->
+                    <p class="cm-block-title">替换或上传参考</p>
+                    <!-- 这一排是参考素材：几族混着放（图片 → 视频 → 音频），末尾一颗不绑族的「+ 参考」。
+                         横排不叠（2026-11-10 照旧图改回来），每格 = 一张照片 + 下面那行编号，
+                         「图片1／图片2」写在格子底下，一眼数得出这是几份不同的东西；
+                         --z 仍旧顺着给（后挂的压在前面那张上头，鼠标抬起时不互相吃），末尾那颗
+                         「+ 参考」在最上面——它是下一个要动的地方。可访问名管的是整块参考区，
+                         「（单图编辑）」这半句挂在那儿，读屏和测试都还拿得到。
+                         只有一族时格子来自 visibleRefCells（已填的 + 一颗空格子）。 -->
                     <div
                       class="cm-ref-stack"
-                      class:is-pair={stackCount === 2}
-                      style="--step-base: {refStep}px; --spread: {refSpread}px"
                       role="group"
                       aria-label={rowAria}
                       onpaste={(e) => {
@@ -1645,6 +1784,7 @@
                     </div>
                   {/if}
                   <div class="cm-prompt-col">
+                    <p class="cm-block-title">{promptBlockTitle || "完整提示词"}</p>
                     <div class="cm-prompt-wrap">
                       <div class="cm-prompt-bg" bind:this={promptBg} aria-hidden="true">
                         {#each mentionChunks(prompt) as chunk, i (i)}
@@ -1652,6 +1792,18 @@
                         {/each}
                       </div>
                       <textarea id="clone-prompt" class="cm-textarea cm-textarea-mirror" bind:this={promptEl} oninput={onPromptInput} onkeydown={onPromptKeydown} onscroll={syncPromptBg} rows="1" aria-label="提示词" placeholder={promptPlaceholder(mediaKind, refNoun, cells.length > 0)} title={promptFoot} bind:value={prompt}></textarea>
+                      <!-- 右下角这颗拉高手柄（2026-11-10 苏醒：「提示词输入框右下角加一个拉高提示词的功能」）。
+                           它改的是 promptUserH 那一档高度，所以拖完接着打字不会被打回原形；
+                           双击（或聚焦后按 Home）退回「跟着内容长」。 -->
+                      <!-- 它调的就是「提示词框多高」这一个数，所以按 slider 报给读屏：念得出「拉高提示词框 · 自动高度」，
+                           上下键与拖动改的是同一个值。Svelte 的 a11y 表认 slider 是可交互角色，不必再挂 svelte-ignore。 -->
+                      <div class="cm-prompt-grip" class:is-live={promptGripping} role="slider"
+                        aria-label="拉高提示词框" aria-orientation="vertical" tabindex="0"
+                        aria-valuemin={PROMPT_MIN_H} aria-valuemax={promptHardMaxH()}
+                        aria-valuenow={promptShownH} aria-valuetext={promptUserH === null ? "自动高度" : `已固定 ${promptShownH}px`}
+                        title={"按住上下拖动：调提示词框的高度\n双击：恢复跟着内容长高"}
+                        onpointerdown={onPromptGripDown} onkeydown={onPromptGripKey}
+                        ondblclick={resetPromptHeight}></div>
                       {#if mentionOpen && mentionOptions.length}
                         <div class="cm-pop-scrim" role="presentation" onclick={() => (mentionOpen = false)}></div>
                         <div class="cm-mention" style="left: {mentionBox.left}px; top: {mentionBox.top}px;" role="listbox" aria-label="引用素材">
@@ -1731,7 +1883,9 @@
                           title={kindRowTitle(kind)} onclick={() => pickCreationKind(kind)}>
                           <span class="cm-kind-icon" aria-hidden="true"><Icon name={KIND_ICONS[kind]} size={15} /></span>
                           <span class="cm-wf-name">{CREATION_KIND_WORDS[kind]}</span>
-                          <span class="cm-kind-count">{kindCountWords(kind)}</span>
+                          <!-- 行末那串「本机 N 份 / 云端 N 条」撤了（2026-11-10 苏醒照图圈掉）：三行灰字并排，
+                               眼睛先读到的是数而不是「选哪一族」，菜单最该有的那件事被挤成了配角。
+                               数没消失：悬停这一行照样报，名字下面不再有第二排字。 -->
                           {#if kind === pickedKind}<span class="cm-kind-check" aria-hidden="true"><Icon name="check" size={15} /></span>{/if}
                         </button>
                       {/each}
@@ -1869,7 +2023,7 @@
                     </button>
                     {#if popOpen}
                       <div class="cm-pop-scrim" role="presentation" onclick={() => (popOpen = false)}></div>
-                      <div class="cm-pop" role="dialog" aria-label="画面参数">
+                      <div class="cm-pop cm-pop-params" role="dialog" aria-label="画面参数">
                         {#each selectSlots as slot (slotKey(slot))}
                           {@const key = slotKey(slot)}
                           <p class="cm-pop-title">{slot.label}</p>
@@ -2079,27 +2233,52 @@
     display: flex; align-items: center; justify-content: center;
     background: #0e0e10;
   }
-  /* 外框也撤了（2026-11-04 苏醒照图：「这个外框也不要了。简洁化」）：这一层背后已经是整列纯色，
-     再画一圈边框 + 圆角 + 一张投影，等于在纯色上又贴了一张卡片，凭空多一层盒子。
-     现在展示图直接坐在 #0e0e10 上，整个弹窗只剩输入区那一张卡（.cm-composer）还带面。
+  /* 这一层自己就是那块模块底（2026-11-10 第三轮苏醒：「我想让这个左右结构放在一个模块背景上。
+     不要看起来像 2 截」）：图在左、控件在右，两块坐在同一张底上才读成一个东西。
+     2026-11-04 那次撤外框当时是对的——只剩输入区一张卡 + 一张裸图，画一圈边等于凭空多贴一张卡片；
+     现在两栏共用这张底，卡里那层画撤了（见 .cm-composer），这一层就是唯一那层面。
+     纯色 #131316（App 那套卡色）不带虚化：底下是整列 #0e0e10 纯色，糊它等于什么也没糊。
      几何一个字不动：max-height 量的还是这一列去掉 backdrop 那 20px 之后的净高，
-     下内边距那 20px 是钉住的坞 bottom:-20px 的测量基准——改它就露一条缝（538x682 踩过）。 */
+     下内边距那 20px 是钉住的坞 bottom:-20px 的测量基准——改它就露一条缝（538x682 踩过）。
+     2026-11-10 苏醒「改回左右结构」：宽度上限 820 → 1040，第二轮照旧图放到旧版（53325f0）那个 1080。820 是竖排那一版的行宽需求，两栏要同时
+     装下展示图与输入卡就不够了。100% 仍是硬顶——这一层被中间那一列框着：1731x1443（可视 1709x1345，
+     侧栏 260 与详情栏 326 都开着）实测那一列 1123、面板吃满 1080；1440x900（可视 1418x802）
+     那一列只有 832、面板 792，装不下两栏，跟着 is-stacked 收回上下结构（见 .cm-body）。 */
   .cm-panel {
-    position: relative; width: min(820px, 100%); max-height: 100%; overflow: auto; padding: 20px 22px;
-    color: #e4e4e7;
+    position: relative; width: min(1080px, 100%); max-height: 100%; overflow: auto; padding: 20px 22px;
+    border: 1px solid rgb(255 255 255 / 8%); border-radius: 20px; background: #131316; color: #e4e4e7;
+    transition: border-color 160ms ease, box-shadow 160ms ease;
   }
 
-  /* 顶栏只剩关闭那颗（标题那两行撤了）：它不该占一整行的高度，负一点上边距把它按到角上，
-     让出来的竖向空间全归展示图。 */
-  .cm-top { display: flex; align-items: center; justify-content: flex-end; margin: -4px -4px 2px; }
+  /* 顶栏两行标题（2026-11-10 照旧图放回来）：小字说这是哪件事，大字报当前挂的工作流 / 模型。
+     整条仍是一行：标题吃左、关闭那颗吃右，标题不另占一行的高度。名字长了截断，全名在悬停提示里。 */
+  .cm-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: -2px -4px 6px; }
+  .cm-heading { min-width: 0; }
+  .cm-kicker { margin: 0; font-size: 12px; line-height: 16px; color: #8a8a8e; }
+  .cm-title { margin: 1px 0 0; font-size: 17px; line-height: 22px; font-weight: 650; color: #fafafa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cm-close { flex: none; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 9px; color: #8a8a8e; background: transparent; }
   .cm-close:hover { color: #fafafa; background: rgb(255 255 255 / 10%); }
 
   .cm-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; padding: 9px 12px; font-size: 12.5px; color: #f7d9a8; background: #2a2318; border: 1px solid #4a3c22; border-radius: 10px; }
 
-  /* 上下结构（2026-11-04 苏醒：像即梦那个 composer，素材在上、提示词在下）。原来是左右两栏：
-     预览图占了半屏，提示词只剩 470px 一条——写提示词才是这件事的主体，预览只是参照。 */
-  .cm-body { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  /* 左右两栏（2026-11-10 苏醒照旧图：「改回类似之前的这种版式」）：展示图在左、输入卡在右，
+     两栏都从顶上开始（align-items: start）。旧图的读法是左图顶到弹窗上沿一路长到底、右列从上往下排；
+     先前一版把两栏垂直居中，两格都在中间飘着、上下各空一大片，看着像弹窗没装满。
+     切法照旧版（53325f0）：左列 1fr 吃剩余、右列定宽，22px 缝。旧图那张展示图之所以大，就是因为右列
+     本来就定宽、剩余全归图；先前 5:7 对半摊把图压到只剩窗口高的 54%。
+     右列上限从旧版 470 抬到 524：底部那一排现在是三颗胶囊 + 圆形生成那颗，470 会把参数胶囊截断。
+     1080 那档实测 左 490 / 右 524 → 竖构图展示图 852 高（窗口高的 63%，旧图那版 72%，同量级）。
+     轨道最小值一律 minmax(0, …)：写成 minmax(240px, …) 列一窄就不收缩，顶出来的是面板横向滚动条。 */
+  .cm-body { --cm-hero-h: min(46vh, 480px); display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 524px); gap: 22px; align-items: start; min-width: 0; }
+  /* 中间那一列窄到放不下两栏时收回上下结构。判宽的是面板自己，不是窗口——侧栏折展、详情栏开关改的
+     都是这一列的宽度；门槛与推导见脚本里 stacked 那条注释。 */
+  .cm-body.is-stacked { grid-template-columns: minmax(0, 1fr); }
+  /* 这一格的高度只有 --cm-hero-h 一个来源（展示图、等待台、画布都只读它：同一格轮流占，各自写一个数
+     就会在换状态时把输入卡顶一下、坠一下，1478x562 踩过）。
+     两栏那一档整列高度归它，取旧版那条 74vh：图是等比的，真正的上限其实是左列宽度（上一条定），74vh 只在
+     横构图和超高屏上兜底；1080 封顶（再高就整屏只剩图，字对比难受）。
+     竖排那一档抬不得——1440x900 实测图 577 + 输入卡 190 时弹窗 857 > 可视 734，得滚才看得见卡底。 */
+  .cm-body:not(.is-stacked) { --cm-hero-h: min(74vh, 1080px); }
   .cm-left { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
   /* 竖排之后展示图由高度定大小（横排时是栏宽撑着的）：限高、等比、居中。
      2026-11-04 苏醒：「适当放大展示图」。26vh/300px 是这张还跟右侧并排时定的数；改成上下结构之后
@@ -2108,8 +2287,13 @@
        46vh → 图 369 高，弹窗 639 高，差 10vh            ← 取这档
        54vh → 图 433 高，弹窗 703 高，只剩 2vh，弹窗自己开始滚
      所以定 46vh/480px：比原来的 26vh 高一截，又不至于把弹窗顶到要滚动才看得见生成那颗。
-     480px 那条封顶是给高屏的：屏越高不等于图可以无限大，图一大字小的对比会更难受。 */
-  .cm-hero { width: auto; max-width: 100%; max-height: min(46vh, 480px); object-fit: contain; border-radius: 16px; background: #0c0c0e; }
+     480px 那条封顶是给高屏的：屏越高不等于图可以无限大，图一大字小的对比会更难受。
+     2026-11-10 改回左右结构：这一格不再独占整宽，独占的是整列高度，两栏那一档按视口高算（见 .cm-body）。
+     数不写在这条上：这里只读 --cm-hero-h，值在 .cm-body 那两条里，见上面那段。 */
+  .cm-hero { width: auto; max-width: 100%; max-height: var(--cm-hero-h); object-fit: contain; border-radius: 16px; background: #0c0c0e; }
+  /* 展示图下面那行文件名（旧图有这一行，2026-11-10 放回来）：从这一格跳回图库、或一次出几份时，
+     认的就是它。长名字截断，完整名字在 title 里。 */
+  .cm-hero-name { margin: 2px 0 0; max-width: 100%; font-size: 12px; line-height: 16px; color: #8a8a8e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* 波形是一张扁的后端 PNG：照搬 cm-hero 的 contain 会把它拉成一大块模糊，这里锁住高度。 */
   .cm-hero-wave { width: min(100%, 560px); height: clamp(88px, 18vh, 148px); object-fit: cover; }
   .cm-hero-audio { width: min(100%, 560px); margin-top: 10px; height: 36px; }
@@ -2120,7 +2304,7 @@
      ① 尺寸写死，不跟素材宽高比跳，换阶段也不重排——来回拉扯本身就是在制造焦虑；
      ② 节奏一律放慢（呼吸 7.5s、扫光 3.4s），动的是「它还活着」，不是催人。 */
   .cm-stage {
-    position: relative; width: min(100%, 620px); height: min(46vh, 480px); overflow: hidden;
+    position: relative; width: min(100%, 620px); height: var(--cm-hero-h); overflow: hidden;
     display: flex; align-items: center; justify-content: center; border-radius: 16px; background: #0c0c0e;
     border: 1px solid rgb(255 255 255 / 6%);
   }
@@ -2182,37 +2366,24 @@
   .cm-block { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .cm-block-title { margin: 0; font-size: 14px; font-weight: 600; color: #ececef; }
 
-  /* 一次输入摆成两栏（2026-11-04 苏醒第二轮，照那张即梦的输入台）：参考在左、话在右。
-     左边只有照片那么宽，右边吃掉全部剩余——提示词那一侧要读长句，宽度必须归它。
-     并排还顺手替老约束换了个方向：十六格的配方以前靠「横向一条 + 横向滚动」才没把提示词框顶出弹窗，
-     现在那一摞再高也只长在左栏，提示词框在右栏原地不动。 */
-  .cm-input-row { display: flex; align-items: flex-start; gap: 14px; min-width: 0; }
-  .cm-prompt-col { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-  /* 左栏是一摞叠放的照片，不是一排缩略图：每张只露出 --step 那么一条。
-     --step / --spread 由 JS 按张数算（见 refStep、refSpread），--z 由行内顺着给（2026-11-04 苏醒：
-     图片1 压在最底下，图片2 压住它，末尾那颗「+ 参考」压在全摞最上面）——所以每张露出来的是
-     **上沿那一条**，编号小牌跟着挪到照片左上角；最后那一格整张露着，它就是「下一个要动的地方」。 */
+  /* 一次输入从上往下排（2026-11-10 苏醒照旧图：「改回类似之前的这种版式」）：参考在上、话在下、
+     操作钉在卡底，两块各带一行小标题。11-04 那一版是「素材在左、话在右」，代价是参考那一摞只有
+     84px 宽、编号只能压在照片上，几份参考叠在一起读不出「这是几张不同的东西」。
+     参考多到一行装不下（十六格那种配方）时整排换行——以前靠竖摞长高，现在靠 wrap 长。 */
+  .cm-input-row { display: flex; flex-direction: column; align-items: stretch; gap: 12px; min-width: 0; }
+  .cm-prompt-col { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  /* 参考是一排缩略图（2026-11-10 改回横排）：每格 = 一张照片 + 摆在格子下面的编号，装不下整排换行。
+     --z 由行内顺着给（后挂的压在前面那张上头），整排关在 z-index:0 这一层：格子悬停抬起时也会互相压，
+     但再也出不去这层；卡底那条与它上面的弹层是 3 层，永远盖得住这一排。 */
   .cm-ref-stack {
-    --step-base: 46px; --spread: 6px; --step: var(--step-base);
-    /* z-index: 0 是给整摞关一个自己的层（苏醒 2026-11-04：叠放反过来之后，最下面那颗「+ 参考」压在全摞
-       最上面，正好长在该弹层展开的位置上——格子自己的 z 是 1..n，弹层那条只有 3，n 一大就把菜单糊住，
-       菜单左半截的字看不见了）。整摞压在 0 层之后，格子里的先后与悬停抬起照旧生效，只是再也出不去这层；
-       卡底条与它上面的弹层是 3 层，永远盖得住这一摞。 */
-    position: relative; z-index: 0; flex: none; width: 84px; display: flex; flex-direction: column;
+    position: relative; z-index: 0; flex: none; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 12px; min-width: 0;
   }
-  /* 鼠标移到整摞上，它自己摊开一点（每张多露 --spread），移开又叠回去：不点开也知道这一摞有几张。 */
-  .cm-ref-stack:hover, .cm-ref-stack:focus-within { --step: calc(var(--step-base) + var(--spread)); }
-  /* 一格 = 一张照片 + 压在照片左下角的编号，所以格子自己就是定位基准。
-     叠放用负 margin 而不是绝对定位：容器高度自己就对了，卡跟着长，不用谁去量。 */
+  /* 一格 = 一张照片 + 下面那行编号，格子自己就是定位基准。叠放用的那几条负 margin 撤了（横排不叠）。 */
   .cm-ref-cell { position: relative; min-width: 0; flex: none; z-index: var(--z, 1);
-    transition: transform 200ms cubic-bezier(0.22, 0.61, 0.36, 1), margin-top 200ms ease; }
-  .cm-ref-stack .cm-ref-cell { margin-top: calc(var(--step) - 84px); }
-  .cm-ref-stack .cm-ref-cell:first-child { margin-top: 0; }
-  /* 静止时每张歪一点点（左右交替）：像手摆上去的一摞，不像表格里的九宫格。 */
-  .cm-ref-stack .cm-ref-cell:nth-child(odd) { transform: rotate(-1.6deg); }
-  .cm-ref-stack .cm-ref-cell:nth-child(even) { transform: rotate(1.3deg); }
-  /* 指到哪张，哪张从摞里抬出来摆正、朝右边（话那一侧）挪一点，其余压暗：眼睛只跟着手走。
-     6px 小于两栏之间 14px 的缝，抬起来也压不到提示词框；z-index 提到 60 才不被后面那张盖回去。 */
+    transition: transform 200ms cubic-bezier(0.22, 0.61, 0.36, 1); }
+  /* 每格歪一点点那两条撤了：那是「手摆上去的一摞」的做法。横排之后编号要落在格子下面，
+     格子一歪字就跟着歪，一排编号读不齐。悬停抬起仍然留着，见下面那条。 */
+  /* 指到哪格，哪格抬起来摆正、其余压暗：眼睛只跟着手走。z-index 提到 60 才不被后面那格盖回去。 */
   .cm-ref-stack .cm-ref-cell:hover, .cm-ref-stack .cm-ref-cell:focus-within {
     z-index: 60; transform: translate(6px, -3px) rotate(0deg) scale(1.06);
   }
@@ -2220,10 +2391,9 @@
      白圆钮在深色卡上糊成一块脏灰（1440 实拍）——它是「还能再加一份」，不该跟着退场。 */
   .cm-ref-stack:hover .cm-ref-cell:not(:hover) .cm-tile.media-chip,
   .cm-ref-stack:focus-within .cm-ref-cell:not(:focus-within) .cm-tile.media-chip { opacity: 0.58; }
-  /* 不想要动效的人不该被这一摞晃：叠放、编号、点得动，一样都不少，只是不飞。 */
+  /* 不想要动效的人不该被这一排晃：编号、点得动，一样都不少，只是不飞。 */
   @media (prefers-reduced-motion: reduce) {
     .cm-ref-cell { transition: none; }
-    .cm-ref-stack .cm-ref-cell:nth-child(odd), .cm-ref-stack .cm-ref-cell:nth-child(even),
     .cm-ref-stack .cm-ref-cell:hover, .cm-ref-stack .cm-ref-cell:focus-within { transform: none; }
   }
   .cm-tile { position: relative; width: 84px; height: 84px; overflow: hidden; border-radius: 14px; background: #141417; border: 1px solid rgb(255 255 255 / 7%); }
@@ -2247,76 +2417,52 @@
   .cm-tile-pick:hover .cm-tile-swap,
   .cm-tile-x:hover { background: rgba(38, 38, 42, 0.95); }
   .cm-tile-x:hover { color: #f87171; }
-  /* 编号压在照片上（图二那一排没有编号，我们得留：提示词里写的是 @图片1，得对得上是谁）。
-     压在图上而不是摆在格子下面：省掉整行高度，卡片贴得住内容。深底＋虚化，跟格子右上角那颗移除键同一套。
-     靠左上角是跟着叠放方向走的（2026-11-04 苏醒：后挂的压在前挂的上头）：每张只有**上沿**露在外面，
-     编号留在下沿就等于全被后面那张盖掉——左上角跟右上角那颗移除键同一水平线，露多露少都读得清。 */
+  /* 编号摆在格子下面（横排之后照片不再互相压着，下沿是空的，读得清了）。提示词里写的是 @图片1，
+     编号必须一眼对得上是谁，所以这一行不省。 */
   .cm-ref-caption {
-    position: absolute; z-index: 2; left: 5px; top: 5px; max-width: calc(100% - 10px);
-    padding: 1px 6px; border-radius: 7px; font-size: 10.5px; line-height: 15px; color: #e8e8ec;
-    background: rgba(14, 14, 16, 0.72); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    display: block; margin-top: 6px; max-width: 100%;
+    font-size: 11px; line-height: 15px; color: #8a8a8e; text-align: center;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none;
   }
-  .cm-ref-caption-empty { color: #8b8b93; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .cm-ref-caption-empty { color: #62626a; }
   /* 绑到位的空格子：小牌上已经写着「图片2」，中间那行「参考」是重复的——只留加号。
      行末那颗不绑族的「+ 参考」不在 .cm-ref-cell 里，它的字照留（那颗没有编号可写）。
      按钮的可访问名来自 aria-label，藏掉这行字不影响读屏。 */
   .cm-ref-cell .cm-tile-add span { display: none; }
-  /* 末尾那颗「+ 参考」是这一摞的最后一张，宽度就是照片那么宽，露多少由 --step 管。
-     它没有编号可写，所以「参考」那两个字留在自己身上。
-     z-index 必须自己吃 --z：不写的话它是 z-index:auto，正 z 的格子全压在它上头，
-     「加载参考在最上面」这条就落不了地（--z 由行内给到 stackCount + 1）。 */
-  .cm-tile.cm-ref-add { width: 84px; height: auto; min-height: 84px; z-index: var(--z, 1); }
-  .cm-ref-stack .cm-ref-add { margin-top: calc(var(--step) - 84px); }
-  /* 只有一张参考时（一张照片 + 一颗空格子，或一份跨族素材 + 那颗不绑族的「+ 参考」）：
-     那颗「+」不再另占一整格，缩成压在照片右下角的小圆钮——苏醒给的那张参考图就是这个样子。
-     格子只留圆钮那么大：留 84px 整格的话，圆钮左边那 52px 是透明的，却把照片下沿整个盖住——
-     鼠标落到那儿看着是照片、点的却是那颗「+」（1440 那一屏实测 hover 直接跑到圆钮那一格上）。
-     可访问名仍是「添加图片2参考图」，点它与读屏都照旧。 */
-  .cm-ref-stack.is-pair .cm-ref-cell:last-child,
-  .cm-ref-stack.is-pair > .cm-ref-add {
-    width: 32px; margin-top: -22px; margin-left: 52px; align-self: flex-start; z-index: 40;
-  }
-  .cm-ref-stack.is-pair .cm-ref-cell:last-child .cm-tile-add,
-  .cm-ref-stack.is-pair > .cm-ref-add {
-    width: 32px; height: 32px; min-height: 0; margin-left: 0;
-    border-radius: 50%; border-style: solid; background: #f4f4f5;
-    border-color: rgb(255 255 255 / 70%); color: #18181b;
-    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.5);
-  }
-  /* 圆钮只剩一颗加号：「图片2」由 aria-label 念，虚线口也换成实心——它是压在照片上的按钮，不是空格子。 */
-  .cm-ref-stack.is-pair .cm-ref-cell:last-child .cm-ref-caption,
-  .cm-ref-stack.is-pair .cm-ref-add span { display: none; }
-  .cm-ref-stack.is-pair .cm-ref-cell:last-child .cm-tile-add:hover,
-  .cm-ref-stack.is-pair > .cm-ref-add:hover { background: #ffffff; border-color: #ffffff; }
+  /* 末尾那颗「+ 参考」自己占一格：它没有编号可写，所以「参考」那两个字留在自己身上。
+     z-index 必须自己吃 --z：不写的话它是 z-index:auto，正 z 的格子全压在它上头。 */
+  .cm-tile.cm-ref-add { width: 84px; height: 84px; min-height: 84px; z-index: var(--z, 1); }
+  /* 「只有一份参考时把「+ 参考」缩成压在照片角上的小圆钮」那几条撤了（2026-11-10 改回横排）：
+     那是竖摞没地方摆第二格时的省法。横排之后第二格就是它自己的位置，编号也写在它下面。 */
 
-  /* composer 那张卡：素材、说明、话共用一张卡、一份内边距，卡里只画一层框。
-     提示词框和高亮层自己的边与底色在这里撤掉——两张套一张会看成三个盒子。
+  /* 输入区这层不再自己带面（2026-11-10 第三轮）：模块底已经挂在外层 .cm-panel 上了，这一层再画
+     一圈就是卡中卡，左右照样读成两截。这里只剩布局：一份内边距 + 上下两块的间距，几何照旧不动。
      底色走上浅下深的一层薄光 + 内上沿一道高光，卡片才不像在面板上又贴了一块黑纸。 */
   .cm-composer {
     position: relative; display: flex; flex-direction: column; gap: 10px;
-    /* 下内边距 0：这条卡最后的卡底条自己带 12px 下内边距，它的下边界就是卡的内边界。留 9px 的话，钉住时那 9px 会留在条下面，滚上去的字从缝里露出来。 */
-    padding: 12px 12px 0; border: 1px solid rgb(255 255 255 / 8%); border-radius: 18px;
-    background: linear-gradient(180deg, rgb(255 255 255 / 3%) 0%, rgb(255 255 255 / 1%) 42%, rgb(0 0 0 / 24%) 100%);
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%);
-    transition: border-color 160ms ease, box-shadow 160ms ease;
+    /* 下内边距 0：这条最后那根卡底条自己带 12px 下内边距，它的下边界就是这条的内边界。留 9px 的话，钉住时那 9px 会留在条下面，滚上去的字从缝里露出来。 */
+    padding: 12px 12px 0;
   }
-  /* 整卡响应聚焦：人在下面打字，上面那几格也还在说「这些就是要用的参考」。
-     描边提亮 + 一层很淡的品牌色外圈，不加底色，免得整块跟着变重。 */
-  .cm-composer:focus-within {
+  /* 整块模块响应聚焦（原先挂在 composer 那圈画上，那层撤了就搬到这里）：人在下面打字，左边那张图
+     与上面那几格也还在说「这些就是要用的参考」。描边提亮 + 一层很淡的品牌色外圈，不加底色。 */
+  /* 正在拉提示词框：指针跑到哪一格都还是拉高光标，顺手锁掉选字——不锁的话拖一趟回来
+     正文被划蓝一片。挂在面板上而不是 body 上，弹窗一卸载这些样式跟着就没了。 */
+  .cm-panel.is-grabbing { cursor: nwse-resize; user-select: none; }
+  .cm-panel:focus-within {
     border-color: rgb(255 255 255 / 20%);
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%), 0 0 0 3px rgb(242 78 78 / 7%);
+    box-shadow: 0 0 0 3px rgb(242 78 78 / 7%);
   }
-  .cm-composer .cm-textarea, .cm-composer .cm-textarea:focus { border-color: transparent; background: transparent; }
-  .cm-composer .cm-prompt-bg { background: transparent; }
-  /* 高度归 autosizePrompt 管，再留竖向拉伸手柄等于给自己使绊子：一打字就把拖出来的高度冲掉。 */
+  /* 打字框自己的边回到基类那档；底色仍留透明——字是高亮层那层显示的，框一填死就把高亮糊掉了。 */
+  /* .cm-prompt-bg 那层的底色也回到基类那档（rgba(0,0,0,.35) + 12 圆角）：那是输入区的口，不是第二张卡。 */
+  /* 原生拉伸手柄仍然关着：它改的是 textarea 自己的 height，一打字就被 autosizePrompt 当场冲回去，
+     看着像框在跟人抢方向盘。要拉高走右下角那颗手柄——它改的是 promptUserH 那一档高度，打字冲不掉。 */
   .cm-composer .cm-textarea { resize: none; }
   /* 附框（参考音频的原话那种）搬进卡里之后，上面那条「卡里的框一律透明」会连它一起吃掉——
      台词和原话糊成同一片，人就分不清哪一格念什么。给它把底和边要回来（同权重，靠顺序赢）。 */
   .cm-composer .cm-textarea-sub,
   .cm-composer .cm-textarea-sub:focus { background: rgba(0, 0, 0, 0.35); border-color: rgb(255 255 255 / 8%); }
-  /* 素材与话之间不再画那条分隔线（2026-11-04 第二轮改成左右之后）：一边是一摞照片、一边是正文，
-     中间 14px 的缝自己就把两件事分开了。再画一条线反而把照片框成「另一块区域」。 */
+  /* 素材与话之间不画分隔线：两块上面各有各的小标题，标题就是分组，再画一条线反而把参考框成
+     「另一块区域」。 */
   /* 卡底那几行灰字撤了（2026-11-04 苏醒：「这种小字提示也删掉」）：说明不再另起一段摆进版面，
      「丢了几份参考」「这一族没被吃进去」「这条工作流不吃参考」合成一句挂到卡的悬停提示上。 */
 
@@ -2385,6 +2531,26 @@
     transition: opacity 140ms ease, color 140ms ease, border-color 140ms ease, background 140ms ease;
   }
   .cm-wand:hover, .cm-wand:focus-visible { opacity: 1; color: #ff6a4d; border-color: rgb(255 106 77 / 45%); background: rgb(24 24 28 / 82%); }
+  /* 提示词框右下角那颗拉高手柄（2026-11-10 苏醒：「提示词输入框右下角加一个拉高提示词的功能」）。
+     静止时压暗、滑过/拖动/键盘聚焦才亮。斜纹画在伪元素上并裁成三角形：看着只是口内角的一小片纹路，
+     命中区仍是整颗方块——好点中，也不会挡住正文文字。整颗往里让 4px：框的口角是 12px 圆角，
+     贴着角画会被那道圆弧切掉一截，看着像缺了个口。 */
+  .cm-prompt-grip {
+    position: absolute; right: 4px; bottom: 4px; z-index: 3;
+    width: 14px; height: 14px; outline: none;
+    cursor: nwse-resize; touch-action: none;
+    opacity: .55; transition: opacity 140ms ease;
+  }
+  .cm-prompt-grip::before {
+    content: ""; position: absolute; inset: 0;
+    clip-path: polygon(100% 0, 100% 100%, 0 100%);
+    background: repeating-linear-gradient(135deg, transparent 0 3px, #9a9aa2 3px 4.5px);
+  }
+  .cm-prompt-grip:hover, .cm-prompt-grip.is-live, .cm-prompt-grip:focus-visible { opacity: 1; }
+  /* 关掉动效的人不该看不见它：这一档不压暗，只是不再有那 140ms 的过渡 */
+  @media (prefers-reduced-motion: reduce) {
+    .cm-prompt-grip { opacity: .85; transition: none; }
+  }
   .cm-note { margin: 0; font-size: 11.5px; color: #71717a; }
   .cm-empty { display: flex; flex-direction: column; gap: 10px; padding: 16px; font-size: 12.5px; color: #a1a1aa; background: #1b1b1f; border: 1px dashed #33333a; border-radius: 12px; }
 
@@ -2405,20 +2571,20 @@
     /* 左右负 margin 只吃**卡片**的内边距（12px）：这一排住在卡里，左右跟卡内边对齐，
        看起来是框的一部分而不是一块外挂的板。下边不需要负——卡的下内边距已经是 0。 */
     margin: 2px -12px 0; padding: 10px 12px 12px;
-    /* 卡不能 overflow:hidden（工作流弹层要往卡外冒），所以这条带自己带上卡的下圆角（18px 减 1px 边框）。 */
-    border-radius: 0 0 17px 17px;
+    /* 卡不能 overflow:hidden（工作流弹层要往卡外冒），所以这条带自己的下圆角：模块圆角 20px 减 1px 边框。 */
+    border-radius: 0 0 19px 19px;
     /* 一点都不许透：0.98/0.9 那一版在 538x682 打长提示词时，「完整提示词 · …」那行从坞底下
        过去，字整个透出来压在按钮上。
-       底色不再是卡片色 #131316：外框撤了之后没有那块底了，这条压在 composer 那张卡的下沿上，
-       就跟它下沿的合成色（#0e0e10 + 24% 黑 = #0b0b0c）。留旧色的话这条比卡底亮一档，
-       看着就像在输入卡上外挂了一块板——正是苏醒 Round 24 撤过一次的东西。 */
-    background: #0b0b0c;
+       底色跟模块底同一支 #131316（2026-11-10 第三轮：模块底搬到 .cm-panel 上了）：这条住在模块里，
+       比模块亮一档或暗一档都会读成外挂的一块板；同色就等于看不见这块板，只在滚动时把从它底下
+       过去的字压住。旧值 #0b0b0c 是当年 composer 那张卡下沿的合成色，那张卡的面已经撤了。 */
+    background: #131316;
   }
   /* 上面那 14px 是一条渐隐，不是分隔线：钉住时滚上来的字在这里淡掉，比被这条的上沿切一刀干净。
      不占布局、不接点击（pointer-events:none），弹层与按钮都不受影响。 */
   .cm-dock::before {
     content: ""; position: absolute; left: 0; right: 0; top: -14px; height: 14px;
-    background: linear-gradient(180deg, rgb(11 11 12 / 0) 0%, #0b0b0c 100%);
+    background: linear-gradient(180deg, rgb(19 19 22 / 0) 0%, #131316 100%);
     pointer-events: none;
   }
   .cm-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
@@ -2456,17 +2622,24 @@
     border: 1px solid rgb(255 255 255 / 9%); border-radius: 16px; background: #1a1a1e;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
   }
+  /* 「画面参数」这一层反过来贴胶囊右边缘往左长（2026-11-10 苏醒照图：「这个弹出菜单会被吃掉一些看不见」）。
+     根因是这一排换了位置：两栏那一档它是最右边那颗，弹层却还照竖排时代贴左往右长。1731x1443 实测
+     弹层 1065..1393，而面板内容右沿 1339 —— 右边 54px 被 .cm-panel 的 overflow 整条切掉（比例第 4 列、
+     分辨率最后一档、自定义那个输入框正好在被切的那截里），顺带顶出 32px 横向滚动条。
+     贴右长就回到右栏之内：那颗的右边缘本来就在栏内，328 < 右栏净宽 498。
+     写两条类名是为了压过窄窗口那条 .cm-pop { width: min(328px, 78vw) }：锚点换了，封顶得跟着换来源。 */
+  .cm-pop.cm-pop-params { left: auto; right: 0; width: min(328px, var(--cm-pop-left, 328px)); }
   .cm-pop-title { margin: 2px 0 0; font-size: 12.5px; color: #a1a1aa; }
   /* 弹层锚点跟着胶囊在这一排里的位置走。竖排之后这颗恒在底部那一排的最左边（先挑来源、再定参数），
      所以一律贴它左边缘往右长——贴右长会顶穿面板左边界。横排时代它贴着右栏的右边缘，才有 right:0 那条。
      1478×902 实测：本机屏 352..620、API 屏 352..804，面板内容框 351..1127；820/560 宽同样在框里。 */
   .cm-pop-wf { left: 0; right: auto; width: 268px; gap: 3px; }
   /* 「创作类型」那一层只有三行，收窄；行距与清单同一套，别做出第二种菜单。 */
-  /* 宽度与工作流那层一致（268）：这层窄到 224 时，正在用的那行末尾多一个勾，「图片生成」就被挤成「图…」——行末的数是主角，被挤的却是不该缩的名字。 */
-  .cm-pop-kind { left: 0; right: auto; width: 268px; gap: 3px; padding: 8px; }
+  /* 宽度按内容收（2026-11-10 照图：行末那串数撤了以后 268 的右半页全是空的）。这层只有一族一名，
+  max-content 就是「图标 + 四个字 + 勾」那么宽；留 152 的地板防止哪天名字更短时空成一格。 */
+  .cm-pop-kind { left: 0; right: auto; width: max-content; min-width: 152px; max-width: 78vw; gap: 3px; padding: 8px; }
   .cm-kind-row { padding: 9px 10px; border-radius: 10px; }
   .cm-kind-icon { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; color: #a1a1aa; }
-  .cm-kind-count { flex: none; font-size: 11px; color: #71717a; }
   .cm-kind-check { flex: none; display: inline-flex; color: #e4e4e7; }
   /* 三颗里它最窄，也最不能截断——截成「图片生…」没人认得那是干什么的。让位的是工作流那颗的名字。 */
   .cm-pill-kind { flex: none; }
@@ -2666,13 +2839,13 @@
      视频与音频的角标跟着搬过去（.cm-hero-out-play）。 */
 
   @media (max-width: 900px) {
-    /* 窄窗口这两条必须同一个数：展示图与等待台是同一格轮流占，高一档矮一档都会在换状态时
-       把下面那张输入卡往上顶一下、往下坠一下。 */
-    .cm-hero { max-height: min(34vh, 360px); }
-    .cm-stage { width: min(100%, 480px); height: min(34vh, 360px); }
+    /* 只换竖排那一档：两栏那条 .cm-body:not(.is-stacked) 特异性高一级，本来就不受这条影响。
+     窄窗口也走不到两栏——面板最多 vw-84，够不着 980 那道门槛，走的就是这一档。 */
+  .cm-body { --cm-hero-h: min(34vh, 360px); }
+    .cm-stage { width: min(100%, 480px); }
     .cm-pop { width: min(328px, 78vw); }
     .cm-pop-wf { width: min(268px, 78vw); }
-  .cm-pop-kind { width: min(268px, 78vw); }
+  .cm-pop-kind { width: max-content; }
     /* 窄窗口这一屏不放两列。这一档的面板内容宽只有 vw-84，而弹层现在贴着胶囊左边缘往右长，
        452px 撑出去就是顶穿右边界（538px 实测过）。所以窄窗口沿用量过的 268px 那一档，
        两列改成上下叠：服务商在上、模型清单在下，一样能挑，只是不再左右两栏。 */
@@ -2685,11 +2858,9 @@
      不砍的话 1478x562 实测整弹窗 573 > 可视 504，钉住的坞直接压在输入区上面，得往下滚才看得见光标。
      放在 max-width 那条之后：又矮又窄时按矮处理。 */
   @media (max-height: 720px) {
-    /* 矮窗口这两条也必须是同一个数（同上：同一格轮流占，别把下面的输入卡顶来顶去）。
-       154px 那条地板是等待台中间那张卡量出来的最低可用高度，展示图跟着抬到同一档，
-       顺带让矮屏上的图不再只有 79px 高。 */
-    .cm-hero { max-height: max(154px, 19vh); }
-    .cm-stage { height: max(154px, 19vh); }
+    /* 同上：只换竖排那一档。154px 是等待台中间那张卡量出来的最低可用高度。
+     两栏那一档不受这条影响：它的值自己带 240px 的地板。 */
+  .cm-body { --cm-hero-h: max(154px, 19vh); }
     .cm-stage-card { gap: 7px; padding: 14px 18px; }
     .cm-stage-bar { width: 168px; }
     .cm-hero-wave { height: clamp(64px, 12vh, 96px); }

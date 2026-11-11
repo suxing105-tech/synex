@@ -236,10 +236,12 @@
 <style>
   .cc-root { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; width: 100%; }
 
-  /* 高度沿用展示图那一档，三个断点必须和 .cm-hero 同一个数：这一格与等待台是轮流占的，
-     高一档矮一档都会在换状态时把下面那张输入卡顶一下、坠一下（1478x562 实测过）。 */
+  /* 高度不在这里定：读弹窗 .cm-body 上那份 --cm-hero-h（自定义属性会继承下来）。这一格与
+     展示图、等待台是轮流占的，各自写一个数就会在换状态时把输入卡顶一下、坠一下（1478x562 踩过）。
+     窄窗口与矮窗口两档同样由弹窗那边改值，所以这里一个断点都不必写。
+     兜底那个数是弹窗的基类值：万一这层落在没写变量的地方，也不至于是零高。 */
   .cc-viewport {
-    position: relative; width: 100%; height: min(46vh, 480px);
+    position: relative; width: 100%; height: var(--cm-hero-h, min(46vh, 480px));
     display: flex; align-items: center; justify-content: center;
     overflow: hidden; border-radius: 16px; outline: none;
     /* 手势归画布：滚轮是缩放、拖动是平移，所以这块区域不再跟着面板竖向滚。 */
@@ -278,12 +280,6 @@
   .cc-card:hover .cc-open, .cc-open:focus-visible, .cc-card.is-focused .cc-open { opacity: 1; }
   .cc-count { margin: 0; font-size: 12px; color: #8a8a8e; }
 
-  @media (max-width: 900px) {
-    .cc-viewport { height: min(34vh, 360px); }
-  }
-  @media (max-height: 720px) {
-    .cc-viewport { height: max(154px, 19vh); }
-  }
   @media (prefers-reduced-motion: reduce) {
     /* 平移与缩放是本组件唯一的动效：要撤就整条撤，别留半条。 */
     .cc-content, .cc-stage, .cc-open { transition: none; }

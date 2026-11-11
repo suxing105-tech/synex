@@ -72,6 +72,8 @@ afterEach(() => {
   http.mockReset();
   // 试听那几条用 spyOn 顶掉了 play/pause，不收干净会漏给后面的用例
   vi.restoreAllMocks();
+  // 拉高手柄那档存的是 localStorage，不清的话拖高那一轮的用例会污染「空着只有两行」那条
+  localStorage.removeItem('suxing.clonePromptH');
   cloneJob.set(EMPTY_CLONE_JOB);
   comfyuiStatus.set({ running: true, enabled: true, url: 'http://127.0.0.1:8188', checked_at: 0 });
 });
@@ -398,63 +400,53 @@ it('选了个不是 JSON 的文件，说清楚原因而不是默默什么都不�
   expect(screen.getByRole('button', { name: '工作流' }).textContent).toContain('Qwen 多图编辑');
 });
 
-it('参考是左栏那一摞：栏宽固定、每张露出多少按张数算，十六格也不顶人', async () => {
-  // 2026-11-04 苏醒第二轮：参考从「横向一条」改成「左栏一摞」。老约束没变——素材那一块不许把
-  // 提示词框顶出弹窗，只是换个方向守：栏宽写死 84px，剩下的宽度全归提示词那一侧。
+it('参考是一排缩略图：格子不叠、装不下整排换行', async () => {
+  // 2026-11-10 苏醒照旧图：「改回类似之前的这种版式」——参考从「左栏斜压的一摞」改回横排。
+  // 老约束没变：素材那一块不许把提示词框顶出弹窗，只是换个方向守：装不下整排自己换行。
   const source = readFileSync("src/components/CloneModal.svelte", "utf8");
-  expect(source).toMatch(/\.cm-input-row \{[^}]*display:\s*flex/);
-  expect(source).toMatch(/\.cm-prompt-col \{[^}]*flex:\s*1 1 auto[^}]*min-width:\s*0/);
-  expect(source).toMatch(/\.cm-ref-stack \{[^}]*flex:\s*none[^}]*width:\s*84px/);
-  // 叠放靠负 margin（露出量 = --step），--z 顺着给（2026-11-04 苏醒：图片1 压在最底下，后挂的压在前面
-  // 那张上头，加载参考那颗压在全摞最上面）→ 每张露的是上沿那一条，编号小牌跟着挪到左上角
-  expect(source).toMatch(/\.cm-ref-stack \.cm-ref-cell \{[^}]*margin-top:\s*calc\(var\(--step\) - 84px\)/);
+  expect(source).toMatch(/\.cm-input-row \{[^}]*flex-direction:\s*column/);
+  expect(source).toMatch(/\.cm-ref-stack \{[^}]*flex-wrap:\s*wrap/);
+  // 叠放那套整个撤了：负 margin 的露出量、按张数算的两个数、悬停摊开量，一个都不许留
+  expect(source).not.toMatch(/\.cm-ref-stack \.cm-ref-cell \{[^}]*margin-top:/);
+  expect(source).not.toContain('--step');
+  expect(source).not.toContain('refStep');
+  expect(source).not.toContain('refSpread');
+  // --z 仍旧顺着给：鼠标抬起那格要压过邻格，「+ 参考」在最上面
   expect(source).toMatch(/style="--z: \{i \+ 1\}"/);
   expect(source).toMatch(/style="--z: \{stackCount \+ 1\}"/);
-  // 露出量上下限：46 是「一眼认得出是谁」，22 以下照片上沿那 20px 的编号就读不到了；
-  // 186px 的总余量分给 n-1 张，整摞最多长到 ~270px，不会无限往下顶
-  expect(source).toMatch(/const refStep = \$derived\(Math\.max\(22, Math\.min\(46,/);
-  expect(source).toMatch(/186 \/ Math\.max\(stackCount - 1, 1\)/);
 });
 
-it('那一摞会动：整摞摊开、指到谁谁抬起来摆正，关动效的人那一摞是静止的', async () => {
+it('这一排会动：指到谁谁抬起来摆正、其余压暗，关动效的人那一排是静止的', async () => {
   const source = readFileSync('src/components/CloneModal.svelte', 'utf8');
-  // 鼠标碰到整摞 → 每张再多露 --spread（这个数同样按张数算，十六格那一档只剩 2px，不至于把卡撑得一跳一跳）
-  expect(source).toMatch(/\.cm-ref-stack:hover, \.cm-ref-stack:focus-within \{ --step: calc\(var\(--step-base\) \+ var\(--spread\)\)/);
-  expect(source).toMatch(/const refSpread = \$derived\(Math\.max\(2, Math\.min\(6,/);
-  // 指到的那张从摞里抬出来摆正，并提到最前面（60 > 行内 --z），否则又被上面那张盖回去
-  const lift = /\.cm-ref-stack \.cm-ref-cell:hover[\s\S]{0,160}?\}/.exec(source)?.[0] ?? '';
+  // 指到的那格抬起来摆正并提到最前面（60 > 行内 --z），否则又被旁边那格盖回去
+  const lift = /.cm-ref-stack \.cm-ref-cell:hover[\s\S]{0,160}?\}/.exec(source)?.[0] ?? '';
   expect(lift).toContain(':focus-within');
   expect(lift).toMatch(/z-index:\s*60/);
   expect(lift).toMatch(/rotate\(0deg\)/);
-  // 抬起量 6px 小于两栏之间 14px 的缝：抬起来压不到提示词框
   expect(lift).toMatch(/translate\(6px, -3px\)/);
-  // 指到谁，其余**照片**压暗；空格子与压在角上的那颗「+」不跟着退场（白圆钮压暗后在深色卡上糊成一块脏灰）
-  const dim = /\.cm-ref-stack:hover \.cm-ref-cell:not\(:hover\)[^{]*\{/.exec(source)?.[0] ?? '';
+  // 指到谁，其余**照片**压暗；空格子与末尾那颗「+」不跟着退场（淡格压暗后等于没了）
+  const dim = /.cm-ref-stack:hover \.cm-ref-cell:not\(:hover\)[^{]*\{/.exec(source)?.[0] ?? '';
   expect(dim).toContain('.cm-tile.media-chip');
-  // 不写 prefers-reduced-motion 的动效等于强迫所有人看：关动效时整摞静止，叠放与编号照旧
+  // 横排之后每格不再歪着摆：编号要落在格子下面，格子一歪一排编号就读不齐
+  expect(source).not.toMatch(/\.cm-ref-cell:nth-child\((odd|even)\) \{ transform: rotate/);
+  // 不写 prefers-reduced-motion 的动效等于强迫所有人看：关动效时这一排静止，编号照旧
   expect(source).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\n\s*\.cm-ref-cell \{ transition:\s*none;/);
 });
 
-it('只有一张参考时那一摞摆两块：照片 + 压在右下角的「+」，可访问名不缩水', async () => {
-  // 苏醒那张参考图就是这个版式：一张照片，加号压在照片角上，而不是旁边再摆一整格虚线框。
+it('只有一份参考时也摆两格：照片 + 一整格「+ 参考」，可访问名不缩水', async () => {
+  // 2026-11-10 改回横排：只有一份参考时不再把「+」缩成压在照片角上的小圆钮（那是竖摞没地方摆
+  // 第二格时的省法）。横排之后第二格就是它自己的位置，和旧图一致。
   const two = { ...TPL, reference_count: 2, slots: [...TPL.slots, { kind: 'image', node: '564', input: 'image', label: '背景参考' }] };
   routes({ ...baseRoutes(), '/api/clone/templates': { items: [two] } });
   const screen = await ready();
   const stack = screen.container.querySelector('.cm-ref-stack') as HTMLElement;
-  expect(stack.classList.contains('is-pair')).toBe(true);
   expect(stack.querySelectorAll('.cm-ref-cell')).toHaveLength(2);
-  // 圆钮只剩一个加号：「图片2」改由 aria-label 念，格子本身仍在可访问树里
   expect(screen.getByRole('button', { name: '添加图片2参考图' })).toBeTruthy();
   expect(screen.getByRole('group', { name: '图片2' })).toBeTruthy();
   const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
-  // 圆钮自己 + 它那一格都缩到 32px：留 84px 整格会拿透明的那半截盖住照片下沿，抢走照片的悬停与点击
-  const place = /\.cm-ref-stack\.is-pair \.cm-ref-cell:last-child,[\s\S]{0,220}?\}/.exec(css)?.[0] ?? '';
-  expect(place).toMatch(/width:\s*32px/);
-  expect(place).toMatch(/margin-left:\s*52px/);
-  const badge = /\.cm-ref-stack\.is-pair \.cm-ref-cell:last-child \.cm-tile-add,[\s\S]{0,320}?\}/.exec(css)?.[0] ?? '';
-  expect(badge).toMatch(/width:\s*32px/);
-  expect(badge).toMatch(/border-radius:\s*50%/);
-  expect(css).toMatch(/\.cm-ref-stack\.is-pair \.cm-ref-cell:last-child \.cm-ref-caption[\s\S]{0,80}?\{[^}]*display:\s*none/);
+  // 那一格是整格 84px，不再是压在角上的 32px 圆钮
+  expect(css).toMatch(/\.cm-tile\.cm-ref-add \{[^}]*width:\s*84px[^}]*height:\s*84px/);
+  expect(css).not.toContain('is-pair');
 });
 
 /** 后端说三档都跑得通的工作流：生成方式不再是开关，而是参考图数量的函数。 */
@@ -543,7 +535,40 @@ it('弹层上限实测写进 --cm-pop-max：封顶量的是这一列，不是视
   cleanup();
 });
 
-it('这一层收进缩略图那一列：纯色底、外框也撤干净，不再整屏虚化', () => {
+it("「画面参数」那层贴右往左长：两栏那一档它是最右那颗，贴左会被面板切掉", async () => {
+  // 2026-11-10 苏醒照图：「这个弹出菜单会被吃掉一些看不见」。1731x1443 实测贴左时长 1065..1393，
+  // 面板内容右沿只有 1339 —— 右边那 54px（比例第 4 列、分辨率最后一档、自定义输入框）被 .cm-panel
+  // 的 overflow 整条切掉，顺带顶出 32px 横向滚动条。这一排现在的位置是本轮「改回左右结构」换的。
+  const src = readFileSync("src/components/CloneModal.svelte", "utf8");
+  const blk = (sel: string) => {
+    const at = src.indexOf(sel);
+    expect(at, sel).toBeGreaterThan(-1);
+    return src.slice(at, src.indexOf("}", at));
+  };
+  const params = blk(".cm-pop.cm-pop-params {");
+  expect(params).toMatch(/left:\s*auto/);
+  expect(params).toMatch(/right:\s*0/);
+  expect(params).toMatch(/width:\s*min\(328px,\s*var\(--cm-pop-left/);
+  // 锚点只换这一颗：另两颗仍在行首往右长（工作流那颗的锚点断言在上面那条里）
+  expect(blk(".cm-pop-kind {")).toMatch(/left:\s*0/);
+  // 窄窗口那条给裸 .cm-pop 的 78vw 封顶不再管这一颗：锚点换了，封顶只认实测的左余量
+  const narrow = src.slice(src.indexOf("@media (max-width: 900px)"));
+  expect(narrow).toMatch(/\.cm-pop\s*\{[^}]*width:\s*min\(328px,\s*78vw/);
+  expect(narrow).not.toMatch(/\.cm-pop-params[^{]*\{[^}]*78vw/);
+
+  // 左余量由 JS 与 --cm-pop-max 同一把尺量：happy-dom 量不到（rect 全是 0）也得从 240 起，不能是负数
+  routes(baseRoutes());
+  const screen = await ready();
+  const panel = screen.container.querySelector(".cm-panel") as HTMLElement;
+  const left = panel.style.getPropertyValue("--cm-pop-left");
+  expect(/^-?\d+px$/.test(left), left).toBe(true);
+  expect(Number.parseInt(left, 10)).toBeGreaterThanOrEqual(240);
+  await fireEvent.click(screen.getByRole("button", { name: "画面参数" }));
+  const pop = await screen.findByRole("dialog", { name: "画面参数" });
+  expect(pop.className).toContain("cm-pop-params");
+  cleanup();
+});
+it('这一层收进缩略图那一列：纯色底 + 一整块模块底，不再整屏虚化', () => {
   // 2026-11-04 苏醒：「再次创作和放大功能一样，收进缩略图区域，不要模糊背景了，和放大一样的纯色背景」
   const src = readFileSync('src/components/CloneModal.svelte', 'utf8');
   const blk = (sel: string) => {
@@ -557,10 +582,18 @@ it('这一层收进缩略图那一列：纯色底、外框也撤干净，不再�
   expect(backdrop).not.toMatch(/backdrop-filter/);
   const panel = blk('.cm-panel {');
   expect(panel).toMatch(/max-height:\s*100%/); // 量这一列的高度，不再拿整窗 90vh 去量
-  // 2026-11-04 第二次：连外框一起撤。纯色底上再画一圈边 + 圆角 + 投影，等于凭空多贴一张卡片。
-  // 整个弹窗只剩输入区那一张卡（.cm-composer）带面，展示图直接坐在 #0e0e10 上。
-  expect(panel).not.toMatch(/background|border|box-shadow|border-radius/);
+  // 2026-11-10 第三轮（苏醒：「左右结构放在一个模块背景上，不要看起来像 2 截」）：这一层自己就是那块
+  // 模块底。整个弹窗只许它带面——输入区那层的画撤干净，否则卡中卡，左右照样读成两截。
+  expect(panel).toMatch(/background:\s*#131316/);
+  expect(panel).toMatch(/border:\s*1px solid/);
+  expect(panel).toMatch(/border-radius:\s*20px/);
+  // 纯色底上没有东西可糊，虚化留着只是白交一层合成
   expect(panel).not.toMatch(/backdrop-filter/);
+  const composer = blk('.cm-composer {');
+  expect(composer).not.toMatch(/background|border(-radius)?:|box-shadow/);
+  // 聚焦那盏灯跟着那层面走：亮在模块上，不亮在里面那层只剩布局的盒子上
+  expect(src).toMatch(/\.cm-panel:focus-within \{/);
+  expect(src).not.toMatch(/\.cm-composer:focus-within \{/);
   // 撤的是外框，不是几何：钉住的坞 bottom:-20px 量的就是这里的下内边距
   expect(panel).toMatch(/overflow:\s*auto;\s*padding:\s*20px 22px/);
   // 两侧栏还在外面可点：aria-modal 是句假话，撤；role=dialog 必须留着，全局快捷键判重认它
@@ -673,9 +706,11 @@ it('定宽优先：名字长短不许决定这一排的几何，取消和生成�
   expect(css).not.toMatch(/\.cm-pill\s*\{[^}]*flex:\s*none/);
 });
 
-it('上下结构 + 卡内左右两栏：预览在上、参考在左、话在右，操作那一坞钉在弹窗最底下', async () => {
+it('左右两栏 + 卡内上下两块：展示图在左、参考在上、话在下，操作那一坞钉在卡底', async () => {
   // 2026-11-04 苏醒：像即梦那个 composer——先看素材，再写提示词，最后一排挑来源/参数并按生成。
-  // happy-dom 不跑布局，所以这里压的是「谁在谁前面、谁包住谁」；钉住那条 bottom:0 的 CSS 由下面那条守卫看着。
+  // 2026-11-10 苏醒：「改回左右结构…改回类似之前的这种版式」——外层展示图在左、输入卡在右，
+  // 卡内回到参考在上、话在下（照他给的那张旧图），两块各带一行小标题。
+  // happy-dom 不跑布局，所以这里压的是「谁在谁前面、谁包住谁」；钉住那条的 CSS 由下面那条守卫看着。
   routes(baseRoutes());
   const screen = await ready();
   const all = Array.from(screen.container.querySelectorAll('*'));
@@ -685,12 +720,12 @@ it('上下结构 + 卡内左右两栏：预览在上、参考在左、话在右�
     return all.indexOf(el as Element);
   });
   expect(at).toEqual([...at].sort((a, b) => a - b));
-  // 卡内那一行是左右两栏（2026-11-04 苏醒第二轮）：素材在左、话在右，两个是同一行的兄弟，
-  // 摞排在前——DOM 顺序与视觉顺序一致，键盘 Tab 才会先过素材再进提示词框。
   const stack = screen.container.querySelector('.cm-ref-stack') as HTMLElement;
   const row = stack.parentElement as HTMLElement;
   expect(row.classList.contains('cm-input-row')).toBe(true);
-  expect(row.firstElementChild).toBe(stack);
+  // 两块各带一行小标题，顺序＝参考、提示词（2026-11-10 照旧图放回来）
+  const titles = Array.from(row.querySelectorAll('.cm-block-title')).map((el) => el.textContent);
+  expect(titles).toEqual(['替换或上传参考', '完整提示词']);
   const col = (screen.container.querySelector('textarea.cm-textarea') as HTMLElement).closest('.cm-prompt-col') as HTMLElement;
   expect(col.parentElement).toBe(row);
   expect(Array.from(row.children).indexOf(stack)).toBeLessThan(Array.from(row.children).indexOf(col));
@@ -703,7 +738,7 @@ it('上下结构 + 卡内左右两栏：预览在上、参考在左、话在右�
   expect(dock.parentElement?.lastElementChild).toBe(dock);
 });
 
-it('竖排不回到左右两栏：弹窗收窄、预览按高度定大小、卡底那条 sticky 在可视区下沿', () => {
+it('左右两栏：展示图归左栏、输入卡归右栏、弹窗放宽，卡底那条仍 sticky 在可视区下沿', () => {
   const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
   // nth 是第几次出现：.cm-hero 有基类和窄窗口两条，别把窄窗口那条当成基类改了
   const rule = (sel: string, nth = 0) => {
@@ -714,13 +749,23 @@ it('竖排不回到左右两栏：弹窗收窄、预览按高度定大小、卡�
     }
     return css.slice(from, css.indexOf('}', from));
   };
-  // 宽度不再是预览图的需求（820：读提示词的行宽 + 452 那屏仍放得下）
-  expect(rule('.cm-panel {')).toMatch(/width:\s*min\(820px/);
+  // 2026-11-10 苏醒：「改回左右结构」，并按旧图把上限回到旧版那个 1080（820 是竖排那一版的行宽需求）
+  expect(rule('.cm-panel {')).toMatch(/width:\s*min\(1080px, 100%\)/);
   const body = rule('.cm-body {');
-  expect(body).toMatch(/flex-direction:\s*column/);
-  expect(body).not.toMatch(/grid-template-columns/);
-  // 预览图由高度定大小：宽图不摊满整行，竖图不冲出弹窗
-  expect(rule('.cm-hero {')).toMatch(/max-height:\s*min\(/);
+  expect(body).toMatch(/display:\s*grid/);
+  // 切法照旧版：左列 1fr 吃剩余、右列定宽。旧图那张展示图大，就是因为右列定宽、剩余全归图
+  expect(body).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\) minmax\(340px, 524px\)/);
+  // 只有左边那一列必须能缩到 0；右列那条 340px 下限留着没关系——两栏只在面板 ≥980 时出现（见 is-stacked），
+  // 那一档内容宽 ≥936，340+22 怎么都装得下，顶不出面板横向滚动条
+  expect(body.match(/minmax\(\d+px/g)?.length ?? 0).toBe(1);
+  // 两栏都从顶上开始（2026-11-10 照旧图）：左图顶到弹窗上沿一路长到底、右列从上往下排。
+  // 中间那一版居中，两格都在半空飘着、上下各空一大片，看着像弹窗没装满。
+  expect(body).toMatch(/align-items:\s*start/);
+  // 中间那一列装不下两栏时收回上下结构：判宽的是面板自己，不是窗口
+  expect(css).toMatch(/\.cm-body\.is-stacked \{ grid-template-columns: minmax\(0, 1fr\); \}/);
+  expect(css).toMatch(/<div class="cm-body" class:is-stacked=\{stacked\}>/);
+  // 展示图由高度定大小：宽图不摊满整栏，竖图不冲出弹窗。数不在这条上，只许读那一个来源
+  expect(rule('.cm-hero {')).toMatch(/max-height:\s*var\(--cm-hero-h\)/);
   const dock = rule('.cm-dock {');
   expect(dock).toMatch(/position:\s*sticky/);
   // 钉住时这条的下边界要压在弹窗可视区的下沿上。Chrome 量 sticky 偏移用的是滚动容器的
@@ -733,8 +778,8 @@ it('竖排不回到左右两栏：弹窗收窄、预览按高度定大小、卡�
   expect(dock).not.toMatch(/margin:[^;]*-22px/);
   // 卡自己的下内边距必须是 0：留着的这几 px 会留在钉住的条下面，字从缝里露出来。
   expect(rule(".cm-composer {")).toMatch(/padding:\s*12px 12px 0/);
-  // 卡不能 overflow:hidden（工作流弹层要往卡外冒），下圆角只能这条自己带：18px 卡圆角减 1px 边框。
-  expect(dock).toMatch(/border-radius:\s*0 0 17px 17px/);
+  // 卡不能 overflow:hidden（工作流弹层要往卡外冒），下圆角只能这条自己带：模块圆角 20px 减 1px 边框。
+  expect(dock).toMatch(/border-radius:\s*0 0 19px 19px/);
   // 这条不再自己画框：上面加一条分隔线就把「一次输入」劈成两块（苏醒要的是一个圆角矩形）。
   expect(dock).not.toMatch(/border-top/);
   // 不透明底：滚动时提示词从这条底下过去，不许透出字来
@@ -744,26 +789,29 @@ it('竖排不回到左右两栏：弹窗收窄、预览按高度定大小、卡�
   expect(fade).toMatch(/top:\s*-14px/);
   expect(fade).toMatch(/pointer-events:\s*none/);
   // 渐隐收进的那个色必须和这条同一个，不然钉住时上沿会横着一道接缝
-  expect(fade).toMatch(/#0b0b0c 100%/);
+  expect(fade).toMatch(/#131316 100%/);
   // 「创作类型」那层与「工作流」那层同宽：窄一档的话，正在用的那行末尾多个勾，
-  // 行末的数把「图片生成」挤成「图…」。
-  expect(rule(".cm-pop-kind {")).toMatch(/width:\s*268px/);
-  expect(css).toMatch(/\.cm-pop-kind\s*\{\s*width:\s*min\(268px,\s*78vw\)/);
+  // 行末那串数撤了之后，这层按内容收宽：还钉着 268 的话右半页全是空白（2026-11-10 苏醒照图）
+  expect(rule(".cm-pop-kind {")).toMatch(/width:\s*max-content/);
+  expect(css).not.toMatch(/\.cm-pop-kind\s*\{[^}]*width:\s*(268px|min\(268px)/);
 });
 
-it('参考做进 composer 那张卡里：素材与话共用一张卡，卡里不摆灰字小注', async () => {
-  // 2026-11-04 苏醒：「把参考做进框里做交互」＋「这种小字提示也删掉」——素材、话、按钮是同一次
-  // 表达，拆成两块就看不出「这几张就是要用的参考」；而说明性的小字一律不占版面。
+it('composer 那张卡：素材、话、按钮共用一张卡，两块各带一行小标题，卡里不摆灰字小注', async () => {
+  // 2026-11-04 苏醒：「把参考做进框里做交互」——素材、话、按钮是同一次表达，共用一张卡。
+  // 卡里那两行小标题 11-04 撤过一轮，2026-11-10 照旧图放回来：上下排之后每块上面没名字就不成组。
+  const source = readFileSync('src/components/CloneModal.svelte', 'utf8');
   routes(baseRoutes());
   const screen = await ready();
   const card = screen.container.querySelector('.cm-composer');
   expect(card, '.cm-composer').toBeTruthy();
   expect(card!.querySelector('.cm-ref-stack')).toBeTruthy();
   expect(card!.querySelector('textarea.cm-textarea')).toBeTruthy();
-  // 卡外不挂小标题：槽位名不占版面，附框上方自己有名字
-  expect(card!.previousElementSibling?.className ?? '').not.toContain('cm-block-title');
-  const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
-  expect(css).not.toContain('<p class="cm-block-title">{promptBlockTitle');
+  expect(card!.querySelector('.cm-block-title')?.textContent).toBe('替换或上传参考');
+  // 提示词那一格的标题用工作流给的槽位名（这条模板的槽位就叫「完整提示词」）
+  expect(source).toMatch(/<p class="cm-block-title">\{promptBlockTitle \|\| "完整提示词"\}<\/p>/);
+  expect(card!.textContent).toContain('完整提示词');
+  // 但灰字小注不回来（2026-11-04：「这种小字提示也删掉」）：说明一律不占版面
+  expect(card!.querySelectorAll('.cm-note')).toHaveLength(0);
 });
 
 it('提示词框下面不摆灰字小注：来源那句挂到框的悬停提示上', async () => {
@@ -885,25 +933,77 @@ it('输入区按内容长高：空着只有两行，不再写死一格 224px', a
   const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
   expect(css).toMatch(/\.cm-textarea\s*\{[^}]*min-height:\s*46px/);
   expect(css).not.toMatch(/\.cm-textarea\s*\{[^}]*height:\s*clamp\(/);
-  // 高度归 JS 管，留着竖向拉伸手柄等于给自己使绊子：一打字就把拖出来的高度冲掉
+  // 原生拉伸手柄必须关着：它改的是 textarea 自己的 height，一打字就被 autosizePrompt 冲回去。
+  // 要拉高走下面那条用例验的那颗手柄——它改的是 promptUserH 那档地板。
   expect(css).toMatch(/\.cm-composer \.cm-textarea\s*\{[^}]*resize:\s*none/);
 });
 
-it('编号压在照片上；空的绑定位不再重复写一遍「参考」', async () => {
+it('提示词框右下角那颗手柄：拖到哪就是哪，打字不改它，双击退回跟着内容长', async () => {
+  routes(baseRoutes());
+  localStorage.removeItem('suxing.clonePromptH');
+  let screen = await ready();
+  let ta = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  const gripOf = (s: typeof screen) => s.container.querySelector('.cm-prompt-grip') as HTMLElement;
+  const h = (el: HTMLElement) => Number(el.style.height.replace('px', ''));
+  let grip = gripOf(screen);
+  await vi.waitFor(() => expect(h(ta)).toBe(46));
+  // 报给读屏的是一个数值，不是「一颗按钮」：静止时它说自己是自动高度
+  expect(grip.getAttribute('role')).toBe('slider');
+  expect(grip.getAttribute('aria-valuetext')).toBe('自动高度');
+
+  // 自动档先立个基线：内容比上限长时停在按视口算的那条线上，多的自己滚
+  Object.defineProperty(ta, 'scrollHeight', { configurable: true, get: () => 620 });
+  const cap = Math.max(120, Math.min(Math.round(window.innerHeight * 0.34), 280));
+  await fireEvent.input(ta, { target: { value: '把光影写细一点'.repeat(40) } });
+  await vi.waitFor(() => expect(h(ta)).toBe(cap));
+  expect(ta.style.overflowY).toBe('auto');
+
+  // 往上拖 60：真的缩 60。做成「地板」的话这一拖会被自动上限当场顶回去，手感是闷的
+  await fireEvent.pointerDown(grip, { button: 0, pointerId: 1, clientY: 300 });
+  expect(grip.classList.contains('is-live')).toBe(true);
+  await fireEvent.pointerMove(window, { pointerId: 1, clientY: 240 });
+  expect(h(ta)).toBe(cap - 60);
+  await fireEvent.pointerUp(window, { pointerId: 1, clientY: 240 });
+  expect(grip.classList.contains('is-live')).toBe(false);
+  expect(grip.getAttribute('aria-valuetext')).toBe(`已固定 ${cap - 60}px`);
+  expect(localStorage.getItem('suxing.clonePromptH')).toBe(String(cap - 60));
+
+  // 拖完接着打字：autosize 又跑了一轮，那一档不许被打回原形
+  await fireEvent.input(ta, { target: { value: '把光影写细一点'.repeat(60) } });
+  await vi.waitFor(() => expect(h(ta)).toBe(cap - 60));
+
+  // 键盘那条路：向下键 +24
+  await fireEvent.keyDown(grip, { key: 'ArrowDown' });
+  await vi.waitFor(() => expect(h(ta)).toBe(cap - 60 + 24));
+
+  // 重开弹窗（新实例）仍是他拖的那一档：不记住的话每轮都得重拖
+  cleanup();
+  screen = await ready();
+  ta = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  grip = gripOf(screen);
+  await vi.waitFor(() => expect(h(ta)).toBe(cap - 60 + 24));
+
+  // 双击退回「跟着内容长」，存储里那一档一起清掉（新实例没再喂 scrollHeight，回到下限两行）
+  await fireEvent.dblClick(grip);
+  await vi.waitFor(() => expect(h(ta)).toBe(46));
+  expect(localStorage.getItem('suxing.clonePromptH')).toBeNull();
+});
+
+it('编号摆在格子下面；空的绑定位不再重复写一遍「参考」', async () => {
   // 得挑一条有两个图片位的模板，否则第一个位被成图自己填上以后没有空格子，藏字那条就没得压
   const two = { ...TPL, reference_count: 2, slots: [...TPL.slots, { kind: 'image', node: '564', input: 'image', label: '背景参考' }] };
   routes({ ...baseRoutes(), '/api/clone/templates': { items: [two] } });
   const screen = await ready();
   const cap = screen.getByText('图片1') as HTMLElement;
   expect(cap.parentElement?.classList.contains('cm-ref-cell')).toBe(true);
-  // 空格子靠小牌说「图片2」，中间那行「参考」是重复的；藏字之后可访问名必须还在
+  // 空格子靠下面那行编号说「图片2」，格子里那行「参考」是重复的；藏字之后可访问名必须还在
   expect(screen.getByRole('button', { name: '添加图片2参考图' })).toBeTruthy();
   const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
-  expect(css).toMatch(/\.cm-ref-caption\s*\{[^}]*position:\s*absolute/);
+  // 横排之后照片不再互相压着，编号回到格子下面（2026-11-10）：不再绝对定位压在图上
+  expect(css).toMatch(/\.cm-ref-caption\s*\{[^}]*display:\s*block/);
+  expect(css).toMatch(/\.cm-ref-caption\s*\{[^}]*margin-top:/);
+  expect(css).not.toMatch(/\.cm-ref-caption\s*\{[^}]*position:\s*absolute/);
   expect(css).toMatch(/\.cm-ref-cell \.cm-tile-add span\s*\{[^}]*display:\s*none/);
-  // 编号在**左上角**：那一摞是后挂的压在前挂的上头，每张只露上沿，编号留在下沿就全被后面那张盖掉
-  expect(css).toMatch(/\.cm-ref-caption\s*\{[^}]*top:\s*5px/);
-  expect(css).not.toMatch(/\.cm-ref-caption\s*\{[^}]*bottom:/);
 });
 
 it('悬停放大的那一张按素材自己的比例摆：不是一条黑边裱一张小图', async () => {
@@ -936,17 +1036,18 @@ it('钉住那条坞不许透字；窗口一矮先给预览图砍一档', () => {
   // 0.98/0.9 那版实测会透出底下那行字压在按钮上，所以只许实心色
   expect(dock).toMatch(/background:\s*#[0-9a-fA-F]{6}/);
   expect(dock).not.toMatch(/background:[^;]*rgba?\(/);
-  // 外框撤了之后不能再拿旧卡片色 #131316 当这条的底：那比 composer 卡底亮一档，看着是外挂的一块板。
-  // 正解是卡底那条渐隐的合成色：#0e0e10 + 24% 黑 = #0b0b0c。
-  expect(dock).toMatch(/background:\s*#0b0b0c/);
+  // 这条住在模块里，底色必须就是模块那支 #131316：亮一档暗一档都会读成外挂的一块板（同色 = 看不见这块板，
+  // 只在滚动时压住从它底下过去的字）。旧值 #0b0b0c 是当年 composer 那张卡下沿的合成色，那层画已经撤了。
+  expect(dock).toMatch(/background:\s*#131316/);
   // 又矮又窄时按矮处理：矮那一档必须写在窄那一档之后
   const shortAt = css.indexOf('@media (max-height: 720px)');
   expect(shortAt).toBeGreaterThan(css.indexOf('@media (max-width: 900px)'));
-  // 矮窗口这一档：展示图与等待台是同一格轮流占，两条必须同一个数。
-  // 1478x562 实测过旧写法的问题——hero 17vh(79) / stage max(154,19vh)(154) 差 75px，
-  // 点「生成」那一下整张输入卡往下坠一截，等待台反而把人晃了一下。
-  expect(css.slice(shortAt)).toMatch(/\.cm-hero\s*\{[^}]*max-height:\s*max\(154px, 19vh\)/);
-  expect(css.slice(shortAt)).toMatch(/\.cm-stage\s*\{[^}]*height:\s*max\(154px, 19vh\)/);
+  // 矮窗口这一档也只换那一个来源的值。1478x562 实测过旧写法的问题——
+  // hero 17vh(79) / stage max(154,19vh)(154) 差 75px，点「生成」那一下输入卡往下坠一截。
+  // 矮这一档只换竖排那个值：两栏那条特异性高一级、本来就不受它影响（它自己带 240px 的地板）
+  expect(css.slice(shortAt)).toMatch(/\.cm-body \{ --cm-hero-h: max\(154px, 19vh\); \}/);
+  expect(css.slice(shortAt)).not.toContain('.cm-body:not(.is-stacked)');
+  expect(css.slice(shortAt)).not.toMatch(/\.cm-hero\s*\{[^}]*max-height/);
 });
 
 it("窄窗口那一屏不许再撑 452px：面板放不下，两列上下叠、宽度回到 268 那一档", () => {
@@ -1431,16 +1532,16 @@ it('本地导入时就把后缀摘掉，并且不和已有那条重名', async (
   await vi.waitFor(() => expect(names).toEqual(['我的多图 (2)']));
 });
 
-it('胶囊定宽时长名字会被截断，全名必须另有落点：两处悬浮提示（顶栏那行字已撤）', async () => {
+it('胶囊定宽时长名字会被截断，全名必须另有落点：顶栏大字 + 两处悬浮提示', async () => {
   const long = { ...TPL, name: 'Qwen-image-2.1多图编辑.json' };
   routes({ ...baseRoutes(), '/api/clone/templates': { items: [long] } });
   const screen = await ready();
   const pill = screen.getByRole('button', { name: '工作流' }) as HTMLButtonElement;
-  // 胶囊宽度是定死的（.cm-fill），名字长在这儿只能截断——所以全名不许只活在胶囊里。顶栏那行字
-  // 撤了（2026-11-04 苏醒照图点名删除），剩下的落点是两处悬浮提示：胶囊这一颗（含「生成中」那句
-  // 前缀）+「切换工作流」清单里那一行，节点数与参数数也只在后者报，顶栏那份跟着那行字一起没了。
+  // 胶囊宽度是定死的（.cm-fill），名字长在这儿只能截断——所以全名不许只活在胶囊里。落点有三处
+  // （2026-11-10 顶栏那行大字照旧图放回来）：顶栏这一行 + 胶囊自己的悬浮提示 +「切换工作流」
+  // 清单里那一行，节点数与参数数只在后者报。
   expect(pill.getAttribute('title')).toBe('Qwen-image-2.1多图编辑');
-  expect(document.querySelector('.cm-title')).toBeNull();
+  expect(document.querySelector('.cm-title')?.textContent).toBe('Qwen-image-2.1多图编辑');
   await fireEvent.click(pill);
   const row = await screen.findByRole('menuitemradio', { name: /Qwen-image-2\.1多图编辑/ });
   expect(row.getAttribute('title')).toContain('Qwen-image-2.1多图编辑 · ');
@@ -2210,15 +2311,16 @@ it("三种出声方式底下那颗都写「闪寻音频」：与切换清单那�
   const screen = await ready({ image: AUDIO_CARD });
   const pill = () => screen.getByRole('button', { name: '工作流' });
   expect(pill().textContent?.trim()).toBe('闪寻音频');
-  expect(document.querySelector('.cm-title')).toBeNull();
-  // 具体是哪一条没丢：悬浮提示里报到，设置页里也各占一行
+  // 底部那颗报的是这一族的叫法，具体哪一条写在顶栏那行大字里（2026-11-10 放回来的那两行）
+  expect(document.querySelector('.cm-title')?.textContent).toBe('闪寻参考音色');
+  // 悬浮提示里也报到，设置页里也各占一行
   expect(pill().getAttribute('title')).toContain('闪寻参考音色');
 
   const group = await screen.findByRole('radiogroup', { name: '音频模式' });
   await fireEvent.click(group.querySelectorAll('button')[1]);
   await vi.waitFor(() => expect(pill().getAttribute('title')).toContain('音色描述'));
   expect(pill().textContent?.trim()).toBe('闪寻音频');
-  expect(document.querySelector('.cm-title')).toBeNull();
+  expect(document.querySelector('.cm-title')?.textContent).toBe('闪寻音色描述');
 });
 
 it("图片工作流不该被折名：底部那颗仍是这份工作流自己的名字，悬浮提示不多余一句", async () => {
@@ -2871,14 +2973,19 @@ it('换创作类型，云端那一屏跟着换族；这一族本机没配方时�
   expect(modelRows(screen)).not.toContain('Seedream');
 });
 
-it('某一族一条都没铺：类型菜单里先说「还没铺路」，点它也不把人切进一份空清单', async () => {
+it('某一族一条都没铺：行末那串数撤了但理由仍在，点它也不把人切进一份空清单', async () => {
   routes({ ...baseRoutes(), '/api/clone/templates': { items: [TPL] } });
   const screen = await ready();
   await fireEvent.click(screen.getByRole('button', { name: '创作类型' }));
   const video = await screen.findByRole('menuitemradio', { name: /视频生成/ });
-  expect(video.textContent).toContain('还没铺路');
-  expect(video.getAttribute('aria-checked')).toBe('false');
+  // 2026-11-10 苏醒照图圈掉行末那串「本机 N 份 / 云端 N 条」：一行只剩族名一个视觉单元，
+  // 三行读下来先是「选哪一族」，不再是三串数。
+  expect(video.textContent?.trim()).toBe('视频生成');
+  expect(video.querySelector('.cm-kind-count')).toBeNull();
+  // 数没消失，只是不再占版面：悬停这一行照样报「还没铺路」和出路
+  expect(video.getAttribute('title')).toContain('还没铺路');
   expect(video.getAttribute('title')).toContain('先加载一份这一族的工作流 JSON');
+  expect(video.getAttribute('aria-checked')).toBe('false');
   await fireEvent.click(video);
   await tick();
   // 没切走：挂着的还是图片那条，理由写在弹窗下面那句里
@@ -3036,18 +3143,17 @@ it('那一摞是后挂的压在前挂的上头，加载参考那颗压在全摞�
 
 /* ── 顶部那一格：生成中是等待台，跑完直接给新东西（2026-11-04 苏醒照图）────── */
 
-it('顶栏那两行字与图下那行文件名都撤了：信息各有落点，读屏仍报得出这是什么', async () => {
+it('顶栏那两行与图下那行文件名都在：小字说哪件事、大字说哪条工作流、图下说哪一份文件', async () => {
+  // 2026-11-10 苏醒照旧图：「改回类似之前的这种版式」——顶栏两行与展示图下面那行文件名放回来了。
   routes(baseRoutes());
   const screen = await ready();
-  expect(document.querySelector('.cm-kicker')).toBeNull();
-  expect(document.querySelector('.cm-title')).toBeNull();
-  expect(document.querySelector('.cm-hero-name')).toBeNull();
-  // 文件名不是藏起来：DOM 里再没出现过（图下那行是真删，不是 visibility）
-  expect(screen.container.textContent ?? '').not.toContain('source.png');
-  // 撤字不等于撤可访问名：dialog 与关闭那颗都还知道自己是什么
+  expect(document.querySelector('.cm-kicker')?.textContent).toBe('再次创作');
+  expect(document.querySelector('.cm-title')?.textContent).toBe('Qwen 多图编辑');
+  expect(document.querySelector('.cm-hero-name')?.textContent).toBe('source.png');
+  // 字放回来不顶掉可访问名：dialog 与关闭那颗都还知道自己是什么
   expect(screen.getByRole('dialog', { name: '再次创作' })).toBeTruthy();
   expect(screen.getByRole('button', { name: '关闭再次创作' })).toBeTruthy();
-  // 当前用哪份工作流没丢，还在底部那颗胶囊上
+  // 底部那颗胶囊照旧报同一份工作流（点它才是换一条）
   expect(screen.getByRole('button', { name: '工作流' }).textContent).toContain('Qwen 多图编辑');
 });
 
@@ -3153,20 +3259,37 @@ it('跑完时人若滚在下面，自动把展示那一格滚回视野；本来�
   expect(still).not.toHaveBeenCalled();
 });
 
+it('两栏还是竖列看面板自己的宽度：980 以下收进 is-stacked，量不到就不收', async () => {
+  // 窗口宽不等于中间那一列宽——侧栏折展、详情栏开关改的都是这一列，所以这道判断只能量面板。
+  const src = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  const line = src.match(/if \(box\.width\) stacked = box\.width < (\d+);/);
+  expect(line, "两栏那道判断不在量面板宽度的那个 $effect 里").toBeTruthy();
+  // 980 是从两栏都还够用反推的：右列定宽上限 524（底部那排三颗胶囊 + 生成那颗要 518）+ 缝 22 +
+  // 展示图那列至少 390 → 面板 980。1440x900（面板 792）实拍过踩这以下的样子：那颗「闪寻图片」被压成「闪…」。
+  expect(Number(line![1])).toBe(980);
+  // 量不到就别写：happy-dom 里 rect 全是 0，写一次就把整份单测摁成竖列
+  routes(baseRoutes());
+  const screen = await ready();
+  const body = screen.container.querySelector('.cm-body') as HTMLElement;
+  expect(body.classList.contains('is-stacked')).toBe(false);
+  cleanup();
+});
+
 it('展示图确实放大了，等待台的动效也有降级：CSS 三条钉住', () => {
   const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
-  // 46vh/480 是这一轮从 26vh/300 提上来的：让图当主角，靠的是这一格而不是把弹窗撑破
-  // （1440x900 实测四档，54vh 时弹窗自己开始滚，所以停在 46vh；注释里有量过的数）
-  expect(css).toMatch(/\.cm-hero \{[^}]*max-height: min\(46vh, 480px\)/);
-  // 等待台与展示图是同一格轮流占：宽窗口与窄窗口两档都必须和 cm-hero 同一个数，
-  // 否则「开始生成」那一下会把下面的输入卡往下坠。
-  expect(css).toMatch(/\.cm-stage \{[^}]*height: min\(46vh, 480px\)/);
+  // 这一格的高度只有一个来源：基类 46vh/480（竖排那一版量出来的），两栏那一档回到旧版那条 74vh。
+  // 展示图与等待台只许读它——同一格轮流占，各自写一个数就会在换状态时把输入卡顶来顶去。
+  expect(css).toMatch(/\.cm-body \{ --cm-hero-h: min\(46vh, 480px\)/);
+  expect(css).toMatch(/\.cm-body:not\(\.is-stacked\) \{ --cm-hero-h: min\(74vh, 1080px\); \}/);
+  expect(css).toMatch(/\.cm-hero \{[^}]*max-height: var\(--cm-hero-h\)/);
+  expect(css).toMatch(/\.cm-stage \{[^}]*height: var\(--cm-hero-h\)/);
+  // 窄窗口那一档只换竖排那个值：两栏那条特异性高一级，本来就不受它影响；而窄窗口本来也到不了
+  // 980 那道门槛（面板最多 vw-84），走的就是竖排这一档。
   const narrow = css.match(/@media \(max-width: 900px\) \{[\s\S]*?\n  \}/);
   expect(narrow).toBeTruthy();
-  const nHero = narrow![0].match(/\.cm-hero \{ max-height: (min\([^)]*\)); \}/);
-  const nStage = narrow![0].match(/\.cm-stage \{[^}]*height: (min\([^)]*\)); \}/);
-  expect(nHero && nStage ? nHero[1] : null).toBeTruthy();
-  expect(nHero![1]).toBe(nStage![1]);
+  expect(narrow![0]).toMatch(/\.cm-body \{ --cm-hero-h: min\([^)]*\); \}/);
+  // 那一档整个 media 里只许出现一次那一个来源，且只挂在竖排那条基类上
+  expect(narrow![0].match(/--cm-hero-h/g)?.length).toBe(1);
   // 台阶之间是缓动缝过去的，不是瞬间跳格
   expect(css).toMatch(/\.cm-stage-bar > span \{[^}]*transition: width 900ms/);
   // 关动效的人：台阶、那句话、秒表一条不少，呼吸/扫光/跳动/入场全停

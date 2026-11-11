@@ -500,25 +500,18 @@ it('弹窗里那两条 fixed 不许搬进画布：它们一旦成了 transform �
   expect(root.querySelector('.cm-dock')).toBeNull();
 });
 
-it('画布的高度沿用展示图那一档，三个断点必须和 .cm-hero 同一个数', () => {
+it('画布的高度只读弹窗那一个来源，自己不写数也不写断点', () => {
   const canvas = readFileSync('src/components/CloneCanvas.svelte', 'utf8');
   const modal = readFileSync('src/components/CloneModal.svelte', 'utf8');
-  const hero = (nth: number) => {
-    const re = /\.cm-hero\s*\{[^}]*?(?:max-)?height:\s*([^;]+);/g;
-    let m: RegExpExecArray | null = null;
-    for (let i = 0; i <= nth; i++) m = re.exec(modal);
-    return m?.[1]?.trim();
-  };
-  const stage = (nth: number) => {
-    const re = /\.cc-viewport\s*\{[\s\S]*?height:\s*([^;]+);/g;
-    let m: RegExpExecArray | null = null;
-    for (let i = 0; i <= nth; i++) m = re.exec(canvas);
-    return m?.[1]?.trim();
-  };
-  // .cm-hero 基类 → 窄窗口 → 矮窗口，画布照同一档走（同一格轮流占，差一档就把输入卡顶来顶去）
-  expect(stage(0)).toBe(hero(0));
-  expect(stage(1)).toBe(hero(1));
-  expect(stage(2)).toBe(hero(2));
+  // 画布读的是继承下来的 --cm-hero-h：弹窗改值它自动跟，窄窗口与矮窗口两档也因此不必自己写断点
+  expect(canvas).toMatch(/\.cc-viewport\s*\{[\s\S]*?height:\s*var\(--cm-hero-h/);
+  expect(canvas).not.toMatch(/\.cc-viewport\s*\{[\s\S]*?height:\s*(min|max|clamp)\(/);
+  // 兜底那个数必须是弹窗的基类值：万一这层落在没写变量的地方，也不能变成零高
+  expect(canvas).toMatch(/height:\s*var\(--cm-hero-h,\s*min\(46vh,\s*480px\)\)/);
+  // 写数的地方只有弹窗那一侧：基类 + 两栏 + 窄窗口 + 矮窗口，四处各一次
+  expect((modal.match(/--cm-hero-h:\s*[^;]+;/g) ?? []).length).toBe(4);
+  // 展示图与等待台都只是读它——同一格轮流占，谁抄一份数就会在换状态时把输入卡顶来顶去
+  expect((modal.match(/(?:max-)?height:\s*var\(--cm-hero-h\)/g) ?? []).length).toBe(2);
 });
 
 it('关动效的人画布是静止的：两层过渡都得撤干净', async () => {

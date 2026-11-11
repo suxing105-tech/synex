@@ -498,6 +498,15 @@
   const stageGhost = $derived(
     image && image.kind !== "audio" ? backendUrl(image.original_url || image.thumbnail_url || "") : "",
   );
+  /**
+   * 等待这一格的形状 = 将要出来的那一份的形状（2026-11-11 苏醒：「明明选了 16:9 的比例，
+   * 但是左边的展示却是 9:16 的展示」）。以前它写死成 min(100%, 620px) × --cm-hero-h，
+   * 1080 那一档就是一块竖板：选了横比例的人等的是竖的，跑完「唰」地变横。底图（被点的素材）
+   * 该被这一格裁成产出该有的样子，不该反过来由它定形状。
+   * 认不出比例（配方里没有认得出宽高的参数）就不加 class，仍旧走写死那一档——那是「不知道」，
+   * 不拿一个猜的形状冒充答案。
+   */
+  const stageAspect = $derived(ratioShape(batchAspectOption() ?? "").ratio);
 
   /**
    * 跑完这一格让给刚出来的那一份：多份产出时 heroOut 记着人在看第几份，
@@ -1666,12 +1675,19 @@
             <!-- 生成中：这一格不再摆一张静止的旧图。底图慢慢呼吸、一条光带慢慢扫过去，中间那张卡说清三件
                  事——在等哪一份、走到第几步、已经等了多久。条子按状态台阶往前走：后端不给整条工作流的剩余
                  时间，就不编一条会自己爬的假百分比。动效只说「它还活着」，不催人。 -->
-            <div class="cm-stage" data-stage={job.state}>
-              {#if stageGhost}
-                <img class="cm-stage-ghost" src={stageGhost} alt="" aria-hidden="true" draggable="false" />
-              {/if}
-              <span class="cm-stage-veil" aria-hidden="true"></span>
-              <span class="cm-stage-beam" aria-hidden="true"></span>
+            <div class="cm-stage" class:is-ratio={Boolean(stageAspect)}
+              style={stageAspect ? `--cm-stage-ar-w: ${stageAspect.w}; --cm-stage-ar-h: ${stageAspect.h};` : undefined}
+              data-stage={job.state}>
+              <!-- 呼吸的底图、红晕、扫光收进同一个帧，裁切只交给帧：状态卡不在帧里，
+                   窄窗口 + 竖比例时比例框比卡还窄（2026-11-11 探针量过：860x700 那一档 9:16 的框
+                   只有 87 宽，而卡 206），裁在框里就是「生成中」几个字被削掉一半。 -->
+              <span class="cm-stage-frame" aria-hidden="true">
+                {#if stageGhost}
+                  <img class="cm-stage-ghost" src={stageGhost} alt="" aria-hidden="true" draggable="false" />
+                {/if}
+                <span class="cm-stage-veil"></span>
+                <span class="cm-stage-beam"></span>
+              </span>
               <div class="cm-stage-card">
                 <span class="cm-stage-orb" aria-hidden="true"><i></i><i></i><i></i></span>
                 <p class="cm-stage-line" role="status">{stageLine}</p>
@@ -2429,12 +2445,30 @@
 
   /* ── 生成中这一格：等待台。三层叠——底图慢慢呼吸、一条光带斜着扫过去、中间那张卡报状态。
      2026-11-04 苏醒：「做一个友好的交互动效，减少用户的等待焦虑」。两条规矩：
-     ① 尺寸写死，不跟素材宽高比跳，换阶段也不重排——来回拉扯本身就是在制造焦虑；
+     ① 尺寸只认「这一批要出的比例」，不跟素材的宽高比跳，一次生成里也不随阶段重排——来回拉扯
+         本身就是在制造焦虑（比例那一档见下面 .cm-stage.is-ratio）；
      ② 节奏一律放慢（呼吸 7.5s、扫光 3.4s），动的是「它还活着」，不是催人。 */
   .cm-stage {
-    position: relative; width: min(100%, 620px); height: var(--cm-hero-h); overflow: hidden;
+    position: relative; width: min(100%, 620px); height: var(--cm-hero-h);
     display: flex; align-items: center; justify-content: center; border-radius: 16px; background: #0c0c0e;
     border: 1px solid rgb(255 255 255 / 6%);
+  }
+  /* 裁切在帧上，不在这一格上：底图（inset 负 6%）和扫光都探出框外，得有人裁住；状态卡不能跟着挨裁。
+     inset:0 落在边框内侧，圆角照抄父级（父级圆角是外沿的 16，这里等比更圆一点，只会多裁不会露角）。 */
+  .cm-stage-frame { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; }
+  /* 认得出比例时（2026-11-11 苏醒：「选了 16:9，左边的展示却是 9:16」）：这一格就是将要出来的
+     那份东西的形状。两条约束一条不落，量的是跑完那张展示图同一把尺——它是 max-width:100% +
+     max-height:--cm-hero-h 的 contain，这里用 aspect-ratio 复现同一个「塞进框里」：
+     width:100% 先吃满左列（flex 子项的百分比宽度对着确定宽度的容器，解析得出来），max-width 那条
+     把它压到「高的天花板 × 比例」以内，于是高 = 宽 ÷ 比例 必然 ≤ --cm-hero-h，所以不必再写一条
+     max-height：那会多出第三个读 --cm-hero-h 的地方（clone-canvas.test.ts 数着这个数）。
+     这一条里没有新的尺寸字面量，天花板仍旧只有 --cm-hero-h 一个来源。
+     为什么不把高钉死成 --cm-hero-h 再由 width:auto 推宽：窄列里宽比例会被 max-width 截成
+     竖板，正是要修的 bug；也不把百分比写进 height：宽度百分比坐在那里解析不出来，整条失效。 */
+  .cm-stage.is-ratio {
+    width: 100%; height: auto;
+    max-width: calc(var(--cm-hero-h) * var(--cm-stage-ar-w, 1) / var(--cm-stage-ar-h, 1));
+    aspect-ratio: var(--cm-stage-ar-w, 1) / var(--cm-stage-ar-h, 1);
   }
   .cm-stage-ghost { position: absolute; inset: -6%; width: 112%; height: 112%; object-fit: cover; opacity: .32; filter: blur(14px) saturate(105%); animation: cm-breathe 7.5s ease-in-out infinite; }
   .cm-stage-veil { position: absolute; inset: 0; background: radial-gradient(120% 90% at 50% 40%, rgb(242 78 78 / 10%), transparent 62%), linear-gradient(180deg, rgb(9 9 11 / 24%), rgb(9 9 11 / 74%)); }
@@ -2443,7 +2477,8 @@
   .cm-stage:hover .cm-stage-ghost { opacity: .44; }
   .cm-stage:hover .cm-stage-beam { animation-duration: 2.1s; }
   .cm-stage-card {
-    position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 9px;
+    /* flex: none —— 框比卡窄时不跟着被压窄：宁可探出框外，也别把台阶那排字挤断 */
+    position: relative; z-index: 2; flex: none; display: flex; flex-direction: column; align-items: center; gap: 9px;
     padding: 18px 24px; border-radius: 15px; text-align: center;
     background: rgb(12 12 14 / 62%); border: 1px solid rgb(255 255 255 / 8%);
     -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);

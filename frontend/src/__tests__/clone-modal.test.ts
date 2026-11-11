@@ -3290,6 +3290,12 @@ it('生成中那一格是等待台：台阶条、已等多久、虚化的底图�
   // 底图还是被点的这一份，虚化着当背景：纯装饰，读屏不该念它
   const ghost = stage.querySelector('img.cm-stage-ghost') as HTMLImageElement;
   expect(ghost.getAttribute('aria-hidden')).toBe('true');
+  // 会探出框外的三层（底图 inset 负 6%、扫光）收进帧里，裁切在帧上（2026-11-11）；
+  // 状态卡不坐进帧里——矮窗 + 竖比例时比例框比卡还窄，跟着裁就把「生成中」削掉一半
+  const frame = stage.querySelector('.cm-stage-frame') as HTMLElement;
+  expect(frame.querySelector('img.cm-stage-ghost')).toBeTruthy();
+  expect(frame.querySelector('.cm-stage-beam')).toBeTruthy();
+  expect(frame.querySelector('.cm-stage-card')).toBeNull();
   expect(ghost.getAttribute('src')).toContain('/api/images/7/file');
   // 同一时间这一格只有一件事：等待台在，就不该同时摆着「刚出的新产出」
   expect(screen.container.querySelectorAll('.cm-stage')).toHaveLength(1);
@@ -3298,6 +3304,56 @@ it('生成中那一格是等待台：台阶条、已等多久、虚化的底图�
   // 那一份从树上摘掉，旧图会留在 .cm-left 里。真 Chrome 里量过三种写法（摊平、包一层元素、
   // 原地嵌套），换分支都是干净的（outputs/hero-stage-v1/probe-leak.mjs）——在这里断言「旧图必须
   // 消失」等于把测试环境的 bug 写成产品的规格，改错的是产品还是测试从此就分不清了。
+});
+
+it('生成中那一格跟着所选比例出形状：16:9 不等成竖板，认不出比例才走写死那一档', async () => {
+  // 2026-11-11 苏醒：「明明我选了 16:9 的比例，但是左边的展示却是 9:16 的展示，明显不合理」。
+  // 等待台以前写死 min(100%, 620px) × --cm-hero-h，1080 那一档就是一块竖板——跟选了什么都没关系。
+  const job = {
+    ...EMPTY_CLONE_JOB, active: true, job_id: 'j1', state: 'running', running: true,
+    template_id: 1, image_ids: [], message: '模型正在出图', elapsed: 3,
+  };
+  routes({ ...baseRoutes(), '/api/clone/jobs/current': job });
+  const screen = await ready();
+  const stage = () => screen.container.querySelector('.cm-stage') as HTMLElement;
+  const arOf = (el: HTMLElement) => {
+    const style = el.getAttribute('style') ?? '';
+    return [/--cm-stage-ar-w: (\d+)/.exec(style)?.[1], /--cm-stage-ar-h: (\d+)/.exec(style)?.[1]];
+  };
+  // 默认那颗是 1:1：这一格就该是方的。既不跟着被点的素材（800×600）走，也不再是那块写死的竖板
+  expect(stage().className).toContain('is-ratio');
+  expect(arOf(stage())).toEqual(['1', '1']);
+  // 换到 16:9：不用等跑完，形状当场变横（提交时交出去的那颗比例就是这一格的形状，同一个来源）
+  await fireEvent.click(screen.getByRole('button', { name: '画面参数' }));
+  await fireEvent.click(screen.getByRole('button', { name: '16:9' }));
+  await tick();
+  expect(arOf(stage())).toEqual(['16', '9']);
+
+  // 配方里没有认得出宽高的参数（只剩百万像素那种数字）：不加 class，仍旧走写死那一档。
+  // 那是「不知道要出什么形状」，不拿一个猜的形状冒充答案。
+  cleanup();
+  const blind = { ...TPL, slots: TPL.slots.filter((slot) => slot.input !== 'aspect_ratio') };
+  routes({ ...baseRoutes(), '/api/clone/templates': { items: [blind] }, '/api/clone/jobs/current': job });
+  const bare = await ready();
+  const bareStage = bare.container.querySelector('.cm-stage') as HTMLElement;
+  expect(bareStage).toBeTruthy();
+  expect(bareStage.className).not.toContain('is-ratio');
+  expect(bareStage.getAttribute('style')).toBeFalsy();
+
+  // 样式那一头：天花板仍只有 --cm-hero-h 一个来源，这条不新增任何尺寸字面量，
+  // 也不多写一条 max-height: var(--cm-hero-h)——读这个变量的地方有测试在数（clone-canvas.test.ts）
+  const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  const fit = /\.cm-stage\.is-ratio \{([^}]*)\}/.exec(css)?.[1] ?? '';
+  expect(fit).toMatch(/width: 100%; height: auto;/);
+  expect(fit).toMatch(/max-width: calc\(var\(--cm-hero-h\) \* var\(--cm-stage-ar-w, 1\) \/ var\(--cm-stage-ar-h, 1\)\)/);
+  expect(fit).toMatch(/aspect-ratio: var\(--cm-stage-ar-w, 1\) \/ var\(--cm-stage-ar-h, 1\);/);
+  expect(fit).not.toMatch(/max-height/);
+  expect(fit).not.toMatch(/\d+(px|vh|vw|rem)\b/);
+  // 裁切只许在帧上：格自己 overflow:hidden 会把探出来的状态卡削掉一半（矮窗 + 竖比例实测过）
+  const stageRule = /\.cm-stage \{([^}]*)\}/.exec(css)?.[1] ?? '';
+  expect(stageRule).not.toMatch(/overflow:/);
+  expect(css).toMatch(/\.cm-stage-frame \{ position: absolute; inset: 0; overflow: hidden; border-radius: inherit; \}/);
+  expect(css).toMatch(/\.cm-stage-card \{[^}]*flex: none/);
 });
 
 it('一次出两份时顶上那一格翻着看：1 / 2、看下一份、再点绕回第一份', async () => {

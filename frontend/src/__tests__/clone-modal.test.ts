@@ -1077,6 +1077,26 @@ it("窄窗口那一屏不许再撑 452px：面板放不下，两列上下叠、�
   // 宽屏那两列不受影响：452px 那条还在，只是被 media query 覆盖
   expect(css).toMatch(/\.cm-pop-wf\.is-api\s*\{[^}]*width:\s*min\(452px/);
 });
+it('云端那一屏两列同一行：标签行左右各一格，服务商那颗与第一行模型同一条中线', () => {
+  // 1920x1080 实测过没对齐的样子：那句「服务商」只把左列顶下去 18.75（15.75 字高 + 2 上边距 + 3 行距），
+  // 右列的模型清单还贴在弹层顶上，两颗的中线差 23.1px。修法是标签行在网格里左右各占一格（右格空的），
+  // 两列的清单一起落到第二行；行高由标签自己撑，不写死数字。这里钉的是结构，浏览器量的数值见提交说明。
+  const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  const head = css.slice(css.indexOf('<div class="cm-api">'), css.indexOf('<div class="cm-api-side">'));
+  expect(head).toMatch(/<p class="cm-api-cap">服务商<\/p>\s*<span class="cm-api-cap cm-api-cap-void" aria-hidden="true"><\/span>/);
+  // 标签与清单之间还是那 3px（左列自己的 gap 从此只管服务商与服务商之间），列距 10 不变
+  expect(css).toMatch(/\.cm-api\s*\{[^}]*gap: 3px 10px/);
+  // 标签的左内边距 = 服务商行图标的左内边距（原来 6/8 差 2px，墨迹左沿 731 对不上 733）
+  expect(css).toMatch(/\.cm-api-cap\s*\{[^}]*padding: 0 8px/);
+  // 同一行高才有同一条中线：那颗走 --ctl-md 32（26 的图标 + 上下各 3），模型行走 .cm-wf 那套 8px 之外自己收 7
+  expect(css).toMatch(/\.cm-api-vendor\s*\{[^}]*min-height: var\(--ctl-md\)[^}]*padding: 3px 8px/);
+  expect(css).toMatch(/\.cm-wf\.cm-api-model\s*\{[^}]*align-items: flex-start[^}]*padding-top: 7px[^}]*padding-bottom: 7px/);
+  // 裸 .cm-api-model 那条会被后面的 .cm-wf 整个盖掉（同特异性、它在后），别再写回去
+  expect(css).not.toMatch(/^\s*\.cm-api-model\s*\{/m);
+  // 叠成一列时没有右列要对齐，空的那一格必须撤掉
+  const at = css.indexOf('@media (max-width: 900px)');
+  expect(css.slice(at)).toMatch(/\.cm-api-cap-void\s*\{\s*display: none;?\s*\}/);
+});
 
 it('静止时先占好「取消」那一格：按下生成，左边那一排不重排', async () => {
   routes(baseRoutes());

@@ -2080,8 +2080,14 @@
                              切完每列只剩一行，等于多点一次看同样的东西。
                              行名用的是模型名，口径在 clone.ts 的 menuRowLabel——与底部那颗胶囊、弹窗标题同一个来源。 -->
                         <div class="cm-api">
+                          <!-- 标签行自己占网格第一行，左右各一格，右边那格是空的（窄窗口叠成一列时撤掉，见 @media）。
+                               为什么要空这一格：这句标签只有左列有，它只把左列往下顶 18.75（15.75 字高 + 2 上边距 + 3 行距），
+                               右列的模型清单还贴在弹层顶上——1920x1080 实测「Running…」那颗的中线与第一行模型的中线差
+                               23.1px，一眼就是没对齐。空一格把两列的清单放到同一条线上开始，标签行多高由这句标签自己撑，
+                               不写死数字，哪天字号改了也不会又错开。 -->
+                          <p class="cm-api-cap">服务商</p>
+                          <span class="cm-api-cap cm-api-cap-void" aria-hidden="true"></span>
                           <div class="cm-api-side">
-                            <p class="cm-api-cap">服务商</p>
                             {#each apiGroups as group (group.key)}
                               <button class="cm-api-vendor" role="menuitem" type="button"
                                 aria-current={group.key === apiActive.key} title={`${group.label} · ${group.blurb}`}
@@ -2823,12 +2829,16 @@
   .cm-pop-list { display: flex; flex-direction: column; gap: 3px; }
   /* 左列 140：装「图标 + 服务商名 + 箭头」够了（名字过长自己截断，全名在悬浮提示里）。
      原来是 172，多出来的宽度全给了右边那列的模型名（2026-11-11 苏醒：右边显示具体模型名称即可）。 */
-  .cm-api { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 10px; min-height: 0; }
+  /* 行距 3 = 原来那句标签与服务商行之间的那 3px（左列自己的 gap 从现在起只管服务商与服务商之间），列距 10 不变。 */
+  .cm-api { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 3px 10px; min-height: 0; }
   .cm-api-side { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding-right: 10px; border-right: 1px solid rgb(255 255 255 / 8%); }
-  .cm-api-cap { margin: 2px 0 0; padding: 0 6px; font-size: 10.5px; color: #7f7f87; }
+  /* 左内边距 8 与服务商行那颗图标的左内边距同一个数（原来 6：实测标签墨迹左沿 731、图标左沿 733，差 2px）。 */
+  .cm-api-cap { margin: 2px 0 0; padding: 0 8px; font-size: 10.5px; color: #7f7f87; }
   /* 服务商那一行：图标方块 + 名字 + 右箭头（小字两行 2026-11-11 撤，见模板那条注释）。
      选中态走 aria-current，不走 aria-pressed——全局 .fill-interactions 会把 pressed 的按钮整颗刷成品牌红底黑字（0.2.34 那轮在设置页栽过一次）。 */
-  .cm-api-vendor { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 8px; text-align: left; color: #d4d4d8; background: transparent; border-radius: 10px; cursor: pointer; }
+  /* 行高走 --ctl-md 32：26 的图标方块 + 上下各 3 = 32，右边那一行模型也是 32 那一档（见下面 .cm-wf.cm-api-model），
+     同一行高才有同一条中线。原来是 7+26+7=40，比模型行高出 6，再叠上标签行顶下来的 18.75，两列怎么都对不齐。 */
+  .cm-api-vendor { display: flex; align-items: center; gap: 8px; width: 100%; min-height: var(--ctl-md); padding: 3px 8px; text-align: left; color: #d4d4d8; background: transparent; border-radius: 10px; cursor: pointer; }
   .cm-api-vendor:hover, .cm-api-vendor[aria-current="true"] { color: #fafafa; background: rgb(255 255 255 / 7%); }
   .cm-api-vendor-mark { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; color: #93c5fd; background: rgb(59 130 246 / 14%); }
   .cm-api-vendor-name { flex: 1; min-width: 0; font-size: 12.5px; }
@@ -2837,7 +2847,10 @@
   .cm-api-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; overflow: auto; }
   /* 模型名允许折两行：这一屏要的就是「用的哪个模型」，截成「即梦 Seedream v…」等于白改。
      两行是上限——再长就是后端那条 label 该收一收了，全名一直在悬浮提示里。 */
-  .cm-api-model { align-items: flex-start; padding-top: 7px; padding-bottom: 7px; }
+  /* 这两条以前写在小写的 .cm-wf（同特异性、声明在后面）之前，被它整个盖掉了：实测 padding 还是 8px、align-items
+     还是 center，单行模型行高 34.8 而不是这里要的 32.8。加上 .cm-wf 一起选，特异性高一级才真落得下来——
+     徽章那颗也才真按这条钉在第一行，而不是跟着两行名字上下居中。 */
+  .cm-wf.cm-api-model { align-items: flex-start; padding-top: 7px; padding-bottom: 7px; }
   .cm-api-model .cm-wf-kind { margin-top: 1px; }
   .cm-api-model .cm-wf-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; overflow: hidden; line-height: 1.3; }
   .cm-api-model .cm-wf-tag { margin-top: 1px; }
@@ -3021,6 +3034,8 @@
     .cm-pop-wf.is-api { left: 0; right: auto; width: min(268px, 78vw); }
     .cm-api { grid-template-columns: minmax(0, 1fr); gap: 6px; }
     .cm-api-side { padding-right: 0; padding-bottom: 5px; border-right: 0; border-bottom: 1px solid rgb(255 255 255 / 8%); }
+    /* 叠成一列就没有右列要对齐了，那格空的留着是在标签和服务商之间凭空多一行。 */
+    .cm-api-cap-void { display: none; }
   }
 
   /* 窗口一矮（笔记本、半屏）就给预览图砍一档：素材在 composer 里还有小图可认，顶部那张大图只是参照。

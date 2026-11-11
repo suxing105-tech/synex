@@ -25,6 +25,9 @@ export interface ImageSummary {
   tags: string[];
   model: string | null;
   seed: number | null;
+  /** 提示词开头那一句，后端洗好给（见 backend/app/prompt_head.py）。
+   *  卡片第一行显示它，空串就退回文件名；整段提示词仍然只在详情接口里出现。 */
+  prompt_snippet?: string;
   new?: boolean;
   has_workflow?: boolean;
 }

@@ -12,6 +12,7 @@ from pathlib import Path
 from .db import get_pool, transaction
 from . import media_tools
 from .parser import is_playable_audio, is_playable_video, parse_video_metadata
+from .prompt_head import HEAD_WINDOW, prompt_head
 from .texts import serialized
 
 logger = logging.getLogger(__name__)
@@ -614,12 +615,15 @@ def image_detail(image_id: int) -> dict | None:
 # 列表/搜索用的列清单。**不要退回 SELECT images.***：ComfyUI 的 workflow JSON
 # 单条就有 25–100KB（视频更是整份画布），一页 200 行白白读十几 MB，
 # 而列表只需要知道"有没有工作流"。用 length() 派生列代替。
+# 卡片页脚要显示「这条的提示词开头」，所以带一段截断的提示词（见 prompt_head 模块）。
+# 窗口宽度与 prompt_head 用的是同一个常量，别在这里另写一个数。
 _SUMMARY_SELECT = (
     "images.id, images.path, images.filename, images.kind, images.width, "
     "images.height, images.mtime, images.size_bytes, images.duration_seconds, "
     "images.video_codec, images.audio_codec, images.fps, "
     "images.model, images.seed, images.thumb_path, images.cover_path, "
     "images.format, images.indexed_at, "
+    f"substr(COALESCE(images.positive_prompt, ''), 1, {HEAD_WINDOW}) AS prompt_head, "
     "length(COALESCE(images.workflow, '')) > 0 AS has_workflow"
 )
 
@@ -663,6 +667,11 @@ def _row_to_summary(row: sqlite3.Row) -> dict:
         "model": row["model"],
         "seed": row["seed"],
         "new": False,
+        # 列表口径只带截断窗口（见 _SUMMARY_SELECT），单条口径走 SELECT * 回落到整列；
+        # 两条路都在 prompt_head 里收成同一句，前端只管显示，不再自己正则一遍。
+        "prompt_snippet": prompt_head(
+            row["prompt_head"] if "prompt_head" in row.keys() else row["positive_prompt"]
+        ),
         # 列表查询只带 length(workflow)>0 这个派生列（见 _SUMMARY_SELECT）；
         # 单条查询走 SELECT *，这里回落到整列。
         "has_workflow": (

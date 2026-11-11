@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render } from "@testing-library/svelte";
 import { tick } from "svelte";
 import Feed from "../components/Feed.svelte";
-import { feedItems, feedLoading } from "../lib/stores";
+import { feedItems, feedLoading, targetColumns } from "../lib/stores";
 import { imagesApi } from "../lib/api";
 import type { MediaFeedItem } from "../lib/types";
 
@@ -38,8 +38,9 @@ function mediaOf(img: Element): Element | null {
 }
 
 beforeEach(() => {
-  // 900 宽 / 5 列，列宽 172，落在两行页脚档，所以页脚一定会渲染出来
+  // 900 宽 / 3 列，列宽 293：两行页脚档，且宽到尺寸也该露面（窄卡会先撤尺寸，见 footerMetaBits）
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(900);
+  targetColumns.set(3);
   feedLoading.set(false);
 });
 
@@ -64,7 +65,7 @@ describe("缩略图淡入", () => {
     expect(mediaOf(img)?.querySelector(".media-card-skeleton")).not.toBeNull();
     // 页脚不依赖图片，所以加载期卡片高度就是最终高度，图到了不跳版
     expect(container.querySelector(".media-card-name")?.textContent).toBe("山雾.jpg");
-    expect(container.querySelector(".media-card-meta")?.textContent).toContain("1600×900");
+    expect(container.querySelector(".media-card-bits")?.textContent).toContain("1600×900");
   });
 
   it("onload 之后淡入并收掉扫光", async () => {

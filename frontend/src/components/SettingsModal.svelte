@@ -11,6 +11,7 @@
   import CloneTemplates from "./CloneTemplates.svelte";
   import UpdatePanel from "./UpdatePanel.svelte";
   import SettingsRow from "./SettingsRow.svelte";
+  import { cardTitleMode } from "../lib/card-title";
   import wechatContact from "../assets/about/wechat-contact.png";
   import rewardQr from "../assets/about/reward-qr.png";
   import { pushToast } from "../lib/toast";
@@ -27,7 +28,7 @@
   interface NavItem { id: string; label: string; keywords: string; }
   const navGroups: { label: string; items: NavItem[] }[] = [
     { label: "素材库", items: [
-      { id: "general", label: "通用", keywords: "导入 目录 监听 watch live 自动 收录 文件夹 图片 视频 音频 文本" },
+      { id: "general", label: "通用", keywords: "导入 目录 监听 watch live 自动 收录 文件夹 图片 视频 音频 文本 卡片 提示词 文件名 瀑布流 页脚" },
       { id: "archived", label: "已归档目录", keywords: "归档 恢复 收起 隐藏 来源目录 移除" },
     ] },
     { label: "操作", items: [
@@ -413,6 +414,18 @@
                     {#if configError}<button class="setting-button" onclick={loadConfig}>重新加载</button>{/if}
                   </div>
                 {/if}
+              </div>
+
+              <h4 class="settings-group-label">卡片</h4>
+              <div class="settings-card">
+                <SettingsRow title="第一行显示" description="默认显示提示词开头那一句：挑图要读的是「这张是什么」，文件名多半是 AnimateDiff_00001.png 这种机器名。切回文件名能一眼分清 .png 和 .psd；文件名没走，鼠标停在卡片上就在。">
+                  {#snippet control()}
+                    <div class="settings-seg" role="group" aria-label="卡片第一行显示内容">
+                      <button type="button" aria-pressed={$cardTitleMode === "prompt"} onclick={() => cardTitleMode.set("prompt")}>提示词</button>
+                      <button type="button" aria-pressed={$cardTitleMode === "filename"} onclick={() => cardTitleMode.set("filename")}>文件名</button>
+                    </div>
+                  {/snippet}
+                </SettingsRow>
               </div>
             </section>
           {/if}

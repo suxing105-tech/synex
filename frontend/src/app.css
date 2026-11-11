@@ -330,8 +330,12 @@ body,
   outline: none;
 }
 
+/* 页脚第二行 = 模型徽标 + 元信息。整行不折行：放不下让徽标自己缩（见下），
+   尺寸/时长/时间都是数字，切一半就没法读了。 */
 .media-card-meta {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 5px;
   min-width: 0;
   font-size: 11px;
   line-height: 1.2;
@@ -339,7 +343,30 @@ body,
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
+}
+
+.media-card-bits {
+  flex: none;
+}
+
+/* 模型徽标：「这张是哪个模型出的」是工作台视图第二行的主角，所以给它一块比页脚亮一档的
+   底（--raise-2），不新造 hex。flex 0 1 auto + min-width: 0 是这行的降级梯子：
+   整行挤不下时只有徽标会被切成「Qwen-im…」，数字段一个都不许切。 */
+.media-card-model {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: calc(var(--r-1) - 2px);
+  background: var(--raise-2);
+  color: var(--text-2);
+  font-size: var(--fs-2xs);
+  line-height: 1;
+  overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* NEW 标记：新素材在页脚名字前点一个红点，不再用满屏呼吸动画抢注意力 */
@@ -687,6 +714,29 @@ body,
 }
 
 /* 开关：语义还是 checkbox，只是换成胶囊外观，键盘焦点仍然看得见。 */
+/* 分段控件：一件只有两个去处的决定用一颗（比 radio 省地方，也比两颗散按钮更像一件事）。
+   交互态一律交给 .fill-interactions（只换底色，边框任何状态都不变色），这里只定形状。 */
+.settings-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-1);
+  background: var(--ink-1);
+}
+
+.settings-seg button {
+  height: calc(var(--ctl-sm) - 6px);
+  padding: 0 10px;
+  border: 0;
+  border-radius: calc(var(--r-1) - 2px);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
 .settings-switch {
   position: relative;
   display: inline-flex;

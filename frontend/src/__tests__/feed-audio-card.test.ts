@@ -98,7 +98,8 @@ describe("音频卡", () => {
     const { container } = renderFeed();
     await tick();
     expect(container.querySelector(".media-duration")).toBeNull();
-    expect(container.querySelector(".media-card-meta")?.textContent).toBe("0:42");
+    // 第二行：片长打头，后面跟时间（口径见 footerMetaBits）
+    expect(container.querySelector(".media-card-bits")?.textContent).toBe("0:42 · 23/11/15");
   });
 
   it("悬停不长播放角标：整张卡就是播放控件，右下角只有「再次创作」", async () => {
@@ -187,7 +188,7 @@ describe("音频卡", () => {
     // 参考图那个走带光点：挂在填充条右端，跟着 width 一起走
     expect(container.querySelector(".audio-progress .audio-progress-knob")).toBeTruthy();
     // 进度只由波形下面的 .audio-progress 表达；页脚是「这是什么文件」，不跟着走表
-    expect(container.querySelector(".media-card-meta")?.textContent).toBe("0:42");
+    expect(container.querySelector(".media-card-bits")?.textContent).toBe("0:42 · 23/11/15");
   });
 
   it("进度超过已知时长也不会溢出卡片", async () => {
@@ -262,7 +263,10 @@ describe("音频卡", () => {
     const { container } = renderFeed();
     await tick();
     expect(container.querySelector(".media-duration")).toBeNull();
-    expect(container.querySelector(".media-card-meta")?.textContent).toBe("");
+    // 时长取不到就整段撤掉，只剩时间；不许留下「· 23/11/15」这种被掏空的接缝
+    const bits = container.querySelector(".media-card-bits")?.textContent;
+    expect(bits).toBe("23/11/15");
+    expect(bits).not.toContain("·");
   });
 
   it("图片卡的缺失检测逻辑不受影响：图片 404 仍然会查一次存在性", async () => {

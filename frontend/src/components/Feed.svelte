@@ -9,12 +9,12 @@
   import FeedSkeleton from "./FeedSkeleton.svelte";
   import TypeChips from "./TypeChips.svelte";
   import { copyOriginalImage } from "../lib/image-clipboard";
-  import { basenameOnly, footerHeightFor, footerMetaText, footerTierFor, isAcceptedMediaFile, THUMB_GAP, isPsdFilename, mediaKindOfFilename, thumbnailAspectRatio, thumbnailHeightToWidthRatio, thumbnailObjectFit } from "../lib/media-format";
-  import { formatSize } from "../lib/ws";
+  import { footerHeightFor, footerMetaBits, footerTierFor, isAcceptedMediaFile, THUMB_GAP, isPsdFilename, mediaKindOfFilename, thumbnailAspectRatio, thumbnailHeightToWidthRatio, thumbnailObjectFit } from "../lib/media-format";
   import { mediaSummary, selectionSummary } from "../lib/counts";
   import { isTextItem, itemUid, kindsIn } from "../lib/items";
   import { matchesAction, shortcutBlocked } from "../lib/shortcut-settings";
   import { backendUrl } from "../lib/backend-url";
+  import { cardTitleMode, footerTitleFor } from "../lib/card-title";
   import {
     removeImageFromFeed, feedItems, feedTotal, feedLoading, feedLoadingMore, feedCounts,
     refreshFeed, refreshStats, loadMoreFeed, setFeedScrollBridge,
@@ -529,12 +529,17 @@ import { hoverPlay } from "../lib/hover-play";
     void checkMissing(it.id, image);
   }
 
-  /** 页脚第二行：尺寸 · 大小 · 时长。size_bytes 可能是旧数据里的 undefined，先挡掉。 */
-  function metaFor(it: MediaFeedItem): string {
-    const size = typeof it.size_bytes === "number" && Number.isFinite(it.size_bytes)
-      ? formatSize(it.size_bytes)
-      : null;
-    return footerMetaText({ width: it.width, height: it.height, sizeText: size, durationSeconds: it.duration_seconds });
+  /** 页脚第二行：模型徽标 + 尺寸/时长 + 时间。尺寸在窄卡上不露面，梯子见 footerMetaBits。 */
+  function metaFor(it: MediaFeedItem): { model: string | null; bits: string[] } {
+    return footerMetaBits({
+      kind: it.kind,
+      width: it.width,
+      height: it.height,
+      durationSeconds: it.duration_seconds,
+      model: it.model,
+      mtime: it.mtime,
+      columnWidth,
+    });
   }
 
   /** 图区占位：图到了、或已确定出图失败，就不再铺扫光。 */
@@ -1263,11 +1268,15 @@ import { hoverPlay } from "../lib/hover-play";
                           onkeydown={(e) => { e.stopPropagation(); if (e.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); void saveRename(it); } else if (e.key === 'Escape') { e.preventDefault(); renamingId = null; } }}
                           onblur={() => saveRename(it)} />
                       {:else}
-                        {basenameOnly(it.filename)}
+                        {footerTitleFor(it, $cardTitleMode)}
                       {/if}
                     </span>
                     {#if footerTier === 2}
-                      <span class="media-card-meta">{metaFor(it)}</span>
+                      {@const meta = metaFor(it)}
+                      <span class="media-card-meta">
+                        {#if meta.model}<span class="media-card-model" title={it.model ?? ""}>{meta.model}</span>{/if}
+                        {#if meta.bits.length}<span class="media-card-bits">{meta.bits.join(" · ")}</span>{/if}
+                      </span>
                     {/if}
                   </div>
                   {#if it.kind === "image" || it.kind === "video" || it.kind === "audio"}

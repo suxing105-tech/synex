@@ -205,3 +205,24 @@ def test_folder_move_order_swaps(tmp_data_dir):
     rows = conn.execute("SELECT id, \"order\" FROM folders ORDER BY \"order\"").fetchall()
     assert rows[0]["id"] == b["id"]
     assert rows[1]["id"] == a["id"]
+
+def test_feed_带提示词短句但不带整段提示词(seeded_db):
+    """卡片页脚那句「提示词开头」跟着列表走，整段正文仍然只在详情接口里。
+
+    整段提示词单条就几 KB，一页 200 条就是几百 KB 白跑；而且前端在列表渲染里
+    正则几百条正是 AGENTS.md §7.4 禁止的同步重活，所以短句在查询侧截、在读取侧洗。
+    """
+    items, _ = repository.feed(limit=10)
+    by_name = {it["filename"]: it for it in items}
+    assert by_name["a.png"]["prompt_snippet"] == "red cat"
+    assert by_name["b.png"]["prompt_snippet"] == "blue sky"
+    # 没提示词的那两张回空串（不是 None）：前端据此退回文件名，不必每处判空
+    assert by_name["d.png"]["prompt_snippet"] == ""
+    assert by_name["e.png"]["prompt_snippet"] == ""
+    # 列表口径不许顺手把整列提示词带出来
+    assert "positive_prompt" not in by_name["a.png"]
+    # 详情口径给的是同一句话：两处用同一个函数，卡片和详情不会各说各话
+    detail = repository.image_detail(by_name["a.png"]["id"])
+    assert detail["prompt_snippet"] == "red cat"
+    assert detail["positive_prompt"]
+

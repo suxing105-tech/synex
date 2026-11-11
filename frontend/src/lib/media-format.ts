@@ -67,9 +67,9 @@ export function splitIntoColumns<T>(
   return buckets;
 }
 
-/** 两行页脚（文件名 + 元信息）所需的最小卡片宽 */
+/** 两行页脚（第一行标题 + 第二行元信息）所需的最小卡片宽 */
 export const FOOTER_TIER_TWO_LINE_MIN_WIDTH = 170;
-/** 单行页脚（只有文件名）所需的最小卡片宽 */
+/** 单行页脚（只有第一行标题）所需的最小卡片宽 */
 export const FOOTER_TIER_ONE_LINE_MIN_WIDTH = 120;
 /** `--2l` 页脚的实测高度（px），与 app.css 的 .media-card-footer--2l 对齐 */
 export const FOOTER_HEIGHT_TWO_LINES = 44;
@@ -81,7 +81,7 @@ export const THUMB_GAP = 10;
 
 export type FooterTier = 0 | 1 | 2;
 
-/** 卡片能放几行页脚：>=170 两行；120-169 只放文件名；<120 整条不渲染。 */
+/** 卡片能放几行页脚：>=170 两行；120-169 只放第一行；<120 整条不渲染。 */
 export function footerTierFor(columnWidth: number): FooterTier {
   if (!Number.isFinite(columnWidth) || columnWidth < FOOTER_TIER_ONE_LINE_MIN_WIDTH) return 0;
   if (columnWidth >= FOOTER_TIER_TWO_LINE_MIN_WIDTH) return 2;
@@ -105,22 +105,108 @@ export function basenameOnly(filename: string): string {
 }
 
 /**
- * 页脚第二行：`1920×1080 · 5.5MB · 0:12`。
- * 尺寸分隔符用 `×`，和 Lightbox 的读数同一口径；缺哪个字段就整段省略，
- * 不留空的分隔符。sizeText 由调用方用 ws.ts 的 formatSize 先算好。
+ * 模型家族徽标：`Krea2\krea2_turbo_bf16.safetensors` → `Krea2`，
+ * `wan2.1-i2v-14b-480p-Q8_0` → `wan2.1`。
+ *
+ * 为什么要缩写：本机 400 条素材实际只有 12 种模型，但 model 存的是整条文件名，
+ * 原样摆到 200px 宽的卡片上，第二行会被它一个字占满。规则只有两条，都不发明新名字：
+ * 带目录的（ComfyUI models 下的子目录）取最后一个目录段——那是用户自己起的家族名；
+ * 裸文件名的取最靠前的那个词，下划线切和连字符切都试一遍取更短的，
+ * 于是 `minimax_h3_hybrid_…` → `minimax`、`wan2.1-i2v-…` → `wan2.1`。
+ * 代价要知道：同一个模型两种存法（`MinimaxH3\x.safetensors` 和裸的 `minimax_h3_…`）
+ * 会显示成两个徽标。那是素材库自己的分组差异，宁可原样反映，也不替用户编一张映射表。
  */
-export function footerMetaText(parts: {
+const MODEL_FILE_EXT = /\.(safetensors|ckpt|pt|pth|bin|gguf|ggml|onnx|engine)$/i;
+
+export function modelFamilyLabel(model: string | null | undefined): string | null {
+  const raw = (model ?? "").trim();
+  if (!raw) return null;
+  const segments = raw.split(/[\\/]+/).filter(Boolean);
+  if (!segments.length) return null;
+  let family: string;
+  if (segments.length > 1) {
+    // 最后一个目录段：Krea2\file.safetensors → Krea2；绝对路径也不会退化成盘符
+    family = segments[segments.length - 2] || segments[0];
+  } else {
+    const base = segments[0].replace(MODEL_FILE_EXT, "");
+    const cuts = [base.split("_")[0], base.split("-")[0]].filter((c) => (c ?? "").length >= 3);
+    family = cuts.length ? cuts.reduce((a, b) => (b.length < a.length ? b : a)) : base;
+  }
+  family = family.trim();
+  if (!family) return null;
+  return family.length > 24 ? family.slice(0, 24) + "…" : family;
+}
+
+/**
+ * 页脚第二行末尾那个时间：越近的事越具体，越久的事越短。
+ * 刚做的一分钟一停、昨天就两个字、上个月只给月日，跨年才补上年份——
+ * 200px 的卡片给不起「2026年11月9日 14:20」这种整串。
+ */
+export function footerTimeLabel(mtime: number | null | undefined, now: number = Date.now() / 1000): string {
+  if (typeof mtime !== "number" || !Number.isFinite(mtime) || mtime <= 0) return "";
+  if (typeof now !== "number" || !Number.isFinite(now)) return "";
+  const diff = now - mtime;
+  if (diff < 60) return "刚刚";
+  if (diff < 3600) return `${Math.floor(diff / 60)} 分前`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} 时前`;
+  const dayIndex = (ms: number) => {
+    const d = new Date(ms);
+    return Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 86400000);
+  };
+  const ref = now * 1000;
+  const then = mtime * 1000;
+  if (dayIndex(ref) - dayIndex(then) === 1) return "昨天";
+  const t = new Date(then);
+  const r = new Date(ref);
+  const mm = String(t.getMonth() + 1).padStart(2, "0");
+  const dd = String(t.getDate()).padStart(2, "0");
+  return t.getFullYear() === r.getFullYear() ? `${mm}/${dd}` : `${String(t.getFullYear()).slice(2)}/${mm}/${dd}`;
+}
+
+/** 两行页脚里「尺寸」愿意露面的最小列宽（px）。见 footerMetaBits 的降级梯子。 */
+export const FOOTER_BITS_DIMS_MIN_WIDTH = 210;
+
+export interface FooterMetaInput {
+  kind: "image" | "video" | "audio" | "text";
   width: number | null;
   height: number | null;
-  sizeText?: string | null;
   durationSeconds?: number | null;
-}): string {
+  model?: string | null;
+  mtime?: number | null;
+  /** 秒级时间戳的「现在」，单测用；界面上不传 */
+  now?: number;
+  /** 当前列宽，决定尺寸要不要露面；不传当宽的 */
+  columnWidth?: number;
+}
+
+/**
+ * 页脚第二行的内容：一个模型徽标 + 几段元信息。
+ *
+ * 三件事要交代清楚：
+ * 1. 尺寸按类型给，不再不分类型地拼 width×height。音频的 width/height 存的是
+ *    波形画布尺寸（840×360），以前就这么大剌剌地摆在音频卡上，是个 bug，顺手修掉。
+ * 2. 尺寸在窄卡上不露面（<${FOOTER_BITS_DIMS_MIN_WIDTH}px）。徽标和时间才是这张卡
+ *    「什么模型、什么时候做的」，尺寸缩略图自己已经说明了高宽比，细节在详情栏看。
+ *    不做这个梯子，四列布局（约 202px）第二行必然溢出一串省略号。
+ * 3. 文件大小从卡片上撤了：扫描时没人靠字节数挑图，详情栏和 Lightbox 都还在。
+ */
+export function footerMetaBits(input: FooterMetaInput): { model: string | null; bits: string[] } {
   const bits: string[] = [];
-  if (parts.width && parts.height) bits.push(`${parts.width}×${parts.height}`);
-  if (parts.sizeText) bits.push(parts.sizeText);
-  const duration = formatDuration(parts.durationSeconds ?? null);
-  if (duration) bits.push(duration);
-  return bits.join(" · ");
+  const wide = typeof input.columnWidth !== "number" || input.columnWidth >= FOOTER_BITS_DIMS_MIN_WIDTH;
+  const dims = input.width && input.height ? `${input.width}×${input.height}` : "";
+  const duration = formatDuration(input.durationSeconds ?? null);
+  if (input.kind === "image") {
+    if (wide && dims) bits.push(dims);
+  } else if (input.kind === "video") {
+    // 卡片上没有时长角标，时长只能在页脚给；尺寸同样等得起宽度
+    if (duration) bits.push(duration);
+    if (wide && dims) bits.push(dims);
+  } else if (input.kind === "audio") {
+    if (duration) bits.push(duration);
+  }
+  const time = footerTimeLabel(input.mtime ?? null, input.now);
+  if (time) bits.push(time);
+  return { model: modelFamilyLabel(input.model ?? null), bits };
 }
 
 /** 时长统一写成 `m:ss`（超过一小时也继续累加分钟，和视频页/详情面板同一口径）。 */

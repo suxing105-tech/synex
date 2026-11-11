@@ -562,6 +562,64 @@ export function cloneOutputsOf(job: CloneJob | null | undefined): CloneOutput[] 
   }));
 }
 
+/**
+ * 本次运行生成过的批次（右侧栏「队列」那一页读它）。
+ *
+ * 为什么不复用上面那个 cloneBatches：那是画布的历史，收了弹窗或换了卡就整叠清掉
+ * （CloneModal 的 effect 里 clearCloneBatches），对画布是对的——旧批留在新卡的画布上
+ * 只会误导；但右侧栏要回答的是「我刚才跑的那批到哪去了」，弹窗一关就清空等于没答。
+ * 两者封存点同一个（applyCloneProgress），只是寿命不同。
+ *
+ * 只到「本次运行」为止是刻意的：本地产出后端不落库（图就在 output 目录里，图库自己会扫到），
+ * 这里要是写成「历史」就会让人以为重启后还在。
+ */
+export interface CloneHistoryEntry {
+  key: string;
+  jobId: string;
+  outputs: CloneOutput[];
+  mediaKind: string;
+  engine: string;
+  provider: string;
+  costCoins: number | null;
+  /** 前端收到「跑完」那一刻的时间戳，只用来排序与显示「几分前」。 */
+  at: number;
+}
+
+/** 右侧栏那一页放得下的量；再多就成了翻相册，不是「刚跑完的那几批」。 */
+export const CLONE_HISTORY_LIMIT = 8;
+
+export const cloneHistory = writable<CloneHistoryEntry[]>([]);
+
+export function clearCloneHistory(): void {
+  cloneHistory.set([]);
+}
+
+function sealCloneHistory(job: CloneJob): void {
+  const outputs = cloneOutputsOf(job);
+  if (!outputs.length) return;
+  const key = job.job_id || "out-" + String(outputs[0]?.id);
+  cloneHistory.update((list) => {
+    const at = list.findIndex((h) => h.key === key);
+    const prev = at >= 0 ? list[at] : undefined;
+    const entry: CloneHistoryEntry = {
+      key,
+      jobId: job.job_id,
+      outputs,
+      mediaKind: job.media_kind,
+      engine: job.engine ?? "",
+      provider: job.provider ?? "",
+      costCoins: job.cost_coins ?? null,
+      at: prev?.at ?? Date.now(),
+    };
+    if (at >= 0 && prev) {
+      const copy = [...list];
+      copy[at] = entry;
+      return copy;
+    }
+    return [entry, ...list].slice(0, CLONE_HISTORY_LIMIT);
+  });
+}
+
 /** 点生成时记下这一批要出的比例——产出清单里不带比例，封存那刻只能提前备着。 */
 let armedAspect: { w: number; h: number } | null = null;
 
@@ -644,6 +702,8 @@ export function applyCloneProgress(payload: unknown, opts: { seal?: boolean } = 
   cloneJob.set(job);
   // 画布的批次：任何一条 job 走到 done 就封存一份，重复推的那几次由 key 去重兜住。
   if (job.state === "done" && opts.seal !== false) sealCloneBatch(job);
+  // 右侧栏「队列」那份历史不受弹窗开关影响，所以单独封一份（见上面那段注释）。
+  if (job.state === "done" && opts.seal !== false) sealCloneHistory(job);
   return job;
 }
 
@@ -1769,6 +1829,10 @@ export const cloudApi = {
   /** 设置页与弹窗共用的一眼：能不能用、差哪一步、账号、花费闸、待取回。 */
   status(): Promise<CloudStatus> {
     return api.http<CloudStatus>("/api/clone/cloud/status");
+  },
+  /** 只要「还没拿到产物」那几条：右侧栏每开一次队列取一次，别拉整份 status。 */
+  pending(): Promise<{ items: CloudPendingTask[] }> {
+    return api.http<{ items: CloudPendingTask[] }>("/api/clone/cloud/pending");
   },
   presets(): Promise<{ provider: string; provider_label: string; base_url: string; items: CloudPresetItem[] }> {
     return api.http("/api/clone/cloud/presets");

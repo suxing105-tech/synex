@@ -353,7 +353,8 @@
         </button>
       {:else}
         <div class="flex items-center justify-between px-3 py-[10px] border-b border-border shrink-0">
-          <span class="text-[11px] uppercase text-muted tracking-wider">详情</span>
+          <!-- 这一栏现在有四页，标题再写「详情」就会在看队列那一页说一句假话 -->
+          <span class="text-[11px] uppercase text-muted tracking-wider">工作台</span>
           <button class="collapse-sidebar" onclick={() => (detailCollapsed = true)} title="收起右侧栏" aria-label="收起右侧栏">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16m-7-11 3 3-3 3"/></svg>
           </button>

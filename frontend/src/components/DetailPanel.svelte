@@ -45,6 +45,8 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
   import TextDetailPanel from "./TextDetailPanel.svelte";
   import FolderPickerModal from "./FolderPickerModal.svelte";
   import VideoCoverModal from "./VideoCoverModal.svelte";
+  import CloneQueuePanel from "./CloneQueuePanel.svelte";
+  import { cloneHistory, cloneJob } from "../lib/clone";
   import { moveSummary } from "../lib/move-result";
   import { nativePath, parentDirectory } from "../lib/file-location";
 
@@ -208,6 +210,50 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
     return kind === "video" ? "该视频未携带 ComfyUI 工作流" : "该图片未携带 ComfyUI 工作流";
   }
 
+  // ---------- 分页 ----------
+  //
+  // 方案 3 第三批（2026-11-11）：右栏从「一条滚到底的灰字墙」改成分页工作台。
+  // 分成 detail / prompt / params / queue，是因为这个产品读一张图就三段——这是哪一张
+  // （位置与标签）→ 它怎么来的（提示词）→ 用什么参数来的（参数与工作流），再加一页队列
+  // 回答「我刚跑的那批呢」。以前四样东西挤在同一条滚动里，找种子要滚过整段反推结果。
+  //
+  // 换页用 hidden 不用 {#if}：反推面板和视频提示词面板把跑出来的结果、进行中的请求都存在
+  // 组件自己身上，切成 {#if} 就是「切出去看一眼参数，回来反推白跑一次」。挂载成本与改之前
+  // 完全一样——这些组件本来就全部挂着。
+  type DetailTab = "detail" | "prompt" | "params" | "queue";
+  const TAB_LABELS: Record<DetailTab, string> = {
+    detail: "详情", prompt: "提示词", params: "参数", queue: "队列",
+  };
+  /** 音频没有提示词也没有生成参数，摆两个空页不如不给。 */
+  function tabsForKind(kind: string | undefined): DetailTab[] {
+    if (kind === "audio") return ["detail", "queue"];
+    return ["detail", "prompt", "params", "queue"];
+  }
+  let detailTab = $state<DetailTab>("detail");
+  const tabs = $derived(tabsForKind($selectedDetail?.kind));
+  const queueBusy = $derived($cloneJob.running);
+  const queueCount = $derived($cloneHistory.length);
+  let tabSeedId = 0;
+  $effect(() => {
+    const d = $selectedDetail;
+    if (!d) {
+      tabSeedId = 0;
+      return;
+    }
+    if (d.id !== tabSeedId) {
+      tabSeedId = d.id;
+      // 提示词优先：上一把卡片页脚改成了「提示词优先」，右栏第一眼落在同一件信息上。
+      detailTab = d.kind !== "audio" && d.positive_prompt ? "prompt" : "detail";
+    }
+    const allowed = tabsForKind(d.kind);
+    if (!allowed.includes(detailTab)) detailTab = allowed[0] ?? "detail";
+  });
+  /** 标签输入框住在「详情」那一页：从底部 ⋯ 菜单或 T 快捷键进来，得先把那一页翻开。 */
+  function openTagEditor() {
+    detailTab = "detail";
+    showTagInput = true;
+  }
+
   // ---------- 派生 ----------
   const loras = $derived(
     $selectedDetail
@@ -339,7 +385,10 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
       {
         key: "t", action: "tags",
         handler: () => {
-          if ($selectedDetail) showTagInput = !showTagInput;
+          if ($selectedDetail) {
+            if (showTagInput) showTagInput = false;
+            else openTagEditor();
+          }
         },
       },
       {
@@ -388,6 +437,29 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
 {:else}
   {@const d = $selectedDetail}
   <div class="h-full flex flex-col overflow-hidden">
+    <!-- ============== 分页 ============== -->
+    <nav class="detail-tabs" aria-label="详情面板分页">
+      {#each tabs as key}
+        <button
+          type="button"
+          id="detail-tab-{key}"
+          role="tab"
+          class="detail-tab"
+          class:is-on={detailTab === key}
+          aria-selected={detailTab === key}
+          aria-controls="detail-pane-{key}"
+          onclick={() => (detailTab = key)}
+        >
+          {TAB_LABELS[key]}
+          {#if key === "queue" && queueBusy}
+            <span class="detail-tab-dot" title="有生成任务正在跑" aria-label="有生成任务正在跑"></span>
+          {:else if key === "queue" && queueCount}
+            <span class="detail-tab-count" title="本次运行已跑完 {queueCount} 批">{queueCount}</span>
+          {/if}
+        </button>
+      {/each}
+    </nav>
+
     <!-- ============== Header ============== -->
     <header class="px-4 py-3 border-b border-border bg-surface-2 flex items-start gap-3 transition-colors">
       <button
@@ -455,7 +527,22 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
 
     <!-- ============== Body ============== -->
     <div class="flex-1 overflow-y-auto p-4 space-y-4 detail-body">
-      {#if d.kind === "video"}
+            {#if d.kind === "video"}
+        <div class="detail-pane" id="detail-pane-detail" role="tabpanel" aria-labelledby="detail-tab-detail" hidden={detailTab !== "detail"}>
+        <!-- 文件夹（视频不做标签） -->
+        <section>
+          <MetadataCard
+            tags={[]}
+            folderIds={d.folder_ids}
+            folders={$folders}
+            path={d.path}
+            onSwitchFolder={() => (showFolderPicker = true)}
+            onRevealLocation={revealLocation}
+            onCopyLocation={copyLocation}
+          />
+        </section>
+        </div>
+        <div class="detail-pane" id="detail-pane-prompt" role="tabpanel" aria-labelledby="detail-tab-prompt" hidden={detailTab !== "prompt"}>
         <!-- ComfyUI 写进视频容器的提示词与工作流（外部下载的视频没有这两块） -->
         {#if d.positive_prompt}
           <PromptCard
@@ -474,28 +561,18 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
             onCopy={(ok) => notify(ok ? "已复制 反向 Prompt" : "复制失败", ok ? "success" : "error")}
           />
         {/if}
-        {#if d.workflow}
-          <WorkflowCard workflow={d.workflow} filename={d.filename} copy={copy} notify={notify} />
-        {/if}
-
         <!-- AI 反推视频提示词（Seedance 2.0 / MiniMax H3） -->
         {#key d.id}
           <VideoPromptPanel videoId={d.id} filename={d.filename} durationSeconds={d.duration_seconds} />
         {/key}
-
-        <!-- 文件夹（视频不做标签） -->
-        <section>
-          <MetadataCard
-            tags={[]}
-            folderIds={d.folder_ids}
-            folders={$folders}
-            path={d.path}
-            onSwitchFolder={() => (showFolderPicker = true)}
-            onRevealLocation={revealLocation}
-            onCopyLocation={copyLocation}
-          />
-        </section>
+        </div>
+        <div class="detail-pane" id="detail-pane-params" role="tabpanel" aria-labelledby="detail-tab-params" hidden={detailTab !== "params"}>
+        {#if d.workflow}
+          <WorkflowCard workflow={d.workflow} filename={d.filename} copy={copy} notify={notify} />
+        {/if}
+        </div>
       {:else if d.kind === "audio"}
+        <div class="detail-pane" id="detail-pane-detail" role="tabpanel" aria-labelledby="detail-tab-detail" hidden={detailTab !== "detail"}>
         <!-- 音频：波形是懒生成 + 落盘缓存的预览，取不到就退回音符图形 -->
         <section class="detail-media-card">
           <div class="relative w-full bg-black flex items-center justify-center audio-wave" style="aspect-ratio: 21 / 9;">
@@ -556,99 +633,107 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
             onCopyLocation={copyLocation}
           />
         </section>
-      {:else}
-      {#key d.id}<ReversePromptPanel imageId={d.id} />{/key}
-      <!-- Prompt 卡片（正向 / 反向） -->
-      <PromptCard
-        title="正向 Prompt"
-        text={d.positive_prompt}
-        copyLabel="正向 Prompt"
-        onCopy={(ok) => notify(ok ? "已复制 正向 Prompt" : "复制失败", ok ? "success" : "error")}
-        initiallyExpanded
-      />
-      <PromptCard
-        title="反向 Prompt"
-        text={d.negative_prompt}
-        copyLabel="反向 Prompt"
-        onCopy={(ok) => notify(ok ? "已复制 反向 Prompt" : "复制失败", ok ? "success" : "error")}
-      />
-
-      <!-- 参数分组（含 LoRA） -->
-      <section>
-        <h4 class="text-[11px] uppercase text-muted mb-1.5 tracking-wider">生成参数</h4>
-        <ParamsCard
-          parameters={d.parameters}
-          detail={{
-            sampler: d.sampler,
-            steps: d.steps,
-            cfg: d.cfg,
-            seed: d.seed,
-            model: d.model,
-            width: d.width,
-            height: d.height,
-          }}
-          loras={loras}
-          onCopy={(ok) => notify(ok ? "已复制" : "复制失败", ok ? "success" : "error")}
-        />
-      </section>
-
-      <!-- 元数据：标签 + 文件夹 -->
-      <section>
-        <div class="flex items-center justify-between mb-1.5">
-          <h4 class="text-[11px] uppercase text-muted tracking-wider">元数据</h4>
-          <button
-            type="button"
-            class="text-[11px] text-muted hover:text-zinc-200 inline-flex items-center gap-1"
-            onclick={() => (showTagInput = !showTagInput)}
-          >
-            <Icon name="plus" size={10} />标签
-          </button>
         </div>
-        {#if showTagInput}
-          <div class="mb-2 bg-surface-2 border border-border rounded p-2">
-            <input
-              type="text"
-              bind:value={tagInput}
-              placeholder="多个标签用逗号分隔"
-              class="w-full bg-bg border border-border rounded px-2 py-1 text-[12px] outline-none focus:border-accent"
-              onkeydown={(e) => {
-                if (e.key === "Enter") saveTagInput();
-                if (e.key === "Escape") { showTagInput = false; tagInput = ""; }
-              }}
-              autofocus
-            />
-            <div class="flex justify-end gap-2 mt-2">
-              <button
-                type="button"
-                class="text-[12px] px-2 py-0.5 rounded border border-border"
-                onclick={() => { showTagInput = false; tagInput = ""; }}
-              >取消</button>
-              <button
-                type="button"
-                class="text-[12px] px-2 py-0.5 rounded bg-accent text-bg"
-                onclick={saveTagInput}
-              >保存</button>
-            </div>
+      {:else}
+        <div class="detail-pane" id="detail-pane-detail" role="tabpanel" aria-labelledby="detail-tab-detail" hidden={detailTab !== "detail"}>
+        <!-- 元数据：标签 + 文件夹 -->
+        <section>
+          <div class="flex items-center justify-between mb-1.5">
+            <h4 class="text-[11px] uppercase text-muted tracking-wider">元数据</h4>
+            <button
+              type="button"
+              class="text-[11px] text-muted hover:text-zinc-200 inline-flex items-center gap-1"
+              onclick={() => (showTagInput = !showTagInput)}
+            >
+              <Icon name="plus" size={10} />标签
+            </button>
           </div>
-        {/if}
-        <MetadataCard
-          tags={d.tags}
-          folderIds={d.folder_ids}
-          folders={$folders}
-          path={d.path}
-          onTagClick={searchByTag}
-          onRemoveTag={removeTag}
-          onSwitchFolder={() => (showFolderPicker = true)}
-          onRevealLocation={revealLocation}
-          onCopyLocation={copyLocation}
+          {#if showTagInput}
+            <div class="mb-2 bg-surface-2 border border-border rounded p-2">
+              <input
+                type="text"
+                bind:value={tagInput}
+                placeholder="多个标签用逗号分隔"
+                class="w-full bg-bg border border-border rounded px-2 py-1 text-[12px] outline-none focus:border-accent"
+                onkeydown={(e) => {
+                  if (e.key === "Enter") saveTagInput();
+                  if (e.key === "Escape") { showTagInput = false; tagInput = ""; }
+                }}
+                autofocus
+              />
+              <div class="flex justify-end gap-2 mt-2">
+                <button
+                  type="button"
+                  class="text-[12px] px-2 py-0.5 rounded border border-border"
+                  onclick={() => { showTagInput = false; tagInput = ""; }}
+                >取消</button>
+                <button
+                  type="button"
+                  class="text-[12px] px-2 py-0.5 rounded bg-accent text-bg"
+                  onclick={saveTagInput}
+                >保存</button>
+              </div>
+            </div>
+          {/if}
+          <MetadataCard
+            tags={d.tags}
+            folderIds={d.folder_ids}
+            folders={$folders}
+            path={d.path}
+            onTagClick={searchByTag}
+            onRemoveTag={removeTag}
+            onSwitchFolder={() => (showFolderPicker = true)}
+            onRevealLocation={revealLocation}
+            onCopyLocation={copyLocation}
+          />
+        </section>
+        </div>
+        <div class="detail-pane" id="detail-pane-prompt" role="tabpanel" aria-labelledby="detail-tab-prompt" hidden={detailTab !== "prompt"}>
+        {#key d.id}<ReversePromptPanel imageId={d.id} />{/key}
+        <!-- Prompt 卡片（正向 / 反向） -->
+        <PromptCard
+          title="正向 Prompt"
+          text={d.positive_prompt}
+          copyLabel="正向 Prompt"
+          onCopy={(ok) => notify(ok ? "已复制 正向 Prompt" : "复制失败", ok ? "success" : "error")}
+          initiallyExpanded
         />
-      </section>
+        <PromptCard
+          title="反向 Prompt"
+          text={d.negative_prompt}
+          copyLabel="反向 Prompt"
+          onCopy={(ok) => notify(ok ? "已复制 反向 Prompt" : "复制失败", ok ? "success" : "error")}
+        />
+        </div>
+        <div class="detail-pane" id="detail-pane-params" role="tabpanel" aria-labelledby="detail-tab-params" hidden={detailTab !== "params"}>
+        <!-- 参数分组（含 LoRA） -->
+        <section>
+          <h4 class="text-[11px] uppercase text-muted mb-1.5 tracking-wider">生成参数</h4>
+          <ParamsCard
+            parameters={d.parameters}
+            detail={{
+              sampler: d.sampler,
+              steps: d.steps,
+              cfg: d.cfg,
+              seed: d.seed,
+              model: d.model,
+              width: d.width,
+              height: d.height,
+            }}
+            loras={loras}
+            onCopy={(ok) => notify(ok ? "已复制" : "复制失败", ok ? "success" : "error")}
+          />
+        </section>
 
-      <!-- Workflow JSON（默认折叠） -->
-      {#if d.workflow}
-        <WorkflowCard workflow={d.workflow} filename={d.filename} copy={copy} notify={notify} />
+        <!-- Workflow JSON（默认折叠） -->
+        {#if d.workflow}
+          <WorkflowCard workflow={d.workflow} filename={d.filename} copy={copy} notify={notify} />
+        {/if}
+        </div>
       {/if}
-      {/if}
+        <div class="detail-pane" id="detail-pane-queue" role="tabpanel" aria-labelledby="detail-tab-queue" hidden={detailTab !== "queue"}>
+        <CloneQueuePanel active={detailTab === "queue"} />
+        </div>
     </div>
 
     <!-- ============== 操作条（常驻底部） ==============
@@ -742,7 +827,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
               type="button"
               class="w-full text-left px-3 py-1.5 text-[12px] hover:bg-surface-3 flex items-center gap-2"
               role="menuitem"
-              onclick={() => { showTagInput = true; closeMenu(); }}
+              onclick={() => { openTagEditor(); closeMenu(); }}
             >
               <Icon name="tag" size={11} />编辑标签…
             </button>
@@ -834,6 +919,64 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
   @media (prefers-reduced-motion: reduce) {
     .detail-skeleton span { animation: none; opacity: 1; transform: none; }
   }
+
+  /* ---------- 分页条（方案 3 第三批，2026-11-11） ----------
+     下划线式，不做成胶囊分段：顶栏的类型切换和设置页那个「第一行显示」是分段控件，
+     说的是「同一组里挑一个值」；这四页是四种不同的东西，读法不一样，别混成同一种控件。
+     选中只多一条朱红下划线——除了顶栏 TypeChips，全站不再多一处红底。 */
+  .detail-tabs {
+    flex: none;
+    display: flex;
+    align-items: stretch;
+    gap: 14px;
+    height: var(--ctl-lg);
+    padding: 0 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .detail-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px; /* 压住容器那条 hairline，选中的下划线才不会浮在半空 */
+    background: transparent;
+    color: var(--text-3);
+    font-size: var(--fs-xs);
+    cursor: pointer;
+  }
+  /* hover 只改字色，不画框：详情栏的交互件统一走这条 */
+  .detail-tab:hover { color: var(--text-2); }
+  .detail-tab.is-on { color: var(--text-1); border-bottom-color: var(--accent); }
+  .detail-tab-count {
+    min-width: 15px;
+    padding: 0 4px;
+    border-radius: var(--r-pill);
+    background: var(--raise-2);
+    color: var(--text-2);
+    font-size: var(--fs-2xs);
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  /* 有任务在跑时这一页得自己会打招呼：人不在这一页也要知道右栏有活 */
+  .detail-tab-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: detail-tab-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes detail-tab-pulse {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .detail-tab-dot { animation: none; opacity: 1; }
+  }
+  /* 换页用 hidden 不用 {#if}（原因见 script 里那段）；display 显式写死，
+     免得将来给 .detail-body 加 flex 之类的规则时悄悄失效。 */
+  .detail-pane[hidden] { display: none; }
 
   .detail-thumb {
     border: 0;

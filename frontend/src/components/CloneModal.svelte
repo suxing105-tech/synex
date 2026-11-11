@@ -1788,7 +1788,7 @@
                               <span>{item.kind === "image" ? "参考" : REF_KIND_NAMES[item.kind]}</span>
                             </button>
                           {/if}
-                          <span class="cm-ref-caption" class:cm-ref-caption-empty={!picked}>{item.cell.label}</span>
+                          <span class="cm-ref-caption">{item.cell.label}</span>
                         </div>
                       {/each}
                       {#if !singleFamily && openKinds.length}
@@ -2470,10 +2470,9 @@
      编号必须一眼对得上是谁，所以这一行不省。 */
   .cm-ref-caption {
     display: block; margin-top: 6px; max-width: 100%;
-    font-size: 11px; line-height: 15px; color: #8a8a8e; text-align: center;
+    font-size: 11px; line-height: 15px; color: var(--text-3); text-align: center;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none;
   }
-  .cm-ref-caption-empty { color: #62626a; }
   /* 绑到位的空格子：小牌上已经写着「图片2」，中间那行「参考」是重复的——只留加号。
      行末那颗不绑族的「+ 参考」不在 .cm-ref-cell 里，它的字照留（那颗没有编号可写）。
      按钮的可访问名来自 aria-label，藏掉这行字不影响读屏。 */
@@ -2560,7 +2559,7 @@
      这条要是挂回 .cm-textarea，任何复用该类的框都会变成看不见字的盲打框。 */
   .cm-textarea-mirror { color: transparent; caret-color: #f24e4e; }
   .cm-textarea:focus { border-color: rgb(255 255 255 / 22%); outline: none; }
-  .cm-textarea::placeholder { color: #62626a; opacity: 1; }
+  .cm-textarea::placeholder { color: var(--text-3); opacity: 1; }
   /* 附框（参考音频的原话那种）比主框矮：它是「别乱动」的东西，占了大半个弹窗反而没人看台词 */
   .cm-textarea-sub { height: auto; min-height: 60px; color: #e4e4e7; background: rgba(0, 0, 0, 0.35); }
   .cm-sub-prompt-title { margin-top: 12px; }

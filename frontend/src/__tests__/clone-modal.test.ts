@@ -1253,7 +1253,9 @@ it("引用标签按品牌色高亮：textarea 涂透明，字画在背后的遮�
   // 透明字只许挂在带镜像层的主框上，不能挂回 .cm-textarea 本体
   const base = [...source.matchAll(/\.cm-textarea\s*\{[^}]*\}/g)].map((m) => m[0]).join("\n");
   expect(base).not.toMatch(/color:\s*transparent/);
-  expect(/\.cm-textarea::placeholder\s*\{[^}]*color: #62626a/.test(source)).toBe(true);
+  // placeholder 那档灰必须够 4.5:1。原来写死 #62626a（压在面板底上只有 3.0:1），
+  // 2026-11-11 无障碍那轮收进 --text-3；这条钉的是「引 token」，不是某个具体灰值。
+  expect(/\.cm-textarea::placeholder\s*\{[^}]*color: var\(--text-3\)/.test(source)).toBe(true);
 });
 
 it("高亮样式不许动盒模型（padding / border / font-weight 都会让高亮和光标错位）", () => {

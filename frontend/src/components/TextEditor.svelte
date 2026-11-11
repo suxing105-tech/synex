@@ -142,5 +142,5 @@
   .markdown-page :global(button) { color:#dfa2a2; cursor:pointer; font-size:13px; padding:4px; }
   .markdown-page :global(a) { color:#dfa2a2; text-decoration:underline; }
   .markdown-page :global(.text-asset) { display:block; margin:16px 0; }
-  .markdown-page :global(.placeholder) { color:#72727e; }
+  .markdown-page :global(.placeholder) { color:var(--text-3); }
 </style>

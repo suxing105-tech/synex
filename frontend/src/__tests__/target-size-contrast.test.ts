@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { tokenValue } from "./fixtures/css-tokens";
 
 /**
@@ -36,6 +37,18 @@ function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
+/** 全站界面源码（测试目录不算：断言里要拿这些色值做对照）。 */
+function walk(dir: string, out: Record<string, string> = {}): Record<string, string> {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === "__tests__") continue;
+    const p = join(dir, entry.name);
+    if (entry.isDirectory()) walk(p, out);
+    else if (/.(svelte|css)$/.test(entry.name)) out[p] = readFileSync(p, "utf8");
+  }
+  return out;
+}
+const SOURCES = walk("src");
+
 it("--text-3 是最暗的一档正文灰，压在任何面板底上都要够 4.5:1", () => {
   const text3 = tokenValue("--text-3");
   // 侧栏与设置页底 / 画布底 / 抬起面（输入框和 placeholder 落在这上面）
@@ -44,18 +57,23 @@ it("--text-3 是最暗的一档正文灰，压在任何面板底上都要够 4.5
   }
 });
 
-it("侧栏与设置页不再留着凭手感调出来的低对比灰", () => {
-  // 改之前：#6f6f76 / #7d7d86 / #6d6d75 压 #141418 只有 3.7~3.9:1，
-  // 偏偏都用在 10.5~11px 的小字和 placeholder 上。全部收进 --text-3 这一档。
-  const sources: Record<string, string> = {
-    "FolderTree.svelte": readFileSync("src/components/FolderTree.svelte", "utf8"),
-    "SettingsModal.svelte": readFileSync("src/components/SettingsModal.svelte", "utf8"),
-  };
-  for (const [name, src] of Object.entries(sources)) {
-    for (const dead of ["#6f6f76", "#7d7d86", "#6d6d75"]) {
-      expect(src, name + " 里还留着 " + dead).not.toContain(dead);
+/**
+ * 凭手感挑出来的低对比灰，全站 .svelte / .css 里一颗都不许留。
+ * 2026-11-11 无障碍那轮先扫了侧栏和设置页（#6f6f76 / #7d7d86 / #6d6d75，压 #141418
+ * 只有 3.7~3.9:1，偏偏都在 10.5~11px 的小字和 placeholder 上）；复跑又抓到同族三处：
+ * 再次创作弹窗提示词框的 placeholder、参考格没绑上时那颗编号（都是 #62626a，3.0:1），
+ * 和文本编辑器「点击开始写作…」（#72727e，4.1:1）。一律收进 --text-3。
+ */
+const DEAD_GRAYS = ["#6f6f76", "#7d7d86", "#6d6d75", "#62626a", "#72727e"];
+
+it("全站不再留着凭手感挑出来的低对比灰", () => {
+  const offenders: string[] = [];
+  for (const [name, src] of Object.entries(SOURCES)) {
+    for (const dead of DEAD_GRAYS) {
+      if (src.includes(dead)) offenders.push(name + " 还留着 " + dead);
     }
   }
+  expect(offenders, offenders.join("；")).toEqual([]);
 });
 
 it("选中项的红色计数够得着正文对比度，且和同一行的标签同档", () => {
@@ -95,4 +113,36 @@ it("点击目标够 WCAG 2.5.8 的 24×24：类型 chips、分组加号、列数
 
 it("尺子本身也在水位线上：--ctl-sm 不许低到 24 以下", () => {
   expect(px(tokenValue("--ctl-sm"))).toBeGreaterThanOrEqual(24);
+});
+
+it("placeholder 的灰一律引 token，不再各挑各的", () => {
+  // placeholder 最容易「随手调个淡灰」，也恰恰是最常掉到 4.5:1 以下的那处文字
+  const offenders: string[] = [];
+  for (const [name, src] of Object.entries(SOURCES)) {
+    for (const m of src.matchAll(/::placeholder\s*\{([^}]*)\}/g)) {
+      if (/#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})\b/.test(m[1])) offenders.push(name + " → " + m[1].trim());
+    }
+  }
+  expect(offenders, "这些 placeholder 还在写 hex：" + offenders.join("；")).toEqual([]);
+});
+
+it("--text-3 压不住 ink-3（控件底），不许和 surface-3 配在同一个元素上", () => {
+  // 地板是相对底色说的：--text-3 压 ink-0 / ink-1 / ink-2 有 5.6 / 5.4 / 4.9，压 ink-3 只剩 4.3
+  expect(contrast(tokenValue("--text-3"), tokenValue("--ink-3"))).toBeLessThan(4.5);
+  const offenders: string[] = [];
+  for (const [name, src] of Object.entries(SOURCES)) {
+    for (const m of src.matchAll(/class="([^"]*)"/g)) {
+      const list = m[1].split(/\s+/);
+      // 只看静态底色：hover:bg-surface-3 那种一定配着 hover:text-* 一起换，不算
+      if (list.includes("bg-surface-3") && list.includes("text-muted")) {
+        offenders.push(name + " → " + m[1].trim());
+      }
+    }
+    for (const m of src.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+      if (/background(?:-color)?\s*:\s*var\(--ink-3\)/.test(m[2]) && /(^|;)\s*color\s*:\s*var\(--text-3\)/.test(m[2])) {
+        offenders.push(name + " → " + m[1].trim().split("\n").pop());
+      }
+    }
+  }
+  expect(offenders, "text-3 压在控件底上：" + offenders.join("；")).toEqual([]);
 });

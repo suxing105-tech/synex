@@ -120,7 +120,7 @@
   {@const it = $selectedText}
   <div class="h-full flex flex-col overflow-hidden">
     <header class="px-4 py-3 border-b border-border bg-surface-2 flex items-start gap-3">
-      <div class="shrink-0 w-12 h-12 rounded-md bg-surface-3 border border-border flex items-center justify-center text-muted font-mono text-[11px]" title="文本素材" aria-label="文本徽标">
+      <div class="shrink-0 w-12 h-12 rounded-md bg-surface-3 border border-border flex items-center justify-center text-zinc-400 font-mono text-[11px]" title="文本素材" aria-label="文本徽标">
         {textFormatLabel(it.format)}
       </div>
       <div class="min-w-0 flex-1">

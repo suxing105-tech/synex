@@ -13,6 +13,9 @@ export const shortcutActions = [
   { id: "searchFocus", label: "定位到搜索框", key: "ctrl+f" },
   { id: "previous", label: "预览上一张", key: "arrowleft" },
   { id: "next", label: "预览下一张", key: "arrowright" },
+  // 预览顶栏那两个旋转按钮的键盘入口：裸方向键已经给上一张/下一张，旋转用 Alt 修饰。
+  { id: "rotateLeft", label: "预览：向左旋转 90°（存回原文件）", key: "alt+arrowleft" },
+  { id: "rotateRight", label: "预览：向右旋转 90°（存回原文件）", key: "alt+arrowright" },
 ] as const;
 export type ShortcutId = typeof shortcutActions[number]["id"];
 export type ShortcutMap = Record<ShortcutId, string>;

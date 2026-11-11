@@ -92,4 +92,21 @@ describe("自定义快捷键", () => {
     expect(() => saveShortcuts({ ...defaultShortcuts, positive: "q" })).toThrow();
     expect(get(shortcutSettings)).toEqual(defaultShortcuts);
   });
+  it("预览旋转：默认 Alt + ←/→，不跟裸方向键的上一张 / 下一张抢", () => {
+    expect(defaultShortcuts).toMatchObject({ rotateLeft: "alt+arrowleft", rotateRight: "alt+arrowright" });
+    expect(validateShortcuts(defaultShortcuts)).toBeNull();
+    const altLeft = new KeyboardEvent("keydown", { key: "ArrowLeft", altKey: true });
+    expect(matchesAction(altLeft, "rotateLeft")).toBe(true);
+    expect(matchesAction(altLeft, "previous")).toBe(false);
+    const altRight = new KeyboardEvent("keydown", { key: "ArrowRight", altKey: true });
+    expect(matchesAction(altRight, "rotateRight")).toBe(true);
+    expect(matchesAction(altRight, "next")).toBe(false);
+    // 设置页由 shortcutActions 自动渲染，两行新条目要在，键位照 shortcutLabel 显示
+    const ui = render(ShortcutSettings);
+    expect(ui.getByRole("button", { name: "设置预览：向左旋转 90°（存回原文件）快捷键" }).textContent).toBe("Alt + ←");
+    expect(ui.getByRole("button", { name: "设置预览：向右旋转 90°（存回原文件）快捷键" }).textContent).toBe("Alt + →");
+    // 改过键也得认：预览里那两个旋转按钮的 hover 提示读的就是这一条
+    shortcutSettings.set({ ...defaultShortcuts, rotateRight: "shift+arrowright" });
+    expect(matchesAction(new KeyboardEvent("keydown", { key: "ArrowRight", shiftKey: true }), "rotateRight")).toBe(true);
+  });
 });

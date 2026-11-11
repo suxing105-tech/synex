@@ -730,6 +730,10 @@ class RenameError(ValueError):
     """重命名失败时抛；HTTP 层转 400/404/409。"""
 
 
+class RotateError(ValueError):
+    """旋转失败时抛；HTTP 层转 400/404/415。格式与占用类错误见 image_ops。"""
+
+
 @serialized
 def rename_image(image_id: int, new_filename: str) -> dict:
     """重命名磁盘文件 + 更新 images 表。
@@ -822,6 +826,78 @@ def rename_image(image_id: int, new_filename: str) -> dict:
     updated = conn.execute(
         "SELECT * FROM images WHERE id = ?", (image_id,)
     ).fetchone()
+    return _row_to_summary(updated)
+
+
+def _purge_preview_files(image_id: int) -> int:
+    """删掉 previews/{id}_max*.webp（与删除图片同一条 glob）。
+
+    预览按原文件内容摘要命名，文件一转摘要就变，旧那份就此作废：
+    留着只占盘，下一次请求会按新摘要重建。
+    """
+    from .config import previews_dir
+
+    pd = previews_dir()
+    if not pd.exists():
+        return 0
+    cleaned = 0
+    for f in pd.glob(f"{image_id}_max*.webp"):
+        try:
+            f.unlink()
+            cleaned += 1
+        except (OSError, FileNotFoundError):
+            pass
+    return cleaned
+
+
+@serialized
+def rotate_image(image_id: int, direction: str) -> dict:
+    """把图片真的转 90° 写回原文件，并把索引里的宽高/时间/大小对齐。
+
+    与 rename 同一套规矩：自己写盘、自己改表，同时抑制 watchdog 事件
+    （不然它会对同一批内容再上报一次，白跑一遍解析）。
+    找不到行 / 原文件不在 → RotateError；格式不支持、文件被占用由 image_ops 抛自己的子类。
+    """
+    if direction not in ("left", "right"):
+        raise RotateError("direction 只支持 left / right")
+    conn = get_pool().main()
+    row = conn.execute(
+        "SELECT id, path, kind FROM images WHERE id = ?", (image_id,)
+    ).fetchone()
+    if not row:
+        raise RotateError("not_found")
+    if (row["kind"] or "image") != "image":
+        raise RotateError("只有图片可以旋转")
+    path = Path(row["path"])
+    if not path.exists():
+        raise RotateError("原文件不存在")
+
+    from .indexer import suppress_watcher_events
+
+    suppress_watcher_events([path])
+    from .image_ops import rotate_image_file
+
+    rotate_image_file(path, direction)
+    _purge_preview_files(image_id)
+
+    from .parser import _extract_dimensions
+
+    stat = path.stat()
+    width, height = _extract_dimensions(path)
+    with transaction() as c:
+        if width and height:
+            c.execute(
+                "UPDATE images SET mtime = ?, size_bytes = ?, width = ?, height = ? WHERE id = ?",
+                (float(stat.st_mtime), stat.st_size, width, height, image_id),
+            )
+        else:
+            # 万一读不出新宽高（格式意外），也不能留着旧值把卡片比例算错：
+            # 只挪时间戳与大小，宽高交给下一次扫描按真实文件重算。
+            c.execute(
+                "UPDATE images SET mtime = ?, size_bytes = ? WHERE id = ?",
+                (float(stat.st_mtime), stat.st_size, image_id),
+            )
+    updated = conn.execute("SELECT * FROM images WHERE id = ?", (image_id,)).fetchone()
     return _row_to_summary(updated)
 
 

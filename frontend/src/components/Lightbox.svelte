@@ -5,16 +5,17 @@
   import { multiSelectedIds, removeImageFromFeed, refreshFolders } from "../lib/stores";
   import { copyOriginalImage } from "../lib/image-clipboard";
   import { isPsdFilename } from "../lib/media-format";
-  import { matchesAction, shortcutBlocked } from "../lib/shortcut-settings";
+  import { matchesAction, shortcutBlocked, shortcutLabel, shortcutSettings } from "../lib/shortcut-settings";
   import { modalFocus } from "../lib/modal-focus";
   import { backendUrl } from "../lib/backend-url";
-  import { mediaItems, refreshFeed, refreshStats } from "../lib/stores";
+  import { mediaItems, refreshFeed, refreshSelectedDetail, refreshStats } from "../lib/stores";
   import { imagesApi } from "../lib/api";
   import { revealLocation as revealInShell } from "../lib/reveal";
   import { copyText, formatSize } from "../lib/ws";
   import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
   import { ViewerZoom, ZOOM_HINT, viewerZoomWheel } from "../lib/viewer-zoom.svelte";
   import ViewerZoomControls from "./ViewerZoomControls.svelte";
+  import Icon from "./Icon.svelte";
   import { getOrientedImageSize, safeOrientedSize } from "../lib/image-dims";
 
   interface Props {
@@ -42,6 +43,71 @@
 
   let originalUrl = $state<string | null>(null);
   let fullPreviewFailed = $state(false);
+
+  // ---------- 旋转 90°：真的转像素并写回原文件 ----------
+  /** 一次只放一个请求在飞：写盘 + 刷 feed 期间按钮置灰，连点、连按快捷键都不重复发。 */
+  let rotating = $state(false);
+  /**
+   * 旋转后刷 feed 会让这一张排到列表最前，index 随之重排；重定位之前先按 id 钉住
+   * 正在看的这一张，文件名 / 尺寸 / alt 才不会在中间那一帧跳到别的图上。
+   */
+  let rotatePinId = $state<number | null>(null);
+  /**
+   * 原图 URL 上的旋转版本号。<img> 的 src 一个字符都不变就不会重新取图，
+   * 写盘成功后必须换一下 URL（后端是 no-cache + 内容 ETag，换参数就等于拿到新字节）。
+   * 换图、关闭预览时归零，回到干净的那一条 URL。
+   */
+  let rotateVersion = $state(0);
+
+  /** 顶栏与 <img> 一律认这一张：正常就是 index 那条，旋转写盘期间是上面钉住的那条。 */
+  let viewedItem = $derived(rotatePinId === null ? $mediaItems[index] : $mediaItems.find((x) => x.id === rotatePinId) ?? $mediaItems[index]);
+
+  /** PSD 只读（psd-tools 写不回原文件）；视频 / 音频 / 文本没有「转 90° 存盘」这回事。 */
+  function canRotate(it: { kind?: string; filename?: string }): boolean {
+    return (it.kind ?? "image") === "image" && !isPsdFilename(it.filename ?? "");
+  }
+
+  /** 快捷键文案跟着设置页走：用户改过键位，提示不能还写着默认键。 */
+  let rotateKeys = $derived({
+    left: shortcutLabel($shortcutSettings.rotateLeft),
+    right: shortcutLabel($shortcutSettings.rotateRight),
+  });
+
+  function rotateTitle(it: { filename?: string }, dir: "left" | "right"): string {
+    if (isPsdFilename(it.filename ?? "")) return "PSD 无法写回原文件，不支持旋转";
+    return dir === "left"
+      ? `向左旋转 90°（逆时针）并保存回原文件（${rotateKeys.left}）`
+      : `向右旋转 90°（顺时针）并保存回原文件（${rotateKeys.right}）`;
+  }
+
+  async function rotate(dir: "left" | "right") {
+    const it = $mediaItems[index];
+    if (!it || rotating || !canRotate(it)) return;
+    const viewedId = it.id;
+    rotatePinId = viewedId;
+    rotating = true;
+    try {
+      await imagesApi.rotate(viewedId, dir);
+      rotateVersion++;
+      notify(dir === "left" ? "已保存：逆时针旋转 90°" : "已保存：顺时针旋转 90°");
+      // 统一流固定「新的在前」，写盘把 mtime 改成当前时间 → 这一张会排到列表最前面。
+      // 所以刷完 feed 要按 id 把 index 重新定位回来，否则预览跳到别的图上。
+      await Promise.allSettled([
+        refreshFeed({ keepScroll: true }),
+        refreshStats(),
+        refreshSelectedDetail([viewedId]),
+      ]);
+      const at = $mediaItems.findIndex((x) => x.id === viewedId);
+      if (at >= 0) index = at;
+    } catch (e) {
+      const detail = (e as { detail?: string }).detail;
+      notify(`旋转失败：${detail || (e as Error).message}`);
+    } finally {
+      // 先落 index 再解钉，解钉那一帧读到的已经是重排后的位置
+      rotatePinId = null;
+      rotating = false;
+    }
+  }
 
   // ---------- 适应窗口 ⇄ 100% ----------
   // 缩放状态与交互（滚轮 / 抓手拖动 / 双击 / 边界 clamp）全部在 lib/viewer-zoom.svelte.ts，
@@ -87,6 +153,7 @@
     open = false;
     compareEnabled = true;
     originalUrl = null;
+    rotateVersion = 0;
     zoom.reset();
   }
 
@@ -111,10 +178,12 @@
 
   function prev() {
     if ($mediaItems.length === 0) return;
+    rotateVersion = 0;
     index = (index - 1 + $mediaItems.length) % $mediaItems.length;
   }
   function next() {
     if ($mediaItems.length === 0) return;
+    rotateVersion = 0;
     index = (index + 1) % $mediaItems.length;
   }
 
@@ -127,6 +196,18 @@
       return;
     }
     if (comparing && e.key !== "Escape") return;
+    // 旋转排在上一张 / 下一张之前：默认键是 Alt + ←/→，裸方向键仍归切图。
+    // preventDefault 是给 WebView2 的——它会把 Alt + ←/→ 当「后退 / 前进」加速器抢走。
+    if (matchesAction(e, "rotateLeft")) {
+      e.preventDefault();
+      void rotate("left");
+      return;
+    }
+    if (matchesAction(e, "rotateRight")) {
+      e.preventDefault();
+      void rotate("right");
+      return;
+    }
     if (e.key === "Escape") {
       if (zoom.isZooming()) {
         e.preventDefault();
@@ -228,9 +309,13 @@
   // 切换图片 / 重新打开：设置 URL + 选中
   $effect(() => {
     if (open) {
-      const it = $mediaItems[index];
+      // 认 viewedItem 而不是 index：旋转写盘后刷 feed 会把这一张顶到列表最前，
+      // 重定位 index 之前它仍然是原来那一张，URL 不会中途换到别的图上。
+      const it = viewedItem;
       if (it) {
-        originalUrl = backendUrl(`/api/images/${it.id}/file?cache=2`);
+        originalUrl = backendUrl(
+          `/api/images/${it.id}/file?cache=2${rotateVersion ? `&v=r${rotateVersion}` : ""}`,
+        );
         fullPreviewFailed = false;
         selectedId = it.id;
       }
@@ -258,9 +343,14 @@
     return () => { cancelled = true; };
   });
 
-  // 切图 → 重置 zoom + 拖动状态；不重置 naturalWidth（让 img 直接换 src 复用）
+  // 真换了一张图才重置 zoom + 拖动状态；不重置 naturalWidth（让 img 直接换 src 复用）。
+  // 认 id 而不是认 index：旋转写盘后刷 feed 会把这一张顶到列表最前，index 变了、图却没换，
+  // 按 index 重置会把用户正在看的 100% 顶回适应窗口。
+  let zoomTrackId: number | null = null;
   $effect(() => {
-    index;
+    const id = viewedItem?.id ?? null;
+    if (id === zoomTrackId) return;
+    zoomTrackId = id;
     zoom.reset();
     // 等新图加载完再清 natural，避免短暂 0×0 让 fitSize 计算抖动
     // 这里不清，依赖 imgNaturalW 重新绑定新图的尺寸即可
@@ -278,7 +368,7 @@
 <svelte:window onkeydown={handleKey} />
 
 {#if open && $mediaItems.length > 0 && $mediaItems[index]}
-  {@const it = $mediaItems[index]}
+  {@const it = viewedItem}
   <!-- tabindex + modalFocus：这一层是中间栏唯一的「打开态」，背后整块网格已经 inert。
      焦点不主动收进来的话，打开预览后 activeElement 还是 <body>，键盘用户等于站在门外。 -->
 <section class="inline-viewer absolute inset-0 z-20 flex flex-col bg-bg overflow-hidden fill-interactions" aria-label="图片细节预览" tabindex="-1" use:modalFocus>
@@ -292,6 +382,21 @@
         <CompareModeSwitch label="图片对比方式" />
       {/if}
       {#if !comparing}
+        {#if (it.kind ?? "image") === "image"}
+          <!-- 旋转 90°：写回原文件。必须排在缩放开关之前 —— Svelte 5 的事件委托里，
+               组件排在同分支兄弟按钮之前会让后面的按钮点不动，原生按钮只能在前。 -->
+          <button type="button" class="viewer-icon-btn" aria-label="向左旋转"
+            title={rotateTitle(it, "left")} disabled={rotating || isPsdFilename(it.filename)}
+            aria-busy={rotating} onclick={() => void rotate("left")}>
+            <Icon name="rotate-left" size={14} />
+          </button>
+          <button type="button" class="viewer-icon-btn" aria-label="向右旋转"
+            title={rotateTitle(it, "right")} disabled={rotating || isPsdFilename(it.filename)}
+            aria-busy={rotating} onclick={() => void rotate("right")}>
+            <Icon name="rotate-right" size={14} />
+          </button>
+          <span class="mx-1 h-5 w-px shrink-0 bg-border" aria-hidden="true"></span>
+        {/if}
         <!-- 缩放开关排在顶栏所有按钮之后：组件排在兄弟按钮前面会让后面的按钮点不动（Svelte 5 事件委托） -->
         <ViewerZoomControls {zoom} />
       {/if}

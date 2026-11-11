@@ -116,6 +116,17 @@ export const imagesApi = {
       body: JSON.stringify({ filename }),
     });
   },
+  /**
+   * 把图片真的转 90° 写回原文件：`left` = 逆时针、`right` = 顺时针。
+   * PNG 像素无损、ComfyUI 提示词等元数据原样保留；JPG/WebP 重编码。返回更新后的行（宽高已互换）。
+   * 失败时 error.detail 是后端给的可直显中文原因（409 文件被占用 / 415 格式不支持 …）。
+   */
+  rotate(id: number, direction: "left" | "right"): Promise<ImageSummary> {
+    return http<ImageSummary>(`/api/images/${id}/rotate`, {
+      method: "POST",
+      body: JSON.stringify({ direction }),
+    });
+  },
   reveal(id: number): Promise<{ ok: boolean; id: number; path: string; method: string }> {
     return http(`/api/images/${id}/reveal`, { method: "POST" });
   },

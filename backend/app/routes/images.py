@@ -10,7 +10,7 @@ from typing import Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 
-from .. import repository
+from .. import image_ops, repository
 from ..config import inbox_dir
 from ..folder_storage import move_image, move_images, target_directory
 
@@ -325,6 +325,44 @@ def rename_image(image_id: int, payload: dict):
         if msg == "目标文件已存在":
             raise HTTPException(409, msg)
         raise HTTPException(400, msg)
+    return updated
+
+
+@router.post("/{image_id}/rotate")
+def rotate_image(image_id: int, payload: dict):
+    """把图片真的转 90° 存回原文件（left = 逆时针，right = 顺时针）。
+
+    body: { "direction": "left" | "right" }
+    成功 → 200 + 更新后的 ImageSummary（宽高已互换）
+    400 direction 非法 / 404 图片不存在或原文件已被移走 / 409 文件被别的程序占用
+    415 该格式不支持旋转（PSD、动画 PNG、非图片）/ 422 读不出来或保存失败（含超大图）
+    500 落盘失败
+
+    写成同步 def 是故意的：FastAPI 把同步路由丢线程池，31MB 的 PNG 实测约 0.8s，
+    用 async def 会把事件循环堵住（预览和 WS 一起卡）。
+    """
+    direction = payload.get("direction") if isinstance(payload, dict) else None
+    try:
+        updated = repository.rotate_image(
+            image_id, direction if isinstance(direction, str) else ""
+        )
+    except repository.RotateError as e:
+        msg = str(e)
+        if msg == "not_found":
+            raise HTTPException(404, "图片不存在")
+        if msg == "原文件不存在":
+            raise HTTPException(404, "原文件不存在")
+        if msg == "只有图片可以旋转":
+            raise HTTPException(415, "只有图片可以旋转")
+        raise HTTPException(400, msg)
+    except image_ops.RotateBusy as e:
+        raise HTTPException(409, str(e))
+    except image_ops.RotateUnsupported as e:
+        raise HTTPException(415, str(e))
+    except image_ops.RotateDecodeFailed as e:
+        raise HTTPException(422, str(e))
+    except image_ops.RotateWriteFailed as e:
+        raise HTTPException(500, str(e))
     return updated
 
 

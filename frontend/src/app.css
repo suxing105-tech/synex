@@ -897,6 +897,12 @@ body,
   color: var(--text-1);
 }
 
+/* 图标按钮置灰（预览里的旋转在 PSD 上不可用、写盘进行中也临时置灰）：
+   没有文字可淡，只能压图标本身，否则看着和能用一样。--text-3 压在 --ink-1 上是 5.4:1。 */
+.viewer-icon-btn:disabled {
+  color: var(--text-3);
+}
+
 .viewer-icon-btn[aria-pressed="true"] {
   background-color: var(--accent);
   color: var(--ink-0);

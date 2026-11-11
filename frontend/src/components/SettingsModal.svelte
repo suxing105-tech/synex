@@ -12,6 +12,7 @@
   import UpdatePanel from "./UpdatePanel.svelte";
   import SettingsRow from "./SettingsRow.svelte";
   import { cardTitleMode } from "../lib/card-title";
+  import { isTypingTarget } from "../lib/modal-focus";
   import wechatContact from "../assets/about/wechat-contact.png";
   import rewardQr from "../assets/about/reward-qr.png";
   import { pushToast } from "../lib/toast";
@@ -86,6 +87,27 @@
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
+  });
+
+  // Esc 关设置页（2026-11-11 苏醒点名要修：以前只能点左上角那颗返回，键盘党卡在页里）。
+  //
+  // 为什么挂在 window 而不是 dialog 元素上：从侧栏 ⚙ 打开设置后，焦点还留在那颗按钮上，
+  // 它不在这个 dialog 的子树里，挂在 dialog 上的监听收不到这一枪。
+  // 为什么走冒泡而不是捕获：快捷键那一栏录制按键时，录制按钮自己的 keydown 会
+  // preventDefault + stopPropagation（ShortcutSettings.capture），捕获阶段抢在它前面
+  // 会把「Esc 取消录制」吃掉，变成整页关掉。
+  // 两条让路：二维码大图开着时归它自己收（上面那条捕获监听）；焦点在输入框里时归输入框。
+  $effect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || qr) return;
+      if (isTypingTarget(event.target)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      open = false;
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   });
 
   const searchTokens = $derived(filter.trim().toLowerCase().split(/\s+/).filter(Boolean));

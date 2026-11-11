@@ -317,11 +317,14 @@
         都挂在这里，都是 absolute inset-0，Esc 一律回到缩略图。网格常驻，只是被 inert 挡住交互。
       -->
       <div class="h-full flex flex-col" inert={lightboxOpen || videoPlayerOpen || Boolean($readerItem)}>
+      <!-- overlayOpen 里带 settingsOpen：设置页整层盖住图库时，中间栏的
+           键盘处理要让路。不加这条，在设置页里按 Esc 会顺手把背后网格的选区清掉。
+           （注释必须待在标签外——开标签里面不接受注释，svelte-check 会直接报。 -->
       <Feed
         bind:selectedId={selectedIdValue}
         bind:lightboxOpen
         bind:lightboxIndex
-        overlayOpen={lightboxOpen || videoPlayerOpen || Boolean($readerItem)}
+        overlayOpen={lightboxOpen || videoPlayerOpen || Boolean($readerItem) || settingsOpen}
         immersive={immersive}
         cloneCanvas={cloneCanvas}
         onOpenSettings={(tab) => { settingsTab = tab; settingsOpen = true; }}

@@ -15,12 +15,14 @@
   import { backendUrl } from "../lib/backend-url";
   import { basenameOnly } from "../lib/media-format";
   import { comfyuiStatus, stopAudio } from "../lib/stores";
-  import { pushToast } from "../lib/toast";
+  import { dismissToast, pushToast } from "../lib/toast";
   import { modalFocus } from "../lib/modal-focus";
   import { subscribeFileDrop } from "../lib/native-drop";
   import Icon from "./Icon.svelte";
   import MediaPickerModal from "./MediaPickerModal.svelte";
   import CloneCanvas from "./CloneCanvas.svelte";
+  import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
+  import PromptSkillModal from "./PromptSkillModal.svelte";
   import type { CanvasEscape } from "../lib/clone-canvas";
   import {
     applyCloneProgress, buildGenerateRequest, cloneApi, cloneError, cloneJob, cloneStatusLabel,
@@ -43,6 +45,12 @@
     type CloneJob, type CloneSources, type CloneTemplate,
   } from "../lib/clone";
   import type { ImageSummary, ImportResponse, MediaFeedItem } from "../lib/types";
+  import { errorMessage } from "../lib/reverse-prompts";
+  import {
+    KIND_WORDS, loadPromptSkills, missingMarks, pickSkillFor, promptSkills, promptSkillsApi,
+    promptSkillSettings, setDefaultSkill, type OptimizeRef, type OptimizeResult,
+    type PromptSkill, type PromptSkillKind,
+  } from "../lib/prompt-skills";
 
   interface Props {
     open: boolean;
@@ -1616,9 +1624,190 @@
     );
   });
 
+  /* ── 提示词优化技能（2026-11-11 苏醒：「输入框右下角加个图标，调用技能优化手动输入的提示词」）──────
+     左键＝拿这一族的默认技能重写一句，右键＝换技能或进设置。模型不在这里挑，吃的是反推那一份
+     默认配置。技能清单懒加载：开一次再次创作弹窗不该多打两次接口，点到这颗按钮才去拉。 */
+
+  let skillMenu = $state(false);
+  let skillMenuAt = $state({ x: 0, y: 0 });
+  let skillModal = $state(false);
+  let optimizing = $state(false);
+  let optimizeAbort: AbortController | null = null;
+
+  /** MediaKind 三种里只有图片和视频有对应的技能族：音频那一族不给优化（后端也拒收）。 */
+  const skillKind = $derived<PromptSkillKind | null>(mediaKind === "audio" ? null : mediaKind);
+
+  /** 右键菜单那几行：这一族的技能，勾子打在默认那条上。读 store 不读 lib 里那份快照——菜单是响应式的，勾子得跟着默认值走。 */
+  const skillRows = $derived.by(() => {
+    const kind = skillKind;
+    if (!kind) return [];
+    const wanted = kind === "video" ? $promptSkillSettings?.default_video_skill : $promptSkillSettings?.default_image_skill;
+    return $promptSkills
+      .filter((item) => item.kinds.includes(kind))
+      .map((item) => ({ item, isDefault: item.id === wanted }));
+  });
+
+  const skillMenuItems = $derived.by<ContextMenuItem[]>(() => {
+    const kind = skillKind;
+    if (!kind) return [];
+    const head: ContextMenuItem[] = [{ label: "优化用哪条技能（" + KIND_WORDS[kind] + "）", disabled: true }];
+    if (!skillRows.length) {
+      return [...head, { label: "还没有技能，去建一条", onClick: () => { skillModal = true; } }];
+    }
+    const picked: ContextMenuItem[] = skillRows.map(({ item, isDefault }) => ({
+      label: (isDefault ? "✓ " : "") + item.name,
+      onClick: () => void chooseSkill(item),
+    }));
+    return [...head, ...picked, { kind: "sep" }, { label: "技能设置…", onClick: () => { skillModal = true; } }];
+  });
+
+  const skillTitle = $derived(
+    optimizing
+      ? "正在按当前技能重写这句，点一下取消"
+      : !prompt.trim()
+        ? "先写一句提示词，再叫技能重写"
+        : "左键：用当前技能重写这句\n右键：换一条技能，或进技能设置",
+  );
+
+  /**
+   * 一起发给模型的参考图：只带图片族里真挂上素材的格子，编号用格子自己的 ordinal。
+   * 空格子时 ordinal 不连续，后端按它把图标成「图 N」——按送过去的先后顺序重编号会把参考错位。
+   * 上限 16 是后端的数，超了它整条请求会被顶回来，所以在这头先按编号裁。
+   */
+  const skillRefs = $derived.by<OptimizeRef[]>(() => {
+    const out: OptimizeRef[] = [];
+    for (const cell of cells) {
+      if ((cell.kind ?? "image") !== "image") continue;
+      const hit = refs[cell.key];
+      if (hit?.id) out.push({ ordinal: cell.ordinal ?? 1, image_id: hit.id });
+    }
+    return out.sort((a, b) => a.ordinal - b.ordinal).slice(0, 16);
+  });
+
+  /**
+   * 右键：先确保清单在手，再把菜单画出来。
+   *
+   * 顺序不能倒。ContextMenu 有个已知的 Svelte 5 毛病（5.57.0 实测）：菜单开着的时候往 items
+   * 里追加条目，新条目的 DOM 不会出来——只多几个空注释节点，长度没变的那种（勾来勾去）反而正常。
+   * 所以「先开菜单、清单回来再长全」看着不卡，实际会给人一个永远少两行的菜单。拉一次是本地
+   * sidecar 的两个 GET，且 loaded 之后不再拉，只有每回第一次点右键付这点延迟。
+   */
+  function openSkillMenu(event: MouseEvent) {
+    if (!skillKind) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const at = { x: event.clientX + 2, y: event.clientY + 2 };
+    void loadPromptSkills()
+      .catch((err) => {
+        pushToast(errorMessage(err), { kind: "error", ttl: 5000 });
+      })
+      .then(() => {
+        // 拉清单这几毫秒里弹窗可能已经被关掉，别把菜单甩在一个关了的东西上
+        if (!open) return;
+        skillMenuAt = at;
+        skillMenu = true;
+      });
+  }
+
+  async function chooseSkill(item: PromptSkill) {
+    const kind = skillKind;
+    if (!kind) return;
+    try {
+      await setDefaultSkill(kind, item.id);
+      pushToast("「" + item.name + "」现在是" + KIND_WORDS[kind] + "提示词的默认技能", { kind: "success" });
+    } catch (err) {
+      pushToast(errorMessage(err), { kind: "error", ttl: 5000 });
+    }
+  }
+
+  /**
+   * 写回提示词走的是和插引用同一条路：置 touched → tick → autosize。少了 touched，反推或来源
+   * 回来会把刚优化完那句冲掉；少了 autosize，高亮镜像层和框高还按旧文案量着，字会错位。
+   * 撤销把这三样一起还原——优化不落库，能退回原地就够了。
+   */
+  async function writePrompt(next: string, skillName: string, res?: OptimizeResult) {
+    const before = prompt;
+    const wasTouched = promptTouched;
+    prompt = next;
+    promptTouched = true;
+    await tick();
+    autosizePrompt();
+    const thin = res?.degraded_refs ? "，参考图只带上 " + res.degraded_refs.sent + " 张" : "";
+    pushToast("已按「" + skillName + "」重写" + thin, {
+      kind: "success",
+      ttl: 10000,
+      actions: [
+        {
+          label: "撤销",
+          primary: true,
+          onClick: () => {
+            prompt = before;
+            promptTouched = wasTouched;
+            void tick().then(() => autosizePrompt());
+          },
+        },
+      ],
+    });
+  }
+
+  async function optimizePrompt() {
+    const kind = skillKind;
+    if (!kind || optimizing) return;
+    const original = prompt;
+    if (!original.trim()) return;
+    let toastId = 0;
+    optimizing = true;
+    try {
+      await loadPromptSkills();
+      const skill = pickSkillFor(kind);
+      if (!skill) {
+        pushToast("这一族还没有可用的技能：右键那颗图标，先建一条", { kind: "error", ttl: 6000 });
+        return;
+      }
+      const ctl = new AbortController();
+      optimizeAbort = ctl;
+      toastId = pushToast("正在用「" + skill.name + "」重写…", {
+        kind: "progress",
+        ttl: 0,
+        actions: [{ label: "取消", onClick: () => ctl.abort() }],
+      });
+      const res = await promptSkillsApi.optimize(
+        skill.id,
+        { prompt: original, kind, refs: skill.with_refs ? skillRefs : [] },
+        ctl.signal,
+      );
+      const lost = missingMarks(original, res.prompt);
+      if (lost.length) {
+        // 模型把 @图片N / <Picture N> 改写掉了：写回去那格参考就静默失效。默认不写，让人自己决定——
+        // 参考悄悄不生效比措辞难看得多，而且不报错。
+        pushToast("「" + skill.name + "」把 " + lost.join("、") + " 弄丢了，没有写回", {
+          kind: "error",
+          ttl: 9000,
+          actions: [{ label: "仍然写入", onClick: () => void writePrompt(res.prompt, skill.name, res) }],
+        });
+        return;
+      }
+      await writePrompt(res.prompt, skill.name, res);
+    } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError") pushToast("已取消这次优化", { kind: "info" });
+      else pushToast(errorMessage(err), { kind: "error", ttl: 6000 });
+    } finally {
+      if (toastId) dismissToast(toastId);
+      optimizeAbort = null;
+      optimizing = false;
+    }
+  }
+
   function onKey(e: KeyboardEvent) {
     if (!open || pickerSlot !== null) return;
     if (e.key === "Escape") {
+      // 技能那两层（右键菜单 / 技能弹窗）比什么都靠上，第一下 Esc 只收它们。
+      if (skillMenu || skillModal) {
+        e.preventDefault();
+        skillMenu = false;
+        skillModal = false;
+        return;
+      }
       // 弹出的菜单开着时 Esc 先收菜单，别一下把整个弹窗关掉。
       if (mentionOpen || popOpen || wfOpen || kindPop) {
         e.preventDefault();
@@ -1909,7 +2098,7 @@
                   {/if}
                   <div class="cm-prompt-col">
                     <p class="cm-block-title">{promptBlockTitle || "完整提示词"}</p>
-                    <div class="cm-prompt-wrap">
+                    <div class="cm-prompt-wrap" class:has-skill={skillKind !== null}>
                       <div class="cm-prompt-bg" bind:this={promptBg} aria-hidden="true">
                         {#each mentionChunks(prompt) as chunk, i (i)}
                           <span class:cm-mention-hl={chunk.mention}>{chunk.text}</span>
@@ -1928,6 +2117,17 @@
                         title={"按住上下拖动：调提示词框的高度\n双击：恢复跟着内容长高"}
                         onpointerdown={onPromptGripDown} onkeydown={onPromptGripKey}
                         ondblclick={resetPromptHeight}></div>
+                      {#if skillKind}
+                        <!-- 拉高手柄左边这颗（2026-11-11 苏醒：「提示词输入框右下角加个图标，调用技能优化手动输入的提示词」）。
+                             左键＝拿这一族的默认技能重写一句；右键＝换技能、进设置。音频工作流不画它：台词是念出来的
+                             东西，重写一遍等于换个人说话，后端那一族也拒收。 -->
+                        <button class="cm-skill" class:is-busy={optimizing} type="button"
+                          disabled={!prompt.trim()} aria-busy={optimizing}
+                          aria-label={optimizing ? "正在优化提示词，点一下取消" : "用技能优化提示词"}
+                          title={skillTitle}
+                          onclick={() => (optimizing ? optimizeAbort?.abort() : void optimizePrompt())}
+                          oncontextmenu={openSkillMenu}><Icon name="sparkle" size={14} /></button>
+                      {/if}
                       {#if mentionOpen && mentionOptions.length}
                         <div class="cm-pop-scrim" role="presentation" onclick={() => (mentionOpen = false)}></div>
                         <div class="cm-mention" style="left: {mentionBox.left}px; top: {mentionBox.top}px;" role="listbox" aria-label="引用素材">
@@ -2350,6 +2550,12 @@
   onClose={() => (pickerSlot = null)}
 />
 
+<!-- 技能那两层挂在 {#if open} 外面，和素材选择器同一层：右键菜单要 fixed 到指针位置，技能弹窗还要盖住
+     再次创作这一层本身。open 由这里替它们把着，弹窗一关不会残留一个打不开的开关。 -->
+<ContextMenu bind:open={skillMenu} x={skillMenuAt.x} y={skillMenuAt.y} items={skillMenuItems} />
+
+<PromptSkillModal open={open && skillModal} onClose={() => (skillModal = false)} />
+
 <style>
   /* 与「放大」同一层、同一块底色（2026-11-04 苏醒：「再次创作和放大功能一样，收进缩略图区域，
      不要模糊背景了，和放大一样的纯色背景」）。absolute 的 containing block 为什么是 <main>：
@@ -2723,6 +2929,31 @@
   /* 关掉动效的人不该看不见它：这一档不压暗，只是不再有那 140ms 的过渡 */
   @media (prefers-reduced-motion: reduce) {
     .cm-prompt-grip { opacity: .85; transition: none; }
+  }
+  /* 提示词框右下角那颗「按技能优化」（2026-11-11 苏醒）。版式抄上面的 .cm-wand：静止压暗、滑过或键盘聚焦才亮。
+     位置让开拉高手柄那颗 14px（它占 right:4 起那一格），这颗从 right:24 起、24×24——命中区 24 是硬底线。
+     颜色一律引 token，不新增裸 hex。 */
+  .cm-skill {
+    position: absolute; right: 24px; bottom: 4px; z-index: 4;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; padding: 0; border-radius: 50%;
+    border: 1px solid var(--raise-4); background: rgb(var(--ink-rgb-0) / 55%);
+    color: rgb(var(--text-1-rgb) / 62%); cursor: pointer;
+    opacity: .6; backdrop-filter: blur(6px);
+    transition: opacity 140ms ease, color 140ms ease, border-color 140ms ease, background 140ms ease;
+  }
+  /* 画了这颗就得给正文留位：24 高的圆正压在底部 4..28px 那一条，长提示词最后一行会正好穿到它下面
+     （提示词是跟着内容长高的，最后一行就贴着底）。留 28px 把那条让出来——空着时框会高一档（约 46→59），
+     这是有意的取舍：宁可空态高一点，也不要字压在图标底下。只在这一族画了它才留，音频工作流不受影响。
+     高亮镜像层和输入框同一条规则，改一处两处一起动，不然高亮和字会错位。 */
+  .cm-prompt-wrap.has-skill .cm-prompt-bg, .cm-prompt-wrap.has-skill .cm-textarea { padding-bottom: 28px; }
+  .cm-skill:hover, .cm-skill:focus-visible { opacity: 1; color: var(--accent-strong); border-color: var(--accent); background: rgb(var(--ink-rgb-0) / 82%); }
+  .cm-skill:disabled { opacity: .28; cursor: default; }
+  .cm-skill.is-busy { opacity: 1; color: var(--accent-strong); animation: cm-skill-pulse 1.2s ease-in-out infinite; }
+  @keyframes cm-skill-pulse { 50% { opacity: .45; } }
+  /* 关掉动效的人照样看得出它在跑：只是不再闪 */
+  @media (prefers-reduced-motion: reduce) {
+    .cm-skill.is-busy { animation: none; }
   }
   .cm-note { margin: 0; font-size: 11.5px; color: #71717a; }
   .cm-empty { display: flex; flex-direction: column; gap: 10px; padding: 16px; font-size: 12.5px; color: #a1a1aa; background: #1b1b1f; border: 1px dashed #33333a; border-radius: 12px; }

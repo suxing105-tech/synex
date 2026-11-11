@@ -7,6 +7,8 @@ import CloneModal from '../components/CloneModal.svelte';
 import { comfyuiApi, imagesApi } from '../lib/api';
 import { EMPTY_CLONE_JOB, applyCloneProgress, cloneJob, cloneOpen } from '../lib/clone';
 import { comfyuiStatus } from '../lib/stores';
+import { clearToasts, toasts } from '../lib/toast';
+import { resetPromptSkills } from '../lib/prompt-skills';
 
 const TPL = {
   id: 1, name: 'Qwen 多图编辑', is_active: true, default_prompt: '工作流里写的那句',
@@ -79,6 +81,9 @@ afterEach(() => {
   vi.restoreAllMocks();
   // 拉高手柄那档存的是 localStorage，不清的话拖高那一轮的用例会污染「空着只有两行」那条
   localStorage.removeItem('suxing.clonePromptH');
+  clearToasts();
+  // 技能清单是模块级快照，不清的话前一条用例拉的默认值会漏给后一条
+  resetPromptSkills();
   cloneJob.set(EMPTY_CLONE_JOB);
   comfyuiStatus.set({ running: true, enabled: true, url: 'http://127.0.0.1:8188', checked_at: 0 });
 });
@@ -3511,4 +3516,233 @@ it('展示图确实放大了，等待台的动效也有降级：CSS 三条钉住
   expect(reduced).toBeTruthy();
   expect(reduced![0]).toContain('.cm-stage-ghost');
   expect(reduced![0]).toMatch(/animation: none/);
+});
+
+
+/* ── 提示词优化技能那颗图标（2026-11-11）────────────────────────────────
+   两条口径贯穿这一段：技能清单是**懒加载**的——所以 baseRoutes 里故意不给
+   /api/prompt-skills，谁在打开弹窗的路上顺手拉它，哪条用例就会被「未预演的接口」顶出来。
+   另一个是 routes 按前缀匹配、先匹配的键赢，所以 /api/prompt-skills/1/optimize 必须写在
+   /api/prompt-skills 前面，不然优化请求会被清单那份答复接走。 */
+
+const SKILL = (over: Record<string, unknown> = {}) => ({
+  id: 1, name: '镜头补全', note: '', kinds: ['image'], instruction: '补上景别与光影',
+  language: 'auto', with_refs: true, builtin_key: 'image_default', sort: 0, created_at: '', updated_at: '',
+  ...over,
+});
+const SKILLS = [
+  SKILL(),
+  SKILL({ id: 2, name: '分镜脚本', kinds: ['video'], builtin_key: 'video_default' }),
+  SKILL({ id: 3, name: '电影感', builtin_key: null, with_refs: false }),
+];
+const skillRoutes = (over: Record<string, unknown> = {}) => ({
+  ...baseRoutes(),
+  '/api/prompt-skill-settings': { default_image_skill: 1, default_video_skill: 2 },
+  '/api/model-configs': [],
+  '/api/reverse-prompt-settings': { default_model_id: null, instruction: '', default_instruction: '' },
+  ...over,
+  '/api/prompt-skills': SKILLS,
+});
+const skillBtn = (screen: any) => screen.container.querySelector('.cm-skill') as HTMLButtonElement;
+const actionOf = (label: string) => get(toasts).flatMap((item) => item.actions ?? []).find((item) => item.label === label);
+
+it('提示词右下角那颗优化图标：空提示词点不动，写一句才按得动，打开弹窗不该偷拉技能清单', async () => {
+  routes(baseRoutes());
+  const screen = await ready();
+  expect(skillBtn(screen).disabled).toBe(true);
+  // 画了这颗就得给正文留位（长提示词最后一行不许穿到图标底下），留位挂在 wrap 的类上
+  expect(screen.container.querySelector('.cm-prompt-wrap')?.className).toContain('has-skill');
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '一句手打的提示词' } });
+  expect(skillBtn(screen).disabled).toBe(false);
+  expect(http.mock.calls.some(([path]) => String(path).startsWith('/api/prompt-skills'))).toBe(false);
+});
+
+it('左键用这一族的默认技能重写、写回输入框，撤销退回原文', async () => {
+  let sent: any = null;
+  routes(skillRoutes({
+    '/api/prompt-skills/1/optimize': (init?: RequestInit) => {
+      sent = JSON.parse(String(init?.body));
+      return { prompt: '重写后：中景、柔光', model_name: '智谱', model: 'glm-4v', degraded_refs: null };
+    },
+  }));
+  const screen = await ready();
+  const ta = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  await fireEvent.input(ta, { target: { value: '原文一句' } });
+  await fireEvent.click(skillBtn(screen));
+  await vi.waitFor(() => expect(ta.value).toBe('重写后：中景、柔光'));
+  // 参考位默认先放被点的这张成图自己，所以第一次优化就带着它，编号是那一格自己的
+  expect(sent).toEqual({ prompt: '原文一句', kind: 'image', refs: [{ ordinal: 1, image_id: 7 }] });
+  const undo = actionOf('撤销');
+  expect(undo).toBeTruthy();
+  undo!.onClick();
+  await vi.waitFor(() => expect(ta.value).toBe('原文一句'));
+});
+
+it('参考图只送图片那一族，编号用格子自己的、不按送过去的先后重排', async () => {
+  const IMG = { id: 40, filename: '猫.png', path: 'D:/猫.png', kind: 'image', original_url: '/api/images/40/file', thumbnail_url: '/api/images/40/file', width: 400, height: 900 };
+  const CLIP = { id: 55, filename: '片子.mp4', path: 'D:/片子.mp4', kind: 'video', original_url: '/api/images/55/file', thumbnail_url: '/api/images/55/file', width: 400, height: 900 };
+  // 一格图 + 一格视频：两格的 ordinal 都是 1，只有图片那格该进这次请求
+  const wire = {
+    ...TPL, media_kind: 'video', soundtracks: 0,
+    reference_cells: [
+      { key: '188.image', kind: 'image', ordinal: 1, label: '图片1', name: '', slot_label: '加载图像', tag: '<Picture 1>' },
+      { key: '185.video', kind: 'video', ordinal: 1, label: '视频1', name: '', slot_label: 'Load Video (Upload)', tag: '<Video 1>' },
+    ],
+  };
+  let sent: any = null;
+  routes(skillRoutes({
+    '/api/clone/templates': { items: [wire] },
+    '/api/clone/sources/7': {
+      references: [{ ...IMG, slot: '188.image' }, { ...CLIP, slot: '185.video' }],
+      template_id: 1, source_image_id: null, dropped: 0,
+    },
+    // 视频那一族的默认技能是 id 2
+    '/api/prompt-skills/2/optimize': (init?: RequestInit) => {
+      sent = JSON.parse(String(init?.body));
+      return { prompt: '按 <Picture 1> 拍成', model_name: '智谱', model: 'glm-4v', degraded_refs: null };
+    },
+  }));
+  const screen = await ready();
+  const ta = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  await fireEvent.input(ta, { target: { value: '照 <Picture 1> 拍' } });
+  await fireEvent.click(skillBtn(screen));
+  await vi.waitFor(() => expect(ta.value).toBe('按 <Picture 1> 拍成'));
+  // 只有图片那格进请求，编号还是它自己的 1：接口只认 image_id，把视频那格塞进去会拿错素材
+  expect(sent).toEqual({ prompt: '照 <Picture 1> 拍', kind: 'video', refs: [{ ordinal: 1, image_id: 40 }] });
+});
+
+it('技能勾了不带参考图，就不白搭那几多模态的流量', async () => {
+  let sent: any = null;
+  routes(skillRoutes({
+    '/api/prompt-skill-settings': { default_image_skill: 3, default_video_skill: 2 },
+    '/api/prompt-skills/3/optimize': (init?: RequestInit) => {
+      sent = JSON.parse(String(init?.body));
+      return { prompt: '重写后', model_name: '智谱', model: 'glm-4v', degraded_refs: null };
+    },
+  }));
+  const screen = await ready();
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '一句' } });
+  await fireEvent.click(skillBtn(screen));
+  await vi.waitFor(() => expect(sent).toBeTruthy());
+  expect(sent.refs).toEqual([]);
+});
+
+it('模型把 @图片1 弄丢了就不写回，人要「仍然写入」才落进框里', async () => {
+  routes(skillRoutes({
+    '/api/prompt-skills/1/optimize': { prompt: '重写后一个字都没提参考', model_name: '智谱', model: 'glm-4v', degraded_refs: null },
+  }));
+  const screen = await ready();
+  const ta = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  await fireEvent.input(ta, { target: { value: '照 @图片1 画' } });
+  await fireEvent.click(skillBtn(screen));
+  await vi.waitFor(() => expect(get(toasts).some((item) => item.message.includes('弄丢了'))).toBe(true));
+  expect(ta.value).toBe('照 @图片1 画');
+  actionOf('仍然写入')!.onClick();
+  await vi.waitFor(() => expect(ta.value).toBe('重写后一个字都没提参考'));
+});
+
+it('换写法不算丢：@图片1 被写成 <Picture 1> 照样直接写回，不多问一句', async () => {
+  routes(skillRoutes({
+    '/api/prompt-skills/1/optimize': { prompt: '按 <Picture 1> 的画面来', model_name: '智谱', model: 'glm-4v', degraded_refs: null },
+  }));
+  const screen = await ready();
+  const ta = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  await fireEvent.input(ta, { target: { value: '照 @图片1 画' } });
+  await fireEvent.click(skillBtn(screen));
+  await vi.waitFor(() => expect(ta.value).toBe('按 <Picture 1> 的画面来'));
+  expect(get(toasts).some((item) => item.message.includes('弄丢了'))).toBe(false);
+});
+
+it('右键那颗图标：列出这一族的技能、勾在默认那条上，点另一条就把默认值写回去', async () => {
+  routes(skillRoutes());
+  const screen = await ready();
+  await fireEvent.contextMenu(skillBtn(screen));
+  const menu = await screen.findByRole('menu');
+  const labels = [...menu.querySelectorAll('[role="menuitem"] span:first-child')].map((node) => node.textContent);
+  // 只有图片那一族的两条，视频那条不许混进来
+  expect(labels).toEqual(['优化用哪条技能（图片）', '✓ 镜头补全', '电影感', '技能设置…']);
+  await fireEvent.click(screen.getByRole('menuitem', { name: '电影感' }));
+  await vi.waitFor(() => expect(
+    http.mock.calls.some(([path, init]) => path === '/api/prompt-skill-settings' && (init as RequestInit)?.method === 'PUT'),
+  ).toBe(true));
+  const put = http.mock.calls.find(([path, init]) => path === '/api/prompt-skill-settings' && (init as RequestInit)?.method === 'PUT');
+  expect(JSON.parse(String(put?.[1]?.body))).toEqual({ default_image_skill: 3, default_video_skill: 2 });
+});
+
+it('清单还在路上时右键：菜单不许先开半截，等清单回来一次给全', async () => {
+  // ContextMenu 有个实测出来的毛病（Svelte 5.57）：菜单开着的时候往 items 里追加条目，新条目
+  // 的 DOM 出不来。所以右键必须先拿到清单再画菜单——这条钉的是那个顺序，倒了就只剩两行。
+  let settle: (value: unknown) => void = () => {};
+  const gate = new Promise((resolve) => { settle = resolve; });
+  routes({ ...skillRoutes(), '/api/prompt-skills': () => gate });
+  const screen = await ready();
+  await fireEvent.contextMenu(skillBtn(screen));
+  await tick();
+  expect(screen.queryByRole('menu')).toBeNull();
+  settle(SKILLS);
+  const menu = await screen.findByRole('menu');
+  expect([...menu.querySelectorAll('[role="menuitem"] span:first-child')].map((node) => node.textContent))
+    .toEqual(['优化用哪条技能（图片）', '✓ 镜头补全', '电影感', '技能设置…']);
+});
+
+it('右键菜单里的「技能设置」开的是技能弹窗，脚下一句报的是反推那份模型', async () => {
+  routes({
+    ...skillRoutes(),
+    '/api/model-configs': [
+      { id: 3, name: '智谱', base_url: 'https://api.example.com', model: 'glm-4v', timeout: 60, provider: null, has_api_key: true, key_persistence: 'encrypted' },
+    ],
+    '/api/reverse-prompt-settings': { default_model_id: 3, instruction: '', default_instruction: '' },
+  });
+  const screen = await ready();
+  await fireEvent.contextMenu(skillBtn(screen));
+  await fireEvent.click(await screen.findByRole('menuitem', { name: '技能设置…' }));
+  const dialog = await screen.findByRole('dialog', { name: '提示词优化技能' });
+  expect(dialog.textContent).toContain('镜头补全');
+  expect(dialog.textContent).toContain('智谱 · glm-4v');
+});
+
+it('Esc 先收技能弹窗，第二下才收掉再次创作整层', async () => {
+  const onClose = vi.fn();
+  routes(skillRoutes());
+  const screen = await ready({ onClose });
+  await fireEvent.contextMenu(skillBtn(screen));
+  await fireEvent.click(await screen.findByRole('menuitem', { name: '技能设置…' }));
+  await screen.findByRole('dialog', { name: '提示词优化技能' });
+  await fireEvent.keyDown(window, { key: 'Escape' });
+  expect(screen.queryByRole('dialog', { name: '提示词优化技能' })).toBeNull();
+  expect(onClose).not.toHaveBeenCalled();
+});
+
+it('音频工作流不画这颗优化图标：台词重写一遍等于换个人说话', async () => {
+  routes({ ...audioRoutes(), '/api/clone/templates': { items: [TTS] } });
+  const screen = await ready({ image: AUDIO });
+  expect(screen.container.querySelector('.cm-skill')).toBeNull();
+  // 没画就不许留那块位：音频那一档的空态高度不该被图片族带着涨
+  expect(screen.container.querySelector('.cm-prompt-wrap')?.className).not.toContain('has-skill');
+});
+
+it('模型只回壳、没配模型那类 detail 原样报出来，不另挑一句官话', async () => {
+  routes(skillRoutes({
+    '/api/prompt-skills/1/optimize': () => {
+      throw Object.assign(new Error('422'), { detail: '还没配好模型：先在设置的「反推提示词」里加一家服务商并选一个默认模型' });
+    },
+  }));
+  const screen = await ready();
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '一句' } });
+  await fireEvent.click(skillBtn(screen));
+  await vi.waitFor(() => expect(
+    get(toasts).some((item) => item.message.includes('先在设置的「反推提示词」里')),
+  ).toBe(true));
+});
+
+it('那颗图标的版面：让开拉高手柄、命中区 24、清单只在点它时才拉', () => {
+  const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  expect(css).toMatch(/\.cm-prompt-grip \{\s*position: absolute; right: 4px; bottom: 4px; z-index: 3;\s*width: 14px; height: 14px/);
+  expect(css).toMatch(/\.cm-skill \{[^}]*right: 24px; bottom: 4px; z-index: 4;[^}]*width: 24px; height: 24px/);
+  // 键盘也得够得着：半透明那颗在 :focus-visible 下和 hover 一样亮起来
+  expect(css).toMatch(/\.cm-skill:hover, \.cm-skill:focus-visible/);
+  expect(css).toMatch(/\.cm-skill:disabled/);
+  // 只有两处会拉清单：点左键、点右键。别混进打开弹窗的那条路
+  expect(css.match(/loadPromptSkills\(\)/g)?.length).toBe(2);
+  expect(css).toMatch(/\{#if skillKind\}/);
 });

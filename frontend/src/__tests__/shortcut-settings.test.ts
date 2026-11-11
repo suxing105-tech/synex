@@ -10,17 +10,34 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); docume
 describe("自定义快捷键", () => {
   it("旧配置补充两个侧栏默认键并保留已有改键", () => {
     localStorage.setItem("suxing.shortcuts.v1", JSON.stringify({ positive: "ctrl+q" }));
-    expect(loadShortcuts()).toMatchObject({ positive: "ctrl+q", rightSidebar: "tab", leftSidebar: "backquote" });
-    expect(validateShortcuts({ ...defaultShortcuts, leftSidebar: "tab" })).toContain("冲突");
+    expect(loadShortcuts()).toMatchObject({ positive: "ctrl+q", rightSidebar: "ctrl+alt+b", leftSidebar: "backquote" });
+    // Tab 谁都不许绑：绑在侧栏上会把键盘焦点遍历整个吃掉（WCAG 2.1.2）
+    expect(validateShortcuts({ ...defaultShortcuts, leftSidebar: "tab" })).toContain("不能绑定");
+    expect(validateShortcuts({ ...defaultShortcuts, leftSidebar: "shift+tab" })).toContain("不能绑定");
   });
-  it("侧栏快捷键可以录制 Tab 和波浪键并保存", async () => {
+  it("旧配置里的 Tab 会被迁走，其余改键一个不动", () => {
+    localStorage.setItem("suxing.shortcuts.v1", JSON.stringify({ rightSidebar: "tab", positive: "ctrl+q", seed: "" }));
+    expect(loadShortcuts()).toMatchObject({ rightSidebar: "ctrl+alt+b", positive: "ctrl+q", seed: "" });
+    localStorage.setItem("suxing.shortcuts.v1", JSON.stringify({ preview: "tab" }));
+    expect(loadShortcuts().preview).toBe("");
+  });
+  it("Tab 录不进去且自动退出录制；波浪键照旧能录并保存", async () => {
     const ui = render(ShortcutSettings);
     const right = ui.getByRole("button", { name: "设置展开 / 收起右侧栏快捷键" });
     const left = ui.getByRole("button", { name: "设置展开 / 收起左侧栏快捷键" });
-    await fireEvent.click(right); await fireEvent.keyDown(right, { key: "Tab" });
+    await fireEvent.click(right);
+    // fireEvent 返回 dispatchEvent 的结果：false 才说明有人吞了 Tab
+    expect(await fireEvent.keyDown(right, { key: "Tab" })).toBe(true);
+    expect(right.getAttribute("aria-pressed")).toBe("false"); // 录制已取消
+    expect(ui.getByRole("status").textContent).toContain("不能绑定");
     await fireEvent.click(left); await fireEvent.keyDown(left, { key: "~", code: "Backquote", shiftKey: true });
     await fireEvent.click(ui.getByText("保存快捷键"));
-    expect(loadShortcuts()).toMatchObject({ rightSidebar: "tab", leftSidebar: "backquote" });
+    expect(loadShortcuts()).toMatchObject({ rightSidebar: "ctrl+alt+b", leftSidebar: "backquote" });
+  });
+  it("Tab 打不动任何快捷键，包括还绑着 Tab 的老配置", () => {
+    expect(matchesAction(new KeyboardEvent("keydown", { key: "Tab" }), "rightSidebar")).toBe(false);
+    shortcutSettings.set({ ...defaultShortcuts, rightSidebar: "tab" });
+    expect(matchesAction(new KeyboardEvent("keydown", { key: "Tab" }), "rightSidebar")).toBe(false);
   });
   it("保存后重载，支持清除，损坏存储回退默认", () => {
     saveShortcuts({ ...defaultShortcuts, positive: "ctrl+q", seed: "" });

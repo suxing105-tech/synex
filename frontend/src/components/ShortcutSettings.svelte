@@ -7,7 +7,9 @@
   let message = $state("");
   function capture(e: KeyboardEvent, id: ShortcutId) {
     if (recording !== id) return;
-    if (e.key === "Tab" && e.shiftKey) { recording = null; return; }
+    // Tab 不吞：录制中按 Tab 就是放弃录制、把焦点交给下一个控件。
+    // 快捷键永远不许绑 Tab（绑了就会卡死键盘焦点遍历，WCAG 2.1.2），这里没什么可录的。
+    if (e.key === "Tab") { recording = null; message = "Tab 用于移动焦点，不能绑定"; return; }
     e.preventDefault();
     e.stopPropagation();
     if (e.key === "Escape") { recording = null; return; }
@@ -47,7 +49,7 @@
     </div>
   </div>
   <p class="settings-hint">
-    点击按键后按下新组合，支持 Ctrl、Alt、Shift、Win / Cmd。Esc 取消录制，Shift + Tab 移动焦点；录制时可直接按 Tab 进行绑定。
+    点击按键后按下新组合，支持 Ctrl、Alt、Shift、Win / Cmd。Esc 取消录制；Tab 只用来移动焦点，不能绑定成快捷键。
     输入文字、输入法和打开设置时不触发；图片操作需选中图片，预览需鼠标停在图片上。系统占用的组合可能无法使用。
   </p>
 </section>

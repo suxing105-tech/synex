@@ -10,13 +10,23 @@ function key(key: string, extra: KeyboardEventInit = {}, target: EventTarget = w
   target.dispatchEvent(event);
   return event;
 }
-it('Tab toggles right and either form of the tilde key toggles left', () => {
+it('Ctrl+Alt+B toggles right and either form of the tilde key toggles left', () => {
   const left = vi.fn(), right = vi.fn();
   off = registerSidebarShortcuts(left, right);
-  expect(key('Tab').defaultPrevented).toBe(true);
-  key('Tab'); key('`', { code: 'Backquote' }); key('~', { code: 'Backquote', shiftKey: true });
+  const chord = { ctrlKey: true, altKey: true };
+  expect(key('b', chord).defaultPrevented).toBe(true);
+  key('b', chord); key('`', { code: 'Backquote' }); key('~', { code: 'Backquote', shiftKey: true });
   expect(left).toHaveBeenCalledTimes(2); expect(right).toHaveBeenCalledTimes(2);
+});
+it('Tab 永远归焦点遍历：任何快捷键都不许拦（WCAG 2.1.2）', () => {
+  const toggle = vi.fn(); off = registerSidebarShortcuts(toggle, toggle);
+  expect(key('Tab').defaultPrevented).toBe(false);
   expect(key('Tab', { shiftKey: true }).defaultPrevented).toBe(false);
+  // 就算存储里还被塞回 Tab（老配置 / 手改 localStorage），也不许再吞
+  shortcutSettings.set({ ...defaultShortcuts, rightSidebar: 'tab', leftSidebar: 'shift+tab' });
+  expect(key('Tab').defaultPrevented).toBe(false);
+  expect(key('Tab', { shiftKey: true }).defaultPrevented).toBe(false);
+  expect(toggle).not.toHaveBeenCalled();
 });
 it('preserves typing, composition, repeated keys and modal focus navigation', () => {
   const toggle = vi.fn(); off = registerSidebarShortcuts(toggle, toggle);

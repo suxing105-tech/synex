@@ -1,7 +1,7 @@
 import { writable, get } from "svelte/store";
 
 export const shortcutActions = [
-  { id: "rightSidebar", label: "展开 / 收起右侧栏", key: "tab" },
+  { id: "rightSidebar", label: "展开 / 收起右侧栏", key: "ctrl+alt+b" },
   { id: "leftSidebar", label: "展开 / 收起左侧栏", key: "backquote" },
   { id: "positive", label: "复制正向 Prompt", key: "p" },
   { id: "negative", label: "复制反向 Prompt", key: "n" },
@@ -17,6 +17,17 @@ export const shortcutActions = [
 export type ShortcutId = typeof shortcutActions[number]["id"];
 export type ShortcutMap = Record<ShortcutId, string>;
 export const defaultShortcuts = Object.fromEntries(shortcutActions.map(a => [a.id, a.key])) as ShortcutMap;
+/**
+ * Tab 曾经是「展开 / 收起右侧栏」的默认键（2026-11-11 撤掉）。
+ * 它把整站的键盘焦点遍历吃掉了：只要焦点不在输入框里，按 Tab 不走到下一个控件，
+ * 而是收起右栏 —— WCAG 2.1.2「不能卡住键盘焦点」。这里留一张迁移表，
+ * 让已经存过 "tab" 的设备平移到新默认键，其它自定义一个不动。
+ */
+const TAB_KEY_MIGRATION: Partial<Record<ShortcutId, string>> = { rightSidebar: "ctrl+alt+b" };
+/** 一个快捷键绑定的最后一段（裸键名），用来识别「这一条其实按的是 Tab」。 */
+function baseKey(key: string): string {
+  return key.split("+").at(-1) || "";
+}
 const storageKey = "suxing.shortcuts.v1";
 const validKey = /^(?:(?:ctrl|alt|shift|meta)\+)*(?:[a-z0-9]|space|tab|backquote|arrowleft|arrowright|arrowup|arrowdown|f[1-9]|f1[0-2]|home|end|pageup|pagedown)$/;
 /** 素材口径键在 lib/content-shortcuts.ts 里硬编码，自定义快捷键不能占用。 */
@@ -28,6 +39,7 @@ export function validateShortcuts(value: ShortcutMap): string | null {
     if (typeof key !== "string" || (key && !validKey.test(key))) return `${a.label}：不支持该按键`;
     if (!key) continue;
     if (RESERVED_SCOPE_KEYS.includes(key)) return `${a.label}：0 / A / I / V / T / Q 保留用于切换素材类型`;
+    if (baseKey(key) === "tab") return `${a.label}：Tab 用于键盘焦点遍历，不能绑定`;
     const parts = key.split("+");
     const canonical = [...new Set(parts.slice(0, -1))].sort().concat(parts.at(-1)!).join("+");
     if (seen.has(canonical)) return `「${a.label}」与「${seen.get(canonical)}」的快捷键冲突`;
@@ -39,6 +51,11 @@ export function loadShortcuts(): ShortcutMap {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey) || "null");
     const value = { ...defaultShortcuts, ...saved };
+    // 老设备可能还把 Tab 绑在某个动作上：那一律解绑，右栏迁到新默认键，其余自定义不动。
+    for (const action of shortcutActions) {
+      if (baseKey(value[action.id]) !== "tab") continue;
+      value[action.id] = TAB_KEY_MIGRATION[action.id] ?? "";
+    }
     for (const action of shortcutActions) {
       if (RESERVED_SCOPE_KEYS.includes(value[action.id])) value[action.id] = action.id === 'tags' && value[action.id] === 't' ? 'shift+t' : '';
     }
@@ -62,6 +79,8 @@ export function eventShortcut(e: KeyboardEvent): string {
 }
 export function shortcutBlocked(e: KeyboardEvent): boolean {
   const target = e.target;
+  // Tab / Shift+Tab 归键盘焦点遍历，任何快捷键都不许把它拦下来（见上面 TAB_KEY_MIGRATION）。
+  if (e.key === "Tab") return true;
   return e.isComposing || e.repeat || !!document.querySelector('[data-settings-dialog]') ||
     (target instanceof HTMLElement && !!target.closest('input, textarea, select, [contenteditable="true"]'));
 }

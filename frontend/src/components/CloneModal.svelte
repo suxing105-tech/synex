@@ -17,6 +17,7 @@
   import { comfyuiStatus, stopAudio } from "../lib/stores";
   import { pushToast } from "../lib/toast";
   import { modalFocus } from "../lib/modal-focus";
+  import { subscribeFileDrop } from "../lib/native-drop";
   import Icon from "./Icon.svelte";
   import MediaPickerModal from "./MediaPickerModal.svelte";
   import CloneCanvas from "./CloneCanvas.svelte";
@@ -41,7 +42,7 @@
     type CloneOutput, type CloneSlot, type MediaKind, type MentionItem, type MentionToken, type PromptGroup, type RefCell, type RefKind,
     type CloneJob, type CloneSources, type CloneTemplate,
   } from "../lib/clone";
-  import type { ImageSummary, MediaFeedItem } from "../lib/types";
+  import type { ImageSummary, ImportResponse, MediaFeedItem } from "../lib/types";
 
   interface Props {
     open: boolean;
@@ -532,9 +533,9 @@
   }
 
   /* 这一层现在被中间那一列的宽度框住，最宽那颗弹层（云端两栏 452px）不能再用 100vw 封顶——
-     量错了对象：列一窄它就从面板右边顶出去，把整块面板顶出横向滚动条。真实上限是
-     「面板内容右沿 − 弹层定位父级的左沿」，实测写进 --cm-pop-max；用户折展侧栏与详情栏
-     会改变这一列的宽度，ResizeObserver 让它跟着走。
+     量错了对象：列一窄它就从面板右边顶出去，把整块面板顶出横向滚动条。真实上限要实测：
+     云端那一屏贴「工作流」那颗胶囊往左长，所以量的是「那一格的右沿 − 面板左内沿」，写进
+     --cm-pop-wf-left；用户折展侧栏与详情栏会改变这一列的宽度，ResizeObserver 让它跟着走。
      别改成 container query：container-type 会给 .cm-panel 加 contain:layout，
      面板里那两条 position:fixed（参考图悬停放大预览、弹层那张整屏兜底遮罩）会跟着错位。 */
   // 中间那一列窄到放不下两栏时收回上下结构（CSS 见 .cm-body.is-stacked）。
@@ -545,12 +546,15 @@
     if (!host) return;
     const writePopMax = () => {
       const box = host.getBoundingClientRect();
-      const pill = host.querySelector<HTMLElement>('[aria-label="工作流"]');
-      // 弹层与那颗胶囊同一个定位父级：照父级左沿算，才不把胶囊自己那 110px 算进余量。
-      const anchorLeft = pill && pill.offsetParent instanceof HTMLElement
-        ? pill.offsetParent.getBoundingClientRect().left
-        : box.left + 22;
-      host.style.setProperty("--cm-pop-max", `${Math.max(240, Math.round(box.right - 24 - anchorLeft))}px`);
+      const wfPill = host.querySelector<HTMLElement>('[aria-label="工作流"]');
+      // 云端那一屏那一层贴这颗胶囊的右边缘往左长（见 .cm-pop-wf.is-api）：余量在左边，量的是
+      // 「那一格的右沿 − 面板左内沿（22 内边距 + 1 描边）」，和下面那颗「画面参数」同一把尺。
+      // 外裹那一格就是胶囊自己的盒子，量同一只盒子；量不到（单测不排版）从 240 起。
+      const wfBox = wfPill?.closest<HTMLElement>(".cm-pop-wrap") ?? wfPill;
+      host.style.setProperty(
+        "--cm-pop-wf-left",
+        `${Math.max(240, Math.round((wfBox ? wfBox.getBoundingClientRect().right : box.right) - box.left - 23))}px`,
+      );
       // 同一把尺再量一份「往左长还剩多少」：画面参数那层贴胶囊右边缘往左长（见 .cm-pop-params），
       // 余量在左边——那颗右边缘到面板左内沿（22 内边距 + 1 描边）。窗口一窄胶囊被压扁，这一档
       // 跟着缩，不至于从左边被面板切第二次。弹层的外裹那一格就是胶囊自己的盒子，量同一只盒子。
@@ -1474,7 +1478,8 @@
  */
   async function importFiles(files: File[], slot?: string | null) {
     const target = slot ? cells.find((cell) => cell.key === slot) ?? null : null;
-    const wantKind = target?.kind ?? null;
+    // 老图片工作流的格子不带 kind，一律按图片算：拖进「图片1」的那一份只可能是图片
+    const wantKind: RefKind | null = target ? target.kind ?? "image" : null;
     const open = new Set(openRefKinds(cells, refs));
     const usable = files.filter((file) => {
       const kind = fileKindOf(file);
@@ -1493,41 +1498,114 @@
     }
     error = "";
     try {
-      const res = await imagesApi.import(usable, null);
-      if (!res.saved.length) {
-        pushToast(res.skipped?.[0] ? `这些素材没能入库（${res.skipped[0].reason}）` : "这些素材没能入库");
-        return;
-      }
-      // 空位按族分桶：一次拖进来一张图加一段音频时各找各的格子，不互相顶位。
-      const free: Record<RefKind, string[]> = { image: [], audio: [], video: [] };
-      for (const cell of cells) {
-        if (!refs[cell.key]) free[(cell.kind ?? "image") as RefKind].push(cell.key);
-      }
-      // 指定了格子就先占它，剩下的同族文件顺着本族的空位往后排。
-      const queue: string[] = [];
-      if (target && wantKind && free[wantKind].includes(target.key)) {
-        queue.push(target.key);
-        free[wantKind] = free[wantKind].filter((key) => key !== target.key);
-      }
-      const next = { ...refs };
-      let used = 0;
-      for (const item of res.saved) {
-        // 入库接口不回 kind（它只回 id / filename / path），认族只能看扩展名
-        const kind: RefKind = kindFromName(item.filename) || wantKind || "image";
-        const key = kind === wantKind && queue.length ? queue.shift() : free[kind].shift();
-        if (!key) continue;
-        next[key] = { ...item, kind } as ImageSummary;
-        used += 1;
-      }
-      refs = next;
-      pushToast(used > 1
-        ? `已把 ${used} ${refCounter}素材收进图库并选为${refNoun}`
-        : `已把「${res.saved[0].filename}」收进图库并选为${refNoun}`);
-      if (res.saved.length > used) pushToast(`${refNoun}位满了，多出的 ${res.saved.length - used} ${refCounter}只收进了图库`);
+      adoptRefs(await imagesApi.import(usable, null), wantKind, target);
     } catch (e) {
       pushToast(cloneError(e));
     }
   }
+
+  /**
+   * 从资源管理器拖进来的那一份：真机给的是磁盘路径，不是 File（见 subscribeFileDrop）。
+   * 语义和拖进图库一致——先复制进收件箱（原文件保留），再自动占参考位。
+   */
+  async function importPaths(paths: string[], slot?: string | null) {
+    const target = slot ? cells.find((cell) => cell.key === slot) ?? null : null;
+    const wantKind: RefKind | null = target ? target.kind ?? "image" : null;
+    const open = new Set(openRefKinds(cells, refs));
+    const usable = paths.filter((path) => {
+      const kind = kindFromName(path);
+      if (!kind) return wantKind === null;
+      return wantKind ? kind === wantKind : open.has(kind);
+    });
+    if (!usable.length) {
+      if (wantKind && paths.length) error = `${target?.label ?? "这一格"}要的是${REF_KIND_NAMES[wantKind]}，你给的这份不是，换一份。`;
+      else if (paths.length) {
+        const first = kindFromName(paths[0]);
+        error = first
+          ? `这份工作流的${REF_KIND_NAMES[first]}参考位已经放满了。要换就点格子上的替换，或先移掉一份。`
+          : "认不出这些素材是哪一族，先确认文件格式。";
+      }
+      return;
+    }
+    error = "";
+    try {
+      adoptRefs(await imagesApi.copyFiles(usable, null), wantKind, target);
+    } catch (e) {
+      pushToast(cloneError(e));
+    }
+  }
+
+  /**
+   * 入库回来的那几份按族占位。两条入库路（浏览器的 File、真机的磁盘路径）都汇到这里，
+   * 「占哪一格」和那两句提示因此只有一份口径。
+   */
+  function adoptRefs(res: ImportResponse, wantKind: RefKind | null, target: RefCell | null) {
+    if (!res.saved.length) {
+      pushToast(res.skipped?.[0] ? `这些素材没能入库（${res.skipped[0].reason}）` : "这些素材没能入库");
+      return;
+    }
+    // 空位按族分桶：一次拖进来一张图加一段音频时各找各的格子，不互相顶位。
+    const free: Record<RefKind, string[]> = { image: [], audio: [], video: [] };
+    for (const cell of cells) {
+      if (!refs[cell.key]) free[(cell.kind ?? "image") as RefKind].push(cell.key);
+    }
+    // 指定了格子就先占它——那一格已经放了素材也照样占：把素材拖到一张参考缩略图上就是「换掉它」
+    //（2026-11-11 苏醒：「当本地图片拖动到参考缩略图时，自动加载参考」）。
+    // 同族剩下的顺本族的空位往后排。
+    const queue: string[] = [];
+    if (target && wantKind) {
+      queue.push(target.key);
+      free[wantKind] = free[wantKind].filter((key) => key !== target.key);
+    }
+    const next = { ...refs };
+    let used = 0;
+    for (const item of res.saved) {
+      // 入库接口不回 kind（它只回 id / filename / path），认族只能看扩展名
+      const kind: RefKind = kindFromName(item.filename) || wantKind || "image";
+      const key = kind === wantKind && queue.length ? queue.shift() : free[kind].shift();
+      if (!key) continue;
+      next[key] = { ...item, kind } as ImageSummary;
+      used += 1;
+    }
+    refs = next;
+    pushToast(used > 1
+      ? `已把 ${used} ${refCounter}素材收进图库并选为${refNoun}`
+      : `已把「${res.saved[0].filename}」收进图库并选为${refNoun}`);
+    if (res.saved.length > used) pushToast(`${refNoun}位满了，多出的 ${res.saved.length - used} ${refCounter}只收进了图库`);
+  }
+
+  /** 整排参考区那一个盒子：原生拖放订阅它，落点按格子逐个点出来。 */
+  let refStackEl = $state<HTMLElement | null>(null);
+  /** 指针现在停在哪个格子上。null = 没指着具体格子，落位交给「按族分派」。 */
+  let refDropSlot = $state<string | null>(null);
+
+  /** 坐标落在哪一格：量不到（还没排版、单测）就不认格子。 */
+  function refSlotAt(x: number, y: number): string | null {
+    const stack = refStackEl;
+    if (!stack) return null;
+    for (const el of Array.from(stack.querySelectorAll<HTMLElement>("[data-ref-slot]"))) {
+      const box = el.getBoundingClientRect();
+      if (!box.width && !box.height) continue;
+      if (x >= box.left && x <= box.right && y >= box.top && y <= box.bottom) return el.dataset.refSlot || null;
+    }
+    return null;
+  }
+
+  /**
+   * 真机（Tauri）里从资源管理器拖文件进来，页面收不到 drop，路径只在 tauri://drag-drop 的
+   * payload 里——Feed、侧栏、设置页那几处早就接了这条，参考格只挂了 DOM 的 ondrop，所以
+   * 「把本地图片拖到参考缩略图上」在真机上毫无反应（2026-11-11 苏醒点名要这条）。
+   * 整排只订阅一次：H3 那种十几个格子的配方不该为每次 drag-over 跑十几遍 rect。
+   */
+  $effect(() => {
+    if (!open) return;
+    return subscribeFileDrop(
+      () => refStackEl,
+      () => {},
+      (paths, point) => importPaths(paths, point ? refSlotAt(point.x, point.y) : refDropSlot),
+      (point) => { refDropSlot = point ? refSlotAt(point.x, point.y) : null; },
+    );
+  });
 
   function onKey(e: KeyboardEvent) {
     if (!open || pickerSlot !== null) return;
@@ -1565,12 +1643,11 @@
        （App / 搜索框 / 侧栏那几处全局快捷键判重认的就是它）。 -->
   <div class="cm-backdrop" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
     <div class="cm-panel" class:is-grabbing={promptGripping} class:is-stacked={stacked} bind:this={panelEl} role="dialog" aria-label="再次创作" use:modalFocus onscroll={() => (refZoom = null)}>
-      <!-- 标题两行照旧图放回来（2026-11-10 苏醒：「改回类似之前的这种版式」）：小字说这是哪件事，
-           大字直接报当前挂的是哪条工作流 / 哪个模型。底部那颗胶囊管「点进去换一条」，顶栏这一行管
-           「我正在用哪一条」，两件事不一样，不再算讲两遍。role=dialog 的 aria-label 照留。 -->
+      <!-- 顶栏只留大字那一行（2026-11-11 苏醒：「再次创作四字删除，标题合理上移」）：那四个字在这层的
+           可访问名、关闭那颗和入口菜单上都还在，顶栏这一行只回答「我正在用哪一条」。
+           底部那颗胶囊管「点进去换一条」，与它不重复。role=dialog 的 aria-label 照留。 -->
       <header class="cm-top">
         <div class="cm-heading">
-          <p class="cm-kicker">再次创作</p>
           <p class="cm-title">{wfDetail || "未选工作流"}</p>
         </div>
         <button class="cm-close" aria-label="关闭再次创作" onclick={onClose}><Icon name="x" size={16} /></button>
@@ -1746,6 +1823,7 @@
                          只有一族时格子来自 visibleRefCells（已填的 + 一颗空格子）。 -->
                     <div
                       class="cm-ref-stack"
+                      bind:this={refStackEl}
                       role="group"
                       aria-label={rowAria}
                       onpaste={(e) => {
@@ -1757,6 +1835,8 @@
                         {@const picked = refs[item.cell.key]}
                         <div
                           class="cm-ref-cell"
+                          class:is-drop-target={refDropSlot === item.cell.key}
+                          data-ref-slot={item.cell.key}
                           style="--z: {i + 1}"
                           role="group"
                           aria-label={item.cell.label}
@@ -1976,9 +2056,12 @@
                             {/if}
                         </div>
                       {:else if apiActive}
-                        <!-- API 这一屏两列摆（2026-11-04 苏醒给的图二）：左列一家服务商一行，图标 + 名字 + 它能干什么；
-                             右列是这一家能点的模型。为什么不在这屏再按图片/视频/音频切一刀：这一屏本来就只有
-                             「花钱的模型」一类东西，切完每列只剩一行，等于多点一次看同样的东西。
+                        <!-- API 这一屏两列摆：左列一家服务商一行（图标 + 名字），右列是这一家能点的模型。
+                             名字下面那两行小字（能干什么 / 怎么扣费）撤了（2026-11-11 苏醒：「左边显示服务商
+                             即可，小字删除」）——这一屏总共就一家服务商、几行模型，那两行是给左列添噪，
+                             还把右列挤到模型名都截断。信息不丢：整句在那一行的悬浮提示里。
+                             为什么不在这屏再按图片/视频/音频切一刀：这一屏本来就只有「花钱的模型」一类东西，
+                             切完每列只剩一行，等于多点一次看同样的东西。
                              行名用的是模型名，口径在 clone.ts 的 menuRowLabel——与底部那颗胶囊、弹窗标题同一个来源。 -->
                         <div class="cm-api">
                           <div class="cm-api-side">
@@ -1988,11 +2071,7 @@
                                 aria-current={group.key === apiActive.key} title={`${group.label} · ${group.blurb}`}
                                 onmouseenter={() => apiVendor = group.key} onclick={() => apiVendor = group.key}>
                                 <span class="cm-api-vendor-mark" aria-hidden="true"><Icon name="cloud" size={14} /></span>
-                                <span class="cm-api-vendor-text">
-                                  <span class="cm-wf-name cm-api-vendor-name">{group.label}</span>
-                                  <span class="cm-api-vendor-sub">{group.caps}</span>
-                                  <span class="cm-api-vendor-sub">{group.cost}</span>
-                                </span>
+                                <span class="cm-wf-name cm-api-vendor-name">{group.label}</span>
                                 <span class="cm-api-vendor-arrow" aria-hidden="true"><Icon name="chevron-right" size={12} /></span>
                               </button>
                             {/each}
@@ -2278,12 +2357,12 @@
     transition: border-color 160ms ease, box-shadow 160ms ease;
   }
 
-  /* 顶栏两行标题（2026-11-10 照旧图放回来）：小字说这是哪件事，大字报当前挂的工作流 / 模型。
-     整条仍是一行：标题吃左、关闭那颗吃右，标题不另占一行的高度。名字长了截断，全名在悬停提示里。 */
-  .cm-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: -2px -4px 6px; }
+  /* 顶栏只剩大字那一行（2026-11-10 照旧图放回来时是两行，2026-11-11 苏醒「再次创作四字删除，
+     标题合理上移」把上面那行小字撤了）：当前挂的工作流 / 模型自己就是顶栏。标题吃左、关闭那颗吃右，
+     名字长了截断，全名在悬停提示里。整行上下居中——大字与右边那颗 30px 的关闭键同一条中线。 */
+  .cm-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -2px -4px 6px; }
   .cm-heading { min-width: 0; }
-  .cm-kicker { margin: 0; font-size: 12px; line-height: 16px; color: #8a8a8e; }
-  .cm-title { margin: 1px 0 0; font-size: 17px; line-height: 22px; font-weight: 650; color: #fafafa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cm-title { margin: 0; font-size: 17px; line-height: 22px; font-weight: 650; color: #fafafa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cm-close { flex: none; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 9px; color: #8a8a8e; background: transparent; }
   .cm-close:hover { color: #fafafa; background: rgb(255 255 255 / 10%); }
 
@@ -2520,6 +2599,9 @@
   .cm-tile { box-shadow: 0 6px 16px rgba(0, 0, 0, 0.34); transition: transform 140ms ease, box-shadow 160ms ease, border-color 160ms ease, opacity 160ms ease; }
   .cm-ref-cell:hover .cm-tile,
   .cm-ref-cell:focus-within .cm-tile { border-color: rgb(255 255 255 / 26%); box-shadow: 0 16px 34px rgba(0, 0, 0, 0.52); }
+  /* 从资源管理器拖素材进来时，指针底下那一格描一圈品牌红：真机的原生拖放不会给页面任何落点提示，
+     画面不响应就等于让人盲投——人只会以为「拖不进来」（2026-11-11）。 */
+  .cm-ref-cell.is-drop-target .cm-tile { border-color: transparent; box-shadow: 0 0 0 2px var(--accent), 0 16px 34px rgba(0, 0, 0, 0.52); }
   /* 空格子的底走不透明的 #1a1a1e（和上面那条 .cm-tile-add 同一个色），不再用 4% 白半透：
      叠放反过来之后，末尾那一格是压在最上面的，半透的话会把下面那张照片透上来——
      一个空位看着像已经放了东西。（贴在深色卡上时两种底差不到 1 个 RGB，看不出区别。） */
@@ -2693,25 +2775,26 @@
   .cm-pill-kind { flex: none; }
   /* 展开态：名字提亮 + 一层淡底。不再描边——静止态没有边，展开时凭空长出一圈边就是闪烁。 */
   .cm-pill-kind.is-on { color: #fff; background: rgb(255 255 255 / 9%); }
-  /* API 那一屏要装两列（左列 156 + 右列模型清单），宽度只在这一屏放开。
+  /* API 那一屏要装两列（左列服务商 + 右列模型清单），宽度只在这一屏放开。
      别写 100%：这块弹层的包含块是那颗胶囊外面那一格（position:relative），100% = 胶囊那么宽。
-     452px 是量出来的上限（弹窗收窄到 820 之后内容框 776，这一屏贴左往右长 352..804 仍在框里），
-     弹窗左右各 20px 留白 + 面板内边距 22px×2，窄窗口下才不会被 .cm-panel 的 overflow 裁掉左边。 */
-    /* 封顶不再看视口：这一层被中间那一列框住，--cm-pop-max 是「面板内容右沿 − 弹层左沿」的实测值。 */
-  .cm-pop-wf.is-api { width: min(452px, var(--cm-pop-max, 452px)); max-height: min(58vh, 430px); }
+     锚点从「贴左往右长」翻成「贴右往左长」（2026-11-11 苏醒照图：右边那列的模型名被截成
+     「即梦 Seedr…」）：这颗胶囊在底部那一排的中间，贴左往右长只剩 389px 可用（1881px 宽的
+     实拍量出来的），两列谁都吃不饱；往左长量到的是「胶囊那一格右沿 − 面板左内沿」，
+     452px 这个设计宽度才真放得下。与「画面参数」那一层同一个法子，封顶只认实测值。 */
+  .cm-pop-wf.is-api { left: auto; right: 0; width: min(452px, var(--cm-pop-wf-left, 452px)); max-height: min(58vh, 430px); }
   /* 本机那一屏那一列行。包一层是为了让 else 挂在外层 if 上（见模板那三条注释），所以行距自己守。 */
   .cm-pop-list { display: flex; flex-direction: column; gap: 3px; }
-  .cm-api { display: grid; grid-template-columns: 172px minmax(0, 1fr); gap: 10px; min-height: 0; }
+  /* 左列 140：装「图标 + 服务商名 + 箭头」够了（名字过长自己截断，全名在悬浮提示里）。
+     原来是 172，多出来的宽度全给了右边那列的模型名（2026-11-11 苏醒：右边显示具体模型名称即可）。 */
+  .cm-api { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 10px; min-height: 0; }
   .cm-api-side { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding-right: 10px; border-right: 1px solid rgb(255 255 255 / 8%); }
   .cm-api-cap { margin: 2px 0 0; padding: 0 6px; font-size: 10.5px; color: #7f7f87; }
-  /* 服务商那一行：图标方块 + 名字 + 一句「能干什么」+ 右箭头。选中态走 aria-current，不走 aria-pressed——
-     全局 .fill-interactions 会把 pressed 的按钮整颗刷成品牌红底黑字（0.2.34 那轮在设置页栽过一次）。 */
+  /* 服务商那一行：图标方块 + 名字 + 右箭头（小字两行 2026-11-11 撤，见模板那条注释）。
+     选中态走 aria-current，不走 aria-pressed——全局 .fill-interactions 会把 pressed 的按钮整颗刷成品牌红底黑字（0.2.34 那轮在设置页栽过一次）。 */
   .cm-api-vendor { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 8px; text-align: left; color: #d4d4d8; background: transparent; border-radius: 10px; cursor: pointer; }
   .cm-api-vendor:hover, .cm-api-vendor[aria-current="true"] { color: #fafafa; background: rgb(255 255 255 / 7%); }
   .cm-api-vendor-mark { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; color: #93c5fd; background: rgb(59 130 246 / 14%); }
-  .cm-api-vendor-text { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; }
-  .cm-api-vendor-name { font-size: 12.5px; }
-  .cm-api-vendor-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; color: #8a8a8e; }
+  .cm-api-vendor-name { flex: 1; min-width: 0; font-size: 12.5px; }
   .cm-api-vendor-arrow { flex: none; display: inline-flex; color: #7f7f87; }
   /* 左下角那一格：族徽 + 当前那条的名字 + 挂在哪一家。顶边一条线把它和上面的清单分开。 */
   .cm-api-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; overflow: auto; }
@@ -2897,7 +2980,8 @@
     /* 窄窗口这一屏不放两列。这一档的面板内容宽只有 vw-84，而弹层现在贴着胶囊左边缘往右长，
        452px 撑出去就是顶穿右边界（538px 实测过）。所以窄窗口沿用量过的 268px 那一档，
        两列改成上下叠：服务商在上、模型清单在下，一样能挑，只是不再左右两栏。 */
-    .cm-pop-wf.is-api { width: min(268px, 78vw); }
+    /* 窄窗口这一档锚点退回贴左：竖排之后这颗在底部那一排的最左边，往左长会顶穿面板左边界。 */
+    .cm-pop-wf.is-api { left: 0; right: auto; width: min(268px, 78vw); }
     .cm-api { grid-template-columns: minmax(0, 1fr); gap: 6px; }
     .cm-api-side { padding-right: 0; padding-bottom: 5px; border-right: 0; border-bottom: 1px solid rgb(255 255 255 / 8%); }
   }

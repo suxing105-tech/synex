@@ -52,9 +52,9 @@ it("三处入口说的是新名字，弹窗的可访问名跟着换", () => {
   const modal = readFileSync("src/components/CloneModal.svelte", "utf8");
   expect(modal).toContain("aria-label=\"" + NEW + "\"");
   expect(modal).toContain("aria-label=\"关闭" + NEW + "\"");
-  // 2026-11-10 苏醒照旧图把顶栏那两行放回来：这名字除了两个可访问名（dialog 叫什么、关闭那颗关的是
-  // 什么），也摆在顶栏那行小字上。口径重新对齐——读屏与截图看到的是同一个名字。
-  expect(modal).toContain('<p class="cm-kicker">' + NEW + "</p>");
+  // 顶栏那行小字撤了（2026-11-11 苏醒：「再次创作四字删除，标题合理上移」）：这四个字现在只活在
+  // 两个可访问名和入口菜单上。上面那两条就是这条口径的落点——画面不重复报，读屏仍知道自己在干什么。
+  expect(modal).not.toContain("cm-kicker");
 
   const settings = readFileSync("src/lib/clone.ts", "utf8");
   expect(settings).toContain("export const CLONE_SETTINGS_TAB = \"" + NEW + "\";");

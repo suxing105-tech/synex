@@ -27,7 +27,12 @@ const http = vi.fn();
 // vi.mock 的工厂会被提升，取不到上面声明的 TPL / http，所以路由表挂到 globalThis 由用例现填。
 vi.mock('../lib/api', () => ({
   itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) },
-  imagesApi: { list: vi.fn(async () => ({ items: [], total: 0 })), import: vi.fn(async () => ({ saved: [], skipped: [] })) },
+  imagesApi: {
+    list: vi.fn(async () => ({ items: [], total: 0 })),
+    import: vi.fn(async () => ({ saved: [], skipped: [] })),
+    // 真机从资源管理器拖进来的是磁盘路径，入库走这一条（见 native-drop / importPaths）
+    copyFiles: vi.fn(async () => ({ saved: [], skipped: [] })),
+  },
   comfyuiApi: { status: vi.fn(async () => ({ running: true, enabled: true, url: 'http://127.0.0.1:8188' })) },
   http: (path: string, init?: RequestInit) => (globalThis as any).__http(path, init),
 }));
@@ -524,14 +529,17 @@ it('这一层开着才把键盘交给它：cloneOpen 与 open 同进同出，卸
   expect(get(cloneOpen)).toBe(false);
 });
 
-it('弹层上限实测写进 --cm-pop-max：封顶量的是这一列，不是视口', async () => {
+it('弹层余量实测写进 --cm-pop-wf-left：封顶量的是这一列，不是视口', async () => {
   // happy-dom 不排版，rect 全是 0，正好验到兜底那一档：结果必须还是 240px 起，不能是负数
   routes(baseRoutes());
   const screen = await ready();
   const panel = screen.container.querySelector('.cm-panel') as HTMLElement;
-  const popMax = panel.style.getPropertyValue('--cm-pop-max');
-  expect(/^-?\d+px$/.test(popMax), popMax).toBe(true);
-  expect(Number.parseInt(popMax, 10)).toBeGreaterThanOrEqual(240);
+  const wfLeft = panel.style.getPropertyValue('--cm-pop-wf-left');
+  expect(/^-?\d+px$/.test(wfLeft), wfLeft).toBe(true);
+  expect(Number.parseInt(wfLeft, 10)).toBeGreaterThanOrEqual(240);
+  // --cm-pop-max 那把尺撤了：云端那一层从「贴左往右长」翻成「贴右往左长」，余量在左边，
+  // 与下面那颗「画面参数」用的是同一条尺（见 --cm-pop-left 那条用例）
+  expect(panel.style.getPropertyValue('--cm-pop-max')).toBe('');
   cleanup();
 });
 
@@ -556,7 +564,7 @@ it("「画面参数」那层贴右往左长：两栏那一档它是最右那颗�
   expect(narrow).toMatch(/\.cm-pop\s*\{[^}]*width:\s*min\(328px,\s*78vw/);
   expect(narrow).not.toMatch(/\.cm-pop-params[^{]*\{[^}]*78vw/);
 
-  // 左余量由 JS 与 --cm-pop-max 同一把尺量：happy-dom 量不到（rect 全是 0）也得从 240 起，不能是负数
+  // 左余量由 JS 与 --cm-pop-wf-left 同一把尺量：happy-dom 量不到（rect 全是 0）也得从 240 起，不能是负数
   routes(baseRoutes());
   const screen = await ready();
   const panel = screen.container.querySelector(".cm-panel") as HTMLElement;
@@ -603,7 +611,11 @@ it('这一层收进缩略图那一列：纯色底 + 一整块模块底，不再�
   expect(panelTag).toContain('aria-label="再次创作"');
   // 最宽那颗弹层（云端两栏）的封顶从视口改成量这一列
   const api = blk('.cm-pop-wf.is-api {');
-  expect(api).toMatch(/width:\s*min\(452px,\s*var\(--cm-pop-max/);
+  expect(api).toMatch(/width:\s*min\(452px,\s*var\(--cm-pop-wf-left/);
+  // 锚点翻成贴右往左长（2026-11-11 苏醒照图：右列模型名被截成「即梦 Seedr…」）：这颗胶囊在底部
+  // 那一排的中间，贴左往右长只有 389px 可用，两列谁都吃不饱
+  expect(api).toMatch(/left:\s*auto/);
+  expect(api).toMatch(/right:\s*0/);
   expect(api).not.toMatch(/100vw/);
   // 「虚化时藏侧栏骨架」那一套整条撤了：栏没被盖住，凭什么藏
   expect(readFileSync('src/App.svelte', 'utf8')).not.toContain('overlay-muted');
@@ -1802,6 +1814,95 @@ it('往已经放满的那一族再拖一份：说清是哪一族满了，不默�
   expect(imagesApi.import).not.toHaveBeenCalled();
 });
 
+/* ── 真机原生拖放：从资源管理器把文件扔到某一格参考缩略图上 ─────────────────
+   DOM 的 ondrop 只在浏览器 dev 里有效；Tauri 主窗口没关原生 drag-drop handler，
+   资源管理器拖进来的文件根本不会进 DOM，路径只在 tauri://drag-drop 的 payload 里。
+   所以下面这三条顶掉 __TAURI__.event.listen，照真机的顺序发事件。 */
+
+/**
+ * 顶掉 __TAURI__.event.listen，拿到那四条 tauri://drag-* 回调。必须在 ready() 之前调用：
+ * 订阅发生在弹窗挂载那一次 $effect 里，而 isTauri() 认的就是这个全局对象。
+ */
+function tauriDrop() {
+  const callbacks: Record<string, (e: { payload: unknown }) => void> = {};
+  (window as any).__TAURI__ = {
+    event: {
+      listen: vi.fn(async (name: string, cb: (e: { payload: unknown }) => void) => {
+        callbacks[name] = cb;
+        return () => {};
+      }),
+    },
+  };
+  return { emit(name: string, payload: unknown) { callbacks[name]?.({ payload }); } };
+}
+
+/** happy-dom 不排版：给某个盒子手工钉一个矩形，用来问「指针现在落在哪一格」。 */
+function putRect(el: HTMLElement, left: number, right: number) {
+  vi.spyOn(el, 'getBoundingClientRect').mockReturnValue({
+    left, right, top: 0, bottom: 100, width: right - left, height: 100,
+  } as DOMRect);
+}
+
+const NATIVE_PNG = 'D:/素材/dragged.png';
+
+it('真机拖放：扔到已经填上的参考缩略图上 = 换掉它（走 copyFiles，原文件不动）', async () => {
+  const drop = tauriDrop();
+  // afterEach 不清 imagesApi 的调用记录，不清零会拿到上一条用例留下的那次调用
+  (imagesApi.copyFiles as ReturnType<typeof vi.fn>).mockClear().mockResolvedValue({
+    saved: [{ id: 88, filename: 'dragged.png', path: NATIVE_PNG }], skipped: [],
+  });
+  routes(baseRoutes());
+  const screen = await ready();
+  const stack = screen.container.querySelector('.cm-ref-stack') as HTMLElement;
+  const cell = screen.getByRole('group', { name: '图片1' });
+  putRect(stack, 0, 400);
+  putRect(cell, 0, 90);
+  drop.emit('tauri://drag-over', { paths: [NATIVE_PNG], position: { x: 40, y: 50 } });
+  await tick();
+  // 真机的原生拖放不会给页面任何落点提示，这一圈描边是唯一的反馈
+  expect(cell.className).toContain('is-drop-target');
+  drop.emit('tauri://drag-drop', { paths: [NATIVE_PNG], position: { x: 40, y: 50 } });
+  await vi.waitFor(() => expect(imagesApi.copyFiles).toHaveBeenCalledWith([NATIVE_PNG], null));
+  await vi.waitFor(() => expect(screen.getByTitle(/^人物参考｜dragged\.png$/)).toBeTruthy());
+  expect(cell.className).not.toContain('is-drop-target');
+  // 落点是在 drop 那一刻用的（见 native-drop 的顺序）：改成「先清记录再回调」就点不出这一格，
+  // 图片族那一格又是满的，结果会退化成报错而不是换掉它
+  expect(screen.container.querySelector('.cm-error')).toBeNull();
+  delete (window as any).__TAURI__;
+});
+
+it('真机拖放：扔的族和那一格要的不是一族，说清是哪一格，根本不入库', async () => {
+  const drop = tauriDrop();
+  (imagesApi.copyFiles as ReturnType<typeof vi.fn>).mockClear().mockResolvedValue({ saved: [], skipped: [] });
+  routes(baseRoutes());
+  const screen = await ready();
+  putRect(screen.container.querySelector('.cm-ref-stack') as HTMLElement, 0, 400);
+  putRect(screen.getByRole('group', { name: '图片1' }), 0, 90);
+  drop.emit('tauri://drag-drop', { paths: ['D:/素材/song.mp3'], position: { x: 40, y: 50 } });
+  expect(await screen.findByRole('status')).toBeTruthy();
+  expect(screen.getByRole('status').textContent).toContain('图片1要的是图片');
+  expect(imagesApi.copyFiles).not.toHaveBeenCalled();
+  delete (window as any).__TAURI__;
+});
+
+it('真机拖放：扔在参考区但没指着具体格子，按文件自己的族找第一个空位', async () => {
+  const drop = tauriDrop();
+  (imagesApi.copyFiles as ReturnType<typeof vi.fn>).mockClear().mockResolvedValue({
+    saved: [{ id: 89, filename: 'loose.png', path: 'D:/loose.png' }], skipped: [],
+  });
+  routes(baseRoutes());
+  const screen = await ready();
+  // 先腾出格子，才谈得上「自己找第一个空位」
+  await fireEvent.click(screen.getByRole('button', { name: '移除图片1' }));
+  putRect(screen.container.querySelector('.cm-ref-stack') as HTMLElement, 0, 400);
+  putRect(screen.getByRole('group', { name: '图片1' }), 0, 90);
+  // x=300 在整排里、在那一格外面
+  drop.emit('tauri://drag-drop', { paths: ['D:/loose.png'], position: { x: 300, y: 50 } });
+  await vi.waitFor(() => expect(imagesApi.copyFiles).toHaveBeenCalledWith(['D:/loose.png'], null));
+  await vi.waitFor(() => expect(screen.getByTitle(/^人物参考｜loose\.png$/)).toBeTruthy());
+  delete (window as any).__TAURI__;
+});
+
 /* ── 音频再次创作（Qwen3 音色克隆）────────────────────────────────────── */
 
 /** 真机那条音色克隆的形状：两个提示词位（要说的话 + 参考音频的原话）+ 一台 LoadAudio + 语言下拉。 */
@@ -2826,10 +2927,13 @@ it('API 那一屏两列级联：左列一家服务商一行，右列摆它报的
   // 两屏各画各的，不许同时挂在 DOM 里（{:else if} 挂错块时实测过会两块一起出来）
   expect(screen.container.querySelector('.cm-api')).toBeNull();
   await fireEvent.click(screen.getByRole('button', { name: /^云端API服务/ }));
-  // 左列：一行一家，名字下面写它能干什么；指针停在那一家就报 aria-current
+  // 左列一行一家，只报「是哪一家」（2026-11-11 苏醒：「左边显示服务商即可，小字删除」）：
+  // 能干什么 / 怎么扣费那两行挪进悬浮提示，画面不再摆；指针停在那一家仍报 aria-current
   const vendor = screen.container.querySelector('.cm-api-vendor') as HTMLElement;
   expect(vendor.textContent).toContain('RunningHub');
-  expect(vendor.textContent).toContain('出图');
+  expect(vendor.textContent).not.toContain('出图');
+  expect(vendor.textContent).not.toContain('RH币');
+  expect(vendor.getAttribute('title')).toContain('出图 · 按 RH币扣费');
   expect(vendor.getAttribute('aria-current')).toBe('true');
   // 右列：那一行叫模型名，不叫「图片API」。差 Key 是整条云端路的事，所以灰掉的是行、说的是「需配置」。
   // 换到 API 屏之后，本机那一屏那一列必须整块撤掉，不是藏起来
@@ -2840,7 +2944,7 @@ it('API 那一屏两列级联：左列一家服务商一行，右列摆它报的
   expect(row.disabled).toBe(true);
   expect(row.getAttribute('title')).toContain('还没填 RunningHub 的 API Key');
   // 左下角那一格「现在挂的是哪一条」被苏醒圈掉了：右列那一条自己挂着「当前」，
-  // 底部那颗胶囊也一直在报同一个名字，172px 的窄列里再挤一份只会截成「即梦 …」。
+  // 底部那颗胶囊也一直在报同一个名字，140px 的窄列里再挤一份只会截成「即梦 …」。
   expect(screen.container.querySelector('.cm-api-cur')).toBeNull();
   // 本机那一行也不跟着跑到 API 屏上
   expect(screen.queryByRole('menuitemradio', { name: /Qwen 多图编辑/ })).toBeNull();
@@ -3145,11 +3249,12 @@ it('那一摞是后挂的压在前挂的上头，加载参考那颗压在全摞�
 
 /* ── 顶部那一格：生成中是等待台，跑完直接给新东西（2026-11-04 苏醒照图）────── */
 
-it('顶栏那两行与图下那行文件名都在：小字说哪件事、大字说哪条工作流、图下说哪一份文件', async () => {
-  // 2026-11-10 苏醒照旧图：「改回类似之前的这种版式」——顶栏两行与展示图下面那行文件名放回来了。
+it('顶栏那行大字与图下那行文件名都在：大字说哪条工作流、图下说哪一份文件', async () => {
+  // 2026-11-10 照旧图放回来的顶栏小字「再次创作」又撤了（2026-11-11 苏醒：「再次创作四字删除，
+  // 标题合理上移」）：那四个字只在可访问名和入口菜单上留着，顶栏这一行只回答「我在用哪一条」。
   routes(baseRoutes());
   const screen = await ready();
-  expect(document.querySelector('.cm-kicker')?.textContent).toBe('再次创作');
+  expect(document.querySelector('.cm-kicker')).toBeNull();
   expect(document.querySelector('.cm-title')?.textContent).toBe('Qwen 多图编辑');
   expect(document.querySelector('.cm-hero-name')?.textContent).toBe('source.png');
   // 字放回来不顶掉可访问名：dialog 与关闭那颗都还知道自己是什么

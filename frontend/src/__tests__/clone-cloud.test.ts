@@ -91,7 +91,7 @@ describe("API 那一屏的两列级联", () => {
     expect(groups[1].rows[0].label).toBe("别家出图");
   });
 
-  it("左列那一行分两行说实话：能干什么一行、扣什么钱一行，拼起来那句进悬浮提示", () => {
+  it("服务商那行的老底照样拼得出来：能干什么 + 扣什么钱，整句只进悬浮提示", () => {
     const items = [
       cloudTpl({ id: 90, cloud: { provider_label: "RunningHub" } }),
       cloudTpl({ id: 91, name: "视频API", media_kind: "video", model: "video", cloud: { provider_label: "RunningHub" } }),
@@ -99,7 +99,8 @@ describe("API 那一屏的两列级联", () => {
     ];
     const groups = cloudMenuGroups(workflowMenuRows(items), items);
     expect(groups).toHaveLength(1);
-    // 左列只有 172px：拼成一句会被截成「按 R…」，所以 caps / cost 分开，blurb 只进 title
+    // 数据照旧拆三份拼（blurb = caps · cost）。2026-11-11 起左列不再摆这两行小字，整句只进那一行
+    // 的 title：鼠标停上去才看，画面留给服务商名和右边的模型名。
     expect(groups[0].caps).toBe("出图/出片/出声音");
     expect(groups[0].cost).toBe("按 RH币扣费");
     expect(groups[0].blurb).toBe("出图/出片/出声音 · 按 RH币扣费");

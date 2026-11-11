@@ -54,7 +54,8 @@ describe('真实文件夹组件交互', () => {
     hover(1); await tick();
     expect(screen.getByRole('status').textContent).toContain('复制');
     vi.mocked(foldersApi.importDirectories).mockResolvedValue({ copied: [{ id: 22, name: '桌面目录', path: 'D:/data/folders/桌面目录' }], failed: [], warnings: [] });
-    await drop(['C:/Desktop/桌面目录']);
+    // 落点这一参现在由 subscribeFileDrop 一并传进来；这一格的落位用不上，给 null
+    await drop(['C:/Desktop/桌面目录'], null);
     expect(foldersApi.importDirectories).toHaveBeenCalledWith(['C:/Desktop/桌面目录']);
     expect(refreshFolders).toHaveBeenCalled();
     expect(refreshFeed).toHaveBeenCalled();

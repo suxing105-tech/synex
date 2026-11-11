@@ -167,6 +167,14 @@ body,
 .media-card.is-selected {
   box-shadow: 0 0 0 1px var(--thumb-ring), 0 4px 14px rgba(0, 0, 0, 0.45);
 }
+/* 键盘焦点单独一条：选中环是 1px 浅灰（--thumb-ring），浏览器默认焦点环落在照片上
+   既看不清、又和选中态长得一样——「这张是选中了还是光标在这」分不清。
+   焦点改成 2px 品牌红外描边：内描边不占布局、不会被 scroller 的 2px 余量裁掉，
+   圆角自动跟随，和 --thumb-ring 的灰一眼能分开。文本卡走的是同一条口径（见 Feed.svelte）。 */
+.thumb.media-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 
 /* 卡片窄到放不下页脚时收一档圆角，不然 90px 的卡顶着一个 10px 圆角会很肿 */
 .media-card--compact {

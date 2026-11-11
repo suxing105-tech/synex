@@ -24,7 +24,7 @@
     selectedId as selectedIdStore,
     applySelection, clearSelection, removeIdsFromSelection,
     comfyuiStatus, scope, kindFilter, mediaItems, playAudio, playingAudio, stopAudio, audioProgress,
-    selectedText, selectTextItem, openTextReader, associateTextPaths,
+    selectedText, selectTextItem, openTextReader, associateTextPaths, query, selectKind,
     appBooting,
   } from "../lib/stores";
   
@@ -111,6 +111,20 @@ import { hoverPlay } from "../lib/hover-play";
   // 当前多选张数（派生：用于工具栏计数）
   let selectedCount = $derived($multiSelectedIds.size);
   let totalLabel = $derived(mediaSummary($feedCounts));
+  const searchWord = $derived($query.trim());
+  /**
+   * 读屏用的结果播报：只有搜索时才给内容。
+   * 审计实测搜 zzzqqq9988 之后屏幕上一句都没有——条数变了但没有任何 role=status 区域在说话，
+   * 读屏用户只知道「按了回车」，不知道搜到了还是什么都没搜到。
+   * 不搜索时留空：滚动懒加载每次多 30 张，跟着播报就成了噪声。
+   */
+  const searchAnnouncement = $derived(
+    searchWord
+      ? $feedItems.length > 0
+        ? `搜索「${searchWord}」：${$feedItems.length} 项`
+        : `搜索「${searchWord}」：没有匹配素材`
+      : "",
+  );
   let selectedKinds = $derived(kindsIn($mediaItems.filter((it) => $multiSelectedIds.has(it.id))));
   let selectedLabel = $derived(selectionSummary(selectedCount, selectedKinds));
   // ---------- 再次创作 ----------
@@ -192,6 +206,10 @@ import { hoverPlay } from "../lib/hover-play";
 
   /** 文本口径 = 侧栏选「全部文本」或类型筛选只勾了文本。 */
   const isTextScope = $derived($scope === "text" || $kindFilter === "text");
+  /** 空场要分三种说：搜不到 / 这个文件夹本来就空 / 文本还没有关联。 */
+  const emptyTitle = $derived(
+    isTextScope ? "还没有文本" : searchWord ? `没有匹配「${searchWord}」的素材` : "空文件夹",
+  );
   let hoveredText = $state<number | null>(null);
   let textMenuOpen = $state(false);
   let textMenuX = $state(0);
@@ -1024,7 +1042,8 @@ import { hoverPlay } from "../lib/hover-play";
 <div class="gallery-toolbar px-4 py-3 items-center border-b border-border bg-surface shrink-0">
   <div class="toolbar-info flex items-center gap-3 min-w-0">
   <div>
-    <div class="text-base font-medium">{$activeFolderName}</div>
+    <!-- 全站原来一个标题都没有：读屏按 H 找内容是空的。当前口径名就是这一页的标题。 -->
+    <h1 class="text-base font-medium">{$activeFolderName}</h1>
     <div class="text-xs text-muted mt-0">
       {totalLabel}
       {#if selectedCount > 0}
@@ -1063,6 +1082,9 @@ import { hoverPlay } from "../lib/hover-play";
 </div>
   {/if}
 </div>
+
+<!-- 搜索结果播报：role=status 常驻，内容只在搜索时变化（见上面的 searchAnnouncement） -->
+<span class="sr-only" role="status">{searchAnnouncement}</span>
 
 <div
   bind:this={scrollerEl}
@@ -1107,7 +1129,26 @@ import { hoverPlay } from "../lib/hover-play";
   {#if gridSkeleton}
     <FeedSkeleton />
   {:else if $feedItems.length === 0}
-    <div class="empty-feed" aria-label={isTextScope ? "还没有文本" : "空文件夹"}>
+    <div class="empty-feed" role="status" aria-label={emptyTitle}>
+      {#if searchWord}
+        <!-- 审计实测：搜不到时中间是一片纯黑，531 变成 5 个 0 的 chips 还占着主视觉。
+             空场至少要说清楚「没搜到」，并给一条回去的路。 -->
+        <div class="empty-search">
+          <p>没有匹配「{searchWord}」的素材</p>
+          <div>
+            <button type="button" class="primary" onclick={() => query.set("")}>清除搜索</button>
+            {#if $kindFilter !== "all"}
+              <button type="button" onclick={() => selectKind("all")}>看全部类型</button>
+            {/if}
+          </div>
+          <small>换个词，或在左侧栏换个口径</small>
+        </div>
+      {:else if !isTextScope}
+        <div class="empty-search">
+          <p>这里还没有素材</p>
+          <small>把图片或视频文件夹拖到左侧栏，也可以按 Ctrl+V 导入剪贴板里的内容</small>
+        </div>
+      {/if}
       {#if isTextScope}
         <div class="empty-text-actions">
           <p>文本直接读你的本地文件，改完就写回原文件。</p>
@@ -1135,6 +1176,8 @@ import { hoverPlay } from "../lib/hover-play";
     >
       <div
         class="masonry-grid"
+        role="group"
+        aria-label="素材网格"
         class:is-materializing={materializing}
         style="grid-template-columns: repeat({columnCount}, minmax(0, 1fr)); gap: {COL_GAP}px;"
       >
@@ -1146,6 +1189,7 @@ import { hoverPlay } from "../lib/hover-play";
                   type="button"
                   class="text-card"
                   class:is-selected={$selectedText?.id === it.id}
+                  aria-pressed={$selectedText?.id === it.id}
                   style="aspect-ratio: {aspectFor(it)}; width: 100%;"
                   title={it.filename}
                   aria-label={it.filename}
@@ -1165,12 +1209,14 @@ import { hoverPlay } from "../lib/hover-play";
                 type="button"
                 class="thumb media-card {footerTier === 0 ? 'media-card--compact' : ''} {it.kind === 'audio' ? 'is-audio ' : ''}{(it.kind === 'image' || it.kind === 'video' || it.kind === 'audio') && footerTier > 0 ? 'is-cloneable ' : ''}text-left {$multiSelectedIds.has(it.id) ? 'is-selected' : ''} {$playingAudio?.id === it.id && it.kind === 'audio' ? 'is-playing' : ''}"
                 style="--card-footer-h: {footerHeightFor(columnWidth)}px"
+                aria-pressed={$multiSelectedIds.has(it.id)}
                 title={it.filename}
-                onclick={(e) => { if (draggedOriginal) { draggedOriginal = false; return; } onThumbClick(e, it); }}
+                onclick={(e) => { if (draggedOriginal) { draggedOriginal = false; return; } if (renamingId === it.id) return; onThumbClick(e, it); }}
                 onpointerdown={(e) => pointerOnImage(e, it)}
                 ondragstart={(e) => e.preventDefault()}
                 ondblclick={() => { if (it.kind === "audio") { playAudio(it); return; } if (it.kind === "video") { void openVideo(it); return; } openLightbox(it, $mediaItems.findIndex((x) => x.item_type === "media" && x.id === it.id)); }}
                 oncontextmenu={(e) => openContextMenu(e, it)}
+                onkeydown={(e) => { if (e.key === "F2" && renamingId !== it.id) { e.preventDefault(); void renameImage(it); } }}
                 onmouseenter={() => (hoveredId = it.id)}
                 onmouseleave={() => { if (hoveredId === it.id) hoveredId = null; }}
               >
@@ -1256,11 +1302,17 @@ import { hoverPlay } from "../lib/hover-play";
                        那个点是 .media-card-name.has-new 的 ::before。不要在这里再嵌一层 {#if}：
                        Svelte 5 会把 {:else} 解析成空分支，整段文件名直接不渲染（踩过，别改回去）。 -->
                   <div class="media-card-footer {footerTier === 2 ? 'media-card-footer--2l' : 'media-card-footer--1l'}">
+                    <!-- 文件名只是卡里的一个文本节点。卡片本身就是一颗按钮，
+                         这里再摆一个 tabindex="0" 的 role="button" 等于在一张卡里多设一个停留点，
+                         而且那个 aria-label="图片名称" 把真正的文件名从读屏里盖掉了。
+                         改名：鼠标双击这里，键盘在卡片上按 F2（见上面那颗卡片按钮的 onkeydown）。
+                         双击改名是鼠标侧的快捷动作（和文件管理器一样），读屏不需要在它上面再摸到一颗按钮，
+                         所以这里故意不给 role —— 键盘那条路是 F2。
+                         这里也不写 onclick：一个静态文本节点不该声称自己能单击，
+                         改名中挡住卡片点击的活儿交给卡片自己的 onclick。 -->
+                    <!-- svelte-ignore a11y_no_static_element_interactions a11y_no_noninteractive_element_interactions -->
                     <span class="media-card-name" class:has-new={$newIds.has(it.id)}
-                      role="button" tabindex="0" aria-label="图片名称"
-                      onkeydown={(e) => { if (renamingId !== it.id && (e.key === "Enter" || e.key === "F2")) { e.stopPropagation(); e.preventDefault(); void renameImage(it); } }}
                       onpointerdown={(e) => e.stopPropagation()}
-                      onclick={(e) => { if (renamingId === it.id) e.stopPropagation(); }}
                       ondblclick={(e) => { e.stopPropagation(); e.preventDefault(); if (renamingId !== it.id) void renameImage(it); }}>
                       {#if renamingId === it.id}
                         <input bind:this={renameInput} bind:value={renameValue} aria-label="编辑图片名称" class="image-rename" style="width: 180px; max-width: 100%;"
@@ -1384,6 +1436,13 @@ import { hoverPlay } from "../lib/hover-play";
     box-shadow: 0 0 0 1px var(--thumb-ring), 0 4px 14px rgba(0, 0, 0, 0.45);
   }
   .text-tool { border: 1px solid rgb(58 58 65); background: #232327; color: #d9d8e0; margin-left: 6px; }
+  /* 搜索没结果 / 文件夹本来就空的空态。颜色一律走 token（这几条是 2026-11-11 无障碍那轮加的，
+     别跟着旁边那套老 hex 走）；按钮 min-height 用 --ctl-sm，24×24 是 WCAG 2.2 的下限。 */
+  .empty-search { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 12px; color: var(--text-2); font-size: var(--fs-sm); }
+  .empty-search button { min-height: var(--ctl-sm); border: 1px solid var(--line-strong); border-radius: var(--r-1); background: var(--ink-3); color: var(--text-1); padding: 6px 12px; font-size: var(--fs-sm); cursor: pointer; margin: 0 4px; }
+  .empty-search button:hover { background: var(--ink-4); }
+  .empty-search button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .empty-search small { color: var(--text-3); }
   .empty-text-actions { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 12px; color: #a9a7b3; font-size: 12.5px; }
   .empty-text-actions button { border: 1px solid rgb(58 58 65); border-radius: 6px; background: #232327; color: #dddce4; padding: 6px 12px; font-size: 12px; cursor: pointer; margin: 0 4px; }
   .empty-text-actions button.primary { background: #6d4c4c; border-color: #8a5f5f; }

@@ -595,8 +595,6 @@ export const comfyuiStatus = writable<ComfyuiStatus>({
   checked_at: 0,
 });
 
-export const comfyuiEnabled = writable<boolean>(true);
-
 
 
 // ---------- 启动期骨架 ----------

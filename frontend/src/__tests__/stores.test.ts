@@ -237,15 +237,6 @@ describe("ComfyUI stores", () => {
     expect(typeof v.checked_at).toBe("number");
   });
 
-  it("comfyuiEnabled 初始值为 true，可独立 set", async () => {
-    const { comfyuiEnabled } = await import("../lib/stores");
-    expect(get(comfyuiEnabled)).toBe(true);
-    comfyuiEnabled.set(false);
-    expect(get(comfyuiEnabled)).toBe(false);
-    comfyuiEnabled.set(true);
-    expect(get(comfyuiEnabled)).toBe(true);
-  });
-
   it("comfyuiStatus.set() 正常更新字段", async () => {
     const { comfyuiStatus } = await import("../lib/stores");
     comfyuiStatus.set({ running: true, url: "http://x", enabled: true, checked_at: 42 });

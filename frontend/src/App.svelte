@@ -2,7 +2,7 @@
   import { startUpdates } from "./lib/updates";
   import { onMount, onDestroy } from "svelte";
   import { connectEvents, disconnectEvents } from "./lib/ws";
-  import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, comfyuiEnabled, mediaItems, tag, folderId, query, selectedDetail, appBooting } from "./lib/stores";
+  import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, mediaItems, tag, folderId, query, selectedDetail, appBooting } from "./lib/stores";
   import { cloneOpen } from "./lib/clone";
   import { createSplashGate } from "./lib/splash-gate.svelte";
   import FolderTree from "./components/FolderTree.svelte";
@@ -91,7 +91,6 @@
     try {
       const s = await comfyuiApi.status();
       comfyuiStatus.set(s);
-      comfyuiEnabled.set(s.enabled);
     } catch (e) {
       // 探测失败不报错（ComfyUI 没启动是正常状态）
       comfyuiStatus.update((cur) => ({ ...cur, running: false }));

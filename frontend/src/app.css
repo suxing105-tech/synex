@@ -734,7 +734,7 @@ body,
 }
 
 .settings-seg button {
-  height: calc(var(--ctl-sm) - 6px);
+  height: var(--ctl-sm);
   padding: 0 10px;
   border: 0;
   border-radius: calc(var(--r-1) - 2px);

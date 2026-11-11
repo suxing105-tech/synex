@@ -133,7 +133,7 @@ it("点击目标够 24×24 第二批：详情栏页签、两处文字按钮、�
   const detailTag = readFileSync("src/components/DetailPanel.svelte", "utf8");
   expect(detailTag).toMatch(/class="text-\[11px\][^"]*inline-flex min-h-6 items-center/);
   const meta = readFileSync("src/components/MetadataCard.svelte", "utf8");
-  expect(meta).toMatch(/class="ml-auto inline-flex min-h-6 items-center/);
+  expect(meta).toMatch(/class="ml-auto inline-flex min-h-6 min-w-6 items-center/);
 
   const tree = readFileSync("src/components/FolderTree.svelte", "utf8");
   expect(px(decl(tree, ":global(.folder-item .menu-btn)", "min-height"))).toBeGreaterThanOrEqual(24);
@@ -148,6 +148,21 @@ it("点击目标够 24×24 第二批：详情栏页签、两处文字按钮、�
   const clone = readFileSync("src/components/CloneModal.svelte", "utf8");
   expect(px(declAll(clone, ".cm-tile-x", "width"))).toBeGreaterThanOrEqual(24);
   expect(px(declAll(clone, ".cm-tile-x", "height"))).toBeGreaterThanOrEqual(24);
+});
+
+it("点击目标够 24×24 第三批：design-QA 同视口复跑剩下的三处", () => {
+  // 复跑是在真浏览器里按 getBoundingClientRect 扫整页：首页已经 0 处不合格，
+  // 剩下的藏在详情栏和设置页里。那颗「切换」上一轮只抬了高度、还差 1px 宽，
+  // 补 min-w-6（断言并到第二批）；这里钉另外两处。
+
+  const feed = readFileSync("src/components/Feed.svelte", "utf8");
+  expect(feed).toMatch(/class="px-1\.5 py-0\.5 text-\[11px\][^"]*inline-flex min-h-6 items-center/);
+
+  // 分段控件里那颗按钮原来写 --ctl-sm 减 6px，等于自己把尺子往下垫了 6px。
+  // 抬回 var(--ctl-sm) 之后外框 26+2×2+1×2=32，正好还是 --ctl-md 那一档。
+  const appCss = readFileSync("src/app.css", "utf8");
+  expect(declAll(appCss, ".settings-seg button", "height")).toBe("var(--ctl-sm)");
+  expect(px(tokenValue("--ctl-sm"))).toBeGreaterThanOrEqual(24);
 });
 
 it("尺子本身也在水位线上：--ctl-sm 不许低到 24 以下", () => {

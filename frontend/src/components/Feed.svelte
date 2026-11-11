@@ -1051,7 +1051,7 @@ import { hoverPlay } from "../lib/hover-play";
           <span>{selectedLabel}</span>
           <button
             type="button"
-            class="px-1.5 py-0.5 text-[11px] rounded border border-border hover:border-accent"
+            class="px-1.5 py-0.5 text-[11px] rounded border border-border inline-flex min-h-6 items-center hover:border-accent"
             onclick={() => clearSelection()}
             title="清空选区（Esc）"
           >清空</button>

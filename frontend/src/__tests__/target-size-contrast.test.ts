@@ -163,6 +163,13 @@ it("点击目标够 24×24 第三批：design-QA 同视口复跑剩下的三处"
   const appCss = readFileSync("src/app.css", "utf8");
   expect(declAll(appCss, ".settings-seg button", "height")).toBe("var(--ctl-sm)");
   expect(px(tokenValue("--ctl-sm"))).toBeGreaterThanOrEqual(24);
+  // 技术上的一条铁律：把命中区抬到 24 不能把行高顶下去。
+  // 侧栏那颗 ⋯ 抬到 24 之后，文件夹行的上下内边距从 6 收到 4：24+4×2=32，
+  // 还是 --ctl-md 那一档。不收的话复跑实测 20 行全部被撑成 36，侧栏整体变疏。
+  const tree = readFileSync("src/components/FolderTree.svelte", "utf8");
+  expect(decl(tree, ":global(.folder-item)", "padding")).toBe("4px 10px");
+  expect(decl(tree, ":global(.folder-item)", "min-height")).toBe("32px");
+  expect(px(decl(tree, ":global(.folder-item .menu-btn)", "min-height"))).toBeGreaterThanOrEqual(24);
 });
 
 it("尺子本身也在水位线上：--ctl-sm 不许低到 24 以下", () => {

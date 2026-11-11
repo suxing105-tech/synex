@@ -629,7 +629,9 @@
     display: flex;
     align-items: center;
     gap: 7px;
-    padding: 6px 10px;
+    /* 上下内边距 6→4：那一行里最高的子元素是 .menu-btn 24 高的命中区（WCAG 2.5.8），
+       24 + 4×2 = 32，行高正好还是原来那把尺子上的 --ctl-md 32；不改这里会被撑成 36 */
+    padding: 4px 10px;
     margin-bottom: 2px;
     min-height: 32px;
     transition: background 120ms, color 120ms;
@@ -703,7 +705,8 @@
     padding: 1px 6px;
     border-radius: 4px;
     font-size: 13px;
-    /* 无障碍：命中区抬到 24 高（WCAG 2.5.8）。文件夹行本身 32 高，够放，行高不变 */
+    /* 无障碍：命中区 24 高（WCAG 2.5.8）。上面 .folder-item 的上下内边距已经从 6 收到 4，
+       所以这 24 把行钉回 32；实测 20 行全部 32，没有因为无障碍把侧栏拉疏 */
     min-height: 24px;
     display: inline-flex;
     align-items: center;

@@ -1057,7 +1057,15 @@ def _ui_workflow_text(value: object) -> str:
 
 
 def _video_model_name(prompt_obj: dict) -> str | None:
-    """从 UNETLoader / CheckpointLoaderSimple 取模型名，去目录去扩展名。"""
+    """取模型加载器里那一串**原样**路径，例如 ``MinimaxH3\\minimax_h3_hybrid_...safetensors``。
+
+    以前这里顺手把目录和扩展名都削掉，于是同一个模型在两类素材里存成两个样：
+    图片走 CheckpointLoader 存 ``MinimaxH3\\Cobijada_H3_Hybrid精炼int8.safetensors``，
+    视频存成 ``Cobijada_H3_Hybrid精炼int8``。卡片徽标认的是「模型在哪个目录」，
+    削过的那条只剩文件名第一个词，于是同一张卡旁边出现 MinimaxH3 和 Cobijada 两个名字
+    （2026-11-11 苏醒指出「文件夹位置识别不对」）。缩写是显示层的事
+    （前端 ``modelFamilyLabel``），解析层不许先替它削掉一半，两类必须存同一个形状。
+    """
     for node in prompt_obj.values():
         if not isinstance(node, dict):
             continue
@@ -1066,8 +1074,7 @@ def _video_model_name(prompt_obj: dict) -> str | None:
             continue
         value = (node.get("inputs") or {}).get(key)
         if isinstance(value, str) and value.strip():
-            base = value.strip().replace("\\", "/").rsplit("/", 1)[-1]
-            return base.rsplit(".", 1)[0] if "." in base else base
+            return value.strip()
     return None
 
 

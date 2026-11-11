@@ -125,8 +125,9 @@ def test_extracts_workflow_and_prompt_from_top_level_tags(samples):
     assert meta["parameters"]["comfyui_metadata"] == "workflow"
     assert meta["positive_prompt"] == "镜头缓慢推进，主播看向镜头"
     assert meta["negative_prompt"] == "模糊"
-    # 模型名去目录去扩展名；表达式节点没被当成提示词
-    assert meta["model"] == "minimax_h3_hybrid_fl2va_ref2va_b25-49-int8"
+    # 模型名保持 ComfyUI 存的原样：带目录带扩展名，和图片那一类同一个形状。
+    # 顺带确认真实表达式节点没被当成提示词
+    assert meta["model"] == "MinimaxH3\\minimax_h3_hybrid_fl2va_ref2va_b25-49-int8.safetensors"
     assert "max(5" not in meta["positive_prompt"]
     assert meta["seed"] == 4242
 
@@ -178,7 +179,7 @@ def test_local_wan_video_prompt_key():
     assert out["negative_prompt"] == "bright tones, overexposed, static"
     assert out["seed"] == 415630178572760
     assert out["workflow_source"] == "comment"
-    assert out["model"] == "wan2.1-i2v-14b-480p-Q8_0", "WanVideoModelLoader 也要能出模型名"
+    assert out["model"] == "InfiniteTalk\\wan2.1-i2v-14b-480p-Q8_0.gguf", "WanVideoModelLoader 也要能出模型名"
 
 
 def test_prompt_only_is_not_a_workflow(samples):
@@ -300,6 +301,41 @@ def test_backfill_fills_old_rows_once(tmp_path, monkeypatch, samples):
     assert get_int_meta("video_metadata_schema", 0) == repository.VIDEO_METADATA_SCHEMA_VERSION
     # 第二次直接跳过
     assert repository.backfill_video_metadata() == 0
+
+
+def test_v4_backfill_rewrites_the_stripped_model(tmp_path, monkeypatch, samples):
+    """v4 回填：把老库里削成裸文件名的 model 换回带目录的原样。
+
+    同一个模型，图片存 ``MinimaxH3\\Cobijada_...safetensors``、视频存
+    ``Cobijada_H3_Hybrid精炼int8``，卡片徽标一个报模型目录、一个报文件名第一个词，
+    看起来就是「模型在哪个文件夹识别错了」（2026-11-11 苏醒指出）。这里模拟上一版
+    跑完的库：门控停在 3、model 是削过的旧值，回填必须把它覆写成新的形状。
+    """
+    from app import repository
+    from app.db import get_int_meta, set_meta
+
+    _isolate(tmp_path, monkeypatch)
+    conn = get_pool().main()
+    path = samples["tag"]
+    conn.execute(
+        "INSERT INTO images(path, filename, kind, size_bytes, mtime, model) VALUES(?,?,?,?,?,?)",
+        (
+            path.as_posix(),
+            path.name,
+            "video",
+            path.stat().st_size,
+            path.stat().st_mtime,
+            "minimax_h3_hybrid_fl2va_ref2va_b25-49-int8",
+        ),
+    )
+    conn.commit()
+    set_meta("video_metadata_schema", 3)
+
+    assert repository.backfill_video_metadata() == 1
+    assert conn.execute("SELECT model FROM images").fetchone()["model"] == (
+        "MinimaxH3\\minimax_h3_hybrid_fl2va_ref2va_b25-49-int8.safetensors"
+    )
+    assert get_int_meta("video_metadata_schema", 0) == repository.VIDEO_METADATA_SCHEMA_VERSION
 
 
 def test_backfill_never_wipes_and_survives_missing_file(tmp_path, monkeypatch, samples):

@@ -114,7 +114,9 @@ export function basenameOnly(filename: string): string {
  * 裸文件名的取最靠前的那个词，下划线切和连字符切都试一遍取更短的，
  * 于是 `minimax_h3_hybrid_…` → `minimax`、`wan2.1-i2v-…` → `wan2.1`。
  * 代价要知道：同一个模型两种存法（`MinimaxH3\x.safetensors` 和裸的 `minimax_h3_…`）
- * 会显示成两个徽标。那是素材库自己的分组差异，宁可原样反映，也不替用户编一张映射表。
+ * 会显示成两个徽标。视频那一路以前被解析器削过目录，正是这种存法，2026-11-11 已修
+ * （parser._video_model_name 不再削 + 回填门控 v4 覆写老数据）；剩下的才是素材库自己的
+ * 分组差异，宁可原样反映，也不替用户编一张映射表。
  */
 const MODEL_FILE_EXT = /\.(safetensors|ckpt|pt|pth|bin|gguf|ggml|onnx|engine)$/i;
 

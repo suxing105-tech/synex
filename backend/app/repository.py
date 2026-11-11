@@ -1508,7 +1508,10 @@ def prune_missing_system_folders(watch_dirs: list[Path]) -> int:
 # v3：以前「ffprobe 不可用」也照样落门控，装 ffmpeg 的机器没跑成功就永久跳过回填，
 # 别人机器上「视频的提示词再也读不出来」是这么来的。改成缺工具不落门控 + 版本 +1，
 # 让那批库在装上自带 ffmpeg 的安装包后自动补跑一次。
-VIDEO_METADATA_SCHEMA_VERSION = 3
+# v4：模型名不再削目录/扩展名（见 parser._video_model_name）。老库里 152 条视频的 model
+# 是削过的裸文件名，跟图片存的那串带目录的对不上，卡片徽标就把同一个模型认成两个家族；
+# 重跑一遍按现在的解析器覆写（model 走「解析出来就写」，不是只补空）。
+VIDEO_METADATA_SCHEMA_VERSION = 4
 
 
 def backfill_video_metadata(conn: sqlite3.Connection | None = None) -> int:

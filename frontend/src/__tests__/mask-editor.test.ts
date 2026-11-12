@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   MASK_EDGE_LIMIT, MASK_EMPTY_PIXELS, cellAcceptsMask, countMaskPixels, isMaskEmpty, maskBadgeText,
@@ -192,4 +195,74 @@ describe("编辑层的只读回显", () => {
     expect(maskEntryLabel(maskEdit({ pixels: 2 }))).toBe("画遮罩");
     expect(maskEntryLabel(maskEdit())).toBe("改遮罩");
   });
+});
+
+/**
+ * 层序护栏（2026-11-12 真机走查后补）。
+ *
+ * happy-dom 不注入 Svelte 的 scoped CSS，computed style 里压根拿不到 z-index，
+ * 所以只能照 type-scale.test.ts 的路子读源文件比数值。写法是丑了点，但被底栏挡住的那颗
+ * 红色「生成」是误点就真跑一次本地生成的脚枪，值得钉死在测试里。
+ */
+
+const srcRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const componentSource = (name: string): string =>
+  readFileSync(resolve(srcRoot, "components", name), "utf8");
+
+/** 取某个选择器那条规则里的第一个 z-index；没写 z-index 返回 null。 */
+function zIndexOf(css: string, selector: string): number | null {
+  const at = css.indexOf("\n  " + selector + " {");
+  if (at < 0) throw new Error("样式里找不到 " + selector + "（改了写法就顺手更新这条测试）");
+  const matched = css.slice(at, css.indexOf("}", at)).match(/z-index:\s*(\d+)/);
+  return matched ? Number(matched[1]) : null;
+}
+
+describe("遮罩编辑层的层序", () => {
+  const maskEditor = componentSource("MaskEditor.svelte");
+  const cloneModal = componentSource("CloneModal.svelte");
+
+  it(".me 压得住弹窗里每一件还点得着的东西", () => {
+    const editor = zIndexOf(maskEditor, ".me");
+    expect(editor).not.toBeNull();
+    // sticky 底栏、工作流那颗 pill 和它的弹层、生成钮：画遮罩时一件都不许透出来
+    for (const sel of [".cm-dock", ".cm-pill", ".cm-pop-scrim", ".cm-pop", ".cm-actions"]) {
+      const z = zIndexOf(cloneModal, sel);
+      expect(z, sel + " 现在没有 z-index，这条测试的口径要重新想").not.toBeNull();
+      expect(editor, ".me(" + editor + ") 压不住 " + sel + "(" + z + ")：画遮罩时它会露在编辑层上面，看着像在画遮罩，点下去是真跑图")
+        .toBeGreaterThan(z as number);
+    }
+  });
+
+  it(".cm-panel 还是不写 z-index（写了就把底栏关进自己的 layer，上面那场的比较口径作废）", () => {
+    expect(zIndexOf(cloneModal, ".cm-panel")).toBeNull();
+  });
+
+  it("编辑层待在 .cm-backdrop 那一层里面，不往外层跑", () => {
+    expect(zIndexOf(maskEditor, ".me") as number)
+      .toBeLessThan(zIndexOf(cloneModal, ".cm-backdrop") as number);
+  });
+});
+
+/**
+ * Svelte 5 runes 的坑：模板里读到的普通 `let` 不参与更新（编译器直接给
+ * `non_reactive_update` 警告，svelte-check 只算 warning、门禁拦不住）。
+ * 「重做」那颗按钮的 disabled 就踩过一次——画完一笔再撤销，它还是灰的，重做这个功能等于没做。
+ * 画布在 happy-dom 里跑不动，测不了「撤销之后重做变亮」，那就把这类变量本身钉住。
+ */
+it("编辑层里没有假装是状态的普通变量", () => {
+  const src = readFileSync(resolve(srcRoot, "components", "MaskEditor.svelte"), "utf8");
+  const scriptEnd = src.indexOf("</script>");
+  const styleStart = src.indexOf("<style>");
+  if (scriptEnd < 0 || styleStart < 0) throw new Error("MaskEditor.svelte 的结构和这条测试想的不一样");
+
+  const script = src.slice(0, scriptEnd);
+  // 属性值和字符串里的中文不参与匹配：class="me-canvas" 会让 \bcanvas\b 误报
+  const markup = src.slice(scriptEnd, styleStart).replace(/"[^"]*"/g, '""');
+  const plainLets = [...script.matchAll(/^ {2}let (\w+)(.*)$/gm)]
+    .filter((m) => !m[2].includes("$state"))
+    .map((m) => m[1]);
+
+  expect(plainLets.length).toBeGreaterThan(0);
+  const offenders = plainLets.filter((name) => new RegExp("\\b" + name + "\\b").test(markup));
+  expect(offenders, "这些普通 let 被模板读到了，改成 $state：" + offenders.join(", ")).toEqual([]);
 });

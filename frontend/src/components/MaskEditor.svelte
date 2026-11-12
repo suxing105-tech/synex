@@ -68,7 +68,9 @@
   let brush = $state(MASK_BRUSH_DEFAULT);
   let ink = $state(MASK_INK_DEFAULT);
   let strokes = $state<Stroke[]>([]);
-  let undone: Stroke[] = [];
+  /** 重做栈要和撤销栈一样是状态：底栏那颗「重做」的 disabled 读它，
+   *  写成普通 let 的话编译器只算一次，撤销完重做还是灰的、永远点不着。 */
+  let undone = $state<Stroke[]>([]);
   let painted = $state(0);
   let handing = $state(false);
   let drawing = false;
@@ -472,9 +474,14 @@
 
 <style>
   /* 盖住整层弹窗（2026-11-12 定稿）：它是 .cm-panel 的兄弟、.cm-backdrop 的孩子，
-     inset:0 连 backdrop 那 20px 内边距一起盖住——画遮罩要的是整块地方，不该在底下留一条缝。 */
+     inset:0 连 backdrop 那 20px 内边距一起盖住——画遮罩要的是整块地方，不该在底下留一条缝。
+     z-index 取 7（2026-11-12 真机走查后从 2 提上来）：.cm-panel 只有 position:relative、没有 z-index，
+     不成 layer，所以它那条 sticky 底栏（.cm-dock 3）、工作流弹层（.cm-pop-scrim 4、.cm-pop 5）和那颗
+     生成钮（.cm-actions 6）都是跟编辑层直接比大小的——留在 2 的时候底栏连那颗红色「生成」还露在画布
+     上面，看着像在画遮罩，手一抖就是一次真跑图。7 压过弹窗里的全部，只把悬停放大那张 .cm-ref-zoom(9)
+     让在外面：画遮罩时鼠标不碰参考图那一排，它本来也不会出现。 */
   .me {
-    position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; gap: 8px;
+    position: absolute; inset: 0; z-index: 7; display: flex; flex-direction: column; gap: 8px;
     padding: 12px 14px; background: var(--ink-0); color: var(--text-1);
     font-size: var(--fs-sm); outline: none;
   }

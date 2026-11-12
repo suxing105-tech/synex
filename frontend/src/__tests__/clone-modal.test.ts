@@ -3870,7 +3870,9 @@ it('编辑层是盖住整块弹窗的一层，不是挤在左栏里的一块', (
   const me = blk('.me {');
   expect(me).toMatch(/position:\s*absolute/);
   expect(me).toMatch(/inset:\s*0/);
-  expect(me).toMatch(/z-index:\s*2/);
+  // 数值本身不在这里钉：它要跟 .cm-dock / .cm-actions 比大小才知道够不够，
+  // 那套比较钉在 mask-editor.test.ts 的「遮罩编辑层的层序」里，这里只确认它自己有 z-index。
+  expect(/z-index:\s*\d+/.test(me), '.me 不写 z-index 就盖不住弹窗那条 sticky 底栏').toBe(true);
   // 挂在 .cm-backdrop 的孩子位上（.cm-panel 的兄弟）：挂进面板就会被圆角和内边距切出一条缝
   const modal = readFileSync('src/components/CloneModal.svelte', 'utf8');
   expect(modal).toMatch(/<\/div>\s*\{#if maskOpen && maskCell\}/);

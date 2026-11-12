@@ -18,6 +18,7 @@ from app.main import app
 
 IMAGE_KEY = "qwen-multi-image-edit"
 MASK_KEY = "qwen-single-mask-edit"
+MASK_LABEL = "闪寻局部编辑"
 VIDEO_KEY = "h3-reference-video"
 AUDIO_KEY = "qwen3-tts-voice-clone"
 DESIGN_KEY = "qwen3-tts-voice-design"
@@ -74,7 +75,7 @@ def test_ships_one_workflow_per_family():
     # 图片族第二条：带遮罩的局部重绘／移除。它不是新的「当前」，见
     # test_the_mask_template_is_seeded_but_not_the_default
     assert by_key[MASK_KEY]["media_kind"] == "image"
-    assert by_key[MASK_KEY]["label"] == "闪寻遮罩编辑"
+    assert by_key[MASK_KEY]["label"] == MASK_LABEL
     assert by_key[VIDEO_KEY]["media_kind"] == "video"
     assert by_key[VIDEO_KEY]["label"] == "闪寻视频"
     assert {by_key[k]["media_kind"] for k in (AUDIO_KEY, DESIGN_KEY, CUSTOM_KEY)} == {"audio"}
@@ -133,6 +134,8 @@ def test_builtins_know_their_old_names():
     assert "闪寻音频" in by_key[AUDIO_KEY]["legacy_labels"]
     # 改名不改主键：老库里那条「闪寻音频克隆」下次启动顺势改成「闪寻参考音色」
     assert "闪寻音频克隆" in by_key[AUDIO_KEY]["legacy_labels"]
+    # 0.2.34 之后叫「闪寻局部编辑」：旧名留在包里，老库那条下次启动顺势改口，记录不换
+    assert "闪寻遮罩编辑" in by_key[MASK_KEY]["legacy_labels"]
 
 
 def test_shipped_workflows_carry_the_two_real_machine_fixes():
@@ -158,7 +161,7 @@ def test_shipped_slots_point_at_real_nodes():
 
 def test_fresh_install_seeds_every_family(seeded):
     rows = clone_templates.list_templates()
-    assert {r["name"] for r in rows} == {"闪寻图片", "闪寻遮罩编辑", "闪寻视频"} | AUDIO_LABELS
+    assert {r["name"] for r in rows} == {"闪寻图片", MASK_LABEL, "闪寻视频"} | AUDIO_LABELS
     assert all(r["is_builtin"] for r in rows)
     assert {r["media_kind"] for r in rows} == {"image", "video", "audio"}
     # 每族各自一个「当前」：声音三条也只能有一条是当前，弹窗开出来才有唯一默认
@@ -174,26 +177,30 @@ def test_the_mask_template_is_seeded_but_not_the_default(seeded):
     image = [r for r in rows.values() if r["media_kind"] == "image"]
     assert len(image) == 2
     assert [r["name"] for r in image if r["is_active"]] == ["闪寻图片"]
-    mask = rows["闪寻遮罩编辑"]
+    mask = rows[MASK_LABEL]
     assert [c["key"] for c in mask["reference_cells"]] == ["193.image"]
     assert [c["kind"] for c in mask["reference_cells"]] == ["image"]
 
 
-def test_the_mask_template_ships_the_four_slot_contracts(seeded):
-    """随包那条遮罩模板的四个约定：能画遮罩、空提示词是移除、两段文字、旋钮管两份。
+def test_the_mask_template_ships_the_slot_contracts(seeded):
+    """随包那条局部编辑模板的槽位约定：能画遮罩、空提示词算一个模式、旋钮管两条分支。
 
-    这四条都是「少一条就出错片」的：遮罩标记没了就没有笔刷；allow_empty 没了
+    这几条都是「少一条就出错片」的：遮罩标记没了就没有笔刷；allow_empty 没了
     空提示词会被后端按「必须填提示词」顶回来；307 的标签不是「完整提示词」
     就进不了主框；sync_to 没了，走移除分支时扩张／羽化退回工作流自带的 4／5。
+
+    「移除指令」不再是一条槽位：它写死在工作流节点里。摆在弹窗里就是一格没人会去动、
+    动错一个字移除当场失灵的输入框（苏醒 2026-11-12：那块展示很多余）。
     """
     entry = [e for e in clone_bundled.entries() if e["key"] == MASK_KEY][0]
     nodes, slots = clone_bundled._prepare(entry)
     by_key = {clone_templates.slot_key(s): s for s in slots}
     assert by_key["307.value"]["label"] == clone_templates.PRIMARY_PROMPT_LABEL
     assert by_key["307.value"]["allow_empty"] is True
-    assert "绿" in by_key["307.value"]["empty_hint"]
-    assert by_key["118.prompt"]["label"] == "移除指令"
-    assert by_key["118.prompt"]["value"] == "移除图像中的绿色区域"
+    # 「留空＝移除」这句由前端固定说（两个模式共用一条文案），槽位上不再带 empty_hint
+    assert "empty_hint" not in by_key["307.value"]
+    assert [s for s in slots if s.get("kind") == "prompt"] == [by_key["307.value"]], \
+        "弹窗里只该有主框那一条提示词，移除指令不在界面上露脸"
     assert by_key["193.image"]["mask"] == "alpha"
     for key in ("212.遮罩扩展百分比", "212.遮罩羽化百分比"):
         assert by_key[key]["sync_to"] == [["252", key.split(".", 1)[1]]], key
@@ -206,12 +213,52 @@ def test_the_mask_template_ships_the_four_slot_contracts(seeded):
     assert outs == ["38"]
 
 
+def test_the_removal_line_names_the_color_it_actually_paints():
+    """移除那句文字说的颜色，必须就是盖给模型看的那层的颜色。
+
+    移除分支没有 MASK 直接进模型：204 把 205 那张纯色图按 40% 盖在遮罩区域上，
+    再叫模型「移除图像中的X色区域」。两处对不上，模型就找不到该移除的地方；
+    万物移除那颗 LoRA 也是照这个配色训的。所以哪天要换颜色，205 的颜色与 118 的
+    那句话得一起改——编辑器里画给人看的那层是红的，跟这条染色是两回事，别去动它。
+    """
+    entry = [e for e in clone_bundled.entries() if e["key"] == MASK_KEY][0]
+    workflow = entry["workflow"]
+    assert workflow["205"]["class_type"] == "LayerUtility: ColorImage"
+    tint = str(workflow["205"]["inputs"]["color"]).lower()
+    line = str(workflow["118"]["inputs"]["prompt"])
+    assert tint == "#00ff00"
+    assert "绿色" in line and "红色" not in line, "染色与指令必须同色"
+    assert workflow["204"]["inputs"]["覆盖图"] == ["205", 0], "那层染色确实盖在遮罩区域上"
+    assert 0 < float(workflow["204"]["inputs"]["透明度"]) < 1, "半透明才既看得见原图又认得出范围"
+
+
+def test_a_slot_only_update_still_reaches_an_untouched_builtin(seeded):
+    """只改槽位、正文一字没动的那一版更新也必须刷进去。
+
+    bundled_sha 只按 workflow 算，所以「撤掉一条多余槽位」这种改动光比 sha 会被当成
+    没变：老库里那条会永远留着「移除指令」那格，界面上撤不掉。正文没被用户改过时
+    再比一次槽位；用户自己改过正文的照旧不覆盖（见 test_user_edited_builtin_is_not_overwritten）。
+    """
+    conn = seeded.main()
+    row = _row_of_key(seeded, MASK_KEY)
+    stale = [*json.loads(row["slots"]),
+             {"kind": "prompt", "node": "118", "input": "prompt",
+              "label": "移除指令", "value": "移除图像中的绿色区域"}]
+    conn.execute("UPDATE clone_templates SET slots=? WHERE id=?",
+                 (json.dumps(stale, ensure_ascii=False), int(row["id"])))
+    assert clone_bundled.seed(conn)["updated"] == [MASK_KEY]
+    after = json.loads(_row_of_key(seeded, MASK_KEY)["slots"])
+    assert [s for s in after if s.get("kind") == "prompt"] == [
+        s for s in after if clone_templates.slot_key(s) == "307.value"]
+    assert clone_bundled.seed(conn)["updated"] == [], "刷完就稳了，别每次启动都重写一遍"
+
+
 def test_the_mask_template_is_the_only_one_with_a_brush(seeded):
     """别的工作流不该被顺手加上遮罩入口：目前随包的只有这一条认遮罩。"""
     for row in clone_templates.list_templates():
         tagged = [s for s in row["slots"] if s.get("mask") == "alpha"]
         assert [s.get("label") for s in tagged] == (
-            ["图片1"] if row["name"] == "闪寻遮罩编辑" else []), row["name"]
+            ["图片1"] if row["name"] == MASK_LABEL else []), row["name"]
 
 
 def test_the_two_extra_audio_modes_have_no_reference_cells(seeded):
@@ -358,7 +405,7 @@ def test_deleting_the_active_one_promotes_a_sibling(seeded):
     clone_templates.delete_template(target["id"])
     rows = clone_templates.list_templates()
     assert {r["media_kind"] for r in rows} == {"image", "audio"}
-    # 图片族有两条（闪寻图片 + 闪寻遮罩编辑），删掉的正好是「当前」那条：顶上来的只能有一条
+    # 图片族有两条（闪寻图片 + 闪寻局部编辑），删掉的正好是「当前」那条：顶上来的只能有一条
     image = [r for r in rows if r["media_kind"] == "image"]
     assert [r["name"] for r in image if r["is_active"]] == ["闪寻图片"], "图片族的当前不能跟着删视频那条一起变动"
     audio = [r for r in rows if r["media_kind"] == "audio"]
@@ -391,7 +438,7 @@ def test_switch_off_keeps_a_fresh_db_empty(tmp_path: Path, monkeypatch):
 def test_api_reports_builtin_templates(seeded):
     with TestClient(app) as client:
         items = client.get("/api/clone/templates").json()["items"]
-    assert {i["name"] for i in items} == {"闪寻图片", "闪寻遮罩编辑", "闪寻视频"} | AUDIO_LABELS
+    assert {i["name"] for i in items} == {"闪寻图片", MASK_LABEL, "闪寻视频"} | AUDIO_LABELS
     assert all(i["is_builtin"] for i in items)
     assert {i["media_kind"] for i in items} == {"image", "video", "audio"}
 
@@ -406,14 +453,14 @@ def test_a_builtin_refuses_redetect(seeded, monkeypatch):
 
     with TestClient(app) as client:
         rows = client.get("/api/clone/templates").json()["items"]
-        mask = [r for r in rows if r["name"] == "闪寻遮罩编辑"][0]
+        mask = [r for r in rows if r["name"] == MASK_LABEL][0]
         res = client.post(f"/api/clone/templates/{mask['id']}/redetect")
         assert res.status_code == 409
         assert "导入一份属于自己" in res.json()["detail"]
-        # 没动库：槽位还是随包那一套（六个槽位、图片1 能画遮罩）
+        # 没动库：槽位还是随包那一套（五个槽位、图片1 能画遮罩）
         after = client.get("/api/clone/templates").json()["items"]
-        row = [r for r in after if r["name"] == "闪寻遮罩编辑"][0]
-        assert len(row["slots"]) == 6
+        row = [r for r in after if r["name"] == MASK_LABEL][0]
+        assert len(row["slots"]) == 5
         assert row["control_count"] == 3
         assert [s.get("mask") for s in row["slots"] if s.get("kind") == "image"] == ["alpha"]
 

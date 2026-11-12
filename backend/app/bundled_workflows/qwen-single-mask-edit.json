@@ -1,23 +1,18 @@
 {
  "key": "qwen-single-mask-edit",
- "label": "闪寻遮罩编辑",
+ "label": "闪寻局部编辑",
+ "legacy_labels": [
+  "闪寻遮罩编辑"
+ ],
  "media_kind": "image",
- "notes": "Qwen image 2.1 单图局部重绘／移除：提示词留空＝按遮罩移除，填写＝按遮罩局部重绘。遮罩在「再次创作」里直接画，随请求合成进图片的透明通道，不往图库里落文件。",
+ "notes": "Qwen image 2.1 单图局部重绘／移除：完整提示词留空＝按遮罩移除，填写＝按遮罩局部重绘。遮罩在「再次创作」里直接画（画笔或 Shift 框选），随请求合成进图片的透明通道，不往图库里落文件。移除那条文字指令与节点 205 的染色必须同色，别只改字。",
  "slots": [
   {
    "allow_empty": true,
-   "empty_hint": "留空＝移除：把遮罩涂过的地方染绿后让模型去掉绿色区域，没移除干净时可能残留绿边。",
    "input": "value",
    "kind": "prompt",
    "label": "完整提示词",
    "node": "307"
-  },
-  {
-   "input": "prompt",
-   "kind": "prompt",
-   "label": "移除指令",
-   "node": "118",
-   "value": "移除图像中的绿色区域"
   },
   {
    "input": "image",

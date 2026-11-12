@@ -13,6 +13,9 @@
 
 更新与删除的规矩：
 - 只在用户没动过它的时候随版本刷新（比对存的 workflow 与 `bundled_sha`）；
+- **槽位约定变了也要刷新**：`bundled_sha` 只按 workflow 算，所以「只改槽位、正文一字没动」
+  的那一版（给某格加遮罩标记、撤掉一条多余的输入框都算）光比 sha 会被当成没变，
+  用户库里永远留着旧约定。所以正文没被改过时，还要再比一次槽位。
 - 用户删掉的内置模板不会下次启动又长回来（记进 meta 的 dismissed 名单）。
 """
 from __future__ import annotations
@@ -321,17 +324,18 @@ def seed(conn) -> dict:
             summary["renamed"].append(key)
 
         stored_sha = str(row["bundled_sha"] or "")
-        if stored_sha == sha:
-            summary["skipped"].append(key)  # 版本没变
-            continue
         if workflow_sha(row["workflow"]) != stored_sha:
             summary["skipped"].append(key)  # 用户改过（或改名前动过正文），不覆盖
             continue
         nodes, slots = _prepare(item)
+        shipped_slots = json.dumps(slots, ensure_ascii=False)
+        if stored_sha == sha and str(row["slots"] or "") == shipped_slots:
+            summary["skipped"].append(key)  # 正文与槽位约定都没变
+            continue
         conn.execute(
             "UPDATE clone_templates SET workflow=?, slots=?, default_prompt=?, bundled_sha=?,"
             " updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?",
-            (json.dumps(nodes, ensure_ascii=False), json.dumps(slots, ensure_ascii=False),
+            (json.dumps(nodes, ensure_ascii=False), shipped_slots,
              default_prompt_for(nodes, slots), sha, int(row["id"])),
         )
         summary["updated"].append(key)

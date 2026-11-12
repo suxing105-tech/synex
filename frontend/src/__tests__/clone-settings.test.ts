@@ -422,3 +422,54 @@ it('隐藏接口答话里没有 key 就不当隐藏项渲染', async () => {
   expect(await screen.findByText('旧的同款')).toBeTruthy();
   expect(screen.queryByText(/已隐藏的内置工作流/)).toBeNull();
 });
+
+it('导入时也要把遮罩那四条约定原样带回去：丢了 mask 就没法画遮罩，丢了 allow_empty 那个模式就没了', async () => {
+  const MASK_IMAGE = { kind: 'image', node: '543', input: 'image', label: '加载图像', mask: 'alpha' };
+  const EMPTY_PROMPT = { ...PROMPT_SLOT, allow_empty: true, empty_hint: '提示词留空＝把涂出来的地方去掉' };
+  const PAIR = { kind: 'number', node: '9', input: 'steps', label: '步数', value: 20, min: 1, max: 100, step: 1, sync_to: [['10', 'steps']] };
+  let created: { slots: Record<string, unknown>[] } | null = null;
+  http.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path === '/api/clone/templates' && (init as RequestInit)?.method === 'POST') {
+      created = JSON.parse(String(init?.body));
+      return { ...TPL };
+    }
+    if (path === '/api/clone/templates/inspect') {
+      return { ...inspectRoutes()['/api/clone/templates/inspect'], slots: [EMPTY_PROMPT, MASK_IMAGE, RATIO_SLOT], candidates: [PAIR] };
+    }
+    if (path === '/api/clone/templates') return { items: [TPL] };
+    throw new Error(`未预演的接口：${path}`);
+  });
+  const screen = render(CloneTemplates, {});
+  await screen.findByText('旧的同款');
+  await importJson(screen);
+  // 候选槽（第二台采样器的步数）默认不勾，要连它一起验 sync_to 得先勾上
+  const steps = screen.getByLabelText(/步数/);
+  await fireEvent.click(steps);
+  await fireEvent.click(screen.getByRole('button', { name: '保存模板' }));
+  await tick();
+  await tick();
+  const slots = (created as unknown as { slots: Record<string, unknown>[] }).slots;
+  const image = slots.find((slot) => slot.kind === 'image');
+  const prompt = slots.find((slot) => slot.kind === 'prompt');
+  const number = slots.find((slot) => slot.kind === 'number');
+  expect(image?.mask).toBe('alpha');
+  expect(prompt).toMatchObject({ allow_empty: true, empty_hint: '提示词留空＝把涂出来的地方去掉' });
+  expect(number?.sync_to).toEqual([['10', 'steps']]);
+});
+
+it('内置工作流不给点「重新检测槽位」，并且说清为什么；自己导入的那条照旧能点', async () => {
+  routes({ '/api/clone/templates': { items: [TPL, { ...VIDEO_TPL, is_builtin: true }] } });
+  const screen = render(CloneTemplates, {});
+  await screen.findByText('旧的同款');
+  const builtin = screen.getByText('H3参考视频').closest('li')!;
+  const own = screen.getByText('旧的同款').closest('li')!;
+  const redetect = (root: Element) =>
+    [...root.querySelectorAll('button')].find((b) => b.textContent?.trim() === '重新检测槽位') as HTMLButtonElement;
+  expect(redetect(own).disabled).toBe(false);
+  const off = redetect(builtin);
+  expect(off.disabled).toBe(true);
+  // 不给点就得给个说法：随包那份的槽位约定（遮罩、留空模式）重扫会被冲掉
+  expect(off.getAttribute('title')).toContain('内置');
+  expect(off.getAttribute('title')).toContain('冲掉');
+});
+

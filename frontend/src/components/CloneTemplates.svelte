@@ -157,7 +157,14 @@
                         ...(slot.unit ? { unit: slot.unit } : {}),
                         ...(slot.presets?.length ? { presets: slot.presets } : {}),
                         // 多图参考的扩位信息必须原样带回去：在这儿丢一次，弹窗就只剩一个参考位
-                        ...(slot.grow ? { grow: slot.grow } : {}) }));
+                        ...(slot.grow ? { grow: slot.grow } : {}),
+                        // 遮罩那四条约定同样是检测出来的，丢一次就少一样：丢了 mask 那颗「画遮罩」
+                        // 就不出现；丢了 allow_empty / empty_hint，「提示词留空＝移除」那个模式退回
+                        // 成「必须填提示词」；丢了 sync_to，一台采样器的步数不再带动另一台
+                        ...(slot.mask ? { mask: slot.mask } : {}),
+                        ...(slot.allow_empty ? { allow_empty: true } : {}),
+                        ...(slot.empty_hint ? { empty_hint: slot.empty_hint } : {}),
+                        ...(slot.sync_to?.length ? { sync_to: slot.sync_to } : {}) }));
     if (!chosen.some((s) => s.kind === "prompt")) {
       error = "至少留一个提示词槽，否则弹窗里没有可改的文案，再次创作就只是重复出一样的图。";
       return;
@@ -278,8 +285,13 @@
               {#if !tpl.is_active}
                 <button class="setting-button" disabled={busy} onclick={() => void run(() => reloadAfter(() => cloneApi.update(tpl.id, { is_active: true })), `已把「${templateDisplayName(tpl.name)}」设为当前模板`)}>设为当前</button>
               {/if}
-              <button class="setting-button" disabled={busy}
-                title="按这份工作流重新检测一遍提示词位、参考位和参数（手动改过的绑定会被冲掉）。导入时 ComfyUI 没开，比例/分辨率没认出来的话就点这个。"
+              <!-- 内置那几条不给重检：随包那份的槽位约定（哪一格吃遮罩、提示词留空算哪个模式、
+                   哪几颗旋钮是一组）是写好并测过的，重扫一遍会把它们冲掉，后端对这条直接回 409。
+                   按钮留着说清为什么点不动，比让人以为程序坏了强。 -->
+              <button class="setting-button" disabled={busy || tpl.is_builtin}
+                title={tpl.is_builtin
+                  ? "内置工作流的槽位是随包定好的（包括哪一格能吃遮罩、提示词留空算哪个模式），重新检测会把它们冲掉，所以点不动。要改就「导出 JSON」，改完再导入一条自己的。"
+                  : "按这份工作流重新检测一遍提示词位、参考位和参数（手动改过的绑定会被冲掉）。导入时 ComfyUI 没开，比例/分辨率没认出来的话就点这个。"}
                 onclick={() => void run(async () => {
                   const saved = await cloneApi.redetect(tpl.id);
                   await reload(true);

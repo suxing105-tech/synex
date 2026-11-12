@@ -27,7 +27,8 @@
   import type { CanvasEscape } from "../lib/clone-canvas";
   import {
     applyCloneProgress, buildGenerateRequest, cloneApi, cloneError, cloneJob, cloneStatusLabel,
-    allowsTextMode, controlSlots, controlSummary, defaultControlValues, defaultReferences, latestReversePrompt,
+    allowsTextMode, controlSlots, controlSummary, defaultControlValues, defaultReferences, formatTargetSize, latestReversePrompt,
+    pickedRatioOption,
     promptGroupValues, modeFromRefCount, modeLabel, numberPresets, numberUnit,
     primaryPromptGroup, promptGroupHint, promptPlaceholder, promptSlots, promptSourceLabel, secondaryPromptGroups,
     ratioShape, referenceCells, referenceIssues, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, visibleRefCells, voiceAvatar, voiceSample, nativeLanguageOverride,
@@ -588,7 +589,10 @@
    * 认不出比例（配方里没有认得出宽高的参数）就不加 class，仍旧走写死那一档——那是「不知道」，
    * 不拿一个猜的形状冒充答案。
    */
-  const stageAspect = $derived(ratioShape(batchAspectOption() ?? "").ratio);
+  /** 这一批要出的画面比例：画面参数里那颗认得出宽高的。取数收在 lib/clone.ts 的 pickedRatioOption，
+     与「这次会出多大」吃同一颗——两处各挑各的，等待台的形状和报的尺寸就会各说一套。 */
+  const batchAspectOption = $derived(pickedRatioOption(template, controls));
+  const stageAspect = $derived(ratioShape(batchAspectOption ?? "").ratio);
 
   /**
    * 跑完这一格让给刚出来的那一份：多份产出时 heroOut 记着人在看第几份，
@@ -620,6 +624,12 @@
     if (maskTemplate) return maskRef?.filename ?? "";
     return image?.filename ?? "";
   });
+  /** 还没出片时，文件名旁边顺带报一句「这么点下去会出多大」：算得出就报，算不出这行不排。
+     出片之后撤掉——那一格摆的是真图，真尺寸在图库详情栏里，拿计划值冒充实测值是假话。
+     生成中也撤掉，跟上面那行文件名同一条理由：等待台不报还没有的东西。 */
+  const heroTargetSize = $derived(heroShowsOutput || busy ? "" : formatTargetSize(template, controls));
+  /** 参数弹层最下面那行吃的是同一个数：弹层本来就开着在挑比例和 MP，得跟着手上的选择实时走。 */
+  const targetSize = $derived(formatTargetSize(template, controls));
   /* 提示词那一格的小标题用工作流给的槽位名（台词 / 正向提示词…），没名字才退回「完整提示词」。 */
   const promptBlockTitle = $derived(primaryPromptGroup(template)?.label ?? "");
   /** 图片取 1024 那张预览（后端缩好并落盘缓存）；视频与音频只认后端给的地址，前端硬拼必错。 */
@@ -1524,15 +1534,6 @@
     }
   }
 
-  /** 这一批要出的画面比例：从画面参数里挑那颗认得出宽高的；认不出就按方的排。 */
-  function batchAspectOption(): string | null {
-    for (const slot of controlSlots(template)) {
-      const value = controls[slotKey(slot)];
-      if (typeof value === "string" && ratioShape(value).ratio) return value;
-    }
-    return null;
-  }
-
   async function generate() {
     if (!template) return;
     if (issues.length) {
@@ -1549,7 +1550,7 @@
     heroOut = null;
     maskBack = false;
     // 画布排卡要用比例，而产出清单里不带它——只能在提交这一刻把当前挑的那颗交出去
-    armCloneBatchAspect(batchAspectOption());
+    armCloneBatchAspect(batchAspectOption);
     // 提交那一刻收掉两个弹层：不然菜单会盖在跑动的界面上，而且它里面的条目马上要全部禁用
     popOpen = false;
     closeWorkflowPop();
@@ -2108,9 +2109,20 @@
                 <div class="cm-hero cm-hero-empty">没有预览</div>
               {/if}
           {/if}
-          {#if heroCaption}
-            <!-- 文件名回到展示图下面（旧图那一版有）：一次出几份、或者从这一格跳回图库时，认的就是它。 -->
-            <p class="cm-hero-name" title={heroCaption}>{heroCaption}</p>
+          {#if heroCaption || heroTargetSize}
+            <div class="cm-hero-meta">
+              {#if heroCaption}
+                <!-- 文件名回到展示图下面（旧图那一版有）：一次出几份、或者从这一格跳回图库时，认的就是它。 -->
+                <p class="cm-hero-name" title={heroCaption}>{heroCaption}</p>
+              {/if}
+              {#if heroTargetSize}
+                <!-- 这一趟会出多大：公式和 ComfyUI 那台 ResolutionSelector 同一份，挑完比例与分辨率就落地，
+                     不用等跑完才发现尺寸不对。认不出这两个数的工作流（云端、局部重绘）不会走到这里。 -->
+                <p class="cm-hero-dims" title="按当前比例与分辨率，这一趟会出这么大的图">
+                  <span class="sr-only">将生成</span>{heroTargetSize}
+                </p>
+              {/if}
+            </div>
           {/if}
         </div>
 
@@ -2614,6 +2626,12 @@
                             </label>
                           {/if}
                         {/each}
+                        {#if targetSize}
+                          <!-- 上面那几颗的合算结果：挑完比例与分辨率，这一行就是这一趟的出图尺寸，点一档就跟着走 -->
+                          <p class="cm-pop-size" title="按当前比例与分辨率，这一趟会出这么大的图">
+                            <span class="sr-only">将生成</span>{targetSize}
+                          </p>
+                        {/if}
                       </div>
                     {/if}
                   </div>
@@ -2823,7 +2841,7 @@
      不写 min-height:0 它顶着 intrinsic 高度不让缩，压不动就变成溢出，等于这条白写。 */
   .cm-body.is-stacked .cm-left { min-height: 0; }
   .cm-body.is-stacked .cm-hero, .cm-body.is-stacked .cm-stage { min-height: 0; }
-  .cm-body.is-stacked .cm-hero-name { flex: none; }
+  .cm-body.is-stacked .cm-hero-meta { flex: none; }
   /* 这一格的高度只有 --cm-hero-h 一个来源（展示图、等待台、画布都只读它：同一格轮流占，各自写一个数
      就会在换状态时把输入卡顶一下、坠一下，1478x562 踩过）。
      两栏那一档整列高度归它，取旧版那条 74vh：图是等比的，真正的上限其实是左列宽度（上一条定），74vh 只在
@@ -2846,6 +2864,11 @@
   .cm-hero { width: auto; max-width: 100%; max-height: var(--cm-hero-h); object-fit: contain; border-radius: 16px; background: #0c0c0e; }
   /* 展示图下面那行文件名（旧图有这一行，2026-11-10 放回来）：从这一格跳回图库、或一次出几份时，
      认的就是它。长名字截断，完整名字在 title 里。 */
+  /* 文件名与「这一趟出多大」并排一行（2026-11-12 苏醒照图：文件名右边那块空位就是留给它的）。
+     被挤的只许是名字——省略号本来就长在它身上；尺寸不许被顶出这一行。 */
+  .cm-hero-meta { display: flex; align-items: baseline; gap: 8px; max-width: 100%; min-width: 0; }
+  .cm-hero-meta .cm-hero-name { flex: 0 1 auto; min-width: 0; }
+  .cm-hero-dims { flex: none; margin: 2px 0 0; font-size: var(--fs-xs); line-height: 16px; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .cm-hero-name { margin: 2px 0 0; max-width: 100%; font-size: 12px; line-height: 16px; color: #8a8a8e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* 波形是一张扁的后端 PNG：照搬 cm-hero 的 contain 会把它拉成一大块模糊，这里锁住高度。 */
   .cm-hero-wave { width: min(100%, 560px); height: clamp(88px, 18vh, 148px); object-fit: cover; }
@@ -3228,6 +3251,9 @@
      写两条类名是为了压过窄窗口那条 .cm-pop { width: min(328px, 78vw) }：锚点换了，封顶得跟着换来源。 */
   .cm-pop.cm-pop-params { left: auto; right: 0; width: min(328px, var(--cm-pop-left, 328px)); }
   .cm-pop-title { margin: 2px 0 0; font-size: 12.5px; color: #a1a1aa; }
+  /* 弹层最底那行是上面那几颗的合算结果：只写数字，不套「尺寸：」这类前缀（2026-11-12 定稿）。
+     用 --text-2 不用 --text-3：这行压在 #1a1a1e 的弹层底上还要读得出，是结论不是注脚。 */
+  .cm-pop-size { margin: 0; font-size: var(--fs-sm); line-height: 16px; color: var(--text-2); font-variant-numeric: tabular-nums; }
   /* 弹层锚点跟着胶囊在这一排里的位置走。竖排之后这颗恒在底部那一排的最左边（先挑来源、再定参数），
      所以一律贴它左边缘往右长——贴右长会顶穿面板左边界。横排时代它贴着右栏的右边缘，才有 right:0 那条。
      1478×902 实测：本机屏 352..620、API 屏 352..804，面板内容框 351..1127；820/560 宽同样在框里。 */

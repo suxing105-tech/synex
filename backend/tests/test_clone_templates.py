@@ -170,6 +170,30 @@ def test_combo_without_options_is_dropped_not_rendered():
     assert [c["input"] for c in controls] == ["megapixels"]
 
 
+def test_megapixels_slot_carries_the_alignment_multiple():
+    """弹窗算「这一趟会出多大一张图」要吃三个数：比例、百万像素、对齐步长。
+    前两个是槽位本身，第三个是同一台节点上的 advanced 输入，必须跟着槽位走。"""
+    nodes = sample_nodes()
+    nodes["13"]["inputs"]["multiple"] = 32
+    numbers = [s for s in ct.detect_slots(nodes, info_new())["slots"] if s["kind"] == "number"]
+    assert [(s["input"], s.get("multiple")) for s in numbers] == [("megapixels", 32)]
+
+    # 节点没有这个输入（老版本那台节点、或换了一台算尺寸的）就不带这个键，前端按 8 兜底
+    plain = [s for s in ct.detect_slots(sample_nodes(), info_new())["slots"] if s["kind"] == "number"]
+    assert "multiple" not in plain[0]
+
+    # 值不是个字面量数字（被上游连走、或者写了怪东西）也不带：宁缺毋滥，猜出来的步长会把尺寸报错
+    for junk in (["472", 0], "32", True, 0, None):
+        dirty = sample_nodes()
+        dirty["13"]["inputs"]["multiple"] = junk
+        got = [s for s in ct.detect_slots(dirty, info_new())["slots"] if s["kind"] == "number"][0]
+        assert "multiple" not in got, junk
+
+    # 只有百万像素那颗沾这个键：multiple 是那台节点算尺寸专用的语义
+    others = ct.detect_slots(nodes, info_new())["candidates"]
+    assert all("multiple" not in c for c in others)
+
+
 def test_no_object_info_still_finds_prompt_and_image_slots():
     detected = ct.detect_slots(sample_nodes(), None)
     assert {s["kind"] for s in detected["slots"]} == {"prompt", "image"}
@@ -228,6 +252,26 @@ def test_normalize_slots_keeps_labels_and_dedupes():
     ], sample_nodes())
     assert [(s["kind"], s["label"]) for s in slots] == [("prompt", "完整提示词"), ("number", "megapixels")]
     assert slots[1]["value"] == 2.2 and slots[1]["max"] == 4
+
+
+def test_normalize_slots_keeps_the_alignment_multiple():
+    """存库这一趟也得把它带过去：丢了前端退回 8，32 对齐的工作流会报成 8 对齐的尺寸。"""
+    kept = ct.normalize_slots([
+        {"kind": "prompt", "node": "582", "input": "prompt"},
+        {"kind": "number", "node": "13", "input": "megapixels", "value": 2.2, "multiple": 32},
+    ], sample_nodes())
+    assert kept[1]["multiple"] == 32
+
+    def only_multiple(extra: dict) -> dict:
+        item = {"kind": "number", "node": "13", "input": "megapixels", "value": 2.2}
+        item.update(extra)
+        return ct.normalize_slots([{"kind": "prompt", "node": "582", "input": "prompt"}, item],
+                                  sample_nodes())[1]
+
+    # 根本不是个数、或者压根不是那台节点给得出口的区间：丢掉让前端退回 8，别把怪值存进库
+    for bad in ({"multiple": "32"}, {"multiple": True}, {"multiple": 0},
+                {"multiple": -8}, {"multiple": 99999}):
+        assert "multiple" not in only_multiple(bad), bad
 
 
 # ---------- build_workflow ----------

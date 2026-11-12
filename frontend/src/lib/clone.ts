@@ -57,7 +57,8 @@ export interface CloneSlot {
   /** number 专用：秒/MP 这类后缀，后端给准，前端不猜 */
   unit?: string | null;
   /** number 专用：后端算好的档位（时长的 5/8/10/12/15），没有就退回通用表 */
-  presets?: number[];
+  presets?: number[];  /** number 专用：百万像素那台节点上的对齐步长（ResolutionSelector 的 multiple），出图尺寸要照它取整 */
+  multiple?: number | null;
   /** 后端给的这句参数说明（云端的「Fast 便宜快」这类），面板上原样显示 */
   hint?: string;
 }
@@ -1657,6 +1658,91 @@ export function controlSummary(
     .map((slot) => formatControlValue(slot, controls[slotKey(slot)]))
     .filter(Boolean)
     .join(" / ");
+}
+
+/** ResolutionSelector 没有 multiple 输入时的对齐步长，与 ComfyUI 那台节点的默认值一致。 */
+const DEFAULT_PIXEL_MULTIPLE = 8;
+
+export interface TargetPixelSize {
+  w: number;
+  h: number;
+}
+
+/** 当前挑中的那颗认得出宽高的画面比例选项；一颗都认不出返回 null。 */
+export function pickedRatioOption(
+  template: CloneTemplate | null | undefined,
+  controls: Record<string, string | number>,
+): string | null {
+  for (const slot of controlSlots(template)) {
+    const value = controls[slotKey(slot)];
+    if (typeof value === "string" && ratioShape(value).ratio) return value;
+  }
+  return null;
+}
+
+function pickedRatioSlot(
+  template: CloneTemplate | null | undefined,
+  controls: Record<string, string | number>,
+): CloneSlot | null {
+  for (const slot of controlSlots(template)) {
+    const value = controls[slotKey(slot)];
+    if (typeof value === "string" && ratioShape(value).ratio) return slot;
+  }
+  return null;
+}
+
+/** Python 的 round 是「四舍六入五成双」，节点跑的就是 Python：半分处不照着来会差一整个 multiple。 */
+function roundHalfToEven(value: number): number {
+  const floor = Math.floor(value);
+  const rest = value - floor;
+  if (rest > 0.5) return floor + 1;
+  if (rest < 0.5) return floor;
+  return floor % 2 === 0 ? floor : floor + 1;
+}
+
+/**
+ * 「这么点下去会出多大一张图」——把 ComfyUI 那台 ResolutionSelector 的算法在前端先跑一遍。
+ *
+ * 为什么前端自己算而不等后端回报：这一格答的是提交之前就该知道的事，而 width/height 是节点
+ * 跑起来才有的产物。公式照抄 comfy_extras/nodes_resolution.py：总像素 = 百万像素 × 1024²，
+ * 按宽高比开方得出比例因子，再各自对齐到 multiple 的最近倍数。两边吃的是同一份输入
+ * （弹窗里挑的比例 + 那颗 MP），所以数字对得上。
+ *
+ * 只认「比例和百万像素挂在同一台节点上」那种：这正是 ResolutionSelector 的形状（一台节点出宽和高）。
+ * 分开挂就说明这份工作流不是这一套算法，套同一个公式属于瞎猜，宁可不显示。
+ * 云端那份没有百万像素（只有 2K 这类档位名）、局部重绘那条跟着原图走，都拿不到 null 之外的数。
+ */
+export function targetPixelSize(
+  template: CloneTemplate | null | undefined,
+  controls: Record<string, string | number>,
+): TargetPixelSize | null {
+  const ratioSlot = pickedRatioSlot(template, controls);
+  if (!ratioSlot) return null;
+  const ratio = ratioShape(String(controls[slotKey(ratioSlot)])).ratio;
+  if (!ratio) return null;
+  const mega = controlSlots(template).find(
+    (slot) => slot.kind === "number"
+      && slot.node === ratioSlot.node
+      && (slot.input.toLowerCase() === "megapixels" || numberUnit(slot) === "MP"),
+  );
+  if (!mega) return null;
+  const megapixels = Number(controls[slotKey(mega)] ?? mega.value);
+  if (!Number.isFinite(megapixels) || megapixels <= 0) return null;
+  const multiple = Number(mega.multiple) > 0 ? Number(mega.multiple) : DEFAULT_PIXEL_MULTIPLE;
+  const scale = Math.sqrt((megapixels * 1024 * 1024) / (ratio.w * ratio.h));
+  const w = roundHalfToEven((ratio.w * scale) / multiple) * multiple;
+  const h = roundHalfToEven((ratio.h * scale) / multiple) * multiple;
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return null;
+  return { w, h };
+}
+
+/** 展示用的那串字：算得出就写「1136×2024」，算不出给空串——没把握的那行就整个不排。 */
+export function formatTargetSize(
+  template: CloneTemplate | null | undefined,
+  controls: Record<string, string | number>,
+): string {
+  const size = targetPixelSize(template, controls);
+  return size ? `${size.w}×${size.h}` : "";
 }
 
 /** 一张参考图，外加生成当时记下的参考位（只有库里记的那份才有，见 defaultReferences）。 */

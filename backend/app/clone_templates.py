@@ -631,6 +631,22 @@ def control_slot(node_id: str, key: str, spec: dict, current: Any = None) -> dic
     return None
 
 
+def attach_pixel_multiple(control: dict, node: Any) -> None:
+    """百万像素那台节点上的对齐步长（ResolutionSelector 的 multiple）跟着槽位一起带走。
+
+    弹窗靠它算「这一趟会出多大一张图」（前端 lib/clone.ts 的 targetPixelSize 是同一套公式：
+    总像素 = MP × 1024²，按比例开方后各自对齐到 multiple 的最近倍数）。那台节点把它做成
+    advanced 输入、默认 8，工作流里改成 32 就得按 32 算——写死 8 会把尺寸报错几十像素。
+    节点没有这个输入、或者值不像个数，就不带这个键，前端按 8 兜底。
+    """
+    if control.get("input") != "megapixels":
+        return
+    multiple = node_inputs(node).get("multiple")
+    if isinstance(multiple, bool) or not isinstance(multiple, (int, float)) or multiple <= 0:
+        return
+    control["multiple"] = int(multiple) if float(multiple).is_integer() else multiple
+
+
 def _duration_control(nodes: dict, used: set[str]) -> dict | None:
     """时长控件：视频工作流里「几秒」这件事必须能在弹窗里改。
 
@@ -895,6 +911,7 @@ def detect_slots(nodes: dict, info: dict | None = None) -> dict:
                     continue
                 control = control_slot(nid, key, spec, node_inputs(nodes[nid]).get(key))
                 if control:
+                    attach_pixel_multiple(control, nodes[nid])
                     controls.append(control)
                     used.add(slot_key(control))
                     auto_controls += 1
@@ -903,6 +920,7 @@ def detect_slots(nodes: dict, info: dict | None = None) -> dict:
                 continue
             control = control_slot(nid, key, spec, node_inputs(nodes[nid]).get(key))
             if control:
+                attach_pixel_multiple(control, nodes[nid])
                 candidates.append(control)
     slots.extend(controls)
 
@@ -1101,6 +1119,12 @@ def normalize_slots(raw: Any, nodes: dict) -> list[dict]:
                        if isinstance(x, (int, float)) and not isinstance(x, bool)]
             if presets:
                 slot["presets"] = presets[:12]
+            # 对齐步长也得活着过一遍存库：弹窗靠它算「这一趟出多大」，丢了就退回 8，
+            # 把 32 对齐的工作流报成 8 对齐的尺寸（几十像素的差）。范围卡在节点给得出口的区间。
+            multiple = item.get("multiple")
+            if (not isinstance(multiple, bool) and isinstance(multiple, (int, float))
+                    and 1 <= multiple <= 1024):
+                slot["multiple"] = int(multiple)
         if kind == "image" and str(item.get("mask") or "") == "alpha":
             # 这台加载器把「这张图」和「只改哪一块」一起收进同一个文件的透明通道，
             # 弹窗里因此多一个画遮罩的入口。只认 alpha 这一种投递方式：

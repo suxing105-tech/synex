@@ -3305,6 +3305,79 @@ it('顶栏那行大字与图下那行文件名都在：大字说哪条工作流�
   expect(screen.getByRole('button', { name: '工作流' }).textContent).toContain('Qwen 多图编辑');
 });
 
+it('文件名旁边报「这一趟会出多大」：跟着比例与分辨率当场变，认不出就不排', async () => {
+  // 2026-11-12 苏醒照图：文件名右边那一块空着，选完比例和分辨率看不见将要出的尺寸。
+  // 数字不是前端拍的：公式与 ComfyUI 那台 ResolutionSelector 同一份（lib/clone.ts 的 targetPixelSize，
+  // 纯函数那头的用例已按真机档位钉死），这里只管它落在界面上。
+  routes(baseRoutes());
+  const screen = await ready();
+  // 只算肉眼看得到的那截：给读屏的一句在 .sr-only 里，界面上按定稿就只有数字，没有「尺寸：」这类前缀
+  const shown = (sel: string) => {
+    const el = document.querySelector(sel);
+    if (!el) return null;
+    const lead = el.querySelector('.sr-only')?.textContent ?? '';
+    // 两个实参都得给：replace 少给第二个，会拿字符串 "undefined" 去顶替匹配到的那截字
+    // （写成 replace(x ?? '') 看着像给了两个，其实只有一个——读出来就是「undefined1208×1208」）
+    return (el.textContent ?? '').replace(lead, '').trim();
+  };
+  // 默认那颗 1:1 + 1.4MP、步长按节点默认的 8
+  expect(shown('.cm-hero-dims')).toBe('1208×1208');
+  // 文件名那一格仍旧只是文件名：一次出几份、跳回图库认的就是它，不许被这行掺进去
+  expect(document.querySelector('.cm-hero-name')?.textContent).toBe('source.png');
+  expect(document.querySelector('.cm-hero-meta')).toBeTruthy();
+
+  await fireEvent.click(screen.getByRole('button', { name: '画面参数' }));
+  await fireEvent.click(screen.getByRole('button', { name: '16:9' }));
+  await tick();
+  expect(shown('.cm-hero-dims')).toBe('1616×912');
+  expect(shown('.cm-pop-size')).toBe('1616×912');
+  // 分辨率那一颗也照样牵着它走
+  await fireEvent.click(screen.getByRole('button', { name: '2MP' }));
+  await tick();
+  expect(shown('.cm-hero-dims')).toBe('1928×1088');
+  expect(shown('.cm-pop-size')).toBe('1928×1088');
+
+  // 配方里没有百万像素那颗（局部重绘那条出图尺寸跟原图走）：整行不排，不报一个猜的数
+  cleanup();
+  const blind = { ...TPL, slots: TPL.slots.filter((slot) => slot.input !== 'megapixels') };
+  routes({ ...baseRoutes(), '/api/clone/templates': { items: [blind] } });
+  const bare = await ready();
+  expect(bare.container.querySelector('.cm-hero-dims')).toBeNull();
+
+  // 尺度护栏：新写的这两行不许再往六档外面挑字号
+  const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  const rules: [string, string][] = [
+    ['.cm-hero-dims', /.cm-hero-dims {([^}]*)}/.exec(css)?.[1] ?? ''],
+    ['.cm-pop-size', /.cm-pop-size {([^}]*)}/.exec(css)?.[1] ?? ''],
+  ];
+  for (const [name, rule] of rules) {
+    expect(rule, name + ' 找不到样式').not.toBe('');
+    expect(/font-size:s*d+(?:.d+)?px/.exec(rule)?.[0] ?? '', name + ' 又写了裸 px 字号').toBe('');
+  }
+  // 挤的时候只许挤文件名（省略号长在它身上），尺寸不许被顶出这一行
+  expect(css).toMatch(/.cm-hero-meta .cm-hero-name { flex: 0 1 auto; min-width: 0; }/);
+  expect(css).toMatch(/.cm-hero-dims { flex: none/);
+  expect(css).toMatch(/.cm-body.is-stacked .cm-hero-meta { flex: none; }/);
+});
+
+it('这一行只在还没出片时报：生成中是等待台，跑完那一格摆的是真图', async () => {
+  routes({ ...baseRoutes(), '/api/clone/generate': { ...EMPTY_CLONE_JOB, active: true, job_id: 'j1', state: 'queued', running: true } });
+  const screen = await ready();
+  expect(document.querySelector('.cm-hero-dims')).toBeTruthy();
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '出一张' } });
+  await fireEvent.click(screen.getByRole('button', { name: '生成' }));
+  await tick();
+  expect(document.querySelector('.cm-hero-dims')).toBeNull();
+  applyCloneProgress({
+    active: true, job_id: 'j1', state: 'done', running: false, template_id: 1, image_ids: [],
+    outputs: [{ id: 41, kind: 'image', filename: 'a.png', thumbnail_url: '/api/images/41/file?max=256' }],
+  });
+  await tick();
+  // 出片之后计划值让位给真图：真尺寸在图库详情栏，拿算出来的数冒充实测出来的数是假话
+  expect(document.querySelector('.cm-hero-name')?.textContent).toBe('a.png');
+  expect(document.querySelector('.cm-hero-dims')).toBeNull();
+});
+
 it('生成中那一格是等待台：台阶条、已等多久、虚化的底图，不再摆一张静止的旧图', async () => {
   routes({
     ...baseRoutes(),

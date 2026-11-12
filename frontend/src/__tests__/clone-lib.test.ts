@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   EMPTY_CLONE_JOB, applyCloneProgress, buildGenerateRequest, cloneError, cloneStatusLabel,
   allowsTextMode, controlSlots, controlSummary, defaultControlValues, defaultReferences, formatControlValue, modesFor,
+  formatTargetSize, pickedRatioOption, targetPixelSize,
   imageSlots, jobForTemplate, latestReversePrompt, modeFromRefCount, numberPresets, numberUnit,
   modeLabel, optionLabel, promptSourceLabel, promptSlots, ratioShape, referenceCells, referenceIssues, visibleRefCells,
   resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, templateDisplayName,
@@ -247,6 +248,58 @@ describe("参数面板的取数与文案", () => {
     expect(controlSummary(tpl, { "13.aspect_ratio": "", "13.megapixels": 2.2 })).toBe("2.2MP");
     expect(formatControlValue(megaSlot, "")).toBe("");
     expect(controlSummary(null, {})).toBe("");
+  });
+});
+
+describe("将生成的尺寸：弹窗在提交之前先把 ResolutionSelector 那台节点的账算一遍", () => {
+  // 公式的真源是 ComfyUI 的 comfy_extras/nodes_resolution.py：
+  // 总像素 = MP × 1024²，按比例开方得比例因子，宽高各自对齐到 multiple 的最近倍数。
+  // 这几个数是从真机出过的片子上核对过的档（9:16 @2.2MP = 1136×2024）。
+  const sizeTpl = tpl([promptSlot, imageSlot, ratioSlot, { ...megaSlot, value: 2.2 }]);
+
+  it("比例 + 百万像素算出一个确定的像素尺寸，横竖不翻", () => {
+    expect(targetPixelSize(sizeTpl, { "13.aspect_ratio": "9:16 (Portrait Widescreen)", "13.megapixels": 2.2 }))
+      .toEqual({ w: 1136, h: 2024 });
+    expect(formatTargetSize(sizeTpl, { "13.aspect_ratio": "9:16 (Portrait Widescreen)", "13.megapixels": 2.2 }))
+      .toBe("1136×2024");
+    expect(formatTargetSize(sizeTpl, { "13.aspect_ratio": "16:9 (Widescreen)", "13.megapixels": 2.2 }))
+      .toBe("2024×1136");
+  });
+
+  it("工作流自带的对齐步长照它取整，不写死 8（advanced 输入，有人真改成 32）", () => {
+    const wide: CloneSlot = { kind: "select", node: "13", input: "aspect_ratio", label: "比例", options: ["21:9"], value: "21:9" };
+    const plain = tpl([promptSlot, wide, { ...megaSlot, value: 2 }]);
+    const aligned = tpl([promptSlot, wide, { ...megaSlot, value: 2, multiple: 32 }]);
+    expect(formatTargetSize(plain, { "13.aspect_ratio": "21:9", "13.megapixels": 2 })).toBe("2216×952");
+    expect(formatTargetSize(aligned, { "13.aspect_ratio": "21:9", "13.megapixels": 2 })).toBe("2208×960");
+  });
+
+  it("算不出来的那些一律空串——没把握的那行就不排（云端 / 没有 MP / 比例认不出 / MP 空着）", () => {
+    // 云端那份只有 2K 这类档位名，没有百万像素那颗旋钮
+    expect(formatTargetSize(tpl([promptSlot, ratioSlot]), { "13.aspect_ratio": "9:16" })).toBe("");
+    // 比例那颗挑中的选项认不出宽高（音色的语种、云端那种 "adaptive"）
+    expect(formatTargetSize(sizeTpl, { "13.aspect_ratio": "很宽", "13.megapixels": 2.2 })).toBe("");
+    // MP 清空或填了怪东西：不拿默认值冒充用户的选择
+    expect(formatTargetSize(sizeTpl, { "13.aspect_ratio": "9:16", "13.megapixels": "" })).toBe("");
+    expect(formatTargetSize(sizeTpl, { "13.aspect_ratio": "9:16", "13.megapixels": 0 })).toBe("");
+    // 局部重绘那条：有数值旋钮但不是百万像素，出图尺寸跟原图走，这里没有能算的账
+    expect(formatTargetSize(tpl([promptSlot, ratioSlot,
+      { kind: "number", node: "13", input: "值", label: "最大采样尺寸", value: 2560 }]),
+    { "13.aspect_ratio": "9:16", "13.值": 2560 })).toBe("");
+    expect(formatTargetSize(null, {})).toBe("");
+  });
+
+  it("百万像素必须和比例挂在同一台节点上才认（分开挂就不是那台节点的算法）", () => {
+    const split = tpl([promptSlot, ratioSlot, { ...megaSlot, node: "99" }]);
+    expect(targetPixelSize(split, { "13.aspect_ratio": "9:16", "13.megapixels": 2.2, "99.megapixels": 2.2 }))
+      .toBeNull();
+  });
+
+  it("pickedRatioOption 交回的是原选项串，不是短标签（画布排卡要拿它认档）", () => {
+    expect(pickedRatioOption(sizeTpl, { "13.aspect_ratio": "9:16 (Portrait Widescreen)" }))
+      .toBe("9:16 (Portrait Widescreen)");
+    expect(pickedRatioOption(sizeTpl, { "13.aspect_ratio": "很宽" })).toBeNull();
+    expect(pickedRatioOption(null, {})).toBeNull();
   });
 });
 

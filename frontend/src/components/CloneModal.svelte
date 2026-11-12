@@ -1636,6 +1636,7 @@
 
   /** MediaKind 三种里只有图片和视频有对应的技能族：音频那一族不给优化（后端也拒收）。 */
   const skillKind = $derived<PromptSkillKind | null>(mediaKind === "audio" ? null : mediaKind);
+  const offerWorkflowPrompt = $derived(shouldOfferWorkflowPrompt(prompt, workflowPrompt));
 
   /** 右键菜单那几行：这一族的技能，勾子打在默认那条上。读 store 不读 lib 里那份快照——菜单是响应式的，勾子得跟着默认值走。 */
   const skillRows = $derived.by(() => {
@@ -2001,18 +2002,6 @@
                  那个 composer）。卡里那两行小标题 11-04 撤过一轮，2026-11-10 照旧图放回来——
                  上下排之后每块上面没名字就不成组了；「完整提示词」用的是工作流给的槽位名。 -->
               <div class="cm-composer" title={composerNote}>
-              {#if shouldOfferWorkflowPrompt(prompt, workflowPrompt)}
-                <!-- 工作流自带提示词、这一格还空着才有这颗（2026-11-04 苏醒照图圈）：半透明挂在
-                     圆角框右上角，鼠标滑过才亮起来，点一下把内置那句填进提示词框。
-                     z-index 压过左边那一摞参考（格子给到 1..n）；mention 弹层在卡内更靠后，仍盖得住它。 -->
-                <button
-                  class="cm-wand"
-                  type="button"
-                  aria-label="载入工作流内置提示词"
-                  title="载入工作流内置的提示词"
-                  onclick={() => { promptTouched = true; prompt = workflowPrompt; }}
-                ><Icon name="wand" size={16} /></button>
-              {/if}
                 <!-- 参考在上、话在下（2026-11-10 照旧图改回来）：两块各带一行小标题，上下排读着是一件事的
                  两步——先给素材，再写话。一条参考位都没有（纯文生图、只填音色描述）时上面那一排
                  整块不摆，话独占这张卡。 -->
@@ -2098,7 +2087,7 @@
                   {/if}
                   <div class="cm-prompt-col">
                     <p class="cm-block-title">{promptBlockTitle || "完整提示词"}</p>
-                    <div class="cm-prompt-wrap" class:has-skill={skillKind !== null}>
+                    <div class="cm-prompt-wrap" class:has-tools={skillKind !== null || offerWorkflowPrompt}>
                       <div class="cm-prompt-bg" bind:this={promptBg} aria-hidden="true">
                         {#each mentionChunks(prompt) as chunk, i (i)}
                           <span class:cm-mention-hl={chunk.mention}>{chunk.text}</span>
@@ -2117,16 +2106,28 @@
                         title={"按住上下拖动：调提示词框的高度\n双击：恢复跟着内容长高"}
                         onpointerdown={onPromptGripDown} onkeydown={onPromptGripKey}
                         ondblclick={resetPromptHeight}></div>
-                      {#if skillKind}
-                        <!-- 拉高手柄左边这颗（2026-11-11 苏醒：「提示词输入框右下角加个图标，调用技能优化手动输入的提示词」）。
-                             左键＝拿这一族的默认技能重写一句；右键＝换技能、进设置。音频工作流不画它：台词是念出来的
-                             东西，重写一遍等于换个人说话，后端那一族也拒收。 -->
-                        <button class="cm-skill" class:is-busy={optimizing} type="button"
-                          disabled={!prompt.trim()} aria-busy={optimizing}
-                          aria-label={optimizing ? "正在优化提示词，点一下取消" : "用技能优化提示词"}
-                          title={skillTitle}
-                          onclick={() => (optimizing ? optimizeAbort?.abort() : void optimizePrompt())}
-                          oncontextmenu={openSkillMenu}><Icon name="sparkle" size={14} /></button>
+                      {#if skillKind || offerWorkflowPrompt}
+                        <!-- 提示词框右下角这一排（2026-11-12 苏醒：「这个图标（即载入工作流内置提示词图标）也去掉圆框描边，
+                                放在优化提示词图标左侧」）：左「载入工作流内置的提示词」、右「按技能优化」，谁的条件不成立谁不在，
+                                右边那颗永远贴在同一格上。两颗都是裸图标——静止压暗，滑过或键盘聚焦才亮。 -->
+                        <div class="cm-prompt-tools">
+                          {#if offerWorkflowPrompt}
+                            <button class="cm-wand" type="button"
+                              aria-label="载入工作流内置提示词" title="载入工作流内置的提示词"
+                              onclick={() => { promptTouched = true; prompt = workflowPrompt; }}
+                            ><Icon name="wand" size={14} /></button>
+                          {/if}
+                          {#if skillKind}
+                            <!-- 左键＝拿这一族的默认技能重写一句；右键＝换技能、进设置。音频工作流不画它：台词是念出来的
+                                 东西，重写一遍等于换个人说话，后端那一族也拒收。 -->
+                            <button class="cm-skill" class:is-busy={optimizing} type="button"
+                              disabled={!prompt.trim()} aria-busy={optimizing}
+                              aria-label={optimizing ? "正在优化提示词，点一下取消" : "用技能优化提示词"}
+                              title={skillTitle}
+                              onclick={() => (optimizing ? optimizeAbort?.abort() : void optimizePrompt())}
+                              oncontextmenu={openSkillMenu}><Icon name="sparkle" size={14} /></button>
+                          {/if}
+                        </div>
                       {/if}
                       {#if mentionOpen && mentionOptions.length}
                         <div class="cm-pop-scrim" role="presentation" onclick={() => (mentionOpen = false)}></div>
@@ -2896,20 +2897,24 @@
   .cm-sub-prompt-title { margin-top: 12px; }
   /* 高亮只许动颜色和背景：padding / border / font-weight 都会推字节，一改高亮就和光标错位。 */
   .cm-mention-hl { color: #ff6a4d; }
-  /* 载入模板那颗：半透明挂在圆角框右上角，滑过才亮（2026-11-04 苏醒：「做成半透明图标，鼠标滑过
-     展示，功能变成加载提示词模板，放在矩形圆框右上角」）。它是卡里唯一的悬浮件，z-index 必须高过
-     左边那一摞参考（格子里给到 1..n）——上一轮菜单就是被这一摞糊掉的，别再犯。
-     键盘走 :focus-visible 也亮起来，读屏拿 aria-label，不靠文字。 */
-  .cm-wand {
-    position: absolute; top: 10px; right: 10px; z-index: 6;
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 30px; height: 30px; padding: 0; border-radius: 50%;
-    border: 1px solid rgb(255 255 255 / 12%); background: rgb(20 20 24 / 55%);
-    color: rgb(255 255 255 / 62%); cursor: pointer;
-    opacity: .55; backdrop-filter: blur(6px);
-    transition: opacity 140ms ease, color 140ms ease, border-color 140ms ease, background 140ms ease;
+  /* 提示词框右下角那一排的容器：两颗各 24×24，谁的条件不成立谁不在，最右边那颗永远落在同一格。
+     整条从 right:24 起——让开拉高手柄那颗 14px（它占 right:4 起那一格），命中区 24 是硬底线。
+     z-index 4：压过镜像层 0 和输入框 1，被 mention 弹层（6）盖住，与拉高手柄 3 不重叠。 */
+  .cm-prompt-tools {
+    position: absolute; right: 24px; bottom: 4px; z-index: 4;
+    display: flex; align-items: center; gap: 2px;
   }
-  .cm-wand:hover, .cm-wand:focus-visible { opacity: 1; color: #ff6a4d; border-color: rgb(255 106 77 / 45%); background: rgb(24 24 28 / 82%); }
+  /* 载入工作流内置提示词那颗。2026-11-04 做成卡右上角的半透明圆框，2026-11-12 苏醒：
+     「也去掉圆框描边，放在优化提示词图标左侧」——收进上面那一排，和右边那颗同款裸图标：
+     不画框、不铺底、不毛玻璃，静止压暗、滑过或键盘聚焦才亮，颜色一律引 token。 */
+  .cm-wand {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; padding: 0; border: 0; background: none;
+    color: rgb(var(--text-1-rgb) / 62%); cursor: pointer;
+    opacity: .6;
+    transition: opacity 140ms ease, color 140ms ease;
+  }
+  .cm-wand:hover, .cm-wand:focus-visible { opacity: 1; color: var(--accent-strong); }
   /* 提示词框右下角那颗拉高手柄（2026-11-10 苏醒：「提示词输入框右下角加一个拉高提示词的功能」）。
      静止时压暗、滑过/拖动/键盘聚焦才亮。斜纹画在伪元素上并裁成三角形：看着只是口内角的一小片纹路，
      命中区仍是整颗方块——好点中，也不会挡住正文文字。整颗往里让 4px：框的口角是 12px 圆角，
@@ -2933,21 +2938,20 @@
   /* 提示词框右下角那颗「按技能优化」（2026-11-11 苏醒）。静止压暗、滑过或键盘聚焦才亮。
      2026-11-12 苏醒：「图标不要圆框描边」——裸图标，不画圆框、不铺底、不加毛玻璃，反馈只剩透明度和颜色，
      跟旁边那颗拉高手柄一样轻；键盘聚焦的框交给浏览器默认焦点环，这里不再自己描一圈。
-     位置让开拉高手柄那颗 14px（它占 right:4 起那一格），这颗从 right:24 起、24×24——命中区 24 是硬底线。
+     位置交给上面那条 .cm-prompt-tools，这颗只管自己 24×24。
      颜色一律引 token，不新增裸 hex。border: 0 / background: none 是清 <button> 的 UA 默认样式，不能省。 */
   .cm-skill {
-    position: absolute; right: 24px; bottom: 4px; z-index: 4;
     display: inline-flex; align-items: center; justify-content: center;
     width: 24px; height: 24px; padding: 0; border: 0; background: none;
     color: rgb(var(--text-1-rgb) / 62%); cursor: pointer;
     opacity: .6;
     transition: opacity 140ms ease, color 140ms ease;
   }
-  /* 画了这颗就得给正文留位：24 高的图标正压在底部 4..28px 那一条，长提示词最后一行会正好穿到它下面
+  /* 画了这一排就得给正文留位：24 高的图标正压在底部 4..28px 那一条，长提示词最后一行会正好穿到它下面
      （提示词是跟着内容长高的，最后一行就贴着底）。留 28px 把那条让出来——空着时框会高一档（约 46→59），
-     这是有意的取舍：宁可空态高一点，也不要字压在图标底下。只在这一族画了它才留，音频工作流不受影响。
-     高亮镜像层和输入框同一条规则，改一处两处一起动，不然高亮和字会错位。 */
-  .cm-prompt-wrap.has-skill .cm-prompt-bg, .cm-prompt-wrap.has-skill .cm-textarea { padding-bottom: 28px; }
+     这是有意的取舍：宁可空态高一点，也不要字压在图标底下。这一排一颗都不画（音频工作流、又没有内置提示词
+     可载入）才不留。高亮镜像层和输入框同一条规则，改一处两处一起动，不然高亮和字会错位。 */
+  .cm-prompt-wrap.has-tools .cm-prompt-bg, .cm-prompt-wrap.has-tools .cm-textarea { padding-bottom: 28px; }
   .cm-skill:hover, .cm-skill:focus-visible { opacity: 1; color: var(--accent-strong); }
   .cm-skill:disabled { opacity: .28; cursor: default; }
   .cm-skill.is-busy { opacity: 1; color: var(--accent-strong); animation: cm-skill-pulse 1.2s ease-in-out infinite; }

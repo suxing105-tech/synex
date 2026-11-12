@@ -835,7 +835,7 @@ it('提示词框下面不摆灰字小注：来源那句挂到框的悬停提示�
   // 2026-11-04 苏醒（圈掉「完整提示词 · 已带上这张图自己的提示词」）：「这种小字提示也删掉」
   routes({
     ...baseRoutes(),
-    // 只用图片自带那句：工作流没有内置提示词，右上角那颗不该出现，来源才轮得到图片自带
+    // 只用图片自带那句：工作流没有内置提示词，那一排的载入图标不该出现，来源才轮得到图片自带
     '/api/clone/templates': { items: [{ ...TPL, default_prompt: '' }] },
     '/api/images/7': { id: 7, filename: 'source.png', positive_prompt: '图里自带的那句' },
   });
@@ -847,7 +847,7 @@ it('提示词框下面不摆灰字小注：来源那句挂到框的悬停提示�
   expect(box.getAttribute('title')).toBe('已带上这张图自己的提示词');
 });
 
-it('载入模板收成圆角框右上角那颗半透明图标：用得上才出现，点一下填进提示词框', async () => {
+it('载入模板收成提示词框右下角那颗裸图标（优化那颗左侧）：用得上才出现，点一下填进提示词框', async () => {
   // 2026-11-04 苏醒（圈掉「填入工作流内置提示词」那颗文字按钮）：「做成半透明图标，鼠标滑过展示，
   // 功能变成加载提示词模板，放在矩形圆框右上角」
   routes(baseRoutes());
@@ -864,16 +864,28 @@ it('载入模板收成圆角框右上角那颗半透明图标：用得上才出�
   routes({ ...baseRoutes(), '/api/clone/templates': { items: [{ ...TPL, default_prompt: '' }] } });
   const s2 = await ready();
   expect(s2.queryByRole('button', { name: '载入工作流内置提示词' })).toBeNull();
-  // 挂在圆角框右上角：绝对定位 + 上/右贴边、静止时半透明，且压得过左边那一摞参考
+  // 2026-11-12 苏醒：这颗不再挂卡右上角那圈圆框里，挪进提示词框右下角那一排，落在优化那颗左边，同样不画框
   const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  const tools = css.slice(css.indexOf('.cm-prompt-tools {'), css.indexOf('.cm-wand {'));
+  expect(tools).toMatch(/position:\s*absolute/);
+  expect(tools).toMatch(/right:\s*24px;\s*bottom:\s*4px/);
   const rule = css.slice(css.indexOf('.cm-wand {'), css.indexOf('.cm-wand:hover'));
-  expect(rule).toMatch(/position:\s*absolute/);
-  expect(rule).toMatch(/top:\s*10px/);
-  expect(rule).toMatch(/right:\s*10px/);
-  expect(rule).toMatch(/opacity:\s*\.55/);
-  const stack = css.slice(css.indexOf('.cm-ref-stack {'), css.indexOf('.cm-ref-stack:hover'));
-  const zc = Number((stack.match(/z-index:\s*(\d+)/) ?? [0, '0'])[1]);
-  expect(Number((rule.match(/z-index:\s*(\d+)/) ?? [0, '0'])[1])).toBeGreaterThan(zc);
+  expect(rule).toMatch(/width:\s*24px;\s*height:\s*24px/);
+  expect(rule).toMatch(/border: 0; background: none;/);
+  expect(rule).not.toMatch(/position:|border-radius|backdrop-filter|1px solid/);
+  expect(css).toMatch(/\.cm-wand:hover, \.cm-wand:focus-visible \{ opacity: 1; color: var\(--accent-strong\); \}/);
+  // 一条 flex 行，DOM 顺序就是左右顺序：载入在左、优化在右
+  const toolsAt = css.indexOf('class="cm-prompt-tools"');
+  const wandAt = css.indexOf('class="cm-wand"');
+  const skillAt = css.indexOf('class="cm-skill"');
+  expect(toolsAt).toBeGreaterThan(0);
+  expect(wandAt).toBeGreaterThan(toolsAt);
+  expect(skillAt).toBeGreaterThan(wandAt);
+  // 层级：压过镜像层 0 和输入框 1，仍让 mention 弹层盖在上面
+  const zt = Number((tools.match(/z-index:\s*(\d+)/) ?? [0, '0'])[1]);
+  const zm = Number((css.slice(css.indexOf('.cm-mention {')).match(/z-index:\s*(\d+)/) ?? [0, '0'])[1]);
+  expect(zt).toBeGreaterThan(1);
+  expect(zm).toBeGreaterThan(zt);
 });
 
 it('版面里一条小字提示都不剩：丢参考、混族、不吃参考全收进悬停提示', async () => {
@@ -3551,7 +3563,7 @@ it('提示词右下角那颗优化图标：空提示词点不动，写一句才�
   const screen = await ready();
   expect(skillBtn(screen).disabled).toBe(true);
   // 画了这颗就得给正文留位（长提示词最后一行不许穿到图标底下），留位挂在 wrap 的类上
-  expect(screen.container.querySelector('.cm-prompt-wrap')?.className).toContain('has-skill');
+  expect(screen.container.querySelector('.cm-prompt-wrap')?.className).toContain('has-tools');
   await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '一句手打的提示词' } });
   expect(skillBtn(screen).disabled).toBe(false);
   expect(http.mock.calls.some(([path]) => String(path).startsWith('/api/prompt-skills'))).toBe(false);
@@ -3717,8 +3729,18 @@ it('音频工作流不画这颗优化图标：台词重写一遍等于换个人�
   routes({ ...audioRoutes(), '/api/clone/templates': { items: [TTS] } });
   const screen = await ready({ image: AUDIO });
   expect(screen.container.querySelector('.cm-skill')).toBeNull();
-  // 没画就不许留那块位：音频那一档的空态高度不该被图片族带着涨
-  expect(screen.container.querySelector('.cm-prompt-wrap')?.className).not.toContain('has-skill');
+  // 那一排还在，只是只剩左边那颗「载入内置提示词」：留位挂在整排上，不挂在具体哪颗上
+  const tools = screen.container.querySelector('.cm-prompt-tools');
+  expect(tools, '音频那条工作流有内置提示词，载入那颗照旧要出现').not.toBeNull();
+  expect(tools?.querySelector('.cm-wand')).not.toBeNull();
+  expect(screen.container.querySelector('.cm-prompt-wrap')?.className).toContain('has-tools');
+});
+
+it('那一排一颗都不画时不留那块位：音频空态高度不被图片族带着涨', async () => {
+  routes({ ...audioRoutes(), '/api/clone/templates': { items: [{ ...TTS, default_prompt: '' }] } });
+  const screen = await ready({ image: AUDIO });
+  expect(screen.container.querySelector('.cm-prompt-tools')).toBeNull();
+  expect(screen.container.querySelector('.cm-prompt-wrap')?.className).not.toContain('has-tools');
 });
 
 it('模型只回壳、没配模型那类 detail 原样报出来，不另挑一句官话', async () => {
@@ -3738,7 +3760,8 @@ it('模型只回壳、没配模型那类 detail 原样报出来，不另挑一�
 it('那颗图标的版面：让开拉高手柄、命中区 24、清单只在点它时才拉', () => {
   const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
   expect(css).toMatch(/\.cm-prompt-grip \{\s*position: absolute; right: 4px; bottom: 4px; z-index: 3;\s*width: 14px; height: 14px/);
-  expect(css).toMatch(/\.cm-skill \{[^}]*right: 24px; bottom: 4px; z-index: 4;[^}]*width: 24px; height: 24px/);
+  expect(css).toMatch(/\.cm-prompt-tools \{[^}]*right: 24px; bottom: 4px; z-index: 4;[^}]*display: flex/);
+  expect(css).toMatch(/\.cm-skill \{[^}]*width: 24px; height: 24px/);
   // 键盘也得够得着：半透明那颗在 :focus-visible 下和 hover 一样亮起来
   expect(css).toMatch(/\.cm-skill:hover, \.cm-skill:focus-visible/);
   expect(css).toMatch(/\.cm-skill:disabled/);

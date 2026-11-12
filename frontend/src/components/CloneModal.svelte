@@ -1371,12 +1371,14 @@
     error = "";
     jobId = "";
     sources = null;
-    // 换了一张卡就得忘掉上一张的提示词状态，包括「用户动过框」这件事
+    // 换了一张卡就得忘掉上一张的提示词状态，包括「用户动过框」这件事，
+    // 也包括上一张那句被技能改写前的原文——留着它，这张卡的框右下角会凭空多一颗撤销。
     prompt = "";
     promptOrigin = "";
     filePrompt = "";
     reversePrompt = "";
     promptTouched = false;
+    promptUndo = null;
     void loadTemplates();
     void loadCloudStatus();
     void loadPrompt(id);
@@ -1727,6 +1729,13 @@
   let skillModal = $state(false);
   let optimizing = $state(false);
   let optimizeAbort: AbortController | null = null;
+  /**
+   * 被技能改写掉的那一版提示词（2026-11-12 苏醒：「优化之后我希望旁边还有一个撤销按钮，
+   * 点击可以回到原来手动输入的提示词」）。null = 这一轮没被改写过，那颗撤销就不画。
+   * 连着优化只留最早那一句：他要回的是「我手打的那句」，不是上一次模型写的那句。
+   * touched 跟着各自那一版一起存——退回「没动过框」那一版时，反推那条路才照旧允许填进来。
+   */
+  let promptUndo = $state<{ text: string; touched: boolean } | null>(null);
 
   /** MediaKind 三种里只有图片和视频有对应的技能族：音频那一族不给优化（后端也拒收）。 */
   const skillKind = $derived<PromptSkillKind | null>(mediaKind === "audio" ? null : mediaKind);
@@ -1823,6 +1832,9 @@
   async function writePrompt(next: string, skillName: string, res?: OptimizeResult) {
     const before = prompt;
     const wasTouched = promptTouched;
+    // 只在第一次改写时留快照，连着优化第二句时不动它：撤销要回的是最早手打那句。
+    // 一个字都没改就别留——那样点了撤销什么也不发生，看着像坏了。
+    if (promptUndo === null && next !== before) promptUndo = { text: before, touched: wasTouched };
     prompt = next;
     promptTouched = true;
     await tick();
@@ -1831,18 +1843,26 @@
     pushToast("已按「" + skillName + "」重写" + thin, {
       kind: "success",
       ttl: 10000,
-      actions: [
-        {
-          label: "撤销",
-          primary: true,
-          onClick: () => {
-            prompt = before;
-            promptTouched = wasTouched;
-            void tick().then(() => autosizePrompt());
-          },
-        },
-      ],
+      // 小条上这颗和框右下角那颗是同一件事，走同一个函数：各存一份「原文」的话，
+      // 先点框里那颗再去点小条那颗，会把早就过期的那句甩回来。
+      actions: [{ label: "撤销", primary: true, onClick: () => undoPrompt() }],
     });
+  }
+
+  /**
+   * 两句对调：手上这句存起来，取回上一版。
+   *
+   * 「存的那一份」是点下去这一刻现取的，不是优化那一刻记下的，所以中途手动改过的字
+   * 一个都不丢——不满意撤销回去，再点一下还能回到改过的那一版。这也是不弹确认框的底气：
+   * 撤销本身可撤销，误点没有代价。
+   */
+  function undoPrompt() {
+    const prev = promptUndo;
+    if (!prev) return;
+    promptUndo = { text: prompt, touched: promptTouched };
+    prompt = prev.text;
+    promptTouched = prev.touched;
+    void tick().then(() => autosizePrompt());
   }
 
   async function optimizePrompt() {
@@ -2245,14 +2265,23 @@
                         ondblclick={resetPromptHeight}></div>
                       {#if skillKind || offerWorkflowPrompt}
                         <!-- 提示词框右下角这一排（2026-11-12 苏醒：「这个图标（即载入工作流内置提示词图标）也去掉圆框描边，
-                                放在优化提示词图标左侧」）：左「载入工作流内置的提示词」、右「按技能优化」，谁的条件不成立谁不在，
-                                右边那颗永远贴在同一格上。两颗都是裸图标——静止压暗，滑过或键盘聚焦才亮。 -->
+                                放在优化提示词图标左侧」+「优化之后旁边还有一个撤销按钮」）：
+                                左「载入工作流内置的提示词」、中「换回上一版提示词」、右「按技能优化」。
+                                谁的条件不成立谁不在，最右边那颗永远贴在同一格上；三颗都是裸图标——静止压暗，滑过或聚焦才亮。 -->
                         <div class="cm-prompt-tools">
                           {#if offerWorkflowPrompt}
                             <button class="cm-wand" type="button"
                               aria-label="载入工作流内置提示词" title="载入工作流内置的提示词"
                               onclick={() => { promptTouched = true; prompt = workflowPrompt; }}
                             ><Icon name="wand" size={14} /></button>
+                          {/if}
+                          {#if promptUndo}
+                            <!-- 撤销那颗（2026-11-12 苏醒：「提示词经过优化之后，希望旁边还有一个撤销按钮，
+                                 点击可以回到原来手动输入的提示词，方便我继续修改手动提示词」）。
+                                 只在真被技能改写过之后出现；点一下是两句对调，回去还能回来。 -->
+                            <button class="cm-undo" type="button"
+                              aria-label="换回上一版提示词" title={"换回上一版提示词\n（技能改写前后那两句可以来回切）"}
+                              onclick={undoPrompt}><Icon name="undo" size={14} /></button>
                           {/if}
                           {#if skillKind}
                             <!-- 左键＝拿这一族的默认技能重写一句；右键＝换技能、进设置。音频工作流不画它：台词是念出来的
@@ -3064,24 +3093,33 @@
   .cm-sub-prompt-title { margin-top: 12px; }
   /* 高亮只许动颜色和背景：padding / border / font-weight 都会推字节，一改高亮就和光标错位。 */
   .cm-mention-hl { color: #ff6a4d; }
-  /* 提示词框右下角那一排的容器：两颗各 24×24，谁的条件不成立谁不在，最右边那颗永远落在同一格。
+  /* 提示词框右下角那一排的容器：每颗各占 24×24，谁的条件不成立谁不在，最右边那颗永远落在同一格。
      整条从 right:24 起——让开拉高手柄那颗 14px（它占 right:4 起那一格），命中区 24 是硬底线。
      z-index 4：压过镜像层 0 和输入框 1，被 mention 弹层（6）盖住，与拉高手柄 3 不重叠。 */
   .cm-prompt-tools {
     position: absolute; right: 24px; bottom: 4px; z-index: 4;
     display: flex; align-items: center; gap: 2px;
   }
-  /* 载入工作流内置提示词那颗。2026-11-04 做成卡右上角的半透明圆框，2026-11-12 苏醒：
-     「也去掉圆框描边，放在优化提示词图标左侧」——收进上面那一排，和右边那颗同款裸图标：
-     不画框、不铺底、不毛玻璃，静止压暗、滑过或键盘聚焦才亮，颜色一律引 token。 */
-  .cm-wand {
+  /* 那一排三颗共用一张脸（2026-11-12 苏醒：「图标不要圆框描边」）：裸图标——不画圆框、不铺底、
+     不毛玻璃，静止压暗，滑过或键盘聚焦才亮，反馈只剩透明度和颜色。
+     规则挂在容器的直接子 button 上，不再一颗抄一份：三颗本来就是同款，将来再加第四颗也不用重抄
+     这六行，更不会各改各的跑偏（载入那颗先是从卡右上角的圆框挪进来、再和这颗统一成裸图标，
+     两张脸分开写的阶段就是它每次都要被点名一遍的原因）。
+     border: 0 / background: none 是清 <button> 的 UA 默认样式，不能省；颜色一律引 token；
+     键盘聚焦的框交给浏览器默认焦点环，这里不自己描一圈。 */
+  .cm-prompt-tools > button {
     display: inline-flex; align-items: center; justify-content: center;
     width: 24px; height: 24px; padding: 0; border: 0; background: none;
     color: rgb(var(--text-1-rgb) / 62%); cursor: pointer;
     opacity: .6;
     transition: opacity 140ms ease, color 140ms ease;
   }
-  .cm-wand:hover, .cm-wand:focus-visible { opacity: 1; color: var(--accent-strong); }
+  .cm-prompt-tools > button:hover, .cm-prompt-tools > button:focus-visible { opacity: 1; color: var(--accent-strong); }
+  /* 画了这一排就得给正文留位：24 高的图标正压在底部 4..28px 那一条，长提示词最后一行会正好穿到它下面
+     （提示词是跟着内容长高的，最后一行就贴着底）。留 28px 把那条让出来——空着时框会高一档（约 46→59），
+     这是有意的取舍：宁可空态高一点，也不要字压在图标底下。这一排一颗都不画（音频工作流、又没有内置提示词
+     可载入）才不留。高亮镜像层和输入框同一条规则，改一处两处一起动，不然高亮和字会错位。 */
+  .cm-prompt-wrap.has-tools .cm-prompt-bg, .cm-prompt-wrap.has-tools .cm-textarea { padding-bottom: 28px; }
   /* 提示词框右下角那颗拉高手柄（2026-11-10 苏醒：「提示词输入框右下角加一个拉高提示词的功能」）。
      静止时压暗、滑过/拖动/键盘聚焦才亮。斜纹画在伪元素上并裁成三角形：看着只是口内角的一小片纹路，
      命中区仍是整颗方块——好点中，也不会挡住正文文字。整颗往里让 4px：框的口角是 12px 圆角，
@@ -3102,25 +3140,9 @@
   @media (prefers-reduced-motion: reduce) {
     .cm-prompt-grip { opacity: .85; transition: none; }
   }
-  /* 提示词框右下角那颗「按技能优化」（2026-11-11 苏醒）。静止压暗、滑过或键盘聚焦才亮。
-     2026-11-12 苏醒：「图标不要圆框描边」——裸图标，不画圆框、不铺底、不加毛玻璃，反馈只剩透明度和颜色，
-     跟旁边那颗拉高手柄一样轻；键盘聚焦的框交给浏览器默认焦点环，这里不再自己描一圈。
-     位置交给上面那条 .cm-prompt-tools，这颗只管自己 24×24。
-     颜色一律引 token，不新增裸 hex。border: 0 / background: none 是清 <button> 的 UA 默认样式，不能省。 */
-  .cm-skill {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 24px; height: 24px; padding: 0; border: 0; background: none;
-    color: rgb(var(--text-1-rgb) / 62%); cursor: pointer;
-    opacity: .6;
-    transition: opacity 140ms ease, color 140ms ease;
-  }
-  /* 画了这一排就得给正文留位：24 高的图标正压在底部 4..28px 那一条，长提示词最后一行会正好穿到它下面
-     （提示词是跟着内容长高的，最后一行就贴着底）。留 28px 把那条让出来——空着时框会高一档（约 46→59），
-     这是有意的取舍：宁可空态高一点，也不要字压在图标底下。这一排一颗都不画（音频工作流、又没有内置提示词
-     可载入）才不留。高亮镜像层和输入框同一条规则，改一处两处一起动，不然高亮和字会错位。 */
-  .cm-prompt-wrap.has-tools .cm-prompt-bg, .cm-prompt-wrap.has-tools .cm-textarea { padding-bottom: 28px; }
-  .cm-skill:hover, .cm-skill:focus-visible { opacity: 1; color: var(--accent-strong); }
-  .cm-skill:disabled { opacity: .28; cursor: default; }
+  /* 禁用态也挂在那一排上：共用的悬停规则比 .cm-skill:disabled 更具体（多了 :hover 那一级），
+     不一起挂的话，disabled 的那颗滑过去照样会亮起来。同一条规则写在悬停之后，同权重后来者胜。 */
+  .cm-prompt-tools > button:disabled { opacity: .28; cursor: default; }
   .cm-skill.is-busy { opacity: 1; color: var(--accent-strong); animation: cm-skill-pulse 1.2s ease-in-out infinite; }
   @keyframes cm-skill-pulse { 50% { opacity: .45; } }
   /* 关掉动效的人照样看得出它在跑：只是不再闪 */

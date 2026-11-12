@@ -866,21 +866,25 @@ it('载入模板收成提示词框右下角那颗裸图标（优化那颗左侧�
   expect(s2.queryByRole('button', { name: '载入工作流内置提示词' })).toBeNull();
   // 2026-11-12 苏醒：这颗不再挂卡右上角那圈圆框里，挪进提示词框右下角那一排，落在优化那颗左边，同样不画框
   const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
-  const tools = css.slice(css.indexOf('.cm-prompt-tools {'), css.indexOf('.cm-wand {'));
+  const tools = css.slice(css.indexOf('.cm-prompt-tools {'), css.indexOf('.cm-prompt-tools > button {'));
   expect(tools).toMatch(/position:\s*absolute/);
   expect(tools).toMatch(/right:\s*24px;\s*bottom:\s*4px/);
-  const rule = css.slice(css.indexOf('.cm-wand {'), css.indexOf('.cm-wand:hover'));
+  // 2026-11-12 苏醒「图标不要圆框描边」+ 撤销那颗进来：那张脸不再一颗写一份，
+  // 挂在容器的直接子 button 上——三颗同款，谁也别想单独跑偏。
+  const rule = css.slice(css.indexOf('.cm-prompt-tools > button {'), css.indexOf('.cm-prompt-tools > button:hover'));
   expect(rule).toMatch(/width:\s*24px;\s*height:\s*24px/);
   expect(rule).toMatch(/border: 0; background: none;/);
   expect(rule).not.toMatch(/position:|border-radius|backdrop-filter|1px solid/);
-  expect(css).toMatch(/\.cm-wand:hover, \.cm-wand:focus-visible \{ opacity: 1; color: var\(--accent-strong\); \}/);
-  // 一条 flex 行，DOM 顺序就是左右顺序：载入在左、优化在右
+  expect(css).toMatch(/\.cm-prompt-tools > button:hover, \.cm-prompt-tools > button:focus-visible \{ opacity: 1; color: var\(--accent-strong\); \}/);
+  // 一条 flex 行，DOM 顺序就是左右顺序：载入在左、撤销居中、优化在右
   const toolsAt = css.indexOf('class="cm-prompt-tools"');
   const wandAt = css.indexOf('class="cm-wand"');
+  const undoAt = css.indexOf('class="cm-undo"');
   const skillAt = css.indexOf('class="cm-skill"');
   expect(toolsAt).toBeGreaterThan(0);
   expect(wandAt).toBeGreaterThan(toolsAt);
-  expect(skillAt).toBeGreaterThan(wandAt);
+  expect(undoAt).toBeGreaterThan(wandAt);
+  expect(skillAt).toBeGreaterThan(undoAt);
   // 层级：压过镜像层 0 和输入框 1，仍让 mention 弹层盖在上面
   const zt = Number((tools.match(/z-index:\s*(\d+)/) ?? [0, '0'])[1]);
   const zm = Number((css.slice(css.indexOf('.cm-mention {')).match(/z-index:\s*(\d+)/) ?? [0, '0'])[1]);
@@ -3556,6 +3560,7 @@ const skillRoutes = (over: Record<string, unknown> = {}) => ({
   '/api/prompt-skills': SKILLS,
 });
 const skillBtn = (screen: any) => screen.container.querySelector('.cm-skill') as HTMLButtonElement;
+const undoBtn = (screen: any) => screen.container.querySelector('.cm-undo') as HTMLButtonElement | null;
 const actionOf = (label: string) => get(toasts).flatMap((item) => item.actions ?? []).find((item) => item.label === label);
 
 it('提示词右下角那颗优化图标：空提示词点不动，写一句才按得动，打开弹窗不该偷拉技能清单', async () => {
@@ -3588,6 +3593,72 @@ it('左键用这一族的默认技能重写、写回输入框，撤销退回原�
   expect(undo).toBeTruthy();
   undo!.onClick();
   await vi.waitFor(() => expect(ta.value).toBe('原文一句'));
+});
+
+it('优化之后右下角多一颗撤销：点一下回手打那句，再点回优化版；没优化过不画它', async () => {
+  routes(skillRoutes({
+    '/api/prompt-skills/1/optimize': { prompt: '重写后：中景、柔光', model_name: '智谱', model: 'glm-4v', degraded_refs: null },
+  }));
+  const screen = await ready();
+  const ta = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  await fireEvent.input(ta, { target: { value: '原文一句' } });
+  // 没被改写之前不该有这颗：平白摆一颗点了没反应的图标，不如不摆
+  expect(undoBtn(screen)).toBeNull();
+  await fireEvent.click(skillBtn(screen));
+  await vi.waitFor(() => expect(undoBtn(screen)).not.toBeNull());
+  await fireEvent.click(undoBtn(screen)!);
+  expect(ta.value).toBe('原文一句');
+  // 对调，不是丢弃：再点回优化那一版
+  await fireEvent.click(undoBtn(screen)!);
+  expect(ta.value).toBe('重写后：中景、柔光');
+});
+
+it('连着优化两次，撤销回的还是最早手打那句；中途手改的字也丢不了', async () => {
+  let n = 0;
+  routes(skillRoutes({
+    '/api/prompt-skills/1/optimize': () => {
+      n += 1;
+      return { prompt: `模型第${n}版`, model_name: '智谱', model: 'glm-4v', degraded_refs: null };
+    },
+  }));
+  const screen = await ready();
+  const ta = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  await fireEvent.input(ta, { target: { value: '我手打的那句' } });
+  await fireEvent.click(skillBtn(screen));
+  await vi.waitFor(() => expect(ta.value).toBe('模型第1版'));
+  await fireEvent.click(skillBtn(screen));
+  await vi.waitFor(() => expect(ta.value).toBe('模型第2版'));
+  // 第二次优化不该把快照换成「模型第1版」——他要回的是自己打的那句
+  await fireEvent.click(undoBtn(screen)!);
+  expect(ta.value).toBe('我手打的那句');
+  // 存的那份是点下去那一刻现取的，所以中途手改的字在回程里还在
+  await fireEvent.input(ta, { target: { value: '我手打的那句，再补一句' } });
+  await fireEvent.click(undoBtn(screen)!);
+  expect(ta.value).toBe('模型第2版');
+  await fireEvent.click(undoBtn(screen)!);
+  expect(ta.value).toBe('我手打的那句，再补一句');
+});
+
+it('小条上那颗撤销和框里那颗走同一条路：不会把过期那句甩回来', async () => {
+  routes(skillRoutes({
+    '/api/prompt-skills/1/optimize': { prompt: '重写后', model_name: '智谱', model: 'glm-4v', degraded_refs: null },
+  }));
+  const screen = await ready();
+  const ta = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  await fireEvent.input(ta, { target: { value: '原文' } });
+  await fireEvent.click(skillBtn(screen));
+  await vi.waitFor(() => expect(ta.value).toBe('重写后'));
+  await fireEvent.click(undoBtn(screen)!);
+  expect(ta.value).toBe('原文');
+  // 闭包里那句 before 早就成了「当前这句」，再按小条那颗该继续对调，而不是原地不动
+  actionOf('撤销')!.onClick();
+  await vi.waitFor(() => expect(ta.value).toBe('重写后'));
+});
+
+it('换卡清掉的只是上一张的状态：撤销记着的那句不跨卡带过去', () => {
+  const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  // 复位那一整块里必须有它，漏了的话换一张卡，框右下角会凭空多一颗撤销
+  expect(css).toMatch(/promptTouched = false;\s*promptUndo = null;/);
 });
 
 it('参考图只送图片那一族，编号用格子自己的、不按送过去的先后重排', async () => {
@@ -3761,16 +3832,19 @@ it('那颗图标的版面：让开拉高手柄、命中区 24、清单只在点�
   const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
   expect(css).toMatch(/\.cm-prompt-grip \{\s*position: absolute; right: 4px; bottom: 4px; z-index: 3;\s*width: 14px; height: 14px/);
   expect(css).toMatch(/\.cm-prompt-tools \{[^}]*right: 24px; bottom: 4px; z-index: 4;[^}]*display: flex/);
-  expect(css).toMatch(/\.cm-skill \{[^}]*width: 24px; height: 24px/);
+  // 三颗共用一条：命中区 24、裸图标（静止/悬停/聚焦都不画框、不铺底、不毛玻璃）
+  const base = css.slice(css.indexOf('.cm-prompt-tools > button {'), css.indexOf('.cm-prompt-tools > button:hover'));
+  expect(base).toMatch(/width: 24px; height: 24px/);
+  expect(base).toMatch(/border: 0; background: none;/);
+  expect(base).not.toMatch(/border-radius|backdrop-filter|1px solid/);
   // 键盘也得够得着：半透明那颗在 :focus-visible 下和 hover 一样亮起来
-  expect(css).toMatch(/\.cm-skill:hover, \.cm-skill:focus-visible/);
-  expect(css).toMatch(/\.cm-skill:disabled/);
-  // 2026-11-12 苏醒「图标不要圆框描边」：裸图标——静止、悬停、聚焦都不画框、不铺底、不毛玻璃
-  const skillBase = css.match(/\.cm-skill \{[^}]*\}/)?.[0] ?? "";
-  expect(skillBase).toMatch(/border: 0; background: none;/);
-  expect(skillBase).not.toMatch(/border-radius|backdrop-filter|1px solid/);
-  const skillStates = css.match(/\.cm-skill(?::[\w-]+|\.is-busy)\s*\{[^}]*\}/g)?.join("") ?? "";
-  expect(skillStates).not.toMatch(/border-color|background:/);
+  expect(css).toMatch(/\.cm-prompt-tools > button:hover, \.cm-prompt-tools > button:focus-visible/);
+  // 灰掉的那颗滑过去不许亮起来：:disabled 和悬停同权重，靠写在悬停之后压住
+  const disabledAt = css.indexOf('.cm-prompt-tools > button:disabled');
+  expect(disabledAt).toBeGreaterThan(css.indexOf('.cm-prompt-tools > button:hover'));
+  expect(css.slice(disabledAt, disabledAt + 90)).toMatch(/opacity: \.28; cursor: default;/);
+  const rowStates = css.slice(disabledAt).match(/\.cm-prompt-tools > button:disabled[^}]*\}|\.cm-skill\.is-busy \{[^}]*\}/g)?.join("") ?? "";
+  expect(rowStates).not.toMatch(/border-color|background:|border-radius/);
   // 只有两处会拉清单：点左键、点右键。别混进打开弹窗的那条路
   expect(css.match(/loadPromptSkills\(\)/g)?.length).toBe(2);
   expect(css).toMatch(/\{#if skillKind\}/);

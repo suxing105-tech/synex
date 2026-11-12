@@ -2,13 +2,17 @@
   /**
    * 遮罩编辑器：盖住整个再次创作弹窗的一层编辑面，画完交回一份「白＝要改的地方」的遮罩。
    *
-   * 三条设计定了就不动摇：
+   * 四条设计定了就不动摇：
    * 1. 画布只看 alpha（涂没涂到），涂出来的红色只是给人看的第二层。提交那份黑白图在导出时按 alpha 现推，
    *    所以「换个颜色」「调叠色不透明度」永远不会悄悄改变送给 ComfyUI 的东西。
    * 2. 撤销不存像素快照：一张 2048² 的 RGBA 快照就是 16MB，存 40 步等于一次编辑器吃 600MB 内存。
    *    这里存笔迹、要重画时整条重放一遍，画布操作是原生路径，几十笔也就几毫秒。
-   * 3. 手势与图库放大层对齐：左键画、滚轮缩放、Ctrl+滚轮改笔刷、双击 100%⇄适应、空格临时抓手。
-   *    唯一的例外是左键——它归画笔，所以平移只能靠空格（或中键），不能像看图那样直接拖。
+   * 3. 手势与图库放大层对齐：左键画、Shift+左键框选、滚轮缩放、Ctrl+滚轮改笔刷、
+   *    双击 100%⇄适应、空格临时抓手。左键归画笔，所以平移只能靠空格（或中键），
+   *    不能像看图那样直接拖；Shift 那一下给的是「圈一整块」，边界是硬的，
+   *    像「把这台机器整个移除」这种用画笔涂永远涂不整齐。
+   * 4. 框选在松手之前一个字都不进遮罩：预览画在第三张画布上，松手才落进遮罩层与显示层。
+   *    拖回去重画（比如从右下角往左上拖）不会留下已经涂上的痕迹。
    *
    * 规则（画布尺寸、补间、多少像素算没画、导出格式）全在 lib/mask.ts，那儿有测试；这层只管画。
    */
@@ -17,9 +21,9 @@
   import { modalFocus } from "../lib/modal-focus";
   import {
     MASK_BRUSH_DEFAULT, MASK_BRUSH_MAX, MASK_BRUSH_MIN, MASK_INK_DEFAULT, MASK_INK_MAX, MASK_INK_MIN,
-    MASK_INK_RGB, MASK_REDO_LIMIT, countMaskPixels, isMaskEmpty, maskBrushRadius, maskCanvasScale, maskCanvasSize,
-    maskPixelsInSource, strokePoints, stripDataUrl,
-    type MaskEdit, type MaskPoint,
+    MASK_INK_RGB, MASK_REDO_LIMIT, countMaskPixels, isMaskEmpty, maskBrushRadius, maskCanvasScale,
+    maskCanvasSize, maskPixelsInSource, maskRectIsReal, maskRectSelect, strokePoints, stripDataUrl,
+    type MaskEdit, type MaskPoint, type MaskRect,
   } from "../lib/mask";
 
   interface Props {
@@ -49,13 +53,16 @@
   }: Props = $props();
 
   type Tool = "paint" | "erase";
-  interface Stroke { op: Tool; r: number; pts: MaskPoint[] }
+  /** 一笔要么是画笔涂的一条线，要么是 Shift 框出来的一块：有 rect 就按块算，pts 留空 */
+  interface Stroke { op: Tool; r: number; pts: MaskPoint[]; rect?: MaskRect }
 
   let rootEl = $state<HTMLDivElement | null>(null);
   let viewport = $state<HTMLDivElement | null>(null);
   let stageEl = $state<HTMLDivElement | null>(null);
   let maskCanvas = $state<HTMLCanvasElement | null>(null);
   let inkCanvas = $state<HTMLCanvasElement | null>(null);
+  /** 框选的预览层：遮罩本体一点都没动，看得见的那圈只是预览 */
+  let liveCanvas = $state<HTMLCanvasElement | null>(null);
 
   /** 画布像素尺寸＝参考图尺寸（长边超上限先降），一笔的坐标就按它算 */
   let size = $state({ width: 1, height: 1 });
@@ -77,6 +84,8 @@
   let painted = $state(0);
   let handing = $state(false);
   let drawing = false;
+  /** Shift+左键按住的两个对角（画布坐标），松手前只是个草稿 */
+  let rectDrag: { from: MaskPoint; to: MaskPoint } | null = null;
   let panning = false;
   let lastClient: MaskPoint | null = null;
   let live: Stroke | null = null;
@@ -131,8 +140,61 @@
     c.restore();
   }
 
+  /** 框出来的那块同样落进两层，一次成形、硬边：圈整件东西时硬边比软边准 */
+  function block(c: CanvasRenderingContext2D, color: string, alpha: number, op: Tool, rect: MaskRect) {
+    c.save();
+    c.globalAlpha = op === "erase" ? 1 : alpha;
+    c.globalCompositeOperation = op === "erase" ? "destination-out" : "source-over";
+    c.fillStyle = color;
+    c.fillRect(rect.x, rect.y, rect.width, rect.height);
+    c.restore();
+  }
+
+  /** 松手那一刻的预览：清掉预览层，把这块真的画进遮罩层与显示层 */
+  function commitRect(rect: MaskRect, op: Tool) {
+    const m = ctx(maskCanvas);
+    const k = ctx(inkCanvas);
+    if (m && k) {
+      block(m, "rgb(255, 255, 255)", 1, op, rect);
+      block(k, `rgb(${MASK_INK_RGB})`, ink, op, rect);
+    }
+    if (m) recount(m);
+  }
+
+  /** 拖动中的预览只画在第三张画布上：橡皮那块用白虚线圈，涂的那块用红的压一层 */
+  function drawPreview(rect: MaskRect | null, erasing: boolean) {
+    const c = ctx(liveCanvas);
+    if (!c) return;
+    c.clearRect(0, 0, size.width, size.height);
+    if (!rect) return;
+    // 画布会被 fit×zoom 缩到屏幕上，线宽先除回去，屏上看永远是 2px 那一圈
+    const lw = 2 / Math.max(0.02, fit * zoom);
+    c.save();
+    if (!erasing) {
+      c.globalAlpha = Math.min(0.9, ink + 0.2);
+      c.fillStyle = `rgb(${MASK_INK_RGB})`;
+      c.fillRect(rect.x, rect.y, rect.width, rect.height);
+    }
+    c.globalAlpha = 1;
+    c.lineWidth = lw;
+    c.strokeStyle = erasing ? "rgb(255, 255, 255)" : `rgb(${MASK_INK_RGB})`;
+    if (erasing) c.setLineDash([lw * 6, lw * 4]);
+    c.strokeRect(rect.x, rect.y, rect.width, rect.height);
+    c.restore();
+  }
+
+  /** 当前这一框在画布上的位置（往回拖、拖出画面都归一成正放矩形） */
+  function selection(): MaskRect | null {
+    return rectDrag ? maskRectSelect(rectDrag.from, rectDrag.to, size.width, size.height) : null;
+  }
+
   /** 一笔同时落进两层：遮罩层涂白（只有 alpha 算数），给人看的那层涂红并按叠色不透明度压暗 */
   function apply(m: CanvasRenderingContext2D, k: CanvasRenderingContext2D, s: Stroke, from = 0) {
+    if (s.rect) {
+      block(m, "rgb(255, 255, 255)", 1, s.op, s.rect);
+      block(k, `rgb(${MASK_INK_RGB})`, ink, s.op, s.rect);
+      return;
+    }
     const pts = from > 0 ? s.pts.slice(from) : s.pts;
     dab(m, "rgb(255, 255, 255)", 1, s.op, s.r, pts);
     dab(k, `rgb(${MASK_INK_RGB})`, ink, s.op, s.r, pts);
@@ -207,6 +269,17 @@
       e.preventDefault();
       return;
     }
+    // Shift+左键＝圈一整块。「把这台机器整个移除」这类需求用画笔涂，边界永远不整齐，
+    // 而松手之前它一个字都没进遮罩，所以拖过头直接松开就行，不需要撤销。
+    if (e.button === 0 && e.shiftKey) {
+      const from = toCanvas(e);
+      if (!from) return;
+      rectDrag = { from, to: from };
+      cursor = null; // 拖动中笔刷圈没有意义，藏掉
+      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+      e.preventDefault();
+      return;
+    }
     if (e.button !== 0) return;
     const p = toCanvas(e);
     if (!p) return;
@@ -221,6 +294,13 @@
   }
 
   function onMove(e: PointerEvent) {
+    if (rectDrag) {
+      const p = toCanvas(e);
+      if (!p) return;
+      rectDrag = { from: rectDrag.from, to: p };
+      drawPreview(selection(), tool === "erase");
+      return;
+    }
     trackCursor(e);
     if (panning && lastClient) {
       pan = { x: pan.x + (e.clientX - lastClient.x), y: pan.y + (e.clientY - lastClient.y) };
@@ -241,6 +321,18 @@
 
   function onUp(e: PointerEvent) {
     (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+    if (rectDrag) {
+      const rect = selection();
+      rectDrag = null;
+      drawPreview(null, tool === "erase");
+      // 手抖拖出一两个像素不算一次操作：不进笔迹栈，也就不占一步撤销
+      if (!maskRectIsReal(rect) || !rect) return;
+      const stroke: Stroke = { op: tool, r: 0, pts: [], rect };
+      strokes = [...strokes, stroke];
+      undone = [];
+      commitRect(rect, tool);
+      return;
+    }
     panning = false;
     lastClient = null;
     if (!drawing || !live) return;
@@ -270,9 +362,11 @@
 
   function clearAll() {
     if (!strokes.length && !seedImg) return;
+    rectDrag = null;
     strokes = [];
     undone = [];
     seedImg = null;
+    drawPreview(null, false);
     redraw();
   }
 
@@ -418,7 +512,7 @@
       <span class="me-prompt" title={promptSummary}>{promptSummary}</span>
       <span class="me-count" class:is-none={emptyMask}>{emptyMask ? "还没涂" : `已涂 ${paintedSource.toLocaleString("zh-CN")} 处像素`}</span>
     </div>
-    <p class="me-hint">{hint || "涂上＝要改的地方，没涂的地方一个字都不动。"}</p>
+    <p class="me-hint">{hint || "左键涂、Shift+左键拖一个框圈住一整块；E 换橡皮，没涂的地方一个字都不动。"}</p>
   </header>
 
   <div class="me-view" class:is-hand={handing} class:is-erase={tool === "erase"}
@@ -431,6 +525,8 @@
       <div class="me-stage" bind:this={stageEl} style={stageStyle}>
         <img class="me-ref" {src} alt="" draggable="false" />
         <canvas class="me-ink" bind:this={inkCanvas} width={size.width} height={size.height}></canvas>
+        <!-- 框选拖动中的预览：遮罩本体在松手之前一个字都没动 -->
+        <canvas class="me-live" bind:this={liveCanvas} width={size.width} height={size.height} aria-hidden="true"></canvas>
         <!-- 真正的遮罩只在这张看不见的画布上：显示那层是它的红色副本 -->
         <canvas class="me-mask" bind:this={maskCanvas} width={size.width} height={size.height} aria-hidden="true"></canvas>
       </div>
@@ -522,9 +618,12 @@
     position: relative; flex: none; transform-origin: center center;
     will-change: transform; user-select: none;
   }
-  .me-ref, .me-ink, .me-mask { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .me-ref, .me-ink, .me-live, .me-mask {
+    position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+  }
   .me-ref { position: relative; pointer-events: none; }
   .me-ink { pointer-events: none; }
+  .me-live { pointer-events: none; }
   /* 看不见的那张才是遮罩本体：显示用的是它的红色副本 */
   .me-mask { visibility: hidden; }
   .me-dab {

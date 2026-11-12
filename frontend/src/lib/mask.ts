@@ -129,6 +129,47 @@ export function strokePoints(from: MaskPoint, to: MaskPoint, radius: number): Ma
   return out;
 }
 
+/** 框出来的一块：画布坐标，左上角 + 宽高，永远正放（拖动方向随意） */
+export interface MaskRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Shift+左键拖出来的框：两个对角换算成正放矩形，越界的部分裁进画布。
+ * 从右下角往左上拖、拖出画面外，都该得到同一块地方——用户不该为浏览器给的坐标方向负责。
+ */
+export function maskRectSelect(
+  from: MaskPoint,
+  to: MaskPoint,
+  width: number,
+  height: number,
+): MaskRect {
+  const w = Math.max(1, Math.round(width || 1));
+  const h = Math.max(1, Math.round(height || 1));
+  const cx = (v: number) => Math.min(w, Math.max(0, Number.isFinite(v) ? v : 0));
+  const cy = (v: number) => Math.min(h, Math.max(0, Number.isFinite(v) ? v : 0));
+  const x0 = cx(from.x);
+  const x1 = cx(to.x);
+  const y0 = cy(from.y);
+  const y1 = cy(to.y);
+  return {
+    x: Math.min(x0, x1),
+    y: Math.min(y0, y1),
+    width: Math.abs(x1 - x0),
+    height: Math.abs(y1 - y0),
+  };
+}
+
+/** 框要多大才算真框了一块：拖出去一两个像素多半是手抖，不该占一步撤销、也不该送出 4 个像素的遮罩。 */
+export const MASK_RECT_MIN = 2;
+
+export function maskRectIsReal(rect: MaskRect | null | undefined, min = MASK_RECT_MIN): boolean {
+  return !!rect && rect.width >= min && rect.height >= min;
+}
+
 /**
  * 数涂到多少像素。按 alpha 数（rgba 数据每 4 个取第 4 个）：编辑器的画布是透明底，涂过才有 alpha，
  * 涂的是什么颜色不算数。

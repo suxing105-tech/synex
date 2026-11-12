@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   MASK_EDGE_LIMIT, MASK_EMPTY_PIXELS, cellAcceptsMask, countMaskPixels, isMaskEmpty, maskBadgeText,
   maskBaseImageUrl, maskBrushRadius, maskCanvasScale, maskCanvasSize, maskEntryLabel, maskHeroKey, maskMode, maskModeLabel,
-  maskPixelsInSource, maskPromptSummary,
+  MASK_RECT_MIN, maskPixelsInSource, maskPromptSummary, maskRectIsReal, maskRectSelect,
   maskRequestPayload, maskableCellKeys, paintedMaskCount, promptEmptyHint, promptMayBeEmpty,
   stripDataUrl, strokePoints, templateAcceptsMask, type MaskEdit,
 } from "../lib/mask";
@@ -199,6 +199,59 @@ describe("编辑层的只读回显", () => {
 });
 
 /**
+ * Shift+左键框选（2026-11-12 苏醒要加的）：圈一整块要的是硬边界，
+ * 用画笔涂「这台机器整个」永远涂不整齐。规则同样全在这里测，画布那部分只能读源文件。
+ */
+describe("Shift 框选", () => {
+  it("两个对角不管往哪个方向拖，都归一成正放的同一块", () => {
+    const down = maskRectSelect({ x: 10, y: 20 }, { x: 60, y: 90 }, 1000, 1000);
+    const back = maskRectSelect({ x: 60, y: 90 }, { x: 10, y: 20 }, 1000, 1000);
+    expect(down).toEqual({ x: 10, y: 20, width: 50, height: 70 });
+    expect(back).toEqual(down);
+  });
+
+  it("拖出画面外的部分裁进画布，不许长出负宽度的框", () => {
+    expect(maskRectSelect({ x: 900, y: 900 }, { x: 2000, y: -500 }, 1000, 800))
+      .toEqual({ x: 900, y: 0, width: 100, height: 800 });
+  });
+
+  it("手抖拖出一两个像素不算一次操作（不占撤销，也不送出四个像素的遮罩）", () => {
+    expect(maskRectIsReal(maskRectSelect({ x: 50, y: 50 }, { x: 50, y: 50 }, 100, 100))).toBe(false);
+    expect(maskRectIsReal({ x: 0, y: 0, width: MASK_RECT_MIN, height: MASK_RECT_MIN })).toBe(true);
+    expect(maskRectIsReal(null)).toBe(false);
+  });
+
+  it("坐标算出 NaN 就当没拖，不许把整张画布涂掉", () => {
+    expect(maskRectSelect({ x: 0, y: 0 }, { x: NaN, y: NaN }, 100, 100))
+      .toEqual({ x: 0, y: 0, width: 0, height: 0 });
+    expect(maskRectIsReal(maskRectSelect({ x: 0, y: 0 }, { x: NaN, y: NaN }, 100, 100))).toBe(false);
+  });
+
+  it("拖动中只画预览层，松手才落进遮罩；撤销重放也认得这种笔迹", () => {
+    const src = componentSource("MaskEditor.svelte");
+    expect(src).toContain('class="me-live"');
+    const move = src.slice(src.indexOf("function onMove"), src.indexOf("function onUp"));
+    // 只看框选那一段：画笔那段本来就要一路 apply 下去，别拿它当反例
+    const rectBranch = move.slice(move.indexOf("if (rectDrag) {"), move.indexOf("trackCursor(e);"));
+    expect(rectBranch).toContain("drawPreview(");
+    expect(rectBranch).not.toMatch(/\bapply\(|\bblock\(|\bcommitRect\(/);
+    const up = src.slice(src.indexOf("function onUp"), src.indexOf("function undo"));
+    expect(up).toContain("maskRectIsReal(rect)");
+    expect(up).toContain("commitRect(rect, tool)");
+    const applyFn = src.slice(src.indexOf("function apply("), src.indexOf("function drawSeed"));
+    expect(applyFn).toContain("if (s.rect)");
+  });
+
+  it("提示里要说出 Shift 框选，别让人自己猜", () => {
+    expect(componentSource("MaskEditor.svelte")).toContain("Shift+左键");
+  });
+});
+
+const srcRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const componentSource = (name: string): string =>
+  readFileSync(resolve(srcRoot, "components", name), "utf8");
+
+/**
  * 层序护栏（2026-11-12 真机走查后补）。
  *
  * happy-dom 不注入 Svelte 的 scoped CSS，computed style 里压根拿不到 z-index，
@@ -206,9 +259,7 @@ describe("编辑层的只读回显", () => {
  * 红色「生成」是误点就真跑一次本地生成的脚枪，值得钉死在测试里。
  */
 
-const srcRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const componentSource = (name: string): string =>
-  readFileSync(resolve(srcRoot, "components", name), "utf8");
+
 
 /** 取某个选择器那条规则里的第一个 z-index；没写 z-index 返回 null。 */
 function zIndexOf(css: string, selector: string): number | null {

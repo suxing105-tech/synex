@@ -176,6 +176,9 @@ def _cell(slot: dict, kind: str, ordinal: int, key: str, name: str) -> dict:
         "label": f"{stem}{ordinal}",
         "name": name,
         "slot_label": str(slot.get("label") or slot_key(slot)),
+        # 这一格吃不吃遮罩（"alpha" = 吃）：弹窗要靠它在格子上摆「编辑遮罩」那颗，
+        # 不然用户得自己记住哪一格接了遮罩。
+        "mask": str(slot.get("mask") or ""),
     }
 
 

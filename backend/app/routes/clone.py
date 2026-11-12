@@ -58,13 +58,19 @@ class ReferenceInput(BaseModel):
 
 class GenerateInput(BaseModel):
     template_id: int
-    prompt: str = Field(min_length=1, max_length=50000)
+    # 长度下限放到 0：局部重绘那一族把「提示词留空」当成一个正经模式（留空＝移除）。
+    # 空提示词到底让不让过由 clone_jobs.plan_request 按槽位的 allow_empty 判，
+    # 那里才知道是哪份工作流在说话。
+    prompt: str = Field(min_length=0, max_length=50000)
     # 主提示词之外的文字位（键 = 「节点.输入」）。音色克隆那类工作流要两段文字：
     # 台词进 prompt，参考音频里的原话进这里，不然原话会被台词冲掉，音色就不像了。
     slot_prompts: dict[str, str] = Field(default_factory=dict)
     references: list[ReferenceInput] = Field(default_factory=list)
     controls: dict[str, Any] = Field(default_factory=dict)
     source_image_id: int | None = None
+    # 画好的遮罩：键 = 参考位（"193.image"），值 = PNG 的 base64（可带 data: 前缀）。
+    # 只跟着这一次请求走，后端合成进上传给 ComfyUI 的那张图，不落任何持久文件。
+    masks: dict[str, str] = Field(default_factory=dict)
 
 
 # ---------- helpers ----------
@@ -320,6 +326,7 @@ async def generate(payload: GenerateInput) -> dict:
             references=references,
             controls=payload.controls,
             source_image_id=payload.source_image_id,
+            masks=payload.masks,
         )
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc

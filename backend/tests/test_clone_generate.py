@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -174,6 +176,7 @@ async def start(template_id: int, image_id: int, **kwargs) -> dict:
         references=kwargs.pop("references", [{"slot": "543.image", "image_id": image_id}]),
         controls=kwargs.pop("controls", None),
         source_image_id=image_id,
+        masks=kwargs.pop("masks", None),
     )
 
 
@@ -566,3 +569,145 @@ async def test_a_run_that_fails_records_no_source(fake, source_image, init_db):
     with pytest.raises(clone_jobs.CloneUnavailable):
         await start(template()["id"], source_image)
     assert get_pool().main().execute("SELECT COUNT(*) c FROM clone_sources").fetchone()["c"] == 0
+
+
+# ---------- 遮罩：合成、命名、不命中旧缓存 ----------
+
+def mask_slots() -> list[dict]:
+    """同一条工作流，但图片位接了遮罩、提示词留空是一个模式（留空＝移除）。"""
+    return [
+        {"kind": "prompt", "node": "540", "input": "prompt",
+         "label": clone_templates.PRIMARY_PROMPT_LABEL, "allow_empty": True},
+        {"kind": "prompt", "node": "582", "input": "prompt", "label": "第二段文字"},
+        {"kind": "image", "node": "543", "input": "image", "label": "图片1", "mask": "alpha"},
+    ]
+
+
+def mask_template() -> dict:
+    return clone_templates.create_template("遮罩工作流", workflow(), mask_slots())
+
+
+def mask_png(width: int = 8, height: int = 8, block: int = 4) -> bytes:
+    """左上角 block×block 白、其余黑的灰度 PNG —— 白＝要改的地方。"""
+    import io
+
+    from PIL import Image
+    img = Image.new("L", (width, height), 0)
+    for y in range(block):
+        for x in range(block):
+            img.putpixel((x, y), 255)
+    out = io.BytesIO()
+    img.save(out, format="PNG")
+    return out.getvalue()
+
+
+def source_bytes(image_id: int) -> bytes:
+    from app.db import get_pool
+    path = Path(get_pool().main().execute(
+        "SELECT path FROM images WHERE id=?", (image_id,)).fetchone()["path"])
+    return path.read_bytes()
+
+
+def test_compose_mask_png_bakes_the_inverse_mask_into_alpha():
+    """遮罩处透明、没遮的地方不透明，画面本身一个像素都不动。
+
+    画面上"不能动"是要紧的：孤海那台加载器认名字之前会拿透明区域去铺白底，
+    我们既对上了它的名字口径，就不许再把源图涂花。
+    """
+    import io
+
+    from PIL import Image
+    base = make_png(Path("nowhere.png"), width=8, height=6).read_bytes()
+    out = clone_jobs.compose_mask_png(base, mask_png(8, 6, 4))
+    with Image.open(io.BytesIO(out)) as img:
+        assert img.mode == "RGBA"
+        rgb, alpha = img.convert("RGB"), img.getchannel("A")
+    with Image.open(io.BytesIO(base)) as src:
+        assert rgb.tobytes() == src.convert("RGB").tobytes(), "RGB"
+    assert [alpha.getpixel((x, y)) for x, y in ((0, 0), (3, 3))] == [0, 0], "遮罩处该透明"
+    assert [alpha.getpixel((x, y)) for x, y in ((7, 5), (4, 0))] == [255, 255], "没画的地方不该透明"
+
+
+def test_compose_mask_png_pulls_a_smaller_canvas_up_to_size():
+    """编辑器为了手感会降采样：遮罩比参考图小就拉齐，不该报错。"""
+    import io
+
+    from PIL import Image
+    base = make_png(Path("nowhere.png"), width=8, height=8).read_bytes()
+    out = clone_jobs.compose_mask_png(base, mask_png(4, 4, 4))
+    with Image.open(io.BytesIO(out)) as img:
+        assert img.size == (8, 8)
+        assert img.getchannel("A").getextrema() == (0, 0)   # 整张遮罩 → 全透明
+
+
+async def test_a_painted_mask_uploads_under_the_clipspace_name(fake, source_image, init_db):
+    """上传名与写回值都得对上孤海那台加载器的口径，不然遮罩会被当成画面涂白。
+
+    名字里那串 seekx_ref_{id}_{源图 hash} 是来源记录认得的部分，不能因为画了遮罩就换；
+    遮罩自己的 hash 拼在后面，改一笔遮罩就是一个新文件。写回值尾巴上的 " [input]"
+    是它判断"这是剪辑板那张图"的依据。
+    """
+    tpl = mask_template()
+    await start(tpl["id"], source_image, prompt="",
+                masks={"543.image": base64.b64encode(mask_png()).decode()})
+    state = await finish()
+    assert state["state"] == "done", state
+    name = fake.uploads[0]
+    digest = hashlib.sha1(source_bytes(source_image)).hexdigest()[:8]
+    assert re.fullmatch(rf"seekx_ref_{source_image}_{digest}_clipspace-mask-[0-9a-f]{{6}}\.png",
+                        name), name
+    assert fake.prompts[0]["prompt"]["543"]["inputs"]["image"] == f"seekx/{name} [input]"
+
+
+async def test_editing_the_mask_never_hits_the_previous_cache(fake, source_image, init_db):
+    """改一笔遮罩必须换一个新文件：ComfyUI 的 IS_CHANGED 是文件内容 hash，撞名就吃旧结果。"""
+    tpl = mask_template()
+    await start(tpl["id"], source_image, masks={"543.image": base64.b64encode(mask_png()).decode()})
+    await finish()
+    first = fake.uploads[0]
+    clone_jobs.reset_for_tests()
+    await start(tpl["id"], source_image,
+                masks={"543.image": base64.b64encode(mask_png(8, 8, 2)).decode()})
+    await finish()
+    assert fake.uploads[1] != first
+    assert fake.uploads[1].split("_clipspace-mask-")[0] == first.split("_clipspace-mask-")[0], \
+        "源图没变，名字前半段（来源记录靠它认图）不该变"
+
+
+async def test_a_mask_on_a_cell_that_does_not_take_one_is_refused(fake, source_image, init_db):
+    tpl = template()          # 随包那条同构体：图片位没接遮罩
+    with pytest.raises(ValueError, match="不能画遮罩"):
+        await start(tpl["id"], source_image,
+                    masks={"543.image": base64.b64encode(mask_png()).decode()})
+
+
+async def test_a_mask_without_a_picture_is_refused(fake, init_db):
+    tpl = mask_template()
+    with pytest.raises(ValueError, match="还没放图"):
+        await start(tpl["id"], 0, references=[],
+                    masks={"543.image": base64.b64encode(mask_png()).decode()})
+
+
+async def test_undecodable_masks_say_so_in_chinese(fake, source_image, init_db):
+    tpl = mask_template()
+    with pytest.raises(ValueError, match="读不出来"):
+        await start(tpl["id"], source_image, masks={"543.image": "这不是 base64 !!!"})
+    clone_jobs.reset_for_tests()
+    with pytest.raises(ValueError, match="不是读得开的图片"):
+        await start(tpl["id"], source_image,
+                    masks={"543.image": base64.b64encode(b"not a png").decode()})
+    clone_jobs.reset_for_tests()
+    with pytest.raises(ValueError, match="是空的"):
+        await start(tpl["id"], source_image, masks={"543.image": ""})
+
+
+async def test_an_empty_prompt_is_allowed_only_where_it_is_a_mode(fake, source_image, init_db):
+    """留空＝移除是这份工作流的正经模式；别的工作流留空就是没文本，照样得拦。"""
+    with pytest.raises(ValueError, match="写一句提示词"):
+        await start(template()["id"], source_image, prompt="   ")
+    clone_jobs.reset_for_tests()
+    tpl = mask_template()
+    await start(tpl["id"], source_image, prompt="")
+    state = await finish()
+    assert state["state"] == "done", state
+    assert fake.prompts[0]["prompt"]["540"]["inputs"]["prompt"] == ""

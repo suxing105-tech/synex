@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 
@@ -12,7 +13,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app import clone_jobs
+from app import clone_jobs, clone_templates
 from app.comfyui_client import ComfyUIClient
 from app.db import init_pool
 from app.main import app
@@ -373,7 +374,10 @@ def test_generate_validates_before_touching_comfyui(client):
     missing = client.post("/api/clone/generate", json={"template_id": 9999, "prompt": "x", "references": []})
     assert missing.status_code == 404
     empty_prompt = client.post("/api/clone/generate", json={"template_id": row["id"], "prompt": "", "references": []})
-    assert empty_prompt.status_code == 422
+    # 提示词留空不该在 pydantic 层就被挡掉：局部重绘那条把「留空」当成一个模式（留空＝移除）。
+    # 该不该留空归 plan_request 按槽位的 allow_empty 判——这份模板没这个约定，所以还是拦，
+    # 但换成 400 加一句人话，而不是前端读不懂的 422。
+    assert empty_prompt.status_code == 400 and "提示词" in empty_prompt.json()["detail"]
     unknown_slot = client.post("/api/clone/generate", json={
         "template_id": row["id"], "prompt": "x",
         "references": [{"slot": "999.image", "image_id": 1}],
@@ -413,3 +417,52 @@ def test_generate_refuses_without_comfyui_and_reports_busy_state(client, monkeyp
     assert res.status_code == 409 and "设置" in res.json()["detail"]
     assert client.get("/api/clone/jobs/current").json()["active"] is False
     assert client.post("/api/clone/jobs/current/cancel").json()["running"] is False
+
+
+MASK_SLOTS = [
+    {"kind": "prompt", "node": "540", "input": "prompt",
+     "label": clone_templates.PRIMARY_PROMPT_LABEL, "allow_empty": True},
+    {"kind": "image", "node": "543", "input": "image", "label": "图片1", "mask": "alpha"},
+]
+
+
+def test_masks_are_checked_before_touching_comfyui(client, tmp_path):
+    """遮罩在参数层就管住：不能画的格子、还没放图的格子、读不出的 base64，各自说清。
+
+    这一类的坏收场是「画了半天、点了生成、什么都没发生」，静默吞掉等于把锅甩给 ComfyUI。
+    """
+    mask = base64.b64encode(make_png(tmp_path / "mask.png", width=8, height=8).read_bytes()).decode()
+    row = create(client, name="能画遮罩", slots=MASK_SLOTS).json()
+    cell = next(c for c in row["reference_cells"] if c["key"] == "543.image")
+    assert cell["mask"] == "alpha", "前端靠这个字段决定哪一格露出「编辑遮罩」"
+    ref = [{"slot": "543.image", "image_id": 1}]
+    # 格子能画、图也放了、提示词留空是它的一个模式：一路过校验，最后卡在 ComfyUI 连不上（409）。
+    # 两种写法都要收——前端那颗本来就是 canvas.toDataURL，带 data: 前缀。
+    for value in (mask, f"data:image/png;base64,{mask}"):
+        ok = client.post("/api/clone/generate", json={
+            "template_id": row["id"], "prompt": "", "references": ref,
+            "masks": {"543.image": value},
+        })
+        assert ok.status_code == 409, ok.text
+    # 工作流没把这格的遮罩接出去（MASK 输出没人用）：画了也不生效，别装作收下了
+    blocked = client.post("/api/clone/generate", json={
+        "template_id": row["id"], "prompt": "", "references": ref, "masks": {"999.image": mask},
+    })
+    assert blocked.status_code == 400 and "不能画遮罩" in blocked.json()["detail"]
+    bare = create(client, name="画不了").json()
+    assert not [c for c in bare["reference_cells"] if c["mask"]], "没接遮罩的工作流不该发笔刷"
+    painted = client.post("/api/clone/generate", json={
+        "template_id": bare["id"], "prompt": "x", "references": ref, "masks": {"543.image": mask},
+    })
+    assert painted.status_code == 400 and "不能画遮罩" in painted.json()["detail"]
+    # 那一格是空的：遮罩没有落点
+    empty_cell = client.post("/api/clone/generate", json={
+        "template_id": row["id"], "prompt": "", "references": [], "masks": {"543.image": mask},
+    })
+    assert empty_cell.status_code == 400 and "还没放图" in empty_cell.json()["detail"]
+    # 半截数据和空遮罩都不许往 ComfyUI 丢
+    for junk in ("not-base64-!!!", ""):
+        broken = client.post("/api/clone/generate", json={
+            "template_id": row["id"], "prompt": "", "references": ref, "masks": {"543.image": junk},
+        })
+        assert broken.status_code == 400 and "遮罩" in broken.json()["detail"], broken.text

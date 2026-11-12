@@ -12,13 +12,16 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
+import io
 import logging
 import mimetypes
 import time
 import uuid
 from pathlib import Path
 from typing import Any
+from PIL import Image, ImageOps
 
 from . import clone_sources, clone_templates, repository, workflow_edit
 from .cloud import engine as cloud_engine
@@ -48,6 +51,14 @@ UPLOAD_KIND_NAMES = {"image": "图片", "audio": "音频", "video": "视频"}
 # VHS_VideoCombine 回的是 gifs，SaveImage 回的是 images，三类都读一遍再按文件去重。
 # 单数 audio 也得读：SaveAudioAdvanced / SaveAudio / PreviewAudio 的历史里用的是
 # {"audio": [...]}（真机实测），只找 audios 的话音频跑完只会得到一句「没交回产物」。
+# ---------- 遮罩：把「只改这一块」合成进参考图的透明通道 ----------
+# 遮罩只是本次生成的一个参数：随请求进来、合成进上传给 ComfyUI 的那张图，
+# 不写图库、不写数据目录，因此也不需要任何清理策略。
+MAX_MASK_BYTES = 12 * 1024 * 1024      # base64 解码后的上限，防一张遮罩把内存吃掉
+MAX_MASK_EDGE = 4096                   # 画布边长上限，编辑器那头按同样口径降采样
+# 孤海的「加载图像」靠文件名里这个记号决定怎么对待透明通道，见 _upload_reference
+MASK_NAME_MARK = "clipspace-mask-"
+
 OUTPUT_HISTORY_KEYS = ("images", "gifs", "videos", "audios", "audio")
 
 _job: dict[str, Any] | None = None
@@ -143,7 +154,8 @@ def media_kind_of(media_id: int) -> str:
 
 
 def plan_request(*, template_id: int, references: list[dict], controls: dict | None,
-                 slot_prompts: dict | None = None) -> tuple[dict, str]:
+                 slot_prompts: dict | None = None,
+                 prompt: str | None = None) -> tuple[dict, str]:
     """先按模板槽位把请求校验一遍，避免把注定失败的请求丢给 ComfyUI。
 
     生成方式不是请求里的一个选项，是参考图数量的函数：0 张文生图、1 张单图编辑、
@@ -194,6 +206,11 @@ def plan_request(*, template_id: int, references: list[dict], controls: dict | N
     for key in (slot_prompts or {}):
         if key not in prompt_keys:
             raise ValueError(f"{key} 不是这份工作流的文字位，关掉弹窗重开一次试试。")
+    if prompt is not None and not prompt.strip():
+        # 空提示词只有在工作流自己把「留空」当成一个模式时才合法——局部重绘那条就是
+        # 留空走移除、填写走重绘。别的工作流留空是整条链没有文本，出张没人要的图而已。
+        if not any(str(s.get("kind")) == "prompt" and s.get("allow_empty") for s in slots):
+            raise ValueError("写一句提示词再生成。")
     return template, mode
 
 
@@ -205,13 +222,16 @@ async def start(
     controls: dict | None,
     source_image_id: int | None,
     slot_prompts: dict | None = None,
+    masks: dict | None = None,
 ) -> dict:
     global _job, _task
     # 先按槽位校验，再管忙不忙：参数写错了就该告诉用户哪儿写错，而且换个调用方也绕不过
     template, mode = plan_request(
         template_id=template_id, references=references, controls=controls,
-        slot_prompts=slot_prompts,
+        slot_prompts=slot_prompts, prompt=prompt,
     )
+    # 遮罩在排队前就验完并解码：画错了要在点下去的那一刻说，别等 ComfyUI 报一句读不了图
+    masks_png = plan_masks(template, references, masks)
     async with _lock:
         if _job and _job.get("state") in RUNNING_STATES:
             raise CloneBusy("已经有一条再次创作正在生成，等这一批出来再点。")
@@ -272,6 +292,8 @@ async def start(
             "slot_prompts": {str(k): str(v) for k, v in (slot_prompts or {}).items()},
             "references": [dict(ref) for ref in references],
             "controls": dict(controls or {}),
+            # 画好的遮罩（参考位 → PNG 字节）只活在这一条任务里，生成完就没了
+            "masks": masks_png,
             "mode": mode,
             "started_at": time.time(),
             "cancelled": False,
@@ -348,8 +370,9 @@ async def _run_comfyui(job: dict, url: str) -> None:
             key = str(ref.get("slot") or "")
             if key not in cell_kinds:
                 raise ValueError(f"这份工作流没有叫 {key} 的参考位。")
-            references[key] = await _upload_reference(client, int(ref.get("image_id") or 0),
-                                                      cell_kinds[key])
+            references[key] = await _upload_reference(
+                client, int(ref.get("image_id") or 0), cell_kinds[key],
+                (job.get("masks") or {}).get(key))
 
         # 只要有参考链要摘（包括一张都不喂的文生图），就得带 object_info 去摘，
         # 不然分不清哪个输入是必填的，会静默摘坏。全喂满时不用浪费这几十次请求。
@@ -577,7 +600,82 @@ SUFFIX_FIX_HINTS = {"image": "先转成 PNG 或 JPG。", "audio": "先转成 MP3
                     "video": "先转成 MP4。"}
 
 
-async def _upload_reference(client: ComfyUIClient, media_id: int, kind: str = "image") -> str:
+def decode_mask_png(raw: Any, label: str) -> bytes:
+    """把前端交来的 base64 遮罩验一遍，交回 PNG 字节；不合法就抛中文 400。
+
+    只收读得成灰度的图：RGB 遮罩、动图这些不猜用户想怎么解释，直接说清不接受。
+    尺寸可以比参考图小（编辑器为了手感会降采样），合成时拉齐，这里不拦。
+    """
+    text = str(raw or "").strip()
+    if text.startswith("data:"):
+        text = text.split(",", 1)[-1]        # 前端那颗是 canvas.toDataURL，带 data:image/png 前缀
+    try:
+        png = base64.b64decode(text, validate=True)
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(f"{label}的遮罩读不出来，重新画一次再提交。") from exc
+    if not png:
+        raise ValueError(f"{label}的遮罩是空的，画几笔再生成，或者把遮罩清掉。")
+    if len(png) > MAX_MASK_BYTES:
+        raise ValueError(f"{label}的遮罩太大了，最多 {MAX_MASK_BYTES // 1024 // 1024}MB。")
+    try:
+        with Image.open(io.BytesIO(png)) as img:
+            if max(img.size) > MAX_MASK_EDGE:
+                raise ValueError(
+                    f"{label}的遮罩超过 {MAX_MASK_EDGE} 像素了，缩小一点再画。")
+            img.convert("L")
+    except ValueError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(f"{label}的遮罩不是读得开的图片，重新画一次再提交。") from exc
+    return png
+
+
+def plan_masks(template: dict, references: list[dict], masks: dict | None) -> dict[str, bytes]:
+    """遮罩键必须是「能画遮罩的参考位」，而且那一格得先有图，否则遮罩没处画。
+
+    交回 {参考位: PNG 字节}，只在内存里活着，不进 params_snapshot。
+    """
+    if not masks:
+        return {}
+    cells = {c["key"]: c for c in clone_templates.reference_cells(template["slots"])}
+    labels = {k: str(c.get("label") or k) for k, c in cells.items()}
+    paintable = {k for k, c in cells.items()
+                 if c.get("kind") == "image" and c.get("mask") == "alpha"}
+    filled = {str(r.get("slot") or "") for r in references}
+    out: dict[str, bytes] = {}
+    for key, raw in masks.items():
+        if key not in paintable:
+            raise ValueError(f"{labels.get(key, key)} 不能画遮罩："
+                             "这份工作流没把它的遮罩接出去，画了也不会生效。")
+        if key not in filled:
+            raise ValueError(f"{labels[key]} 还没放图，遮罩没有地方画。")
+        out[key] = decode_mask_png(raw, labels[key])
+    return out
+
+
+def compose_mask_png(source: bytes, mask: bytes) -> bytes:
+    """参考图的 RGB + 遮罩反相成的 alpha，合成一张 PNG：透明处＝要改的地方。
+
+    口径照孤海「加载图像」读透明通道的写法来（1 - alpha 就是它交回的 MASK），
+    和官方 LoadImage 也一致。先 exif_transpose 再合成：浏览器里用户看到的是
+    转正的画面，遮罩是按那个画面画的，这边也得把图转正确保两者对得上。
+    """
+    with Image.open(io.BytesIO(source)) as base, Image.open(io.BytesIO(mask)) as mask_img:
+        canvas = ImageOps.exif_transpose(base)
+        if canvas is not None:
+            base = canvas
+        gray = mask_img.convert("L")
+        rgb = base.convert("RGB")
+        if gray.size != rgb.size:
+            gray = gray.resize(rgb.size, Image.Resampling.LANCZOS)
+        rgb.putalpha(ImageOps.invert(gray))
+        out = io.BytesIO()
+        rgb.save(out, format="PNG")
+        return out.getvalue()
+
+
+async def _upload_reference(client: ComfyUIClient, media_id: int, kind: str = "image",
+                           mask_png: bytes | None = None) -> str:
     """把图库里的素材推进 ComfyUI 的 input 目录，返回加载器认的写法。
 
     三类素材共用 /upload/image 这一条通道——ComfyUI 那边只管落盘、不校验扩展名，
@@ -605,11 +703,27 @@ async def _upload_reference(client: ComfyUIClient, media_id: int, kind: str = "i
     # 名字带素材 id + 内容 hash：既不覆盖用户 input 目录里的原始文件，
     # 也让"同一份参考素材反复生成"在 ComfyUI 侧命中同一份，不堆垃圾。
     # 来源记录（clone_sources）就是靠这个文件名把成图认回当初的参考，别改这个格式。
+    # 名字里的 digest 永远是图库里那份原图的内容 hash：来源记录（clone_sources）
+    # 就是拿它把成图认回当初的参考，画了遮罩也不能改这个口径。
     digest = hashlib.sha1(content).hexdigest()[:8]
-    name = f"seekx_ref_{media_id}_{digest}{suffix}"
-    uploaded = await client.upload_image(name, content, mimetypes.guess_type(name)[0])
+    annotated = ""
+    if mask_png is None:
+        name = f"seekx_ref_{media_id}_{digest}{suffix}"
+        payload = content
+    else:
+        payload = compose_mask_png(content, mask_png)
+        # 名字必须带上 clipspace-mask- 这个记号：加载图像 孤海 认得它，才把透明通道
+        # 原样当遮罩交回；认不出就顺手把透明区域铺成白底，模型只会看见一块白。
+        # 尾巴上的 " [input]" 是同一台节点判断"这是剪辑板那张图"的依据，官方
+        # LoadImage 两样都不挑，跟着这么写没有坏处。遮罩内容进名字：改一笔遮罩
+        # 就得换一个文件，绝不命中 ComfyUI 那份旧缓存（它的 IS_CHANGED 是文件 hash）。
+        mark = hashlib.sha1(mask_png).hexdigest()[:6]
+        name = f"seekx_ref_{media_id}_{digest}_{MASK_NAME_MARK}{mark}.png"
+        annotated = " [input]"
+    uploaded = await client.upload_image(name, payload, mimetypes.guess_type(name)[0])
     subfolder = uploaded.get("subfolder") or ""
-    return f"{subfolder}/{uploaded['name']}" if subfolder else uploaded["name"]
+    ref = f"{subfolder}/{uploaded['name']}" if subfolder else uploaded["name"]
+    return ref + annotated
 
 
 def _poll_timeout(job: dict) -> float:

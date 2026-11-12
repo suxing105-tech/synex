@@ -3775,3 +3775,127 @@ it('那颗图标的版面：让开拉高手柄、命中区 24、清单只在点�
   expect(css.match(/loadPromptSkills\(\)/g)?.length).toBe(2);
   expect(css).toMatch(/\{#if skillKind\}/);
 });
+
+/* ── 遮罩编辑 ──────────────────────────────────────────────────────────────
+   带遮罩的工作流（后端按 MASK 输出检测到，槽位上就是 mask: "alpha"）会改掉左栏那张大图：
+   摆的是「那一格里的参考图」而不是被点的卡，左上角多一颗入口。下面几条钉的就是这次改动
+   真正会碰坏的地方：大图归属、空态、提示词留空变成一个模式、编辑层的键盘边界。 */
+const MASK_TPL = {
+  ...TPL,
+  name: '单图局部重绘',
+  slots: [
+    {
+      kind: 'prompt', node: '582', input: 'prompt', label: '完整提示词',
+      allow_empty: true, empty_hint: '提示词留空＝把涂出来的地方去掉，别的地方不动',
+    },
+    { kind: 'image', node: '543', input: 'image', label: '加载图像', mask: 'alpha' },
+  ],
+};
+const maskRoutes = (over: Record<string, unknown> = {}) => routes({ ...baseRoutes(), '/api/clone/templates': { items: [MASK_TPL] }, ...over });
+const heroImg = (screen: any) => screen.container.querySelector('.cm-mask-hero img.cm-hero') as HTMLImageElement | null;
+const maskEditor = (screen: any) => screen.queryByRole('dialog', { name: '编辑图片1的遮罩' });
+
+it('能吃遮罩的工作流：大图摆那一格的参考图，左上角给一颗「画遮罩」；普通模板没这颗', async () => {
+  maskRoutes();
+  const screen = await ready();
+  const enter = screen.getByRole('button', { name: /画遮罩/ });
+  expect((enter as HTMLButtonElement).disabled).toBe(false);
+  // 大图是那一格里的图（默认就是被点的这张），不是另一份
+  expect(heroImg(screen)?.getAttribute('src')).toContain('/api/images/7/file');
+  cleanup();
+  routes(baseRoutes());
+  const plain = await ready();
+  expect(plain.queryByRole('button', { name: /画遮罩/ })).toBeNull();
+  expect(plain.container.querySelector('.cm-mask-hero')).toBeNull();
+});
+
+it('那一格还空着：入口点不动，并且说清要先放一张图', async () => {
+  maskRoutes();
+  const screen = await ready();
+  await fireEvent.click(screen.getByRole('button', { name: '移除图片1' }));
+  const enter = screen.getByRole('button', { name: /画遮罩/ }) as HTMLButtonElement;
+  expect(enter.disabled).toBe(true);
+  await fireEvent.click(enter);
+  expect(maskEditor(screen)).toBeNull();
+  expect(screen.getByText(/还空着，先放一张图才能画遮罩/)).toBeTruthy();
+});
+
+it('点「画遮罩」打开编辑层：Esc 第一下只退编辑层，再次创作那层还在', async () => {
+  maskRoutes();
+  const screen = await ready();
+  await fireEvent.click(screen.getByRole('button', { name: /画遮罩/ }));
+  expect(maskEditor(screen)).toBeTruthy();
+  await fireEvent.keyDown(window, { key: 'Escape' });
+  expect(maskEditor(screen)).toBeNull();
+  expect(screen.queryByRole('dialog', { name: '再次创作' })).toBeTruthy();
+});
+
+it('提示词留空是这条工作流的一个模式：空着也能生成，底下那行说清留空会干什么', async () => {
+  let submitted: Record<string, unknown> | null = null;
+  maskRoutes({
+    '/api/clone/generate': (init?: RequestInit) => {
+      submitted = JSON.parse(String(init?.body));
+      return { ...EMPTY_CLONE_JOB, active: true, job_id: 'j1', state: 'queued', running: true };
+    },
+  });
+  const screen = await ready();
+  const generate = screen.getByRole('button', { name: '生成' }) as HTMLButtonElement;
+  expect(generate.disabled).toBe(false);
+  expect(screen.getByText(/提示词留空＝把涂出来的地方去掉/)).toBeTruthy();
+  await fireEvent.click(generate);
+  await tick();
+  // 一张遮罩都没画就不许凭空多出 masks 键：老请求体保持一字不差
+  expect(submitted).toMatchObject({ template_id: 1, prompt: '' });
+  expect(submitted && 'masks' in submitted).toBe(false);
+  // 没画范围＝整张按提示词走，这跟用户点进来的预期差很远，必须先说一句
+  expect(get(toasts).some((item) => item.message.includes('没画遮罩'))).toBe(true);
+});
+
+it('提示词一写，那一行从「留空＝移除」换成「局部重绘 · 只改涂出来的地方」', async () => {
+  maskRoutes();
+  const screen = await ready();
+  expect(screen.getByText(/提示词留空＝把涂出来的地方去掉/)).toBeTruthy();
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '把外套换成皮衣' } });
+  expect(screen.getByText('局部重绘 · 只改涂出来的地方')).toBeTruthy();
+  expect(screen.queryByText(/提示词留空＝/)).toBeNull();
+});
+
+it('编辑层是盖住整块弹窗的一层，不是挤在左栏里的一块', () => {
+  const src = readFileSync('src/components/MaskEditor.svelte', 'utf8');
+  const blk = (sel: string) => {
+    const at = src.indexOf(sel);
+    expect(at, sel).toBeGreaterThan(-1);
+    return src.slice(at, src.indexOf('}', at));
+  };
+  const me = blk('.me {');
+  expect(me).toMatch(/position:\s*absolute/);
+  expect(me).toMatch(/inset:\s*0/);
+  expect(me).toMatch(/z-index:\s*2/);
+  // 挂在 .cm-backdrop 的孩子位上（.cm-panel 的兄弟）：挂进面板就会被圆角和内边距切出一条缝
+  const modal = readFileSync('src/components/CloneModal.svelte', 'utf8');
+  expect(modal).toMatch(/<\/div>\s*\{#if maskOpen && maskCell\}/);
+  // 叠层不许吃鼠标：画布上的手势归 MaskEditor，参考图那层不该抢
+  const tint = (() => {
+    const at = modal.indexOf('.cm-mask-tint {');
+    return modal.slice(at, modal.indexOf('}', at));
+  })();
+  expect(tint).toMatch(/pointer-events:\s*none/);
+  // 角标不许写裸 hex：色只从 token 走
+  const flag = (() => {
+    const at = modal.indexOf('.cm-mask-flag {');
+    return modal.slice(at, modal.indexOf('}', at));
+  })();
+  expect(flag).toMatch(/background:\s*var\(--accent\)/);
+  expect(flag).not.toMatch(/#[0-9a-fA-F]{3,6}/);
+});
+
+it('遮罩编辑层的工具条全是文字按钮，命中高度走控件档，不靠悬停才现形', () => {
+  const src = readFileSync('src/components/MaskEditor.svelte', 'utf8');
+  const at = src.indexOf('.me-btn {');
+  const btn = src.slice(at, src.indexOf('}', at));
+  expect(btn).toMatch(/height:\s*var\(--ctl-sm\)/);
+  expect(parseFloat(/min-width:\s*(\d+)px/.exec(btn)?.[1] ?? '0')).toBeGreaterThanOrEqual(24);
+  expect(src).toMatch(/画笔/);
+  expect(src).toMatch(/橡皮/);
+  expect(src).toMatch(/撤销/);
+});

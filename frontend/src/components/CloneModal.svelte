@@ -23,6 +23,7 @@
   import CloneCanvas from "./CloneCanvas.svelte";
   import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
   import PromptSkillModal from "./PromptSkillModal.svelte";
+  import MaskEditor from "./MaskEditor.svelte";
   import type { CanvasEscape } from "../lib/clone-canvas";
   import {
     applyCloneProgress, buildGenerateRequest, cloneApi, cloneError, cloneJob, cloneStatusLabel,
@@ -44,6 +45,11 @@
     type CloneOutput, type CloneSlot, type MediaKind, type MentionItem, type MentionToken, type PromptGroup, type RefCell, type RefKind,
     type CloneJob, type CloneSources, type CloneTemplate,
   } from "../lib/clone";
+  import {
+    maskBadgeText, maskEntryLabel, maskHeroKey as firstMaskableCell, maskModeLabel, maskPromptSummary,
+    maskRequestPayload, maskableCellKeys, paintedMaskCount, promptEmptyHint, promptMayBeEmpty,
+    templateAcceptsMask, type MaskEdit,
+  } from "../lib/mask";
   import type { ImageSummary, ImportResponse, MediaFeedItem } from "../lib/types";
   import { errorMessage } from "../lib/reverse-prompts";
   import {
@@ -98,6 +104,18 @@
    * 用户改台词的同时把原话冲掉，克隆出来的音色立刻不像——所以各填各的，各交各的。
    */
   let extraPrompts = $state<Record<string, string>>({});
+  /**
+   * 这一次生成要带的遮罩（键 = 参考位 key）。它和提示词是同一类东西：只属于这一次，
+   * 不进库、不写回工作流，关掉弹窗重开就是空的。画在哪一份参考图上记在 edit.imageId 里，
+   * 换图之后那份笔迹没有落点了，下面有一条 effect 负责把它清掉。
+   */
+  let maskEdits = $state<Record<string, MaskEdit | undefined>>({});
+  /** 遮罩编辑层开着没 */
+  let maskOpen = $state(false);
+  /** 编辑层这一趟改的是哪一格 */
+  let maskAt = $state("");
+  /** 跑完之后这一格默认让给新产出；人想看遮罩圈在原图哪儿，就临时切回参考图 */
+  let maskBack = $state(false);
   let pickerSlot = $state<string | null>(null);
   let error = $state("");
   let submitting = $state(false);
@@ -219,6 +237,54 @@
       ? `这条云端 API 不吃${REF_KIND_NAMES[cardKind]}参考，${cardLabel}没放进去。要喂素材就点下面的参考位。`
       : "",
   );
+  /* ── 遮罩：这份工作流里有没有能画遮罩的参考位 ────────────────────────────
+     云端模板走的是另一套 API，吃不了一份本地透明 PNG，先排除。
+     能画的那一格（一般就是图片1）占住左边大图：画遮罩必须看得见自己涂在哪儿，
+     而被点的那张卡未必就是这一格里的那份参考——摆错图等于闭着眼睛涂。 */
+  const maskTemplate = $derived(templateAcceptsMask(template) && !isCloud);
+  const maskCellKey = $derived(maskTemplate ? firstMaskableCell(template) : "");
+  const maskCell = $derived(cells.find((cell) => cell.key === maskCellKey) ?? null);
+  const maskRef = $derived(maskCellKey ? refs[maskCellKey] ?? null : null);
+  const maskSrc = $derived(maskRef ? backendUrl(maskRef.original_url || maskRef.thumbnail_url || "") : "");
+  const maskHere = $derived(maskCellKey ? maskEdits[maskCellKey] : undefined);
+  /** 「提示词留空会走移除」这句话是工作流自己写的（槽位 empty_hint），前端不替它编 */
+  const maskHint = $derived(promptEmptyHint(template));
+  const maskModeNow = $derived(maskModeLabel(prompt));
+  const maskPromptEcho = $derived(maskPromptSummary(prompt));
+  /** 撤掉大图这一格的遮罩。连键一起删——留一个空键会让下面那条清理误判成「图换了」 */
+  function clearMaskHere() {
+    if (!maskCellKey) return;
+    const next = { ...maskEdits };
+    delete next[maskCellKey];
+    maskEdits = next;
+  }
+
+  $effect(() => {
+    // 生成中不许还盖着编辑层：那整块地方要让给等待台
+    if (busy && maskOpen) maskOpen = false;
+    // 「回看参考图」只是这批产出的临时对照，产出没了（下一批开跑）就自动还回去
+    if (!done) maskBack = false;
+  });
+
+  $effect(() => {
+    // 换参考图 / 换工作流就把对不上的遮罩清掉：遮罩是画在某一张图上的坐标，图一换
+    // 那些笔迹就没有落点，留着等于悄悄拿旧图的范围去改新图。
+    // maskEdits 走 untrack：这里只需要跟着「图和模板变了没有」动，自己写自己不该再转一圈。
+    const paintable = new Set(maskTemplate ? maskableCellKeys(template) : []);
+    const edits = untrack(() => maskEdits);
+    const dropped = Object.keys(edits).filter((key) => {
+      const edit = edits[key];
+      if (!edit) return false;
+      const picked = refs[key];
+      return !(picked && paintable.has(key) && edit.imageId === picked.id);
+    });
+    if (!dropped.length) return;
+    const next = { ...edits };
+    for (const key of dropped) delete next[key];
+    maskEdits = next;
+    if (dropped.includes(maskAt)) maskOpen = false;
+    pushToast(`换了参考图，${dropped.length} 格上画的遮罩跟着清了——遮罩是画在图上的，换图不认。`);
+  });
   /** 一族一行。只有图片一族时，参考区与图片再次创作的版面一字不差。 */
   const imageCells = $derived(familyCells(cells, "image"));
   const audioCells = $derived(familyCells(cells, "audio"));
@@ -536,7 +602,16 @@
   const heroOutIndex = $derived(heroOutput ? outputChips.findIndex((o) => o.id === heroOutput.id) : -1);
   /* 展示图下面那行名字跟着这一格真正摆的东西走：跑完报刚出来的那份，还没跑报手上这份。生成中不报——
      那一格是等待台，报文件名等于骗人说图已经出来了。 */
-  const heroCaption = $derived(heroOutput ? heroOutput.filename : busy ? "" : image?.filename ?? "");
+  /** 产出与参考图抢同一格：maskBack 只在这批产出还在时有效，切回去看一眼再切回来。
+     必须排在 heroOutput 之后：const 在声明前连闭包里都不许引用。 */
+  const heroShowsOutput = $derived(Boolean(heroOutput) && !maskBack);
+  const heroCaption = $derived.by(() => {
+    if (heroShowsOutput) return heroOutput?.filename ?? "";
+    if (busy) return "";
+    // 遮罩工作流这一格摆的是参考位里那一份，未必是被点的卡：名字要跟着画面报
+    if (maskTemplate) return maskRef?.filename ?? "";
+    return image?.filename ?? "";
+  });
   /* 提示词那一格的小标题用工作流给的槽位名（台词 / 正向提示词…），没名字才退回「完整提示词」。 */
   const promptBlockTitle = $derived(primaryPromptGroup(template)?.label ?? "");
   /** 图片取 1024 那张预览（后端缩好并落盘缓存）；视频与音频只认后端给的地址，前端硬拼必错。 */
@@ -625,7 +700,12 @@
     wfDetail && wfDetail !== wfName ? wfName + `（当前：${wfDetail}）` : wfName,
   );
 
-  const canGenerate = $derived(Boolean(template) && prompt.trim().length > 0 && issues.length === 0 && !busy && !submitting);
+  // 提示词不再是硬性条件：工作流自己声明了「留空是一个模式」（局部重绘那条＝留空走移除）时，
+  // 空着照样能生成。别的工作流留空只会出一张没人要的图，所以那条开关由模板说了算。
+  const canGenerate = $derived(
+    Boolean(template) && (promptMayBeEmpty(template) || prompt.trim().length > 0)
+    && issues.length === 0 && !busy && !submitting,
+  );
 
   /**
    * 移除一份就把同族后面的往前挪：编号就是接线顺序，中间不能留洞。
@@ -1449,10 +1529,15 @@
       error = `${refNoun}还没放好：${issues.join("、")}`;
       return;
     }
+    // 遮罩工作流没画范围就等于整张重画，跟用户以为的「局部」差很远，说一声再走
+    if (maskTemplate && !paintedMaskCount(maskEdits)) {
+      pushToast("这一张没画遮罩：这一次没有局部范围，整张按提示词走。要局部改就先点大图左上角「画遮罩」。");
+    }
     submitting = true;
     error = "";
     // 上一批产出马上要让位：先收掉，这一格才能干净地回到「正在生成」那一态
     heroOut = null;
+    maskBack = false;
     // 画布排卡要用比例，而产出清单里不带它——只能在提交这一刻把当前挑的那颗交出去
     armCloneBatchAspect(batchAspectOption());
     // 提交那一刻收掉两个弹层：不然菜单会盖在跑动的界面上，而且它里面的条目马上要全部禁用
@@ -1467,6 +1552,7 @@
         sourceImageId: image?.id ?? null,
         cellOrder: cells.map((cell) => cell.key),
         slotPrompts: extraPrompts,
+        masks: maskRequestPayload(maskEdits),
       }));
       jobId = started.job_id;
       applyCloneProgress(started);
@@ -1802,6 +1888,12 @@
   function onKey(e: KeyboardEvent) {
     if (!open || pickerSlot !== null) return;
     if (e.key === "Escape") {
+      // 遮罩编辑层盖在整块弹窗上面，第一下 Esc 只退它，而且按「取消」算：这次画的不要。
+      if (maskOpen) {
+        e.preventDefault();
+        maskOpen = false;
+        return;
+      }
       // 技能那两层（右键菜单 / 技能弹窗）比什么都靠上，第一下 Esc 只收它们。
       if (skillMenu || skillModal) {
         e.preventDefault();
@@ -1894,7 +1986,7 @@
             <!-- 画布分支（?cm_canvas=1）：整批铺开、点哪张看哪张、旧批变淡。
                  下面那条原样留着——两条分支并存，实拍对比过再决定撤哪条。 -->
             <CloneCanvas batches={canvasBatches} {onOpenImage} onCamera={(api) => (canvasEscape = api)} />
-          {:else if heroOutput}
+          {:else if heroOutput && heroShowsOutput}
             {@const out = heroOutput}
             <!-- 生成完直接在这格看新东西（2026-11-04 苏醒：「生成后，这里展示新生成的内容」）。
                  整块点下去 = 到图库里看那一份（图片进对比、视频进播放器，由父组件分派）；一次出几份时
@@ -1915,6 +2007,39 @@
                 <button class="cm-hero-nav" aria-label="看下一份产出" onclick={() => stepHeroOut(1)}><Icon name="chevron-right" size={14} /></button>
               </div>
             {/if}
+            {#if maskTemplate}
+              <!-- 这一格刚让给新产出。想确认遮罩圈在原图的哪儿，切回去看一眼，再点回来 -->
+              <button class="cm-mask-corner is-top-right" onclick={() => (maskBack = true)} aria-label="回看参考图">
+                <Icon name="mask" size={12} />回看参考图
+              </button>
+            {/if}
+          {:else if maskTemplate}
+            <!-- 这份工作流有能画遮罩的参考位：这一格摆那一格里的图，并把画出来的范围叠在旁边。
+                 摆的不是被点的那张卡——两者常常不是同一份，画遮罩必须看见自己涂在哪儿。 -->
+            <div class="cm-mask-hero">
+              {#if maskSrc}
+                <img class="cm-hero" src={maskSrc} alt={maskRef?.filename ?? ""} draggable="false" />
+                {#if maskHere}
+                  <img class="cm-mask-tint" src={maskHere.tint} alt="" aria-hidden="true" draggable="false" />
+                {/if}
+              {:else}
+                <div class="cm-hero cm-hero-empty">{maskCell?.label ?? "参考图"} 还空着，先放一张图才能画遮罩</div>
+              {/if}
+              <button class="cm-mask-corner is-enter" disabled={!maskSrc}
+                title={maskSrc ? "涂上要改的地方；没涂的地方一个字都不动" : "先在这一格放一张图"}
+                onclick={() => { maskAt = maskCellKey; maskOpen = true; }}>
+                <Icon name="mask" size={12} />{maskEntryLabel(maskHere)}
+              </button>
+              {#if maskHere}
+                <button class="cm-mask-corner is-bottom-right" onclick={clearMaskHere}
+                  aria-label={`撤掉${maskCell?.label ?? "这张"}的遮罩`}>撤掉遮罩</button>
+              {/if}
+              {#if heroOutput}
+                <button class="cm-mask-corner is-top-right" onclick={() => (maskBack = false)} aria-label="回到新产出">
+                  <Icon name="external-link" size={12} />回到新产出
+                </button>
+              {/if}
+            </div>
           {:else}
             {#if image?.kind === "video" && image.playable !== false && image.play_url}
                 <!-- 视频卡的左边直接能播：再次创作要抄的常常是片子里的节奏、运镜和转场，
@@ -2055,6 +2180,10 @@
                               <button class="cm-tile-x" aria-label={`移除${item.cell.label}`} onclick={() => removeRef(item.cell.key)}>
                                 <Icon name="x" size={12} />
                               </button>
+                              {#if maskBadgeText(maskEdits[item.cell.key])}
+                                <!-- 84px 的格子认不出涂了哪儿，但至少要说清这一格是带着范围去生成的 -->
+                                <span class="cm-mask-flag" title="这一格画了遮罩">{maskBadgeText(maskEdits[item.cell.key])}</span>
+                              {/if}
                             </div>
                           {:else}
                             <button class="cm-tile cm-tile-add" aria-label={addLabel(item.kind, item.cell.label)} title={addTitle(item.kind)} onclick={() => (pickerSlot = item.cell.key)}>
@@ -2475,6 +2604,11 @@
             </div>
                 <!-- 状态这几行跟着底部这条一起钉着：生成中的进度、云端那句「价格没取到」和报错
                      必须一直看得见，不能藏到要往下滚才出现的地方。 -->
+                {#if maskTemplate}
+                  <!-- 提示词写没写就是两个模式（写了＝按这句话改涂出来的地方，空着＝把涂出来的地方去掉）。
+                       这一行钉在操作行下面常驻，跟着提示词现变。 -->
+                  <p class="cm-foot-note cm-status" role="status">{prompt.trim() ? maskModeNow : maskHint || maskModeNow}</p>
+                {/if}
                 {#if error}
                   <p class="cm-foot-note cm-error" role="status">{error}</p>
                 {:else if job && job.state === "error"}
@@ -2526,6 +2660,30 @@
         />
       </div>
     </div>
+    {#if maskOpen && maskCell}
+      <!-- 编辑层是 .cm-backdrop 的孩子、.cm-panel 的兄弟：它要吃掉整块地方，挂在面板里面
+           就会被面板的圆角和内边距切出一条缝，画到边上就画不进去。 -->
+      <MaskEditor
+        src={maskSrc}
+        label={maskCell.label}
+        modeText={maskModeNow}
+        promptSummary={maskPromptEcho}
+        hint={maskHint}
+        seed={maskHere?.coverage ?? ""}
+        imageId={maskRef?.id ?? 0}
+        onCancel={() => (maskOpen = false)}
+        onDone={(edit) => {
+          const key = maskCellKey;
+          const next = { ...maskEdits };
+          if (edit && key) next[key] = edit;
+          else if (key) delete next[key];
+          maskEdits = next;
+          maskOpen = false;
+          // 全擦完等于这格没画：说清楚，别让「完成」按钮看起来像保存了个东西
+          if (!edit) pushToast("这一格的遮罩全擦掉了：这一次等于没画范围。");
+        }}
+      />
+    {/if}
   </div>
 {/if}
 
@@ -2636,7 +2794,7 @@
      所以这里的数往下调并不会让弹窗不滚（1440x900 实测 46vh→32vh 只省 112，同一档还差 260），
      它只决定高屏上让完之后还剩多少给图。 */
   .cm-body:not(.is-stacked) { --cm-hero-h: min(74vh, 1080px); }
-  .cm-left { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
+  .cm-left { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
   /* 竖排之后展示图由高度定大小（横排时是栏宽撑着的）：限高、等比、居中。
      2026-11-04 苏醒：「适当放大展示图」。26vh/300px 是这张还跟右侧并排时定的数；改成上下结构之后
      顶上这一格独占整宽，先在真浏览器里量了四档（1440x900 可视高 802，展示图是竖构图时）：
@@ -3304,4 +3462,30 @@
   .cm-mention-add .cm-mention-icon { color: #f8a29a; background: rgb(242 78 78 / 12%); }
   .cm-mention-file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: #71717a; }
   .cm-mention-add .cm-mention-label { font-weight: 500; color: #f8a29a; }
+
+  /* ── 遮罩：大图上的入口与红色范围、参考格角标 ───────────────────────────
+     红色只在叠层里用一次（那张 PNG 就是 MaskEditor 画完交回来的），这几处只是「带着范围」的记号。 */
+  .cm-mask-hero { position: relative; max-width: 100%; min-width: 0; }
+  /* 叠层盖的正是底下那张图：cm-hero 的圆角是 16px，这里要跟齐，不然四个角露出一圈红 */
+  .cm-mask-tint {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    pointer-events: none; border-radius: 16px;
+  }
+  .cm-mask-corner {
+    position: absolute; z-index: 1; display: inline-flex; align-items: center; gap: 4px;
+    min-height: var(--ctl-sm); padding: 0 10px; border: 0; border-radius: var(--r-pill);
+    font-size: var(--fs-xs); color: var(--text-1); background: rgb(14 14 16 / 78%);
+    cursor: pointer; transition: background-color 140ms ease;
+  }
+  .cm-mask-corner:hover { background: rgb(14 14 16 / 94%); }
+  .cm-mask-corner:disabled { color: var(--text-2); background: rgb(14 14 16 / 62%); cursor: not-allowed; }
+  .cm-mask-corner.is-enter { left: 8px; top: 8px; }
+  .cm-mask-corner.is-top-right { right: 8px; top: 8px; }
+  .cm-mask-corner.is-bottom-right { right: 8px; bottom: 8px; }
+  .cm-mask-flag {
+    position: absolute; left: 3px; bottom: 3px; z-index: 2; padding: 2px 6px;
+    border-radius: var(--r-1); font-size: var(--fs-2xs); line-height: 1.35;
+    /* 红底配墨底字（token 里 --accent-ink 就是为这个定的）：白字压品牌红只有 3.2:1 */
+    color: var(--accent-ink); background: var(--accent); pointer-events: none;
+  }
 </style>

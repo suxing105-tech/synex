@@ -76,3 +76,36 @@
   `  [input]` 尾巴，三处任一变了都会「看着成功、其实整张重画」。
 - 带遮罩的每次生成多一次上传 + 一次像素比对。
 - 云端模板不吃本地透明 PNG，`maskTemplate` 直接排除。
+
+## 7. 本机真跑一次的结果（2026-11-12，随包 qwen-single-mask-edit）
+
+参考图 `Qwen_image_2.1_00128.png`（media 1478，1136×2016），涂三笔 → 点生成：
+
+- ComfyUI `prompt_id=b6102c31-bd1c-48e4-bc2a-be2e8d2c6135`，35 个节点，`status_str=success`、
+  `completed=true`，产物 `SeekX_MaskEdit_00001_.png`（1136×2016），已落库成 media 1479。
+- 遮罩确实落在 `ComfyUI/input`：`seekx_ref_1478_b2156a5b_clipspace-mask-2fdd6f.png`；该 prompt 里
+  `193` 号 `LoadImageGoohai` 的 `image` = `seekx_ref_1478_b2156a5b_clipspace-mask-2fdd6f.png [input]`。
+  前缀和 `  [input]` 尾巴两条硬约定在真机上成立，不是只在测试里成立。
+- 那张遮罩的 alpha 分布：透明 222863、过渡 29319、不透明 2037994（合计正好 1136×2016）——硬边，
+  过渡只占 1.3%，说明「透明处＝要改的地方」这条口径没被抗锯齿糊掉。
+
+## 8. 真跑才量出来的坑：底图是 feed 的 ?max=1024 预览
+
+编辑器顶栏说「已涂 62290 处像素」，而实际送进 ComfyUI 的那张遮罩涂了 252182 个像素（约 4 倍）。
+问题不在遮罩链路，在底图地址：列表接口的 `original_url` 本身就是 `?max=1024`
+（`repository.original_url_for` 的 `max_size` 默认 1024，为的是 feed 少下一倍流量），
+于是 1136×2016 的图进画布只剩 577×1024，画布跟着小图走：
+
+- 滑杆写「直径 60，按原图像素算」，在 577 宽的画布上落半径 30，导出后又被 `compose_mask_png`
+  拉回 1136 宽贴上去 → 实测一条 124 像素宽，是标称值的两倍，涂的位置和改的范围对不上；
+- 「已涂 N 处像素」按画布数，面积少报 k² 倍；
+- 遮罩边缘被重采样拉大一遍，精度一起丢。
+
+改法两条，都进 `lib/mask.ts`：`maskBaseImageUrl` 把底图地址的 `max` 档位抬到画布上限
+（长边 ≤4096 直接要原图，`fit` 去掉、cache-bust 的 `v` 留着）；`maskCanvasScale` /
+`maskBrushRadius` / `maskPixelsInSource` 在真降过档（源图长边超 4096）时把笔刷半径与像素计数
+换算回源图口径。口径定死一句：**`?max=1024` 那类降档地址只许用来显示，任何「按像素说话」的
+编辑功能都得按参考图真实分辨率要底图。**
+
+顺手修的一处：笔刷圈直径以前是 `brush * fit * zoom * 2`，而落笔半径是 `brush / 2`（直径就是
+`brush`），圈比真正涂到的宽一倍，用户只能凭感觉把笔刷调小。

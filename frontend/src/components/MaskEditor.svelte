@@ -3,14 +3,17 @@
    * 遮罩编辑器：盖住整个再次创作弹窗的一层编辑面，画完交回一份「白＝要改的地方」的遮罩。
    *
    * 四条设计定了就不动摇：
-   * 1. 画布只看 alpha（涂没涂到），涂出来的红色只是给人看的第二层。提交那份黑白图在导出时按 alpha 现推，
-   *    所以「换个颜色」「调叠色不透明度」永远不会悄悄改变送给 ComfyUI 的东西。
+   * 1. 画布只看 alpha（涂没涂到），给人看的那一层是它现染出来的副本，不是第二份事实（paintInk）。
+   *    提交那份黑白图在导出时按 alpha 现推，所以「换个颜色」「调叠色不透明度」永远不会悄悄改变
+   *    送给 ComfyUI 的东西；反过来，这一层的颜色必须跟工作流盖给模型看的那份一致（lib/mask.ts），
+   *    不然人在屏幕上涂红、模型收到绿，照屏幕理解指令必然对不上。
    * 2. 撤销不存像素快照：一张 2048² 的 RGBA 快照就是 16MB，存 40 步等于一次编辑器吃 600MB 内存。
    *    这里存笔迹、要重画时整条重放一遍，画布操作是原生路径，几十笔也就几毫秒。
-   * 3. 手势与图库放大层对齐：左键画、Shift+左键框选、滚轮缩放、Ctrl+滚轮改笔刷、
-   *    双击 100%⇄适应、空格临时抓手。左键归画笔，所以平移只能靠空格（或中键），
-   *    不能像看图那样直接拖；Shift 那一下给的是「圈一整块」，边界是硬的，
-   *    像「把这台机器整个移除」这种用画笔涂永远涂不整齐。
+   * 3. 手势与图库放大层对齐：左键画、Shift+左键框选加一块、Alt+左键框选减一块、滚轮缩放、
+   *    Ctrl+滚轮改笔刷、双击 100%⇄适应、空格临时抓手。左键归画笔，所以平移只能靠空格（或中键），
+   *    不能像看图那样直接拖；Shift/Alt 那两下给的是「圈一整块 / 挖掉一块」，边界是硬的，
+   *    像「把这台机器整个移除」这种用画笔涂永远涂不整齐，圈多了也不必擦干净重画。
+   *    谁算框选、算加还是算减在 lib/mask.ts 的 maskRectOp 里判，那儿有测试。
    * 4. 框选在松手之前一个字都不进遮罩：预览画在第三张画布上，松手才落进遮罩层与显示层。
    *    拖回去重画（比如从右下角往左上拖）不会留下已经涂上的痕迹。
    *
@@ -22,8 +25,9 @@
   import {
     MASK_BRUSH_DEFAULT, MASK_BRUSH_MAX, MASK_BRUSH_MIN, MASK_INK_DEFAULT, MASK_INK_MAX, MASK_INK_MIN,
     MASK_INK_RGB, MASK_REDO_LIMIT, countMaskPixels, isMaskEmpty, maskBrushRadius, maskCanvasScale,
-    maskCanvasSize, maskPixelsInSource, maskRectIsReal, maskRectSelect, strokePoints, stripDataUrl,
-    type MaskEdit, type MaskPoint, type MaskRect,
+    maskCanvasSize, maskPixelsInSource, maskRectIsReal, maskRectOp, maskRectSelect, strokePoints,
+    stripDataUrl,
+    type MaskEdit, type MaskPoint, type MaskRect, type MaskTool,
   } from "../lib/mask";
 
   interface Props {
@@ -52,8 +56,8 @@
     src, label, modeText, promptSummary, hint = "", seed = "", imageId, sourceWidth = 0, onCancel, onDone,
   }: Props = $props();
 
-  type Tool = "paint" | "erase";
-  /** 一笔要么是画笔涂的一条线，要么是 Shift 框出来的一块：有 rect 就按块算，pts 留空 */
+  type Tool = MaskTool;
+  /** 一笔要么是画笔涂的一条线，要么是框选（Shift 加 / Alt 减）圈出来的一块：有 rect 就按块算，pts 留空 */
   interface Stroke { op: Tool; r: number; pts: MaskPoint[]; rect?: MaskRect }
 
   let rootEl = $state<HTMLDivElement | null>(null);
@@ -84,8 +88,8 @@
   let painted = $state(0);
   let handing = $state(false);
   let drawing = false;
-  /** Shift+左键按住的两个对角（画布坐标），松手前只是个草稿 */
-  let rectDrag: { from: MaskPoint; to: MaskPoint } | null = null;
+  /** 框选按住的两个对角（画布坐标）与这一框是加还是减，松手前只是个草稿 */
+  let rectDrag: { from: MaskPoint; to: MaskPoint; op: Tool } | null = null;
   let panning = false;
   let lastClient: MaskPoint | null = null;
   let live: Stroke | null = null;
@@ -140,7 +144,7 @@
     c.restore();
   }
 
-  /** 框出来的那块同样落进两层，一次成形、硬边：圈整件东西时硬边比软边准 */
+  /** 框出来的那块一次成形、硬边：圈整件东西时硬边比软边准 */
   function block(c: CanvasRenderingContext2D, color: string, alpha: number, op: Tool, rect: MaskRect) {
     c.save();
     c.globalAlpha = op === "erase" ? 1 : alpha;
@@ -150,18 +154,17 @@
     c.restore();
   }
 
-  /** 松手那一刻的预览：清掉预览层，把这块真的画进遮罩层与显示层 */
+  /** 松手那一刻：清掉预览层，把这块落进遮罩层，再照着遮罩层重染一层给人看 */
   function commitRect(rect: MaskRect, op: Tool) {
     const m = ctx(maskCanvas);
-    const k = ctx(inkCanvas);
-    if (m && k) {
-      block(m, "rgb(255, 255, 255)", 1, op, rect);
-      block(k, `rgb(${MASK_INK_RGB})`, ink, op, rect);
-    }
-    if (m) recount(m);
+    if (!m) return;
+    block(m, "rgb(255, 255, 255)", 1, op, rect);
+    recount(m);
+    paintInk();
   }
 
-  /** 拖动中的预览只画在第三张画布上：橡皮那块用白虚线圈，涂的那块用红的压一层 */
+  /** 拖动中的预览只画在第三张画布上：加的那块用与松手后同一个绿、同一个浓度压一层，
+   *  减的那块用白虚线圈。预览什么样子，松手就是什么样子，别让人按预览去猜结果。 */
   function drawPreview(rect: MaskRect | null, erasing: boolean) {
     const c = ctx(liveCanvas);
     if (!c) return;
@@ -171,7 +174,7 @@
     const lw = 2 / Math.max(0.02, fit * zoom);
     c.save();
     if (!erasing) {
-      c.globalAlpha = Math.min(0.9, ink + 0.2);
+      c.globalAlpha = ink;
       c.fillStyle = `rgb(${MASK_INK_RGB})`;
       c.fillRect(rect.x, rect.y, rect.width, rect.height);
     }
@@ -188,47 +191,65 @@
     return rectDrag ? maskRectSelect(rectDrag.from, rectDrag.to, size.width, size.height) : null;
   }
 
-  /** 一笔同时落进两层：遮罩层涂白（只有 alpha 算数），给人看的那层涂红并按叠色不透明度压暗 */
-  function apply(m: CanvasRenderingContext2D, k: CanvasRenderingContext2D, s: Stroke, from = 0) {
+  /** 一笔只落进遮罩层：涂白（只有 alpha 算数），橡皮挖空。给人看的那层不在这里画——
+   *  它是遮罩层的染色副本，见 paintInk()。早先两层一起涂时同一条笔画上的圆点互相叠，
+   *  0.45 叠三五层就成实心，而框选只叠一层，画笔和框就给出了两种浓度。 */
+  function apply(m: CanvasRenderingContext2D, s: Stroke, from = 0) {
     if (s.rect) {
       block(m, "rgb(255, 255, 255)", 1, s.op, s.rect);
-      block(k, `rgb(${MASK_INK_RGB})`, ink, s.op, s.rect);
       return;
     }
-    const pts = from > 0 ? s.pts.slice(from) : s.pts;
-    dab(m, "rgb(255, 255, 255)", 1, s.op, s.r, pts);
-    dab(k, `rgb(${MASK_INK_RGB})`, ink, s.op, s.r, pts);
+    dab(m, "rgb(255, 255, 255)", 1, s.op, s.r, from > 0 ? s.pts.slice(from) : s.pts);
   }
 
-  /** 上一次的遮罩落到两层上：遮罩层直接画，显示层要先把它染成红色再按不透明度压 */
-  function drawSeed(m: CanvasRenderingContext2D, k: CanvasRenderingContext2D) {
+  /** 上一次的遮罩落进遮罩层（种子那份只有 alpha 有用），给人看的那层随后由它派生 */
+  function drawSeed(m: CanvasRenderingContext2D) {
     if (!seedImg) return;
     m.drawImage(seedImg, 0, 0, size.width, size.height);
-    const scratch = document.createElement("canvas");
-    scratch.width = size.width;
-    scratch.height = size.height;
-    const s = scratch.getContext("2d");
-    if (!s) return;
-    s.drawImage(seedImg, 0, 0, size.width, size.height);
-    s.globalCompositeOperation = "source-in";
-    s.fillStyle = `rgb(${MASK_INK_RGB})`;
-    s.fillRect(0, 0, scratch.width, scratch.height);
+  }
+
+  /** 给人看的那一层 = 遮罩层现染出来的副本：整层拷过去时按 ink 压一次浓度，再 source-in 换成
+   *  MASK_INK_RGB。source-in 的结果 alpha = 源 alpha × 目标 alpha，所以颜色换得掉、浓度不会再
+   *  被乘第二遍。这样浓淡只由「涂没涂到」决定：叠多少笔、叠几块都一样，橡皮挖掉的地方自动跟着没。
+   *  以前是每笔往这一层各叠一次 alpha，重叠处一路加深，画笔/选框/遮罩区给出三种浓度。 */
+  function paintInk() {
+    const m = maskCanvas;
+    const k = ctx(inkCanvas);
+    if (!m || !k) return;
     k.save();
+    k.clearRect(0, 0, size.width, size.height);
     k.globalAlpha = ink;
-    k.drawImage(scratch, 0, 0);
+    k.drawImage(m, 0, 0);
+    k.globalCompositeOperation = "source-in";
+    k.globalAlpha = 1;
+    k.fillStyle = `rgb(${MASK_INK_RGB})`;
+    k.fillRect(0, 0, size.width, size.height);
     k.restore();
+  }
+
+  /** 画笔一拖每秒几十个事件，而重染是整层合成（4096 那一档不便宜），合并到下一帧只做一次。
+   *  redraw/finish 里同步补一次，交图那一刻不会停在上一帧。 */
+  let inkScheduled = false;
+  function syncInk() {
+    if (inkScheduled) return;
+    inkScheduled = true;
+    const run = () => {
+      inkScheduled = false;
+      paintInk();
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(run);
+    else setTimeout(run, 16);
   }
 
   /** 整条重放：撤销、重做、清空、改叠色都走这一条，不存像素快照 */
   function redraw() {
     const m = ctx(maskCanvas);
-    const k = ctx(inkCanvas);
-    if (!m || !k) return;
+    if (!m) return;
     m.clearRect(0, 0, size.width, size.height);
-    k.clearRect(0, 0, size.width, size.height);
-    drawSeed(m, k);
-    for (const s of strokes) apply(m, k, s);
+    drawSeed(m);
+    for (const s of strokes) apply(m, s);
     recount(m);
+    paintInk();
   }
 
   function recount(m: CanvasRenderingContext2D) {
@@ -269,12 +290,13 @@
       e.preventDefault();
       return;
     }
-    // Shift+左键＝圈一整块。「把这台机器整个移除」这类需求用画笔涂，边界永远不整齐，
-    // 而松手之前它一个字都没进遮罩，所以拖过头直接松开就行，不需要撤销。
-    if (e.button === 0 && e.shiftKey) {
+    // Shift+左键＝圈一整块加进来，Alt+左键＝从这个框的位置上减一块（与孤海那台编辑器同一套修饰键）。
+    // 松手之前它一个字都没进遮罩，所以拖过头直接松开就行，不需要撤销；圈多了也不必擦干净重画。
+    const rectOp = e.button === 0 ? maskRectOp(e, tool) : null;
+    if (rectOp) {
       const from = toCanvas(e);
       if (!from) return;
-      rectDrag = { from, to: from };
+      rectDrag = { from, to: from, op: rectOp };
       cursor = null; // 拖动中笔刷圈没有意义，藏掉
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
       e.preventDefault();
@@ -287,8 +309,8 @@
     live = { op: tool, r: maskBrushRadius(brush, size.width, sourceWidth), pts: [p] };
     undone = [];
     const m = ctx(maskCanvas);
-    const k = ctx(inkCanvas);
-    if (m && k) apply(m, k, live);
+    if (m) apply(m, live);
+    paintInk(); // 点一下也要立刻看见，这一处不排队
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     e.preventDefault();
   }
@@ -297,8 +319,9 @@
     if (rectDrag) {
       const p = toCanvas(e);
       if (!p) return;
-      rectDrag = { from: rectDrag.from, to: p };
-      drawPreview(selection(), tool === "erase");
+      const op = rectDrag.op;
+      rectDrag = { from: rectDrag.from, to: p, op };
+      drawPreview(selection(), op === "erase");
       return;
     }
     trackCursor(e);
@@ -315,22 +338,23 @@
     const prev = live.pts[from - 1];
     live.pts.push(...strokePoints(prev, p, live.r));
     const m = ctx(maskCanvas);
-    const k = ctx(inkCanvas);
-    if (m && k) apply(m, k, live, from);
+    if (m) apply(m, live, from);
+    syncInk();
   }
 
   function onUp(e: PointerEvent) {
     (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
     if (rectDrag) {
       const rect = selection();
+      const op = rectDrag.op;
       rectDrag = null;
-      drawPreview(null, tool === "erase");
+      drawPreview(null, op === "erase");
       // 手抖拖出一两个像素不算一次操作：不进笔迹栈，也就不占一步撤销
       if (!maskRectIsReal(rect) || !rect) return;
-      const stroke: Stroke = { op: tool, r: 0, pts: [], rect };
+      const stroke: Stroke = { op, r: 0, pts: [], rect };
       strokes = [...strokes, stroke];
       undone = [];
-      commitRect(rect, tool);
+      commitRect(rect, op);
       return;
     }
     panning = false;
@@ -419,6 +443,8 @@
       return;
     }
     if (typing) return;
+    // Alt 是「减一块」的修饰键，按住它时那一下是鼠标操作，不该顺手把 B/E/0 这类快捷键也触发
+    if (e.altKey) return;
     // 空格＝临时抓手：画遮罩最常做的两件事是涂和挪，这两个键位与图库放大层一致
     if (e.code === "Space") {
       e.preventDefault();
@@ -447,6 +473,8 @@
       onDone(null);
       return;
     }
+    // 拖动时重染排到了下一帧，交图之前先补一次，免得 tint 是上一帧那一层的
+    paintInk();
     // 三步推出黑白：铺黑 → 把涂过的地方擦成透明 → 从底下垫白。
     // 为什么绕这一圈：编辑器只看 alpha（颜色随便换都不该改变提交的东西），
     // 后端要的是「白＝要改」的灰度图。逐像素循环在 4096 像素上要卡手，这三步是原生路径。
@@ -512,7 +540,7 @@
       <span class="me-prompt" title={promptSummary}>{promptSummary}</span>
       <span class="me-count" class:is-none={emptyMask}>{emptyMask ? "还没涂" : `已涂 ${paintedSource.toLocaleString("zh-CN")} 处像素`}</span>
     </div>
-    <p class="me-hint">{hint || "左键涂、Shift+左键拖一个框圈住一整块；E 换橡皮，没涂的地方一个字都不动。"}</p>
+    <p class="me-hint">{hint || "左键涂 · Shift+左键拖框加一块 · Alt+左键拖框减一块 · E 换橡皮 · 没涂的地方一个字都不动"}</p>
   </header>
 
   <div class="me-view" class:is-hand={handing} class:is-erase={tool === "erase"}
@@ -527,7 +555,7 @@
         <canvas class="me-ink" bind:this={inkCanvas} width={size.width} height={size.height}></canvas>
         <!-- 框选拖动中的预览：遮罩本体在松手之前一个字都没动 -->
         <canvas class="me-live" bind:this={liveCanvas} width={size.width} height={size.height} aria-hidden="true"></canvas>
-        <!-- 真正的遮罩只在这张看不见的画布上：显示那层是它的红色副本 -->
+        <!-- 真正的遮罩只在这张看不见的画布上：上面那层是它现染出来的副本 -->
         <canvas class="me-mask" bind:this={maskCanvas} width={size.width} height={size.height} aria-hidden="true"></canvas>
       </div>
       {#if cursor && !handing}
@@ -559,7 +587,8 @@
     <label class="me-slider">
       <span>叠色</span>
       <input type="range" min={MASK_INK_MIN} max={MASK_INK_MAX} step={0.05} bind:value={ink}
-        aria-label="红色叠层不透明度" oninput={() => setInk(ink)} title="只是让你看得清，不影响送给 ComfyUI 的遮罩" />
+        aria-label="遮罩叠层不透明度" oninput={() => setInk(ink)}
+        title="只是让你看得清，不影响送给 ComfyUI 的遮罩；默认 40% 与工作流盖给模型看的那一层同浓度" />
       <b>{Math.round(ink * 100)}%</b>
     </label>
 
@@ -624,7 +653,7 @@
   .me-ref { position: relative; pointer-events: none; }
   .me-ink { pointer-events: none; }
   .me-live { pointer-events: none; }
-  /* 看不见的那张才是遮罩本体：显示用的是它的红色副本 */
+  /* 看不见的那张才是遮罩本体：显示那层每次由它现染（paintInk） */
   .me-mask { visibility: hidden; }
   .me-dab {
     position: absolute; transform: translate(-50%, -50%); border-radius: var(--r-pill);

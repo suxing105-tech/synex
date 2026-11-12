@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 import {
   MASK_EDGE_LIMIT, MASK_EMPTY_PIXELS, cellAcceptsMask, countMaskPixels, isMaskEmpty, maskBadgeText,
   maskBaseImageUrl, maskBrushRadius, maskCanvasScale, maskCanvasSize, maskEntryLabel, maskHeroKey, maskMode, maskModeLabel,
-  MASK_RECT_MIN, maskPixelsInSource, maskPromptSummary, maskRectIsReal, maskRectSelect,
+  MASK_INK_DEFAULT, MASK_INK_RGB, MASK_RECT_MIN, maskPixelsInSource, maskPromptSummary, maskRectIsReal,
+  maskRectOp, maskRectSelect,
   maskRequestPayload, maskableCellKeys, paintedMaskCount, promptEmptyHint, promptMayBeEmpty,
   stripDataUrl, strokePoints, templateAcceptsMask, type MaskEdit,
 } from "../lib/mask";
@@ -199,10 +200,21 @@ describe("编辑层的只读回显", () => {
 });
 
 /**
- * Shift+左键框选（2026-11-12 苏醒要加的）：圈一整块要的是硬边界，
- * 用画笔涂「这台机器整个」永远涂不整齐。规则同样全在这里测，画布那部分只能读源文件。
+ * 框选（2026-11-12 苏醒要加的，第二次补了减选区）：圈一整块要的是硬边界，
+ * 用画笔涂「这台机器整个」永远涂不整齐；圈多了再 Alt 拖一框挖掉，不必擦干净重画。
+ * 规则同样全在这里测，画布那部分只能读源文件。
  */
-describe("Shift 框选", () => {
+describe("框选（Shift 加 / Alt 减）", () => {
+  it("Shift=加当前工具那一块，Alt=减一块，两个键都没按就不算框选", () => {
+    expect(maskRectOp({ shiftKey: true }, "paint")).toBe("paint");
+    // 橡皮状态下 Shift 拖出来的那一框是减，与画笔拖出来是加对称
+    expect(maskRectOp({ shiftKey: true }, "erase")).toBe("erase");
+    // Alt 抢在橡皮之前：手里是画笔也能直接挖一块，不必先按 E 换工具
+    expect(maskRectOp({ altKey: true }, "paint")).toBe("erase");
+    expect(maskRectOp({ altKey: true, shiftKey: true }, "paint")).toBe("erase");
+    expect(maskRectOp({}, "paint")).toBeNull();
+  });
+
   it("两个对角不管往哪个方向拖，都归一成正放的同一块", () => {
     const down = maskRectSelect({ x: 10, y: 20 }, { x: 60, y: 90 }, 1000, 1000);
     const back = maskRectSelect({ x: 60, y: 90 }, { x: 10, y: 20 }, 1000, 1000);
@@ -237,16 +249,24 @@ describe("Shift 框选", () => {
     expect(rectBranch).not.toMatch(/\bapply\(|\bblock\(|\bcommitRect\(/);
     const up = src.slice(src.indexOf("function onUp"), src.indexOf("function undo"));
     expect(up).toContain("maskRectIsReal(rect)");
-    expect(up).toContain("commitRect(rect, tool)");
+    // 松手才落进遮罩层，且按拖的那一刻定下的加/减落，不按松手时的工具
+    expect(up).toContain("commitRect(rect, op)");
     const applyFn = src.slice(src.indexOf("function apply("), src.indexOf("function drawSeed"));
     expect(applyFn).toContain("if (s.rect)");
   });
 
-  it("提示里要说出 Shift 框选，别让人自己猜", () => {
-    expect(componentSource("MaskEditor.svelte")).toContain("Shift+左键");
+  it("起笔那一下的加/减交给 maskRectOp 判，别在组件里另写一套修饰键", () => {
+    const down = componentSource("MaskEditor.svelte");
+    expect(down).toContain("maskRectOp(e, tool)");
+    expect(down).toContain("op: rectOp");
+  });
+
+  it("提示里要说出 Shift 加、Alt 减，别让人自己猜", () => {
+    const hint = componentSource("MaskEditor.svelte");
+    expect(hint).toContain("Shift+左键");
+    expect(hint).toContain("Alt+左键");
   });
 });
-
 const srcRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const componentSource = (name: string): string =>
   readFileSync(resolve(srcRoot, "components", name), "utf8");
@@ -376,5 +396,82 @@ describe("底图档位与源图口径", () => {
     expect(src).toContain("maskBaseImageUrl(");
     expect(src).toContain("sourceWidth={maskRef?.width ?? 0}");
     expect(src).not.toMatch(/const maskSrc = \$derived\(maskRef \? backendUrl\(maskRef\.original_url/);
+  });
+});
+
+/**
+ * 显示层的一致性（2026-11-12 第二轮）。
+ *
+ * 苏醒指出「画笔颜色、画框颜色、遮罩区域得到的颜色不一致」：其实是同一个色、三种浓度，
+ * 因为显示层是一路累加 alpha 叠出来的——画笔那一笔里圆点互相叠，0.4 叠几层就成实心，
+ * 框选只叠一层。修法是显示层不再自己叠，每次从遮罩层现染。happy-dom 不放画布，
+ * 只能读源文件钉这条口径，但它钉的是「别再退回累加」这个真实的回退风险。
+ */
+describe("给人看的那一层是遮罩层的派生副本", () => {
+  const editor = componentSource("MaskEditor.svelte");
+
+  it("重染一次成型：整层拷过去压一次浓度，再 source-in 换成遮罩色", () => {
+    const at = editor.indexOf("function paintInk()");
+    expect(at, "显示层必须由 paintInk() 从遮罩层派生，不能每笔往它上面叠").toBeGreaterThan(-1);
+    const paint = editor.slice(at, editor.indexOf("function syncInk"));
+    expect(paint).toContain("k.clearRect(0, 0, size.width, size.height)");
+    expect(paint).toContain("k.globalAlpha = ink");
+    expect(paint).toContain('k.globalCompositeOperation = "source-in"');
+    expect(paint).toContain("`rgb(${MASK_INK_RGB})`");
+  });
+
+  it("画笔与框都不再往显示层叠色（叠了就等于把三种浓度那个 bug 请回来）", () => {
+    for (const fn of ["function dab(", "function block("]) {
+      const body = editor.slice(editor.indexOf(fn), editor.indexOf("\n  }\n", editor.indexOf(fn)));
+      expect(body, fn + " 不该再收显示层的颜色").not.toContain("MASK_INK_RGB");
+    }
+    const apply = editor.slice(editor.indexOf("function apply("), editor.indexOf("function drawSeed"));
+    expect(apply).not.toContain("MASK_INK_RGB");
+    // 拿这个色填地方的只许有两处：paintInk（落定的那一层）和 drawPreview（拖动中的预览）。
+    // 别处再填一次，就是有人绕过派生层自己叠色去了。
+    const filled = [...editor.matchAll(/fillStyle = `rgb\(\$\{MASK_INK_RGB\}\)`/g)].map((m) => m.index);
+    expect(filled.length).toBeGreaterThan(0);
+    const spans = [
+      [editor.indexOf("function paintInk"), editor.indexOf("function syncInk")],
+      [editor.indexOf("function drawPreview"), editor.indexOf("function selection")],
+    ];
+    for (const at of filled) {
+      expect(spans.some(([a, b]) => a > -1 && at > a && at < b),
+        "绕过 paintInk 自己往画布上填遮罩色：" + editor.slice(at - 60, at)).toBe(true);
+    }
+  });
+
+  it("拖动中的预览与松手后同浓度（预览 ink + 0.2 是让人按预览猜结果）", () => {
+    const preview = editor.slice(editor.indexOf("function drawPreview"), editor.indexOf("function selection"));
+    expect(preview).toContain("c.globalAlpha = ink;");
+    expect(preview).not.toContain("ink + 0.2");
+  });
+
+  it("默认叠色对齐工作流盖给模型看的那一层（204 透明度 0.4）", () => {
+    expect(MASK_INK_DEFAULT).toBe(0.4);
+  });
+
+  it("编辑器显示的那个绿，就是随包工作流盖给模型看的那个绿、也是移除指令说的那个颜色", () => {
+    // 这条钉的是苏醒连着两轮撞上的同一件事：屏幕上涂红、模型收到绿
+    const wf = resolve(srcRoot, "../../backend/app/bundled_workflows/qwen-single-mask-edit.json");
+    const doc = JSON.parse(readFileSync(wf, "utf8")) as {
+      workflow: Record<string, { class_type: string; inputs: Record<string, unknown> }>;
+    };
+    const painted = Object.values(doc.workflow)
+      .find((n) => n.class_type === "LayerUtility: ColorImage");
+    const line = Object.values(doc.workflow)
+      .find((n) => typeof n.inputs?.prompt === "string" && String(n.inputs.prompt).includes("区域"));
+    expect(painted, "随包工作流里没有那颗纯色图像节点").toBeTruthy();
+    const hex = String(painted!.inputs.color).replace("#", "").toLowerCase();
+    expect(hex.length).toBe(6);
+    const rgb = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(", ");
+    expect(MASK_INK_RGB, "编辑器显示色与工作流染色节点不同色").toBe(rgb);
+    // 那句移除指令里的颜色名也要对得上（后端还有一条同色的测试，两头都钉）
+    const names: Record<string, string> = {
+      "00ff00": "绿", ff0000: "红", "0000ff": "蓝", ffffff: "白", "000000": "黑",
+    };
+    const named = names[hex];
+    expect(named, `颜色名对照表里没有 #${hex}，加上它，别放过这条契约`).toBeTruthy();
+    expect(String(line!.inputs.prompt)).toContain(named + "色");
   });
 });

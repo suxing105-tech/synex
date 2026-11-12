@@ -20,14 +20,42 @@ export const MASK_BRUSH_MAX = 200;
 export const MASK_BRUSH_DEFAULT = 60;
 export const MASK_INK_MIN = 0.15;
 export const MASK_INK_MAX = 0.8;
-export const MASK_INK_DEFAULT = 0.45;
-/** 叠在参考图上给人看的那一层面：偏洋红的红，深色底与浅色照片上都压得住 */
-export const MASK_INK_RGB = "255, 59, 92";
+/** 默认浓度对齐随包工作流里 204 孤海-图像合并（遮罩）那颗「透明度 0.4」：
+ *  不去拖滑杆时，屏幕上这一层就是模型真看到的那一层。滑杆只负责让人看得清。 */
+export const MASK_INK_DEFAULT = 0.4;
+/**
+ * 叠在参考图上给人看的那一层，跟随包工作流盖给模型看的那份**同一个绿**：
+ * 204 把 205 LayerUtility: ColorImage 的 #00ff00 按 40% 盖在遮罩区域上，118 那句写的是
+ * 「移除图像中的绿色区域」（backend/tests/test_clone_bundled.py 钉死这两处同色）。
+ * 这层以前是红的（255, 59, 92），于是「屏幕上涂红、模型收到绿」，照屏幕理解指令必然对不上
+ * ——2026-11-12 苏醒两次指出这件事，第二次把它改成同色了。要动颜色得连 205/118 一起动，
+ * 见 materials/43-mask-edit-contract.md §9 与 §11。
+ * 写成 rgb(...) 而不是裸 hex：design-tokens.test.ts 的 hex 棘轮连 script 里的画布颜色一起数。
+ */
+export const MASK_INK_RGB = "0, 255, 0";
 /** 涂到的像素少于这个数就当「没画」。不是随手挑的：孤海那台裁遮罩的节点同样把 10 像素以下当空遮罩强制成全白，
  *  我们若把它当有遮罩，用户会得到一张整幅被重绘的图，还以为自己只圈了一小块。 */
 export const MASK_EMPTY_PIXELS = 10;
 /** 重做栈深度：撤销掉的笔迹能捞回来这么多步，再多就不留了 */
 export const MASK_REDO_LIMIT = 40;
+/** 画还是擦 */
+export type MaskTool = "paint" | "erase";
+
+/**
+ * 一记左键是不是框选、是框选的话算加还是算减：Shift＝加一块，Alt＝减一块。
+ * 与孤海那台遮罩编辑器的两个修饰键同口径，返 null 表示这记左键该交给画笔。
+ *
+ * Alt 排在橡皮之前：手里拿着画笔也能直接挖掉一块，不必先按 E 换工具再拖。
+ * 拿 Shift 时照当前的工具走——橡皮状态下 Shift 拖出来的那一框是减，与画笔拖出来是加对称。
+ */
+export function maskRectOp(
+  e: { shiftKey?: boolean; altKey?: boolean },
+  tool: MaskTool,
+): MaskTool | null {
+  if (e.altKey) return "erase";
+  if (e.shiftKey) return tool;
+  return null;
+}
 /** 两个鼠标位置之间按笔刷半径的几分之几补一个点 */
 const MASK_STEP_RATIO = 0.34;
 /** 参考位能画遮罩的标记值，后端 _cell() 只发这一个值 */

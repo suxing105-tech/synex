@@ -497,3 +497,128 @@ def test_growing_the_same_cell_twice_is_refused():
 def test_split_reference_key_separates_real_slot_from_grown_cell():
     assert ct.split_reference_key("543.image") == ("543.image", None)
     assert ct.split_reference_key("543.image::image_2") == ("543.image", "image_2")
+
+
+# ---------- 遮罩位：谁接走 MASK，谁能画遮罩 ----------
+
+def mask_nodes() -> dict:
+    """局部重绘那一族的最小同构体。
+
+    9 是加载图像 孤海（IMAGE / MASK / 文件名），它的 MASK 被 12 接走；
+    10 是一台普通的 LoadImage，MASK 没人接。13 与 14 是两条分支各自的裁剪恢复，
+    各自带一份遮罩扩展／羽化——弹窗里只该有一颗旋钮，两份一起改。
+    """
+    return {
+        "9": {"class_type": "LoadImageGoohai",
+              "inputs": {"image": "旧图.png", "保留透明通道": False},
+              "_meta": {"title": "加载图像 孤海"}},
+        "10": {"class_type": "LoadImage", "inputs": {"image": "另一张.png"},
+               "_meta": {"title": "加载图像"}},
+        "20": {"class_type": "PrimitiveStringMultiline", "inputs": {"value": ""},
+               "_meta": {"title": "留空是移除"}},
+        "12": {"class_type": "GH_MaskCropV2",
+               "inputs": {"图像": ["9", 0], "遮罩": ["9", 1], "遮罩填充": True}},
+        "13": {"class_type": "GH_CropRestore",
+               "inputs": {"接缝": ["12", 0], "遮罩扩展百分比": 4, "遮罩羽化百分比": 5}},
+        "14": {"class_type": "GH_CropRestore",
+               "inputs": {"接缝": ["12", 0], "遮罩扩展百分比": 4, "遮罩羽化百分比": 5}},
+        "30": {"class_type": "SaveImage", "inputs": {"images": ["13", 0],
+                                                     "filename_prefix": "SeekX"}},
+    }
+
+
+def mask_slots() -> list[dict]:
+    return [
+        {"kind": "prompt", "node": "20", "input": "value",
+         "label": ct.PRIMARY_PROMPT_LABEL, "allow_empty": True,
+         "empty_hint": "留空＝移除"},
+        {"kind": "image", "node": "9", "input": "image", "label": "图片1", "mask": "alpha"},
+        {"kind": "image", "node": "10", "input": "image", "label": "图片2"},
+        {"kind": "number", "node": "13", "input": "遮罩扩展百分比", "label": "遮罩扩张 %",
+         "value": 4, "min": 0, "max": 30, "step": 1,
+         "sync_to": [["14", "遮罩扩展百分比"]]},
+    ]
+
+
+def test_only_the_loader_whose_mask_is_wired_gets_a_brush():
+    """检测只看一件事：这台加载器交回的 MASK（第 1 个输出）有没有被下游接走。
+
+    接了就画得动，没接画了也白画——所以不给笔刷，而不是给了笔刷再解释为什么没变化。
+    """
+    slots = ct.detect_slots(mask_nodes())["slots"]
+    by_node = {s["node"]: s for s in slots if s["kind"] == "image"}
+    assert by_node["9"].get("mask") == "alpha"
+    assert "mask" not in by_node["10"]
+
+
+def test_redetect_keeps_the_mask_flag():
+    """「重新检测槽位」会整体替换槽位：检测认得遮罩，内置那条才不会一键退化成不能画。"""
+    nodes = mask_nodes()
+    slots = ct.normalize_slots(ct.detect_slots(nodes)["slots"], nodes)
+    assert next(s for s in slots if s["node"] == "9").get("mask") == "alpha"
+
+
+def test_normalize_keeps_the_mask_and_empty_prompt_contract():
+    slots = ct.normalize_slots(mask_slots(), mask_nodes())
+    by_key = {ct.slot_key(s): s for s in slots}
+    assert by_key["9.image"]["mask"] == "alpha"
+    assert "mask" not in by_key["10.image"]
+    assert by_key["20.value"]["allow_empty"] is True
+    assert by_key["20.value"]["empty_hint"] == "留空＝移除"
+    assert by_key["13.遮罩扩展百分比"]["sync_to"] == [["14", "遮罩扩展百分比"]]
+
+
+def test_normalize_only_accepts_the_alpha_mask_and_a_real_empty_flag():
+    """认错了比不认更糟：遮罩投递方式只认 alpha，空提示词只认真 True。"""
+    raw = [
+        {"kind": "prompt", "node": "20", "input": "value", "label": "提示词",
+         "allow_empty": "yes", "empty_hint": "  "},
+        {"kind": "image", "node": "9", "input": "image", "label": "图片1", "mask": "rgb"},
+        {"kind": "image", "node": "10", "input": "image", "label": "图片2", "mask": True},
+    ]
+    slots = ct.normalize_slots(raw, mask_nodes())
+    by_key = {ct.slot_key(s): s for s in slots}
+    assert "mask" not in by_key["9.image"] and "mask" not in by_key["10.image"]
+    assert "allow_empty" not in by_key["20.value"]
+    assert "empty_hint" not in by_key["20.value"]
+
+
+def test_normalize_truncates_a_runaway_empty_hint():
+    raw = [{"kind": "prompt", "node": "20", "input": "value", "label": "提示词",
+            "allow_empty": True, "empty_hint": "长" * 500},
+           {"kind": "image", "node": "9", "input": "image", "label": "图片1"}]
+    slot = ct.normalize_slots(raw, mask_nodes())[0]
+    assert len(slot["empty_hint"]) == 200
+
+
+def test_normalize_drops_sync_targets_that_do_not_exist():
+    """目标节点被用户删了 / 键名写错 / 指向自己：静默丢掉那颗同步，别把整条模板判死。"""
+    raw = [{"kind": "prompt", "node": "20", "input": "value", "label": "提示词"},
+           {"kind": "number", "node": "13", "input": "遮罩扩展百分比", "label": "扩张",
+            "value": 4,
+            "sync_to": [["99", "遮罩扩展百分比"], ["14", "不存在的键"],
+                        ["13", "遮罩羽化百分比"], "不是一对"]}]
+    slot = ct.normalize_slots(raw, mask_nodes())[1]
+    assert "sync_to" not in slot
+
+
+def test_one_knob_writes_every_copy_of_the_parameter():
+    """弹窗里拧一次，两条分支的那份都要跟着变，否则走移除分支时数就凭空退回默认。"""
+    nodes = mask_nodes()
+    workflow, _ = ct.build_workflow(
+        nodes, mask_slots(), prompt="把背景换成雪地",
+        references={"9.image": "seekx_ref_1_abcd1234.png", "10.image": "x.png"},
+        controls={"13.遮罩扩展百分比": 18}, randomize_seed=False)
+    assert workflow["13"]["inputs"]["遮罩扩展百分比"] == 18
+    assert workflow["14"]["inputs"]["遮罩扩展百分比"] == 18
+    # 没让改的那颗不动：sync_to 只管同一颗旋钮管到的那份
+    assert workflow["13"]["inputs"]["遮罩羽化百分比"] == 5
+
+
+def test_an_empty_prompt_reaches_the_node_as_empty():
+    """留空＝移除是这份工作流的一个模式，注进去就得是空串，不是被谁悄悄填上别的。"""
+    nodes = mask_nodes()
+    workflow, _ = ct.build_workflow(
+        nodes, mask_slots(), prompt="",
+        references={"9.image": "a.png", "10.image": "b.png"}, randomize_seed=False)
+    assert workflow["20"]["inputs"]["value"] == ""

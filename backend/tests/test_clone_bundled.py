@@ -17,11 +17,12 @@ from app.clone_templates import detect_slots
 from app.main import app
 
 IMAGE_KEY = "qwen-multi-image-edit"
+MASK_KEY = "qwen-single-mask-edit"
 VIDEO_KEY = "h3-reference-video"
 AUDIO_KEY = "qwen3-tts-voice-clone"
 DESIGN_KEY = "qwen3-tts-voice-design"
 CUSTOM_KEY = "qwen3-tts-custom-voice"
-ALL_KEYS = [IMAGE_KEY, VIDEO_KEY, AUDIO_KEY, DESIGN_KEY, CUSTOM_KEY]
+ALL_KEYS = [IMAGE_KEY, MASK_KEY, VIDEO_KEY, AUDIO_KEY, DESIGN_KEY, CUSTOM_KEY]
 AUDIO_LABELS = {"闪寻参考音色", "闪寻音色描述", "闪寻指定音色"}
 
 
@@ -70,6 +71,10 @@ def test_ships_one_workflow_per_family():
     assert set(by_key) == set(ALL_KEYS)
     assert by_key[IMAGE_KEY]["media_kind"] == "image"
     assert by_key[IMAGE_KEY]["label"] == "闪寻图片"
+    # 图片族第二条：带遮罩的局部重绘／移除。它不是新的「当前」，见
+    # test_the_mask_template_is_seeded_but_not_the_default
+    assert by_key[MASK_KEY]["media_kind"] == "image"
+    assert by_key[MASK_KEY]["label"] == "闪寻遮罩编辑"
     assert by_key[VIDEO_KEY]["media_kind"] == "video"
     assert by_key[VIDEO_KEY]["label"] == "闪寻视频"
     assert {by_key[k]["media_kind"] for k in (AUDIO_KEY, DESIGN_KEY, CUSTOM_KEY)} == {"audio"}
@@ -153,7 +158,7 @@ def test_shipped_slots_point_at_real_nodes():
 
 def test_fresh_install_seeds_every_family(seeded):
     rows = clone_templates.list_templates()
-    assert {r["name"] for r in rows} == {"闪寻图片", "闪寻视频"} | AUDIO_LABELS
+    assert {r["name"] for r in rows} == {"闪寻图片", "闪寻遮罩编辑", "闪寻视频"} | AUDIO_LABELS
     assert all(r["is_builtin"] for r in rows)
     assert {r["media_kind"] for r in rows} == {"image", "video", "audio"}
     # 每族各自一个「当前」：声音三条也只能有一条是当前，弹窗开出来才有唯一默认
@@ -161,6 +166,52 @@ def test_fresh_install_seeds_every_family(seeded):
         family = [r for r in rows if r["media_kind"] == kind]
         assert sum(1 for r in family if r["is_active"]) == 1, kind
     assert sum(1 for r in rows if r["media_kind"] == "audio") == 3
+
+
+def test_the_mask_template_is_seeded_but_not_the_default(seeded):
+    """多一条图片工作流可以，但默认那条不能换：老用户点开「再次创作」认的是闪寻图片。"""
+    rows = {r["name"]: r for r in clone_templates.list_templates()}
+    image = [r for r in rows.values() if r["media_kind"] == "image"]
+    assert len(image) == 2
+    assert [r["name"] for r in image if r["is_active"]] == ["闪寻图片"]
+    mask = rows["闪寻遮罩编辑"]
+    assert [c["key"] for c in mask["reference_cells"]] == ["193.image"]
+    assert [c["kind"] for c in mask["reference_cells"]] == ["image"]
+
+
+def test_the_mask_template_ships_the_four_slot_contracts(seeded):
+    """随包那条遮罩模板的四个约定：能画遮罩、空提示词是移除、两段文字、旋钮管两份。
+
+    这四条都是「少一条就出错片」的：遮罩标记没了就没有笔刷；allow_empty 没了
+    空提示词会被后端按「必须填提示词」顶回来；307 的标签不是「完整提示词」
+    就进不了主框；sync_to 没了，走移除分支时扩张／羽化退回工作流自带的 4／5。
+    """
+    entry = [e for e in clone_bundled.entries() if e["key"] == MASK_KEY][0]
+    nodes, slots = clone_bundled._prepare(entry)
+    by_key = {clone_templates.slot_key(s): s for s in slots}
+    assert by_key["307.value"]["label"] == clone_templates.PRIMARY_PROMPT_LABEL
+    assert by_key["307.value"]["allow_empty"] is True
+    assert "绿" in by_key["307.value"]["empty_hint"]
+    assert by_key["118.prompt"]["label"] == "移除指令"
+    assert by_key["118.prompt"]["value"] == "移除图像中的绿色区域"
+    assert by_key["193.image"]["mask"] == "alpha"
+    for key in ("212.遮罩扩展百分比", "212.遮罩羽化百分比"):
+        assert by_key[key]["sync_to"] == [["252", key.split(".", 1)[1]]], key
+    # 纯预览的两台不在图里：ComfyUI 会执行所有输出节点，比对图那次白等
+    assert "281" not in nodes and "289" not in nodes
+    assert nodes["38"]["inputs"]["filename_prefix"] == "SeekX_MaskEdit"
+    # 到 SaveImage 之外没有第二个输出节点
+    outs = [nid for nid, node in nodes.items()
+            if str(node.get("class_type", "")).lower().startswith(("save", "preview"))]
+    assert outs == ["38"]
+
+
+def test_the_mask_template_is_the_only_one_with_a_brush(seeded):
+    """别的工作流不该被顺手加上遮罩入口：目前随包的只有这一条认遮罩。"""
+    for row in clone_templates.list_templates():
+        tagged = [s for s in row["slots"] if s.get("mask") == "alpha"]
+        assert [s.get("label") for s in tagged] == (
+            ["图片1"] if row["name"] == "闪寻遮罩编辑" else []), row["name"]
 
 
 def test_the_two_extra_audio_modes_have_no_reference_cells(seeded):
@@ -307,7 +358,9 @@ def test_deleting_the_active_one_promotes_a_sibling(seeded):
     clone_templates.delete_template(target["id"])
     rows = clone_templates.list_templates()
     assert {r["media_kind"] for r in rows} == {"image", "audio"}
-    assert all(r["is_active"] for r in rows if r["media_kind"] == "image"), "图片族的当前不受影响"
+    # 图片族有两条（闪寻图片 + 闪寻遮罩编辑），删掉的正好是「当前」那条：顶上来的只能有一条
+    image = [r for r in rows if r["media_kind"] == "image"]
+    assert [r["name"] for r in image if r["is_active"]] == ["闪寻图片"], "图片族的当前不能跟着删视频那条一起变动"
     audio = [r for r in rows if r["media_kind"] == "audio"]
     assert sum(1 for r in audio if r["is_active"]) == 1, "声音三条里仍只有一条是当前"
     assert len(audio) == 3, "删掉视频不会牵连声音那三条"
@@ -338,9 +391,32 @@ def test_switch_off_keeps_a_fresh_db_empty(tmp_path: Path, monkeypatch):
 def test_api_reports_builtin_templates(seeded):
     with TestClient(app) as client:
         items = client.get("/api/clone/templates").json()["items"]
-    assert {i["name"] for i in items} == {"闪寻图片", "闪寻视频"} | AUDIO_LABELS
+    assert {i["name"] for i in items} == {"闪寻图片", "闪寻遮罩编辑", "闪寻视频"} | AUDIO_LABELS
     assert all(i["is_builtin"] for i in items)
     assert {i["media_kind"] for i in items} == {"image", "video", "audio"}
+
+
+def test_a_builtin_refuses_redetect(seeded, monkeypatch):
+    """随包那几条不给「重新检测槽位」：它们的槽位是调好才进包的，冲掉就退化成不能用。
+
+    遮罩那条最典型——空提示词是「移除」这个模式、哪一格能画遮罩、扩张羽化一颗旋钮管
+    两条分支，这些检测都认不出来，一次点击就能把它变成一条普通的局部重绘。
+    """
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        rows = client.get("/api/clone/templates").json()["items"]
+        mask = [r for r in rows if r["name"] == "闪寻遮罩编辑"][0]
+        res = client.post(f"/api/clone/templates/{mask['id']}/redetect")
+        assert res.status_code == 409
+        assert "导入一份属于自己" in res.json()["detail"]
+        # 没动库：槽位还是随包那一套（六个槽位、图片1 能画遮罩）
+        after = client.get("/api/clone/templates").json()["items"]
+        row = [r for r in after if r["name"] == "闪寻遮罩编辑"][0]
+        assert len(row["slots"]) == 6
+        assert row["control_count"] == 3
+        assert [s.get("mask") for s in row["slots"] if s.get("kind") == "image"] == ["alpha"]
+
 
 
 def test_templates_imported_by_the_user_are_not_builtin(seeded):

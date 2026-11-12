@@ -266,11 +266,19 @@ async def redetect_template(template_id: int) -> dict:
 
     存在的理由就是上面那条：导入那一刻 ComfyUI 没开，比例/分辨率就没了；
     现在它开着，不必重新导一次工作流也能把参数补回来。
+    随包那几条不给点：它们的槽位是调好才进包的（空提示词是移除、哪些格子能画遮罩、
+    一颗旋钮管两条分支），这些检测认不出来，点一次就把调好的那套冲掉了。
+    要按自己的工作流改，就先导出 JSON、改完再导入一份属于自己的。
     """
     try:
-        nodes = clone_templates.get_template(template_id)["nodes"]
+        template = clone_templates.get_template(template_id)
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc
+    if str(template.get("bundled_key") or ""):
+        raise HTTPException(
+            409, "随包工作流的参数是调好才进包的，重新检测会把它们冲掉。"
+                 "要按自己的工作流改，先导出这份的 JSON，改完再导入一份属于自己的。")
+    nodes = template["nodes"]
     info, reason = await _object_info(nodes)
     if not info:
         raise HTTPException(409, f"还是没能读到 ComfyUI 的节点信息（{reason}），把它打开以后再点一次。")

@@ -821,7 +821,12 @@ def detect_slots(nodes: dict, info: dict | None = None) -> dict:
             secondary = SECONDARY_PROMPT_KEYS.get(lowered, "")
             if not (by_key or by_class or secondary):
                 continue
-            if not isinstance(value, str) or not value.strip():
+            if not isinstance(value, str):
+                continue
+            if not value.strip() and not by_class:
+                # 空文本框一般没什么好写的（写进去也只是把空字符串再填一遍），跳过。
+                # 但「字符串原语」那一类整台节点就是一段文字：它现在空着是这份工作流的
+                # 默认值（局部重绘那条就是靠留空切到移除模式），跳过等于把这个模式删了。
                 continue
             if secondary:
                 # 认得出用途的第二段文字（音色克隆的原话）：键名说了算，不看谁先出现，
@@ -858,6 +863,14 @@ def detect_slots(nodes: dict, info: dict | None = None) -> dict:
             if grow:
                 slot["grow"] = grow
         slots.append(slot)
+
+    # 谁的 MASK 输出去到了下游，谁就能在弹窗里画遮罩：加载器交回的第 1 个输出
+    # 本来就是这张图的透明通道，画上去等于把「只改这一块」交给工作流自己接线。
+    # 没人接就不给笔刷——涂半天出片一模一样，那是骗人。
+    mask_users = _mask_consumers(nodes)
+    for slot in slots:
+        if slot.get("kind") == "image" and str(slot.get("node")) in mask_users:
+            slot["mask"] = "alpha"
 
     used = {slot_key(s) for s in slots}
     controls: list[dict] = []
@@ -912,6 +925,22 @@ def detect_slots(nodes: dict, info: dict | None = None) -> dict:
         ),
         "warnings": warnings,
     }
+
+
+def _mask_consumers(nodes: dict) -> set[str]:
+    """把「第 1 个输出（MASK）被人接走」的节点号挑出来。
+
+    API 格式里连线只写在消费方：`{"遮罩": ["193", 1]}`。所以扫一遍所有输入，
+    凡是二元素数组且第二项是 1 的，它的源节点就是拿遮罩当遮罩用的那一个。
+    不认类名：官方 LoadImage 与第三方加载器（加载图像 孤海）在这一条上一样，
+    IMAGE 在前、MASK 在后，透明通道就是那张 MASK。
+    """
+    users: set[str] = set()
+    for node in nodes.values():
+        for value in node_inputs(node).values():
+            if isinstance(value, (list, tuple)) and len(value) == 2 and str(value[1]) == "1":
+                users.add(str(value[0]))
+    return users
 
 
 def reference_kind_for(class_type: Any) -> str:
@@ -1008,6 +1037,11 @@ def detect_media_kind(nodes: dict) -> str:
 # ---------- 槽位校验 ----------
 
 
+# 这些字段不是从工作流里"看"出来的，是这份模板的用法说明：能不能画遮罩、
+# 提示词留空算不算一个模式、一颗旋钮管几台节点。重新检测没资格把它们抹掉。
+SLOT_CONTRACT_KEYS = ("mask", "allow_empty", "empty_hint", "sync_to")
+
+
 def _load_slots(raw: Any) -> list[dict]:
     if isinstance(raw, list):
         return [x for x in raw if isinstance(x, dict)]
@@ -1064,6 +1098,33 @@ def normalize_slots(raw: Any, nodes: dict) -> list[dict]:
                        if isinstance(x, (int, float)) and not isinstance(x, bool)]
             if presets:
                 slot["presets"] = presets[:12]
+        if kind == "image" and str(item.get("mask") or "") == "alpha":
+            # 这台加载器把「这张图」和「只改哪一块」一起收进同一个文件的透明通道，
+            # 弹窗里因此多一个画遮罩的入口。只认 alpha 这一种投递方式：
+            # 别的写法（单独一张黑白遮罩图、单独一台 LoadImageMask）我们不接，
+            # 认错了比不认更糟——遮罩会被当成图像内容喂进去。
+            slot["mask"] = "alpha"
+        if kind == "prompt" and item.get("allow_empty") is True:
+            # 提示词留空在这类工作流里是一个正经模式（局部重绘／移除二选一），
+            # 不是「用户忘了填」。空提示词的放行只认这一条标记。
+            slot["allow_empty"] = True
+            hint = str(item.get("empty_hint") or "").strip()
+            if hint:
+                slot["empty_hint"] = hint[:200]
+        if kind in ("number", "select"):
+            # 同一个参数在图里被写了两遍（局部重绘与移除两条分支各一份）时，
+            # 弹窗里仍然只该有一颗旋钮，另一份跟着一起改，见 build_workflow。
+            targets: list[list[str]] = []
+            for pair in (item.get("sync_to") or []):
+                if not (isinstance(pair, (list, tuple)) and len(pair) == 2):
+                    continue
+                tnode, tkey = str(pair[0]), str(pair[1])
+                if tnode == node or tnode not in nodes:
+                    continue
+                if tkey in node_inputs(nodes[tnode]):
+                    targets.append([tnode, tkey])
+            if targets:
+                slot["sync_to"] = targets
         grow = item.get("grow")
         if isinstance(grow, dict):
             gnode = str(grow.get("node") or "")
@@ -1211,6 +1272,15 @@ def build_workflow(
             continue
         _validate_control(slot, value)
         node_inputs(workflow.get(slot["node"])).update({slot["input"]: value})
+        # 这颗旋钮管的好几个人：局部重绘与移除两条分支各带一份裁剪恢复节点，
+        # 只改弹窗里那一份，走另一条分支时用户拧的数就凭空消失。
+        # 目标节点不在图里（用户自己删过）就跳过，不值得为它整条生成失败。
+        for target in (slot.get("sync_to") or []):
+            if not (isinstance(target, (list, tuple)) and len(target) == 2):
+                continue
+            tnode, tkey = str(target[0]), str(target[1])
+            if tnode in workflow and tkey in node_inputs(workflow[tnode]):
+                node_inputs(workflow[tnode]).update({tkey: value})
     # 没喂素材的加载器一律摘掉：留着它，ComfyUI 会悄悄用工作流里那份旧图/旧声音/旧片子，
     # 用户在弹窗里看到的参考和实际出片的参考就对不上了。一份都不喂就是纯文本生成。
     unused = unused_reference_nodes(slots, references)
@@ -1366,15 +1436,44 @@ def set_active(template_id: int) -> dict:
     return public(conn.execute("SELECT * FROM clone_templates WHERE id=?", (template_id,)).fetchone())
 
 
+def keep_authored_contract(old: list[dict], detected: list[dict]) -> list[dict]:
+    """重新检测出来的槽位，继承老的那一份里"检测不出来的东西"。
+
+    重新检测存在的理由是「导入那一刻 ComfyUI 没开，比例／分辨率／autogrow 没认出来」。
+    它不是为了改名，更不该顺手把用户写下的约定冲掉：能不能画遮罩、提示词留空算不算
+    一个模式、一颗旋钮管几台节点，还有他自己改过的格子名。同一个「节点.输入」两边都有时，
+    主体用新认的那份（选项和上下限要靠 object_info 才准），这几样从老的那份搬过来。
+    """
+    by_key = {slot_key(x): x for x in old if isinstance(x, dict)}
+    out: list[dict] = []
+    for slot in detected:
+        before = by_key.get(slot_key(slot))
+        if before is None:
+            out.append(dict(slot))
+            continue
+        keep = dict(slot)
+        label = str(before.get("label") or "").strip()
+        if label:
+            keep["label"] = label[:40]
+        for extra in SLOT_CONTRACT_KEYS:
+            if extra in before:
+                keep[extra] = before[extra]
+        out.append(keep)
+    return out
+
+
 def redetect_slots(template_id: int, info: dict | None = None) -> dict:
     """按库里存着的工作流重新检测槽位，结果整体替换旧的。
 
-    主要是补「导入时 ComfyUI 没开 → 比例/分辨率没检测出来」这一课。
-    代价是手动改过的绑定会被冲掉，所以设置页那个按钮的 title 里要写清楚。
+    主要是补「导入时 ComfyUI 没开 → 比例/分辨率没检测出来」这一课。代价是检测认不出的
+    绑定会被冲掉，所以随包那几条在设置页根本不给这个按钮（它们的槽位是调好才进包的），
+    自己导入的那条至少保住名字和手写的约定，见 keep_authored_contract。
     """
     row = get_row(template_id)
     nodes = parse_workflow(row.get("workflow") or "")
-    slots = normalize_slots(detect_slots(nodes, info)["slots"], nodes)
+    detected = detect_slots(nodes, info)["slots"]
+    slots = normalize_slots(
+        keep_authored_contract(_load_slots(row.get("slots")), detected), nodes)
     conn = _conn()
     conn.execute(
         f"UPDATE clone_templates SET slots=?, default_prompt=?, updated_at={NOW_SQL} WHERE id=?",

@@ -5,8 +5,9 @@ import { describe, expect, it } from "vitest";
 import {
   MASK_EDGE_LIMIT, MASK_EMPTY_PIXELS, cellAcceptsMask, countMaskPixels, isMaskEmpty, maskBadgeText,
   maskBaseImageUrl, maskBrushRadius, maskCanvasScale, maskCanvasSize, maskEntryLabel, maskHeroKey, maskMode, maskModeLabel,
-  MASK_INK_DEFAULT, MASK_INK_RGB, MASK_RECT_MIN, maskPixelsInSource, maskPromptSummary, maskRectIsReal,
-  maskRectOp, maskRectSelect,
+  MASK_CLICK_SLOP, MASK_INK_DEFAULT, MASK_INK_RGB, MASK_RECT_MIN, MASK_TINTS, MASK_TINT_DEFAULT,
+  maskIsClick, maskPixelsInSource, maskPromptSummary, maskRectContains, maskRectIsReal, maskRectMove,
+  maskRectOp, maskRectSelect, maskSquareSelect, maskTintRgb,
   maskRequestPayload, maskableCellKeys, paintedMaskCount, promptEmptyHint, promptMayBeEmpty,
   stripDataUrl, strokePoints, templateAcceptsMask, type MaskEdit,
 } from "../lib/mask";
@@ -249,8 +250,11 @@ describe("框选（Shift 加 / Alt 减）", () => {
     expect(rectBranch).not.toMatch(/\bapply\(|\bblock\(|\bcommitRect\(/);
     const up = src.slice(src.indexOf("function onUp"), src.indexOf("function undo"));
     expect(up).toContain("maskRectIsReal(rect)");
-    // 松手才落进遮罩层，且按拖的那一刻定下的加/减落，不按松手时的工具
-    expect(up).toContain("commitRect(rect, op)");
+    // 加/减按拖的那一刻定下的算，不按松手时的工具或修饰键
+    expect(up).toContain("drag.op");
+    // 选框工具：松手先悬着（可挪可取消）；画笔态的 Shift/Alt 框：松手即落进遮罩层
+    expect(up).toContain("pending = { rect, op: drag.op };");
+    expect(up).toContain("commitRect(rect, drag.op)");
     const applyFn = src.slice(src.indexOf("function apply("), src.indexOf("function drawSeed"));
     expect(applyFn).toContain("if (s.rect)");
   });
@@ -417,7 +421,8 @@ describe("给人看的那一层是遮罩层的派生副本", () => {
     expect(paint).toContain("k.clearRect(0, 0, size.width, size.height)");
     expect(paint).toContain("k.globalAlpha = ink");
     expect(paint).toContain('k.globalCompositeOperation = "source-in"');
-    expect(paint).toContain("`rgb(${MASK_INK_RGB})`");
+    // 颜色来自色板，但色板第一颗必须还是工作流盖给模型的那个绿（下面那条契约钉着）
+    expect(paint).toContain("`rgb(${tintRgb})`");
   });
 
   it("画笔与框都不再往显示层叠色（叠了就等于把三种浓度那个 bug 请回来）", () => {
@@ -427,24 +432,23 @@ describe("给人看的那一层是遮罩层的派生副本", () => {
     }
     const apply = editor.slice(editor.indexOf("function apply("), editor.indexOf("function drawSeed"));
     expect(apply).not.toContain("MASK_INK_RGB");
-    // 拿这个色填地方的只许有两处：paintInk（落定的那一层）和 drawPreview（拖动中的预览）。
-    // 别处再填一次，就是有人绕过派生层自己叠色去了。
-    const filled = [...editor.matchAll(/fillStyle = `rgb\(\$\{MASK_INK_RGB\}\)`/g)].map((m) => m.index);
-    expect(filled.length).toBeGreaterThan(0);
-    const spans = [
-      [editor.indexOf("function paintInk"), editor.indexOf("function syncInk")],
-      [editor.indexOf("function drawPreview"), editor.indexOf("function selection")],
-    ];
-    for (const at of filled) {
-      expect(spans.some(([a, b]) => a > -1 && at > a && at < b),
-        "绕过 paintInk 自己往画布上填遮罩色：" + editor.slice(at - 60, at)).toBe(true);
-    }
+    // 全组件只许 paintInk 一处拿遮罩色去 fill 画布；别处再填一次，就是绕过派生层自己叠色去了。
+    const filled = [...editor.matchAll(/fillStyle = `rgb\(\$\{tintRgb\}\)`/g)].map((m) => m.index);
+    expect(filled.length).toBe(1);
+    const at = filled[0];
+    expect(at > editor.indexOf("function paintInk") && at < editor.indexOf("function syncInk"),
+      "遮罩色的 fillStyle 只许出现在 paintInk 里").toBe(true);
   });
 
-  it("拖动中的预览与松手后同浓度（预览 ink + 0.2 是让人按预览猜结果）", () => {
+  it("那一框只画框、不填充（图2 就是虚线框；填充会让人分不清哪块已经算了）", () => {
     const preview = editor.slice(editor.indexOf("function drawPreview"), editor.indexOf("function selection"));
-    expect(preview).toContain("c.globalAlpha = ink;");
-    expect(preview).not.toContain("ink + 0.2");
+    expect(preview).not.toContain("fillRect");
+    expect(preview).not.toContain("fillStyle");
+    expect(preview).toContain("setLineDash");
+    expect(preview).toContain("strokeRect");
+    // 一亮一暗两条线叠着画，压在白墙和夜空上都看得见
+    expect(preview).toContain("rgb(255, 255, 255)");
+    expect(preview).toContain("rgb(20, 20, 24)");
   });
 
   it("默认叠色对齐工作流盖给模型看的那一层（204 透明度 0.4）", () => {
@@ -466,6 +470,9 @@ describe("给人看的那一层是遮罩层的派生副本", () => {
     expect(hex.length).toBe(6);
     const rgb = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(", ");
     expect(MASK_INK_RGB, "编辑器显示色与工作流染色节点不同色").toBe(rgb);
+    // 用户一进来没点色板时真正用的那支笔，也得是这颗绿
+    expect(maskTintRgb(MASK_TINT_DEFAULT), "色板默认那颗不是工作流盖给模型的颜色").toBe(rgb);
+    expect(MASK_TINTS[0].rgb).toBe(rgb);
     // 那句移除指令里的颜色名也要对得上（后端还有一条同色的测试，两头都钉）
     const names: Record<string, string> = {
       "00ff00": "绿", ff0000: "红", "0000ff": "蓝", ffffff: "白", "000000": "黑",
@@ -473,5 +480,122 @@ describe("给人看的那一层是遮罩层的派生副本", () => {
     const named = names[hex];
     expect(named, `颜色名对照表里没有 #${hex}，加上它，别放过这条契约`).toBeTruthy();
     expect(String(line!.inputs.prompt)).toContain(named + "色");
+  });
+});
+
+/**
+ * 选框工具的键位与几何（2026-11-12 照孤海那台编辑器的说明行做）：
+ * Shift=1:1／加选区 · Alt=减选区 · 框内拖动移动 · 外部单击取消。
+ * 四件全在规则层测，组件那半只能读源文件。
+ */
+describe("选框工具（图2 那套键位）", () => {
+  it("选框工具下左键就画框；Alt 变减；画笔/橡皮下不按修饰键不画框", () => {
+    expect(maskRectOp({}, "select")).toBe("paint");
+    expect(maskRectOp({ altKey: true }, "select")).toBe("erase");
+    expect(maskRectOp({ shiftKey: true }, "select")).toBe("paint"); // Shift 给 1:1，不改加减
+    expect(maskRectOp({}, "paint")).toBeNull();
+    expect(maskRectOp({}, "erase")).toBeNull();
+    expect(maskRectOp({ shiftKey: true }, "erase")).toBe("erase");
+  });
+
+  it("Shift 锁 1:1：边长取短的那边，四个方向都保方向", () => {
+    expect(maskSquareSelect({ x: 0, y: 0 }, { x: 100, y: 40 }, 1000, 1000))
+      .toEqual({ x: 0, y: 0, width: 40, height: 40 });
+    expect(maskSquareSelect({ x: 100, y: 100 }, { x: 40, y: 60 }, 1000, 1000))
+      .toEqual({ x: 60, y: 60, width: 40, height: 40 });
+    expect(maskSquareSelect({ x: 100, y: 20 }, { x: 20, y: 60 }, 1000, 1000))
+      .toEqual({ x: 60, y: 20, width: 40, height: 40 });
+  });
+
+  it("1:1 也照样钳进画面，不许长出负宽度的框", () => {
+    const r = maskSquareSelect({ x: 980, y: 980 }, { x: 3000, y: 3000 }, 1000, 1000);
+    expect(r.x).toBeGreaterThanOrEqual(0);
+    expect(r.y).toBeGreaterThanOrEqual(0);
+    expect(r.x + r.width).toBeLessThanOrEqual(1000);
+    expect(r.y + r.height).toBeLessThanOrEqual(1000);
+  });
+
+  it("框内/框外判定与挪框钳位（框内拖动移动）", () => {
+    const box = { x: 10, y: 20, width: 30, height: 40 };
+    expect(maskRectContains(box, { x: 25, y: 30 })).toBe(true);
+    expect(maskRectContains(box, { x: 40, y: 60 })).toBe(true); // 边上算在里面
+    expect(maskRectContains(box, { x: 9, y: 30 })).toBe(false);
+    expect(maskRectMove(box, 5, 5, 100, 100)).toEqual({ x: 15, y: 25, width: 30, height: 40 });
+    // 往左上死拽也只贴在 (0,0)，尺寸不许被拽变形
+    expect(maskRectMove(box, -9999, -9999, 100, 100)).toEqual({ x: 0, y: 0, width: 30, height: 40 });
+    expect(maskRectMove(box, 9999, 9999, 100, 100)).toEqual({ x: 70, y: 60, width: 30, height: 40 });
+  });
+
+  it("按下与松开差几个像素算单击，不算拖框（外部单击取消靠它认）", () => {
+    expect(maskIsClick({ x: 50, y: 50 }, { x: 50, y: 50 })).toBe(true);
+    expect(maskIsClick({ x: 50, y: 50 }, { x: 50 + MASK_CLICK_SLOP, y: 50 })).toBe(true);
+    expect(maskIsClick({ x: 50, y: 50 }, { x: 51 + MASK_CLICK_SLOP, y: 50 })).toBe(false);
+    expect(maskIsClick({ x: 50, y: 50 }, { x: 400, y: 300 })).toBe(false);
+  });
+
+  it("色板只换显示色：认不出来回默认，不许画出全透明", () => {
+    expect(MASK_TINTS.length).toBeGreaterThanOrEqual(3);
+    expect(maskTintRgb("green")).toBe(MASK_INK_RGB);
+    expect(maskTintRgb("没有这个色")).toBe(maskTintRgb(MASK_TINT_DEFAULT));
+    expect(maskTintRgb(undefined)).toBe(maskTintRgb(MASK_TINT_DEFAULT));
+    for (const t of MASK_TINTS) expect(t.rgb).toMatch(/^\d{1,3}, \d{1,3}, \d{1,3}$/);
+  });
+});
+
+/**
+ * 图2 那套版式与「悬着一框」的生命周期：happy-dom 不放画布，只能读源文件钉。
+ * 钉的是「别退回一松手就焊死、别把工具按钮弄丢」这类真实回退。
+ */
+describe("图2 版式与悬框生命周期", () => {
+  const editor = componentSource("MaskEditor.svelte");
+
+  it("三件工具都在顶栏上，选框是一件工具不是一个修饰键", () => {
+    const bar = editor.slice(editor.indexOf('aria-label="工具"'), editor.indexOf('aria-label="遮罩显示色"'));
+    expect(bar).toContain(">画笔</button>");
+    expect(bar).toContain(">橡皮擦</button>");
+    expect(bar).toContain(">选框</button>");
+    expect(bar).toContain('pickTool("select")');
+  });
+
+  it("说明行照图2 那四个键位写，别让人自己猜", () => {
+    for (const s of ["Shift=1:1", "Alt=减选区", "框内拖动移动", "外部单击取消"]) {
+      expect(editor, "说明行少了「" + s + "」").toContain(s);
+    }
+  });
+
+  it("反转、清空、取消、保存遮罩四颗按钮齐（图2 右侧那一排）", () => {
+    for (const s of [">反转</button>", ">清空</button>", ">取消</button>", ">保存遮罩</button>"]) {
+      expect(editor, "少了按钮 " + s).toContain(s);
+    }
+    expect(editor).toContain("onclick={invertMask}");
+  });
+
+  it("反转进笔迹栈并重放，撤销一次退回反转之前", () => {
+    expect(editor).toContain("invert: true");
+    const redraw = editor.slice(editor.indexOf("function redraw()"), editor.indexOf("function recount"));
+    expect(redraw).toContain("if (s.invert) invertLayer(m);");
+    const invert = editor.slice(editor.indexOf("function invertMask"), editor.indexOf("function redraw()"));
+    // 先落定手上那一框，再反；空遮罩不给反（反完等于整图都要改，是误触）
+    expect(invert).toContain("if (emptyMask) return;");
+    expect(invert).toContain("commitPending();");
+  });
+
+  it("悬着那一框：换工具/开始涂画/保存都先落定，撤销先撤掉它，清空丢掉它", () => {
+    const pick = editor.slice(editor.indexOf("function pickTool"), editor.indexOf("function fitView"));
+    expect(pick).toContain("commitPending();");
+    const up = editor.slice(editor.indexOf("function onUp"), editor.indexOf("function undo"));
+    expect(up).toContain("cancelPending();"); // 外部单击取消
+    const undo = editor.slice(editor.indexOf("function undo()"), editor.indexOf("function redo"));
+    expect(undo).toContain("cancelPending();");
+    const clear = editor.slice(editor.indexOf("function clearAll"), editor.indexOf("function onWheel"));
+    expect(clear).toContain("pending = null;");
+    const finish = editor.slice(editor.indexOf("function finish"), editor.indexOf("onMount("));
+    expect(finish).toContain("commitPending();");
+  });
+
+  it("界面读的是 hasPending，不是普通 let pending（模板读普通 let 这个仓库有护栏）", () => {
+    const markup = editor.slice(editor.indexOf("<header"));
+    expect(markup).toContain("hasPending");
+    expect(markup).not.toMatch(/!pending\b/);
   });
 });

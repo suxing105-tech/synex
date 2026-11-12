@@ -9,13 +9,15 @@
    *    不然人在屏幕上涂红、模型收到绿，照屏幕理解指令必然对不上。
    * 2. 撤销不存像素快照：一张 2048² 的 RGBA 快照就是 16MB，存 40 步等于一次编辑器吃 600MB 内存。
    *    这里存笔迹、要重画时整条重放一遍，画布操作是原生路径，几十笔也就几毫秒。
-   * 3. 手势与图库放大层对齐：左键画、Shift+左键框选加一块、Alt+左键框选减一块、滚轮缩放、
-   *    Ctrl+滚轮改笔刷、双击 100%⇄适应、空格临时抓手。左键归画笔，所以平移只能靠空格（或中键），
-   *    不能像看图那样直接拖；Shift/Alt 那两下给的是「圈一整块 / 挖掉一块」，边界是硬的，
-   *    像「把这台机器整个移除」这种用画笔涂永远涂不整齐，圈多了也不必擦干净重画。
-   *    谁算框选、算加还是算减在 lib/mask.ts 的 maskRectOp 里判，那儿有测试。
-   * 4. 框选在松手之前一个字都不进遮罩：预览画在第三张画布上，松手才落进遮罩层与显示层。
-   *    拖回去重画（比如从右下角往左上拖）不会留下已经涂上的痕迹。
+   * 3. 手势与图库放大层对齐：滚轮缩放、Ctrl+滚轮改笔刷、双击 100%⇄适应、空格临时抓手、
+   *    B/E/S 换工具、Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y、+−0。左键归画笔，所以平移只能靠空格（或中键）。
+   *    框选那几件的键位照孤海那台编辑器（图2）：选框是一件工具，Shift=1:1 与加选区，Alt=减选区，
+   *    谁算框选、算加还是算减全在 lib/mask.ts 的 maskRectOp 里判，那儿有测试。
+   * 4. 框是「拖出来先悬着」，不是松手就焊死：选框工具下拖完那一框只在预览层上，
+   *    按在框里拖可以挪（图2「框内拖动移动」），在框外单击就撤掉（「外部单击取消」），
+   *    开始下一框／换工具／保存遮罩时才落进遮罩层。画笔态的 Shift/Alt 框照旧松手即落——
+   *    那是涂到一半顺手圈一块的快捷法，不该被挂住。两种框在松手前都不进遮罩，
+   *    从右下角往回拖、拖过头直接松开都不留痕迹。
    *
    * 规则（画布尺寸、补间、多少像素算没画、导出格式）全在 lib/mask.ts，那儿有测试；这层只管画。
    */
@@ -24,10 +26,10 @@
   import { modalFocus } from "../lib/modal-focus";
   import {
     MASK_BRUSH_DEFAULT, MASK_BRUSH_MAX, MASK_BRUSH_MIN, MASK_INK_DEFAULT, MASK_INK_MAX, MASK_INK_MIN,
-    MASK_INK_RGB, MASK_REDO_LIMIT, countMaskPixels, isMaskEmpty, maskBrushRadius, maskCanvasScale,
-    maskCanvasSize, maskPixelsInSource, maskRectIsReal, maskRectOp, maskRectSelect, strokePoints,
-    stripDataUrl,
-    type MaskEdit, type MaskPoint, type MaskRect, type MaskTool,
+    MASK_REDO_LIMIT, MASK_TINTS, MASK_TINT_DEFAULT, countMaskPixels, isMaskEmpty, maskBrushRadius,
+    maskCanvasScale, maskCanvasSize, maskIsClick, maskPixelsInSource, maskRectContains, maskRectIsReal, maskRectMove,
+    maskRectOp, maskRectSelect, maskSquareSelect, maskTintRgb, strokePoints, stripDataUrl,
+    type MaskEdit, type MaskOp, type MaskPoint, type MaskRect, type MaskTool,
   } from "../lib/mask";
 
   interface Props {
@@ -57,8 +59,16 @@
   }: Props = $props();
 
   type Tool = MaskTool;
-  /** 一笔要么是画笔涂的一条线，要么是框选（Shift 加 / Alt 减）圈出来的一块：有 rect 就按块算，pts 留空 */
-  interface Stroke { op: Tool; r: number; pts: MaskPoint[]; rect?: MaskRect }
+  type Op = MaskOp;
+  /** 一笔要么是画笔涂的一条线，要么是框出来的一块（有 rect 就按块算，pts 留空），
+   *  要么是一次「反转」——它也得进笔迹栈，不然撤销一次就把反转吞了。 */
+  interface Stroke {
+    op: Op;
+    r: number;
+    pts: MaskPoint[];
+    rect?: MaskRect;
+    invert?: boolean;
+  }
 
   let rootEl = $state<HTMLDivElement | null>(null);
   let viewport = $state<HTMLDivElement | null>(null);
@@ -81,6 +91,9 @@
   let tool = $state<Tool>("paint");
   let brush = $state(MASK_BRUSH_DEFAULT);
   let ink = $state(MASK_INK_DEFAULT);
+  /** 色板：只换给人看这一层的颜色，送出去的遮罩与模型看到的染色都不跟着变 */
+  let tintId = $state(MASK_TINT_DEFAULT);
+  const tintRgb = $derived(maskTintRgb(tintId));
   let strokes = $state<Stroke[]>([]);
   /** 重做栈要和撤销栈一样是状态：底栏那颗「重做」的 disabled 读它，
    *  写成普通 let 的话编译器只算一次，撤销完重做还是灰的、永远点不着。 */
@@ -88,8 +101,19 @@
   let painted = $state(0);
   let handing = $state(false);
   let drawing = false;
-  /** 框选按住的两个对角（画布坐标）与这一框是加还是减，松手前只是个草稿 */
-  let rectDrag: { from: MaskPoint; to: MaskPoint; op: Tool } | null = null;
+  /** 拖框中的草稿：两个对角、加还是减、是新框还是在挪已有那框（挪时 base 是原框）、Shift 是否锁了 1:1 */
+  let rectDrag: {
+    from: MaskPoint; to: MaskPoint; op: Op; square: boolean;
+    mode: "new" | "move"; base: MaskRect | null;
+  } | null = null;
+  /** 选框工具拖出来、还没落进遮罩的那一框：可以接着挪，也可以在框外单击撤掉（图2 的用法） */
+  let pending: { rect: MaskRect; op: Op } | null = null;
+  /** 上面那一框存不存在要给界面看（撤销/清空按钮的 disabled 读它），所以必须是 $state；
+   *  pending 本身只给逻辑读，写成普通 let——模板里读普通 let 是这个仓库明令禁止的（有护栏测试）。
+   *  两个值同生同灭，只在 commitPending / cancelPending / 拖框那两处成对改。 */
+  let hasPending = $state(false);
+  /** 反转要一整层的像素反相，借一张临时画布中转（复用，别每步新建） */
+  let scratch: HTMLCanvasElement | null = null;
   let panning = false;
   let lastClient: MaskPoint | null = null;
   let live: Stroke | null = null;
@@ -154,8 +178,27 @@
     c.restore();
   }
 
-  /** 松手那一刻：清掉预览层，把这块落进遮罩层，再照着遮罩层重染一层给人看 */
-  function commitRect(rect: MaskRect, op: Tool) {
+  /** 把悬着的那一框落进遮罩层（选框工具拖完的框先悬着，到这里才算数） */
+  function commitPending() {
+    if (!pending) return;
+    const { rect, op } = pending;
+    pending = null;
+    hasPending = false;
+    strokes = [...strokes, { op, r: 0, pts: [], rect }];
+    undone = [];
+    commitRect(rect, op);
+  }
+
+  /** 撤掉悬着的那一框：它一个字都没进遮罩，所以撤掉不需要撤销 */
+  function cancelPending() {
+    if (!pending) return;
+    pending = null;
+    hasPending = false;
+    drawPreview(null, false);
+  }
+
+  /** 松手那一刻：把这块落进遮罩层，再照着遮罩层重染一层给人看 */
+  function commitRect(rect: MaskRect, op: Op) {
     const m = ctx(maskCanvas);
     if (!m) return;
     block(m, "rgb(255, 255, 255)", 1, op, rect);
@@ -163,8 +206,10 @@
     paintInk();
   }
 
-  /** 拖动中的预览只画在第三张画布上：加的那块用与松手后同一个绿、同一个浓度压一层，
-   *  减的那块用白虚线圈。预览什么样子，松手就是什么样子，别让人按预览去猜结果。 */
+  /** 悬着/拖动中的那一框只画在第三张画布上，**只画框不填充**（图2 就是这样的）：
+   *  这一框还没落进遮罩，填上一层会让人分不清哪块已经算了、哪块还在挑，
+   *  而且填充会挡住要看的画面。加与减靠「深浅两层虚线换位」区分，不靠颜色：
+   *  加＝暗底 + 白虚线，减＝白底 + 暗虚线，压在亮处暗处都看得见。 */
   function drawPreview(rect: MaskRect | null, erasing: boolean) {
     const c = ctx(liveCanvas);
     if (!c) return;
@@ -172,23 +217,29 @@
     if (!rect) return;
     // 画布会被 fit×zoom 缩到屏幕上，线宽先除回去，屏上看永远是 2px 那一圈
     const lw = 2 / Math.max(0.02, fit * zoom);
+    const dark = "rgb(20, 20, 24)";
+    const light = "rgb(255, 255, 255)";
     c.save();
-    if (!erasing) {
-      c.globalAlpha = ink;
-      c.fillStyle = `rgb(${MASK_INK_RGB})`;
-      c.fillRect(rect.x, rect.y, rect.width, rect.height);
-    }
     c.globalAlpha = 1;
     c.lineWidth = lw;
-    c.strokeStyle = erasing ? "rgb(255, 255, 255)" : `rgb(${MASK_INK_RGB})`;
-    if (erasing) c.setLineDash([lw * 6, lw * 4]);
+    c.setLineDash([]);
+    c.strokeStyle = erasing ? light : dark;
+    c.strokeRect(rect.x, rect.y, rect.width, rect.height);
+    c.lineWidth = lw * 0.8;
+    c.setLineDash([lw * 4, lw * 3]);
+    c.strokeStyle = erasing ? dark : light;
     c.strokeRect(rect.x, rect.y, rect.width, rect.height);
     c.restore();
   }
 
-  /** 当前这一框在画布上的位置（往回拖、拖出画面都归一成正放矩形） */
+  /** 当前这一框在画布上的位置：Shift 锁 1:1，往回拖、拖出画面都归一成正放矩形；
+   *  挪已有那框时以悬着的那框为准（它已经算好了，别再从两个对角反推） */
   function selection(): MaskRect | null {
-    return rectDrag ? maskRectSelect(rectDrag.from, rectDrag.to, size.width, size.height) : null;
+    if (!rectDrag) return null;
+    if (rectDrag.mode === "move") return pending ? pending.rect : null;
+    return rectDrag.square
+      ? maskSquareSelect(rectDrag.from, rectDrag.to, size.width, size.height)
+      : maskRectSelect(rectDrag.from, rectDrag.to, size.width, size.height);
   }
 
   /** 一笔只落进遮罩层：涂白（只有 alpha 算数），橡皮挖空。给人看的那层不在这里画——
@@ -211,7 +262,8 @@
   /** 给人看的那一层 = 遮罩层现染出来的副本：整层拷过去时按 ink 压一次浓度，再 source-in 换成
    *  MASK_INK_RGB。source-in 的结果 alpha = 源 alpha × 目标 alpha，所以颜色换得掉、浓度不会再
    *  被乘第二遍。这样浓淡只由「涂没涂到」决定：叠多少笔、叠几块都一样，橡皮挖掉的地方自动跟着没。
-   *  以前是每笔往这一层各叠一次 alpha，重叠处一路加深，画笔/选框/遮罩区给出三种浓度。 */
+   *  以前是每笔往这一层各叠一次 alpha，重叠处一路加深，画笔/选框/遮罩区给出三种浓度。
+   *  颜色取色板 tintRgb，默认那颗就是工作流盖给模型看的绿（lib/mask.ts 里钉着）。 */
   function paintInk() {
     const m = maskCanvas;
     const k = ctx(inkCanvas);
@@ -222,7 +274,7 @@
     k.drawImage(m, 0, 0);
     k.globalCompositeOperation = "source-in";
     k.globalAlpha = 1;
-    k.fillStyle = `rgb(${MASK_INK_RGB})`;
+    k.fillStyle = `rgb(${tintRgb})`;
     k.fillRect(0, 0, size.width, size.height);
     k.restore();
   }
@@ -241,13 +293,55 @@
     else setTimeout(run, 16);
   }
 
-  /** 整条重放：撤销、重做、清空、改叠色都走这一条，不存像素快照 */
+  /** 把遮罩层整层反相：涂过的地方变成没涂，没涂的变成涂了（图2 那颗「反转」）。
+   *  绕一张临时画布走原生路径：铺白 → 把现在这块擦掉 → 盖回遮罩层。
+   *  逐像素循环在 4096² 上要卡手，和导出黑白那三步是同一个理由。 */
+  function invertLayer(m: CanvasRenderingContext2D) {
+    if (!scratch) scratch = document.createElement("canvas");
+    const el = scratch;
+    if (el.width !== size.width || el.height !== size.height) {
+      el.width = size.width;
+      el.height = size.height;
+    }
+    const s = el.getContext("2d");
+    if (!s) return;
+    s.save();
+    s.globalCompositeOperation = "source-over";
+    s.clearRect(0, 0, el.width, el.height);
+    s.fillStyle = "rgb(255, 255, 255)";
+    s.fillRect(0, 0, el.width, el.height);
+    s.globalCompositeOperation = "destination-out";
+    if (maskCanvas) s.drawImage(maskCanvas, 0, 0);
+    s.restore();
+    m.save();
+    m.globalCompositeOperation = "source-over";
+    m.clearRect(0, 0, size.width, size.height);
+    m.drawImage(el, 0, 0);
+    m.restore();
+  }
+
+  /** 反转：先把手上那一框落进去再反，不然刚圈的那块会被反相吞掉。
+   *  反转本身进笔迹栈，所以撤销一次就退回反转之前。 */
+  function invertMask() {
+    if (emptyMask) return;
+    commitPending();
+    const m = ctx(maskCanvas);
+    if (!m) return;
+    strokes = [...strokes, { op: "paint", r: 0, pts: [], invert: true }];
+    undone = [];
+    redraw();
+  }
+
+  /** 整条重放：撤销、重做、清空、反转、改叠色/换色都走这一条，不存像素快照 */
   function redraw() {
     const m = ctx(maskCanvas);
     if (!m) return;
     m.clearRect(0, 0, size.width, size.height);
     drawSeed(m);
-    for (const s of strokes) apply(m, s);
+    for (const s of strokes) {
+      if (s.invert) invertLayer(m);
+      else apply(m, s);
+    }
     recount(m);
     paintInk();
   }
@@ -290,13 +384,27 @@
       e.preventDefault();
       return;
     }
-    // Shift+左键＝圈一整块加进来，Alt+左键＝从这个框的位置上减一块（与孤海那台编辑器同一套修饰键）。
-    // 松手之前它一个字都没进遮罩，所以拖过头直接松开就行，不需要撤销；圈多了也不必擦干净重画。
+    // 选框工具下按在已选那一框里面＝挪动它，不是重画一框（图2「框内拖动移动」）。
+    // Alt 除外：按住 Alt 是「减一块」的起手，不该被挪框抢走。
+    if (e.button === 0 && !e.altKey && pending && tool === "select") {
+      const hit = toCanvas(e);
+      if (hit && maskRectContains(pending.rect, hit)) {
+        rectDrag = { from: hit, to: hit, op: pending.op, square: false, mode: "move", base: pending.rect };
+        cursor = null;
+        (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+        e.preventDefault();
+        return;
+      }
+    }
+    // 框选：选框工具下左键就画框；画笔/橡皮下要按 Shift（加）或 Alt（减）。
+    // 松手之前它一个字都没进遮罩，所以拖过头直接松开就行；圈多了也不必擦干净重画。
     const rectOp = e.button === 0 ? maskRectOp(e, tool) : null;
     if (rectOp) {
       const from = toCanvas(e);
       if (!from) return;
-      rectDrag = { from, to: from, op: rectOp };
+      // 上一框还悬着 → 先落进遮罩，这一拖是下一框（屏上同时只留一框，和图2 一样）
+      commitPending();
+      rectDrag = { from, to: from, op: rectOp, square: false, mode: "new", base: null };
       cursor = null; // 拖动中笔刷圈没有意义，藏掉
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
       e.preventDefault();
@@ -305,11 +413,16 @@
     if (e.button !== 0) return;
     const p = toCanvas(e);
     if (!p) return;
+    // 开始正常涂画：悬着那一框先落定，别让它悬在画面上不明不白
+    commitPending();
     drawing = true;
-    live = { op: tool, r: maskBrushRadius(brush, size.width, sourceWidth), pts: [p] };
+    // 走到这儿工具只可能是画笔或橡皮（选框在上面那支就返回了），但 TS 看不出来，明说一次
+    const op: Op = tool === "erase" ? "erase" : "paint";
+    const start: Stroke = { op, r: maskBrushRadius(brush, size.width, sourceWidth), pts: [p] };
+    live = start;
     undone = [];
     const m = ctx(maskCanvas);
-    if (m) apply(m, live);
+    if (m) apply(m, start);
     paintInk(); // 点一下也要立刻看见，这一处不排队
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     e.preventDefault();
@@ -319,9 +432,19 @@
     if (rectDrag) {
       const p = toCanvas(e);
       if (!p) return;
-      const op = rectDrag.op;
-      rectDrag = { from: rectDrag.from, to: p, op };
-      drawPreview(selection(), op === "erase");
+      if (rectDrag.mode === "move" && rectDrag.base) {
+        // 位移＝这一帧的鼠标位置减起笔位置，框本身不放大不缩小
+        const moved = maskRectMove(
+          rectDrag.base, p.x - rectDrag.from.x, p.y - rectDrag.from.y, size.width, size.height,
+        );
+        pending = { rect: moved, op: rectDrag.op };
+        hasPending = true;
+        drawPreview(moved, rectDrag.op === "erase");
+        return;
+      }
+      // Shift 是当场生效的：按住锁 1:1，松开就恢复自由矩形（图2 那句 Shift=1:1）
+      rectDrag = { from: rectDrag.from, to: p, op: rectDrag.op, square: e.shiftKey, mode: "new", base: null };
+      drawPreview(selection(), rectDrag.op === "erase");
       return;
     }
     trackCursor(e);
@@ -345,16 +468,33 @@
   function onUp(e: PointerEvent) {
     (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
     if (rectDrag) {
+      const drag = rectDrag;
       const rect = selection();
-      const op = rectDrag.op;
       rectDrag = null;
-      drawPreview(null, op === "erase");
+      if (drag.mode === "move") {
+        // 挪完了还悬着，等下一次操作落定；框保持画出来，让人看得见它还在挑
+        if (pending) drawPreview(pending.rect, pending.op === "erase");
+        return;
+      }
+      drawPreview(null, false);
+      // 图2「外部单击取消」：什么都没拖出来、只是点了一下 → 把悬着那一框撤掉
+      if (maskIsClick(drag.from, drag.to)) {
+        cancelPending();
+        return;
+      }
       // 手抖拖出一两个像素不算一次操作：不进笔迹栈，也就不占一步撤销
       if (!maskRectIsReal(rect) || !rect) return;
-      const stroke: Stroke = { op, r: 0, pts: [], rect };
-      strokes = [...strokes, stroke];
+      if (tool === "select") {
+        // 选框工具：加与减都先悬着，让人接着挪 / 取消，到下一框或保存时才落进遮罩
+        pending = { rect, op: drag.op };
+        hasPending = true;
+        drawPreview(rect, drag.op === "erase");
+        return;
+      }
+      // 画笔/橡皮态按 Shift/Alt 拖的框：老口径，松手即落
+      strokes = [...strokes, { op: drag.op, r: 0, pts: [], rect }];
       undone = [];
-      commitRect(rect, op);
+      commitRect(rect, drag.op);
       return;
     }
     panning = false;
@@ -369,6 +509,11 @@
   }
 
   function undo() {
+    // 屏上还悬着一框时，撤销先把它撤掉——它就是「最近那一下」，而且它还没进遮罩
+    if (pending) {
+      cancelPending();
+      return;
+    }
     if (!strokes.length) return;
     const last = strokes[strokes.length - 1];
     strokes = strokes.slice(0, -1);
@@ -377,6 +522,10 @@
   }
 
   function redo() {
+    if (pending) {
+      cancelPending();
+      return;
+    }
     if (!undone.length) return;
     const back = undone[undone.length - 1];
     undone = undone.slice(0, -1);
@@ -385,8 +534,10 @@
   }
 
   function clearAll() {
-    if (!strokes.length && !seedImg) return;
+    if (!strokes.length && !seedImg && !pending) return;
     rectDrag = null;
+    pending = null;
+    hasPending = false;
     strokes = [];
     undone = [];
     seedImg = null;
@@ -415,6 +566,13 @@
 
   function zoomBy(delta: number) {
     zoom = Math.min(12, Math.max(0.2, zoom + delta));
+  }
+
+  /** 换工具前先把悬着那一框落定：切到画笔却还剩着一框悬着，比谁都容易看错算什么 */
+  function pickTool(next: Tool) {
+    if (next === tool) return;
+    commitPending();
+    tool = next;
   }
 
   function fitView() {
@@ -451,8 +609,14 @@
       handing = true;
       return;
     }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      commitPending();
+      return;
+    }
     if (e.key.toLowerCase() === "b") tool = "paint";
     else if (e.key.toLowerCase() === "e") tool = "erase";
+    else if (e.key.toLowerCase() === "s") tool = "select";
     else if (e.key === "+" || e.key === "=") zoomBy(0.25);
     else if (e.key === "-") zoomBy(-0.25);
     else if (e.key === "0") fitView();
@@ -473,6 +637,8 @@
       onDone(null);
       return;
     }
+    // 还悬着一框就先落进遮罩，不能让用户以为「框还在」＝「没算进去」
+    commitPending();
     // 拖动时重染排到了下一帧，交图之前先补一次，免得 tint 是上一帧那一层的
     paintInk();
     // 三步推出黑白：铺黑 → 把涂过的地方擦成透明 → 从底下垫白。
@@ -535,9 +701,40 @@
   bind:this={rootEl} use:modalFocus onkeydown={onKeyDown} onkeyup={onKeyUp}>
   <header class="me-top">
     <div class="me-line">
+      <div class="me-group" role="group" aria-label="工具">
+        <button class="me-btn" class:is-on={tool === "paint"} aria-pressed={tool === "paint"}
+          title="画笔（B）：涂上的地方＝要改的地方" onclick={() => pickTool("paint")}>画笔</button>
+        <button class="me-btn" class:is-on={tool === "erase"} aria-pressed={tool === "erase"}
+          title="橡皮擦（E）：擦掉涂错的地方" onclick={() => pickTool("erase")}>橡皮擦</button>
+        <button class="me-btn" class:is-on={tool === "select"} aria-pressed={tool === "select"}
+          title="选框（S）：拖一个框圈住一整块；拖完按框里可以挪，在框外单击取消"
+          onclick={() => pickTool("select")}>选框</button>
+      </div>
+      <div class="me-group me-swatches" role="group" aria-label="遮罩显示色">
+        {#each MASK_TINTS as tint (tint.id)}
+          <button class="me-swatch" class:is-on={tintId === tint.id} aria-pressed={tintId === tint.id}
+            style={`background: rgb(${tint.rgb})`}
+            title={`遮罩显示色：${tint.label}（只换你看的这一层，送出去的遮罩与模型看到的染色都不变）`}
+            aria-label={`遮罩显示色 ${tint.label}`} onclick={() => (tintId = tint.id)}></button>
+        {/each}
+      </div>
+      <p class="me-legend">Shift=1:1／加选区 · Alt=减选区 · 框内拖动移动 · 外部单击取消</p>
+      <div class="me-group" role="group" aria-label="笔迹">
+        <button class="me-btn" disabled={!strokes.length && !hasPending} title="撤销（Ctrl+Z）：还悬着一框时先撤掉它" onclick={undo}>撤销</button>
+        <button class="me-btn" disabled={!undone.length} title="重做（Ctrl+Y）" onclick={redo}>重做</button>
+        <button class="me-btn" disabled={emptyMask} title="反转：涂过的和没涂的对调，撤销一次退回" onclick={invertMask}>反转</button>
+        <button class="me-btn" disabled={!strokes.length && !seed && !hasPending} title="全部清掉，从空白重画" onclick={clearAll}>清空</button>
+      </div>
+      <div class="me-group me-actions" role="group" aria-label="结束">
+        <button class="me-btn" onclick={onCancel}>取消</button>
+        <button class="me-btn me-btn-go" onclick={finish}>保存遮罩</button>
+      </div>
+    </div>
+    <div class="me-line">
       <span class="me-what"><Icon name="mask" size={14} />{label} · 遮罩</span>
       <span class="me-mode">{modeText}</span>
       <span class="me-prompt" title={promptSummary}>{promptSummary}</span>
+      {#if hasPending}<span class="me-pending">框已选中：按框里拖可挪 · 框外单击取消 · 回车落定</span>{/if}
       <span class="me-count" class:is-none={emptyMask}>{emptyMask ? "还没涂" : `已涂 ${paintedSource.toLocaleString("zh-CN")} 处像素`}</span>
     </div>
     <p class="me-hint">{hint || "左键涂 · Shift+左键拖框加一块 · Alt+左键拖框减一块 · E 换橡皮 · 没涂的地方一个字都不动"}</p>
@@ -566,17 +763,8 @@
     {/if}
   </div>
 
+  <!-- 图2 那一排没有粗细／浓度／缩放，但这三样我们离不了（画笔不看见直径没法画），所以留在底栏 -->
   <footer class="me-bar">
-    <div class="me-group" role="group" aria-label="工具">
-      <button class="me-btn" class:is-on={tool === "paint"} aria-pressed={tool === "paint"}
-        title="画笔（B）：涂上的地方＝要改的地方" onclick={() => (tool = "paint")}>画笔</button>
-      <button class="me-btn" class:is-on={tool === "erase"} aria-pressed={tool === "erase"}
-        title="橡皮（E）：擦掉涂错的地方" onclick={() => (tool = "erase")}>橡皮</button>
-      <button class="me-btn" disabled={!strokes.length} title="撤销（Ctrl+Z）" onclick={undo}>撤销</button>
-      <button class="me-btn" disabled={!undone.length} title="重做（Ctrl+Y）" onclick={redo}>重做</button>
-      <button class="me-btn" disabled={!strokes.length && !seed} title="全部清掉，从空白重画" onclick={clearAll}>清空</button>
-    </div>
-
     <label class="me-slider">
       <span>粗细</span>
       <input type="range" min={MASK_BRUSH_MIN} max={MASK_BRUSH_MAX} step={1} bind:value={brush}
@@ -600,10 +788,7 @@
       <button class="me-btn" title="100%：一个像素就是一个像素" onclick={toggleRealSize}>100%</button>
     </div>
 
-    <div class="me-group me-actions">
-      <button class="me-btn" onclick={onCancel}>取消</button>
-      <button class="me-btn me-btn-go" onclick={finish}>完成</button>
-    </div>
+    <p class="me-bar-note">已涂的处数按原图像素算，与送出去的遮罩同口径</p>
   </footer>
 </div>
 
@@ -634,6 +819,19 @@
   .me-count { margin-left: auto; color: var(--text-2); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
   .me-count.is-none { color: var(--warn); }
   .me-hint { margin: 0; color: var(--text-2); font-size: var(--fs-xs); }
+  .me-legend {
+    margin: 0 auto; color: var(--text-2); font-size: var(--fs-xs);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .me-swatches { gap: 6px; }
+  .me-swatch {
+    width: 24px; height: 24px; padding: 0; border-radius: var(--r-pill);
+    border: 1px solid var(--line); cursor: pointer;
+  }
+  .me-swatch:hover { border-color: var(--text-3); }
+  .me-swatch.is-on { border: 2px solid var(--accent); }
+  .me-pending { color: var(--warn); font-size: var(--fs-xs); }
+  .me-bar-note { margin: 0 0 0 auto; color: var(--text-2); font-size: var(--fs-xs); }
 
   .me-view {
     position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden;

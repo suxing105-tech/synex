@@ -31,30 +31,101 @@ export const MASK_INK_DEFAULT = 0.4;
  * ——2026-11-12 苏醒两次指出这件事，第二次把它改成同色了。要动颜色得连 205/118 一起动，
  * 见 materials/43-mask-edit-contract.md §9 与 §11。
  * 写成 rgb(...) 而不是裸 hex：design-tokens.test.ts 的 hex 棘轮连 script 里的画布颜色一起数。
+ * 它就是下面色板 MASK_TINTS 第一颗；色板只是换「给人看的这一层」的颜色，这颗默认值不许动。
  */
 export const MASK_INK_RGB = "0, 255, 0";
+
+/** 顶栏那颗色板：只换「给人看的这一层」用什么色，改不了工作流盖给模型的染色。 */
+export interface MaskTint { id: string; label: string; rgb: string }
+/**
+ * 三颗与孤海那台编辑器的色板对齐（绿/灰/黑）。默认绿是有原因的（见上面 MASK_INK_RGB）：
+ * 不点色板时屏幕上这层＝模型收到的那层。挑灰或黑只是换个看得清的颜色，模型那边不会跟着换。
+ */
+export const MASK_TINTS: MaskTint[] = [
+  { id: "green", label: "绿", rgb: MASK_INK_RGB },
+  { id: "gray", label: "灰", rgb: "214, 214, 218" },
+  { id: "black", label: "黑", rgb: "0, 0, 0" },
+];
+export const MASK_TINT_DEFAULT = "green";
+
+/** 色板 id → 画布用的 rgb 三元组；认不出来回默认那颗（色板以后增删也不至于画出全透明） */
+export function maskTintRgb(id: string | null | undefined): string {
+  return MASK_TINTS.find((t) => t.id === id)?.rgb ?? MASK_TINTS[0].rgb;
+}
 /** 涂到的像素少于这个数就当「没画」。不是随手挑的：孤海那台裁遮罩的节点同样把 10 像素以下当空遮罩强制成全白，
  *  我们若把它当有遮罩，用户会得到一张整幅被重绘的图，还以为自己只圈了一小块。 */
 export const MASK_EMPTY_PIXELS = 10;
 /** 重做栈深度：撤销掉的笔迹能捞回来这么多步，再多就不留了 */
 export const MASK_REDO_LIMIT = 40;
-/** 画还是擦 */
-export type MaskTool = "paint" | "erase";
+/** 落在遮罩层上的两种动作：加一块 / 减一块。笔迹只认这两个。 */
+export type MaskOp = "paint" | "erase";
+/** 顶栏那三件工具：与孤海那台编辑器一样，选框是一件工具，不只是画笔的修饰键 */
+export type MaskTool = "paint" | "erase" | "select";
 
 /**
- * 一记左键是不是框选、是框选的话算加还是算减：Shift＝加一块，Alt＝减一块。
- * 与孤海那台遮罩编辑器的两个修饰键同口径，返 null 表示这记左键该交给画笔。
+ * 这一记左键要不要框选、框出来是加还是减。返 null = 该交给画笔正常涂。
+ * 与孤海那台编辑器同口径：Alt＝减选区，Shift＝加选区。
  *
- * Alt 排在橡皮之前：手里拿着画笔也能直接挖掉一块，不必先按 E 换工具再拖。
- * 拿 Shift 时照当前的工具走——橡皮状态下 Shift 拖出来的那一框是减，与画笔拖出来是加对称。
+ * - 选框工具下左键本来就画框，没有修饰键也算（返 paint）；Shift 那一下留给 1:1（见 maskSquareSelect）。
+ * - 画笔/橡皮下必须按住修饰键才进框选，左键仍然是涂/擦——不然谁还敢正常画笔。
+ * - Alt 排在最前：手里拿着画笔也能直接挖一块，不必先按 E 换工具再拖。
  */
 export function maskRectOp(
   e: { shiftKey?: boolean; altKey?: boolean },
   tool: MaskTool,
-): MaskTool | null {
+): MaskOp | null {
   if (e.altKey) return "erase";
-  if (e.shiftKey) return tool;
+  if (tool === "select") return "paint";
+  if (e.shiftKey) return tool === "erase" ? "erase" : "paint";
   return null;
+}
+
+/**
+ * Shift 拖框时锁成正方形（图2 那句「Shift=1:1」）：边长取横向与纵向里短的那一个，
+ * 拖动方向照原样保留（往左上拖还是往左上）。钳进画面仍然交给 maskRectSelect。
+ */
+export function maskSquareSelect(
+  from: MaskPoint,
+  to: MaskPoint,
+  width: number,
+  height: number,
+): MaskRect {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const side = Math.min(Math.abs(dx), Math.abs(dy));
+  const sx = dx < 0 ? -1 : 1;
+  const sy = dy < 0 ? -1 : 1;
+  return maskRectSelect(from, { x: from.x + sx * side, y: from.y + sy * side }, width, height);
+}
+
+/** 这一点在不在框里（图2 那句「框内拖动移动」：按在已选的那块里是挪动，不是重画一框） */
+export function maskRectContains(rect: MaskRect, p: MaskPoint): boolean {
+  return (
+    p.x >= rect.x && p.x <= rect.x + rect.width
+    && p.y >= rect.y && p.y <= rect.y + rect.height
+  );
+}
+
+/** 把框挪 dx/dy，挪不出画面（贴到边上就停下），尺寸不变 */
+export function maskRectMove(
+  rect: MaskRect,
+  dx: number,
+  dy: number,
+  width: number,
+  height: number,
+): MaskRect {
+  return {
+    x: Math.min(Math.max(0, rect.x + dx), Math.max(0, width - rect.width)),
+    y: Math.min(Math.max(0, rect.y + dy), Math.max(0, height - rect.height)),
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
+/** 按下与松开差不到这个数当「单击」而不是拖框——图2 那句「外部单击取消」靠它区分 */
+export const MASK_CLICK_SLOP = 3;
+export function maskIsClick(from: MaskPoint, to: MaskPoint, slop = MASK_CLICK_SLOP): boolean {
+  return Math.abs(to.x - from.x) <= slop && Math.abs(to.y - from.y) <= slop;
 }
 /** 两个鼠标位置之间按笔刷半径的几分之几补一个点 */
 const MASK_STEP_RATIO = 0.34;

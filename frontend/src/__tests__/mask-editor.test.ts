@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   MASK_EDGE_LIMIT, MASK_EMPTY_PIXELS, cellAcceptsMask, countMaskPixels, isMaskEmpty, maskBadgeText,
-  maskCanvasSize, maskEntryLabel, maskHeroKey, maskMode, maskModeLabel, maskPromptSummary,
+  maskBaseImageUrl, maskBrushRadius, maskCanvasScale, maskCanvasSize, maskEntryLabel, maskHeroKey, maskMode, maskModeLabel,
+  maskPixelsInSource, maskPromptSummary,
   maskRequestPayload, maskableCellKeys, paintedMaskCount, promptEmptyHint, promptMayBeEmpty,
   stripDataUrl, strokePoints, templateAcceptsMask, type MaskEdit,
 } from "../lib/mask";
@@ -265,4 +266,64 @@ it("编辑层里没有假装是状态的普通变量", () => {
   expect(plainLets.length).toBeGreaterThan(0);
   const offenders = plainLets.filter((name) => new RegExp("\\b" + name + "\\b").test(markup));
   expect(offenders, "这些普通 let 被模板读到了，改成 $state：" + offenders.join(", ")).toEqual([]);
+});
+
+/**
+ * 底图档位与「按源图说话」的两个数——这两条都是真跑一次本机 ComfyUI 量出来的。
+ *
+ * 列表给的 original_url 是 feed 用的 ?max=1024 预览，曾经就拿它当编辑器底图：一张
+ * 1136×2016 的图进画布只剩 577×1024，画布跟着小图走，导出后后端又把遮罩拉回原图尺寸贴上去，
+ * 于是「直径 60」的笔画出 124 宽的一条，编辑器说已涂 62290、送进 ComfyUI 的那张实际 252182。
+ * 修法是两件事：底图按参考图真实分辨率要；真降过档（源图超 4096）时笔刷与计数换算回源图口径。
+ */
+describe("底图档位与源图口径", () => {
+  it("上限以内直接要原图，别拿 ?max=1024 那张预览画遮罩", () => {
+    expect(maskBaseImageUrl("/api/images/1478/file?max=1024&v=2-1794448268-abc", 1136, 2016))
+      .toBe("/api/images/1478/file?v=2-1794448268-abc");
+  });
+
+  it("超过画布上限的按上限要，PSD 的 fit 去掉、cache-bust 的 v 留着", () => {
+    expect(MASK_EDGE_LIMIT).toBe(4096);
+    expect(maskBaseImageUrl("/api/images/9/file?max=1024&fit=psd-portrait&v=7", 6000, 4000))
+      .toBe("/api/images/9/file?max=4096&v=7");
+  });
+
+  it("地址空的就交回空串，本来就没降档的就原样还回去", () => {
+    expect(maskBaseImageUrl("", 1136, 2016)).toBe("");
+    expect(maskBaseImageUrl("/api/images/3/file", 100, 100)).toBe("/api/images/3/file");
+  });
+
+  it("画布没缩算 1，缩过按比例，源图尺寸不知道也别乱缩", () => {
+    expect(maskCanvasScale(1136, 1136)).toBe(1);
+    expect(maskCanvasScale(1136, 0)).toBe(1);
+    expect(maskCanvasScale(500, 1000)).toBe(0.5);
+  });
+
+  it("笔刷直径按源图说话，落到缩过的画布上半径跟着缩", () => {
+    expect(maskBrushRadius(60, 1136, 1136)).toBe(30);
+    expect(maskBrushRadius(60, 500, 1000)).toBe(15);
+    expect(maskBrushRadius(0, 500, 1000)).toBe(0.5);
+  });
+
+  it("已涂多少像素按源图报：画布线性缩一半，面积差四倍", () => {
+    expect(maskPixelsInSource(62290, 1136, 1136)).toBe(62290);
+    expect(maskPixelsInSource(62290, 500, 1000)).toBe(249160);
+    expect(maskPixelsInSource(1, 500, 1000)).toBe(4);
+  });
+
+  it("编辑器别再把直径乘成两倍画圈，下笔也别绕过换算直接 brush/2", () => {
+    const src = componentSource("MaskEditor.svelte");
+    expect(src).toContain("const unitScale = $derived(maskCanvasScale(size.width, sourceWidth));");
+    expect(src).toContain("r: maskBrushRadius(brush, size.width, sourceWidth)");
+    expect(src).toContain("已涂 ${paintedSource.toLocaleString(\"zh-CN\")} 处像素");
+    expect(src).not.toMatch(/brush\s*\*\s*[^\n]*\*\s*2/);
+    expect(src).not.toMatch(/r:\s*brush\s*\/\s*2/);
+  });
+
+  it("再次创作把底图交给 maskBaseImageUrl，并把参考图的真实宽度告诉编辑器", () => {
+    const src = componentSource("CloneModal.svelte");
+    expect(src).toContain("maskBaseImageUrl(");
+    expect(src).toContain("sourceWidth={maskRef?.width ?? 0}");
+    expect(src).not.toMatch(/const maskSrc = \$derived\(maskRef \? backendUrl\(maskRef\.original_url/);
+  });
 });

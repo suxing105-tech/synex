@@ -69,6 +69,49 @@ export function maskCanvasSize(
   const k = limit / long;
   return { width: Math.max(1, Math.round(w * k)), height: Math.max(1, Math.round(h * k)) };
 }
+/**
+ * 遮罩编辑器底图的地址：把参考图地址里的 max 档位抬到画布上限，上限以内直接要原图。
+ * cache-bust 的 v 原样留着；fit 只给 PSD 裁切用，这儿用不上，去掉。
+ *
+ * 为什么不能拿列表给的那个地址直接画：original_url 是 feed 用的 ?max=1024 预览，
+ * 一张 1136×2016 的图进来只剩 577×1024，画布就跟着这张小图走了，两支笔的账全乱：
+ * 笔刷标的「原图像素」在画布上只有一半粗，导出的遮罩又被后端拉回原图尺寸贴上去，
+ * 涂出来的一条变成两倍粗、四倍面积，「已涂多少像素」跟着少报四倍。
+ * 真跑过一次量出来的：编辑器说 62290，送给 ComfyUI 的那张实际是 252182。
+ */
+export function maskBaseImageUrl(url: string, width: number, height: number): string {
+  const base = String(url || "").trim();
+  if (!base) return "";
+  const cut = base.indexOf("?");
+  const head = cut >= 0 ? base.slice(0, cut) : base;
+  const params = new URLSearchParams(cut >= 0 ? base.slice(cut + 1) : "");
+  params.delete("fit");
+  const long = Math.max(Math.round(width || 0), Math.round(height || 0));
+  if (long > MASK_EDGE_LIMIT) params.set("max", String(MASK_EDGE_LIMIT));
+  else params.delete("max");
+  const qs = params.toString();
+  return qs ? `${head}?${qs}` : head;
+}
+
+/** 画布相对源图缩了几倍（只会 ≤1）：笔刷粗细和像素计数都要按它换算回源图口径。 */
+export function maskCanvasScale(canvasWidth: number, sourceWidth: number): number {
+  const canvas = Math.max(1, Math.round(canvasWidth || 1));
+  const source = Math.max(1, Math.round(sourceWidth || 0));
+  return source > canvas ? canvas / source : 1;
+}
+
+/** 笔刷直径按源图像素说话：落到缩过的画布上要先缩，再取半径。 */
+export function maskBrushRadius(brushPx: number, canvasWidth: number, sourceWidth: number): number {
+  return Math.max(0.5, (Math.max(0, brushPx) / 2) * maskCanvasScale(canvasWidth, sourceWidth));
+}
+
+/** 画布上数出来的像素换回源图像素：线性缩 k 倍，面积就差 k 平方。 */
+export function maskPixelsInSource(paintedCanvas: number, canvasWidth: number, sourceWidth: number): number {
+  const painted = Math.max(0, paintedCanvas || 0);
+  const k = maskCanvasScale(canvasWidth, sourceWidth);
+  if (k >= 1) return Math.round(painted);
+  return Math.max(painted > 0 ? 1 : 0, Math.round(painted / (k * k)));
+}
 
 /**
  * 两个事件位置之间补出中间的点。

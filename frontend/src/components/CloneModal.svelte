@@ -46,7 +46,7 @@
     type CloneJob, type CloneSources, type CloneTemplate,
   } from "../lib/clone";
   import {
-    maskBadgeText, maskEntryLabel, maskHeroKey as firstMaskableCell, maskModeLabel, maskPromptSummary,
+    maskBadgeText, maskBaseImageUrl, maskEntryLabel, maskHeroKey as firstMaskableCell, maskModeLabel, maskPromptSummary,
     maskRequestPayload, maskableCellKeys, paintedMaskCount, promptEmptyHint, promptMayBeEmpty,
     templateAcceptsMask, type MaskEdit,
   } from "../lib/mask";
@@ -245,7 +245,15 @@
   const maskCellKey = $derived(maskTemplate ? firstMaskableCell(template) : "");
   const maskCell = $derived(cells.find((cell) => cell.key === maskCellKey) ?? null);
   const maskRef = $derived(maskCellKey ? refs[maskCellKey] ?? null : null);
-  const maskSrc = $derived(maskRef ? backendUrl(maskRef.original_url || maskRef.thumbnail_url || "") : "");
+  /* 底图要按参考图的真实分辨率要：列表给的 original_url 是 feed 用的 ?max=1024 预览，
+     拿它当底图就是在小图上画大笔——导出后后端还要把遮罩拉回原图尺寸贴上去，
+     涂出来的一条会变成两倍粗、四倍面积，涂的位置和改的位置对不上。 */
+  const maskSrc = $derived(
+    maskRef
+      ? backendUrl(maskBaseImageUrl(
+          maskRef.original_url || maskRef.thumbnail_url || "", maskRef.width || 0, maskRef.height || 0))
+      : "",
+  );
   const maskHere = $derived(maskCellKey ? maskEdits[maskCellKey] : undefined);
   /** 「提示词留空会走移除」这句话是工作流自己写的（槽位 empty_hint），前端不替它编 */
   const maskHint = $derived(promptEmptyHint(template));
@@ -2671,6 +2679,7 @@
         hint={maskHint}
         seed={maskHere?.coverage ?? ""}
         imageId={maskRef?.id ?? 0}
+        sourceWidth={maskRef?.width ?? 0}
         onCancel={() => (maskOpen = false)}
         onDone={(edit) => {
           const key = maskCellKey;

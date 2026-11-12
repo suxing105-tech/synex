@@ -17,7 +17,8 @@
   import { modalFocus } from "../lib/modal-focus";
   import {
     MASK_BRUSH_DEFAULT, MASK_BRUSH_MAX, MASK_BRUSH_MIN, MASK_INK_DEFAULT, MASK_INK_MAX, MASK_INK_MIN,
-    MASK_INK_RGB, MASK_REDO_LIMIT, countMaskPixels, isMaskEmpty, maskCanvasSize, strokePoints, stripDataUrl,
+    MASK_INK_RGB, MASK_REDO_LIMIT, countMaskPixels, isMaskEmpty, maskBrushRadius, maskCanvasScale, maskCanvasSize,
+    maskPixelsInSource, strokePoints, stripDataUrl,
     type MaskEdit, type MaskPoint,
   } from "../lib/mask";
 
@@ -36,13 +37,15 @@
     seed?: string;
     /** 画在哪一份参考图上，换图之后遮罩就不认了 */
     imageId: number;
+    /** 参考图的真实宽：底图地址可能被后端降过档，笔刷粗细与像素计数要按源图说话，别按画布 */
+    sourceWidth?: number;
     onCancel: () => void;
     /** 交回 null = 这格其实没画（用户全擦了），调用方据此把标记一起撤掉 */
     onDone: (edit: MaskEdit | null) => void;
   }
 
   let {
-    src, label, modeText, promptSummary, hint = "", seed = "", imageId, onCancel, onDone,
+    src, label, modeText, promptSummary, hint = "", seed = "", imageId, sourceWidth = 0, onCancel, onDone,
   }: Props = $props();
 
   type Tool = "paint" | "erase";
@@ -86,10 +89,17 @@
     + `transform: translate(${pan.x.toFixed(1)}px, ${pan.y.toFixed(1)}px) scale(${zoom.toFixed(4)});`,
   );
   const percent = $derived(Math.round(zoom * fit * 100));
+  /** 底图降过档时画布比源图小：笔刷与计数都要换算回源图口径，不然同一支笔在两张图上不一样粗 */
+  const unitScale = $derived(maskCanvasScale(size.width, sourceWidth));
+  /** 「已涂多少像素」也按源图报：画布线性缩 k 倍，面积差 k 平方 */
+  const paintedSource = $derived(maskPixelsInSource(painted, size.width, sourceWidth));
   const cursorStyle = $derived(cursor
     ? `left:${cursor.x.toFixed(1)}px; top:${cursor.y.toFixed(1)}px; `
-      + `width:${Math.max(6, brush * fit * zoom * 2).toFixed(1)}px; `
-      + `height:${Math.max(6, brush * fit * zoom * 2).toFixed(1)}px;`
+      // 笔刷圈要和落下去那一笔一样粗：brush 是直径（下笔取 brush/2 作半径），换算到屏幕
+      // 上就是「直径 × 画布缩放 × 这一格多大 × 用户放的倍率」。以前多乘了个 2，
+      // 圈看着比实际涂到的宽一倍，用户只能凭感觉把笔刷调小。
+      + `width:${Math.max(6, brush * unitScale * fit * zoom).toFixed(1)}px; `
+      + `height:${Math.max(6, brush * unitScale * fit * zoom).toFixed(1)}px;`
     : "");
   const emptyMask = $derived(isMaskEmpty(painted));
 
@@ -201,7 +211,7 @@
     const p = toCanvas(e);
     if (!p) return;
     drawing = true;
-    live = { op: tool, r: brush / 2, pts: [p] };
+    live = { op: tool, r: maskBrushRadius(brush, size.width, sourceWidth), pts: [p] };
     undone = [];
     const m = ctx(maskCanvas);
     const k = ctx(inkCanvas);
@@ -365,7 +375,7 @@
       coverage: m.toDataURL("image/png"),
       png: stripDataUrl(out.toDataURL("image/png")),
       tint: k.toDataURL("image/png"),
-      pixels: painted,
+      pixels: paintedSource,
       imageId,
     });
   }
@@ -406,7 +416,7 @@
       <span class="me-what"><Icon name="mask" size={14} />{label} · 遮罩</span>
       <span class="me-mode">{modeText}</span>
       <span class="me-prompt" title={promptSummary}>{promptSummary}</span>
-      <span class="me-count" class:is-none={emptyMask}>{emptyMask ? "还没涂" : `已涂 ${painted} 处像素`}</span>
+      <span class="me-count" class:is-none={emptyMask}>{emptyMask ? "还没涂" : `已涂 ${paintedSource.toLocaleString("zh-CN")} 处像素`}</span>
     </div>
     <p class="me-hint">{hint || "涂上＝要改的地方，没涂的地方一个字都不动。"}</p>
   </header>

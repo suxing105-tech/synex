@@ -589,8 +589,10 @@
    * 认不出比例（配方里没有认得出宽高的参数）就不加 class，仍旧走写死那一档——那是「不知道」，
    * 不拿一个猜的形状冒充答案。
    */
-  /** 这一批要出的画面比例：画面参数里那颗认得出宽高的。取数收在 lib/clone.ts 的 pickedRatioOption，
-     与「这次会出多大」吃同一颗——两处各挑各的，等待台的形状和报的尺寸就会各说一套。 */
+  /**
+   * 这一批要出的画面比例：画面参数里那颗认得出宽高的。取数收在 lib/clone.ts 的 pickedRatioOption，
+   * 与「这次会出多大」吃同一颗——两处各挑各的，等待台的形状和报的尺寸就会各说一套。
+   */
   const batchAspectOption = $derived(pickedRatioOption(template, controls));
   const stageAspect = $derived(ratioShape(batchAspectOption ?? "").ratio);
 
@@ -2864,12 +2866,12 @@
   .cm-hero { width: auto; max-width: 100%; max-height: var(--cm-hero-h); object-fit: contain; border-radius: 16px; background: #0c0c0e; }
   /* 展示图下面那行文件名（旧图有这一行，2026-11-10 放回来）：从这一格跳回图库、或一次出几份时，
      认的就是它。长名字截断，完整名字在 title 里。 */
+  .cm-hero-name { margin: 2px 0 0; max-width: 100%; font-size: 12px; line-height: 16px; color: #8a8a8e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* 文件名与「这一趟出多大」并排一行（2026-11-12 苏醒照图：文件名右边那块空位就是留给它的）。
      被挤的只许是名字——省略号本来就长在它身上；尺寸不许被顶出这一行。 */
   .cm-hero-meta { display: flex; align-items: baseline; gap: 8px; max-width: 100%; min-width: 0; }
   .cm-hero-meta .cm-hero-name { flex: 0 1 auto; min-width: 0; }
   .cm-hero-dims { flex: none; margin: 2px 0 0; font-size: var(--fs-xs); line-height: 16px; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .cm-hero-name { margin: 2px 0 0; max-width: 100%; font-size: 12px; line-height: 16px; color: #8a8a8e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* 波形是一张扁的后端 PNG：照搬 cm-hero 的 contain 会把它拉成一大块模糊，这里锁住高度。 */
   .cm-hero-wave { width: min(100%, 560px); height: clamp(88px, 18vh, 148px); object-fit: cover; }
   .cm-hero-audio { width: min(100%, 560px); margin-top: 10px; height: 36px; }

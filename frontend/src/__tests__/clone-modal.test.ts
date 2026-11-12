@@ -3742,6 +3742,12 @@ it('那颗图标的版面：让开拉高手柄、命中区 24、清单只在点�
   // 键盘也得够得着：半透明那颗在 :focus-visible 下和 hover 一样亮起来
   expect(css).toMatch(/\.cm-skill:hover, \.cm-skill:focus-visible/);
   expect(css).toMatch(/\.cm-skill:disabled/);
+  // 2026-11-12 苏醒「图标不要圆框描边」：裸图标——静止、悬停、聚焦都不画框、不铺底、不毛玻璃
+  const skillBase = css.match(/\.cm-skill \{[^}]*\}/)?.[0] ?? "";
+  expect(skillBase).toMatch(/border: 0; background: none;/);
+  expect(skillBase).not.toMatch(/border-radius|backdrop-filter|1px solid/);
+  const skillStates = css.match(/\.cm-skill(?::[\w-]+|\.is-busy)\s*\{[^}]*\}/g)?.join("") ?? "";
+  expect(skillStates).not.toMatch(/border-color|background:/);
   // 只有两处会拉清单：点左键、点右键。别混进打开弹窗的那条路
   expect(css.match(/loadPromptSkills\(\)/g)?.length).toBe(2);
   expect(css).toMatch(/\{#if skillKind\}/);

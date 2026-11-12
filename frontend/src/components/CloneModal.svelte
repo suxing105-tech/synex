@@ -2930,24 +2930,25 @@
   @media (prefers-reduced-motion: reduce) {
     .cm-prompt-grip { opacity: .85; transition: none; }
   }
-  /* 提示词框右下角那颗「按技能优化」（2026-11-11 苏醒）。版式抄上面的 .cm-wand：静止压暗、滑过或键盘聚焦才亮。
+  /* 提示词框右下角那颗「按技能优化」（2026-11-11 苏醒）。静止压暗、滑过或键盘聚焦才亮。
+     2026-11-12 苏醒：「图标不要圆框描边」——裸图标，不画圆框、不铺底、不加毛玻璃，反馈只剩透明度和颜色，
+     跟旁边那颗拉高手柄一样轻；键盘聚焦的框交给浏览器默认焦点环，这里不再自己描一圈。
      位置让开拉高手柄那颗 14px（它占 right:4 起那一格），这颗从 right:24 起、24×24——命中区 24 是硬底线。
-     颜色一律引 token，不新增裸 hex。 */
+     颜色一律引 token，不新增裸 hex。border: 0 / background: none 是清 <button> 的 UA 默认样式，不能省。 */
   .cm-skill {
     position: absolute; right: 24px; bottom: 4px; z-index: 4;
     display: inline-flex; align-items: center; justify-content: center;
-    width: 24px; height: 24px; padding: 0; border-radius: 50%;
-    border: 1px solid var(--raise-4); background: rgb(var(--ink-rgb-0) / 55%);
+    width: 24px; height: 24px; padding: 0; border: 0; background: none;
     color: rgb(var(--text-1-rgb) / 62%); cursor: pointer;
-    opacity: .6; backdrop-filter: blur(6px);
-    transition: opacity 140ms ease, color 140ms ease, border-color 140ms ease, background 140ms ease;
+    opacity: .6;
+    transition: opacity 140ms ease, color 140ms ease;
   }
-  /* 画了这颗就得给正文留位：24 高的圆正压在底部 4..28px 那一条，长提示词最后一行会正好穿到它下面
+  /* 画了这颗就得给正文留位：24 高的图标正压在底部 4..28px 那一条，长提示词最后一行会正好穿到它下面
      （提示词是跟着内容长高的，最后一行就贴着底）。留 28px 把那条让出来——空着时框会高一档（约 46→59），
      这是有意的取舍：宁可空态高一点，也不要字压在图标底下。只在这一族画了它才留，音频工作流不受影响。
      高亮镜像层和输入框同一条规则，改一处两处一起动，不然高亮和字会错位。 */
   .cm-prompt-wrap.has-skill .cm-prompt-bg, .cm-prompt-wrap.has-skill .cm-textarea { padding-bottom: 28px; }
-  .cm-skill:hover, .cm-skill:focus-visible { opacity: 1; color: var(--accent-strong); border-color: var(--accent); background: rgb(var(--ink-rgb-0) / 82%); }
+  .cm-skill:hover, .cm-skill:focus-visible { opacity: 1; color: var(--accent-strong); }
   .cm-skill:disabled { opacity: .28; cursor: default; }
   .cm-skill.is-busy { opacity: 1; color: var(--accent-strong); animation: cm-skill-pulse 1.2s ease-in-out infinite; }
   @keyframes cm-skill-pulse { 50% { opacity: .45; } }

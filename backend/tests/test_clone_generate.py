@@ -608,7 +608,7 @@ def source_bytes(image_id: int) -> bytes:
     return path.read_bytes()
 
 
-def test_compose_mask_png_bakes_the_inverse_mask_into_alpha():
+def test_compose_mask_png_bakes_the_inverse_mask_into_alpha(tmp_path):
     """遮罩处透明、没遮的地方不透明，画面本身一个像素都不动。
 
     画面上"不能动"是要紧的：孤海那台加载器认名字之前会拿透明区域去铺白底，
@@ -617,7 +617,7 @@ def test_compose_mask_png_bakes_the_inverse_mask_into_alpha():
     import io
 
     from PIL import Image
-    base = make_png(Path("nowhere.png"), width=8, height=6).read_bytes()
+    base = make_png(tmp_path / "base.png", width=8, height=6).read_bytes()
     out = clone_jobs.compose_mask_png(base, mask_png(8, 6, 4))
     with Image.open(io.BytesIO(out)) as img:
         assert img.mode == "RGBA"
@@ -628,12 +628,12 @@ def test_compose_mask_png_bakes_the_inverse_mask_into_alpha():
     assert [alpha.getpixel((x, y)) for x, y in ((7, 5), (4, 0))] == [255, 255], "没画的地方不该透明"
 
 
-def test_compose_mask_png_pulls_a_smaller_canvas_up_to_size():
+def test_compose_mask_png_pulls_a_smaller_canvas_up_to_size(tmp_path):
     """编辑器为了手感会降采样：遮罩比参考图小就拉齐，不该报错。"""
     import io
 
     from PIL import Image
-    base = make_png(Path("nowhere.png"), width=8, height=8).read_bytes()
+    base = make_png(tmp_path / "base.png", width=8, height=8).read_bytes()
     out = clone_jobs.compose_mask_png(base, mask_png(4, 4, 4))
     with Image.open(io.BytesIO(out)) as img:
         assert img.size == (8, 8)

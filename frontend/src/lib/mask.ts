@@ -98,6 +98,68 @@ export function maskSquareSelect(
   return maskRectSelect(from, { x: from.x + sx * side, y: from.y + sy * side }, width, height);
 }
 
+/**
+ * 涂到闭合就把圈里填上（原节点的行为：圈一台机器要的是整台进遮罩，
+ * 只把那一笔当遮罩的话，模型只会照着那条带子动手，中间那台机器它看不见）。
+ *
+ * 三条一起过才算闭合，少一条就会误填：
+ *  1. **走到一半之后**有某个点回到起点容差内。只查最后一个点不够——人常常画过起点
+ *     再接着拖一段，尾巴停在别处，圈其实早就合上了；从一半往后扫是因为起点出发
+ *     马上蹭回来那一下不算绕圈。
+ *  2. 那一圈用鞋带公式算出的面积够大（见 maskMinEnclosedArea）：原地来回蹭两下
+ *     起终点自然重合，却一点地方都没围住，填了就是凭空多一块遮罩。
+ *  3. 至少三个点。
+ * 取**第一个**满足条件的下标，圈到那里为止：之后那截尾巴仍然只是一笔带子，
+ * 它画到哪儿算哪儿，不跟着进多边形。
+ */
+export function maskEnclosedPolygon(
+  pts: MaskPoint[],
+  tolerance: number,
+  minArea: number,
+): MaskPoint[] | null {
+  const n = pts.length;
+  if (n < 3) return null;
+  const tol = Math.max(0, tolerance || 0);
+  const need = Math.max(0, minArea || 0);
+  const start = pts[0];
+  for (let k = Math.max(2, Math.floor(n / 2)); k < n; k += 1) {
+    const p = pts[k];
+    if (Math.hypot(p.x - start.x, p.y - start.y) > tol) continue;
+    const ring = pts.slice(0, k + 1);
+    if (ring.length < 3) continue;
+    if (Math.abs(maskPolygonArea(ring)) < need) continue;
+    return ring;
+  }
+  return null;
+}
+
+/** 闭合容差：笔尾回到起点多远算把圈合上了。取「笔刷半径 1.5 倍」与「画布对角线 2%」
+ *  里大的那个，再兜个 6px 下限：粗笔的笔尖盖过起点本就该算闭合，小图上也得留够手抖的余量。 */
+export const MASK_CLOSE_TOL_RATIO = 0.02;
+export const MASK_CLOSE_TOL_MIN = 6;
+export function maskCloseTolerance(brushRadius: number, width: number, height: number): number {
+  const r = Math.max(0, brushRadius || 0);
+  return Math.max(MASK_CLOSE_TOL_MIN, r * 1.5, Math.hypot(width || 1, height || 1) * MASK_CLOSE_TOL_RATIO);
+}
+
+/** 要围出多大才算「圈住了一块」：比笔刷自己那团圆还大的圈才算，另外不低于画面面积的 0.08%。 */
+export const MASK_MIN_ENCLOSED_RATIO = 0.0008;
+export function maskMinEnclosedArea(brushRadius: number, width: number, height: number): number {
+  const r = Math.max(0, brushRadius || 0);
+  return Math.max(r * r * 4, (width || 1) * (height || 1) * MASK_MIN_ENCLOSED_RATIO);
+}
+
+/** 鞋带公式的有向面积（顺时针为负，调用方取绝对值）。 */
+export function maskPolygonArea(pts: MaskPoint[]): number {
+  let sum = 0;
+  for (let i = 0, n = pts.length; i < n; i += 1) {
+    const a = pts[i];
+    const b = pts[(i + 1) % n];
+    sum += a.x * b.y - b.x * a.y;
+  }
+  return sum / 2;
+}
+
 /** 这一点在不在框里（图2 那句「框内拖动移动」：按在已选的那块里是挪动，不是重画一框） */
 export function maskRectContains(rect: MaskRect, p: MaskPoint): boolean {
   return (

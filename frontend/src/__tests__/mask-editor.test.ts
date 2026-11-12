@@ -6,10 +6,11 @@ import {
   MASK_EDGE_LIMIT, MASK_EMPTY_PIXELS, cellAcceptsMask, countMaskPixels, isMaskEmpty, maskBadgeText,
   maskBaseImageUrl, maskBrushRadius, maskCanvasScale, maskCanvasSize, maskEntryLabel, maskHeroKey, maskMode, maskModeLabel,
   MASK_CLICK_SLOP, MASK_INK_DEFAULT, MASK_INK_RGB, MASK_RECT_MIN, MASK_TINTS, MASK_TINT_DEFAULT,
-  maskIsClick, maskPixelsInSource, maskPromptSummary, maskRectContains, maskRectIsReal, maskRectMove,
+  MASK_CLOSE_TOL_MIN, MASK_MIN_ENCLOSED_RATIO, maskCloseTolerance, maskEnclosedPolygon, maskIsClick,
+  maskMinEnclosedArea, maskPixelsInSource, maskPolygonArea, maskPromptSummary, maskRectContains, maskRectIsReal, maskRectMove,
   maskRectOp, maskRectSelect, maskSquareSelect, maskTintRgb,
   maskRequestPayload, maskableCellKeys, paintedMaskCount, promptEmptyHint, promptMayBeEmpty,
-  stripDataUrl, strokePoints, templateAcceptsMask, type MaskEdit,
+  stripDataUrl, strokePoints, templateAcceptsMask, type MaskEdit, type MaskPoint,
 } from "../lib/mask";
 import { referenceCells, type CloneSlot, type CloneTemplate } from "../lib/clone";
 
@@ -597,5 +598,118 @@ describe("图2 版式与悬框生命周期", () => {
     const markup = editor.slice(editor.indexOf("<header"));
     expect(markup).toContain("hasPending");
     expect(markup).not.toMatch(/!pending\b/);
+  });
+});
+
+
+/**
+ * 涂到闭合自动把中间填上（2026-11-12 苏醒指出：原节点画笔画的遮罩闭合一圈后会自动填充中间，
+ * 我们只把那一笔当遮罩）。这条不是观感问题：圈一台机器时只有那条带子进了遮罩，
+ * 工作流照着遮罩盖染色，模型看到的就是一个绿环，中间那台机器它根本不晓得要动。
+ */
+describe("涂到闭合自动填中间", () => {
+  const W = 1024;
+  const H = 768;
+  const R = 30; // 画笔半径（画布像素）
+  const TOL = maskCloseTolerance(R, W, H);
+  const MIN_AREA = maskMinEnclosedArea(R, W, H);
+
+  /** 绕 (500,400) 走一圈：rx=200、ry=180；`sweep` 是小于一圈的比例；`tail` 是合上之后又拖出去的笔数 */
+  const loop = (sweep = 1, n = 60, tail = 0): MaskPoint[] => {
+    const pts: MaskPoint[] = [];
+    for (let i = 0; i <= n; i += 1) {
+      const t = (i / n) * Math.PI * 2 * sweep;
+      pts.push({ x: 500 + Math.cos(t) * 200, y: 400 + Math.sin(t) * 180 });
+    }
+    for (let i = 1; i <= tail; i += 1) pts.push({ x: 700 + i * 20, y: 100 });
+    return pts;
+  };
+
+  it("整圈闭合：给出该填的那圈点，首点就是起笔那一点", () => {
+    const ring = maskEnclosedPolygon(loop(), TOL, MIN_AREA);
+    expect(ring).toBeTruthy();
+    expect(ring!.length).toBeGreaterThanOrEqual(3);
+    expect(ring![0]).toEqual({ x: 700, y: 400 });
+    // 圈住的就是那个椭圆里外，不是随便一圈：面积只比 π·rx·ry 少一点点（最后几度的收尾）
+    expect(Math.abs(maskPolygonArea(ring!))).toBeGreaterThan(MIN_AREA * 20);
+  });
+
+  it("差一点点合上也算闭合，缺口超出容差就不算", () => {
+    // 收尾差 10px 没接到起点：容差 45px 以内，人已经画过头了，该填
+    expect(maskEnclosedPolygon(loop(1 - 0.008), TOL, MIN_AREA)).toBeTruthy();
+    // 只画了四分之三圈，开口大得很：这是「C」不是圈，一个字都不该填
+    expect(maskEnclosedPolygon(loop(0.75), TOL, MIN_AREA)).toBeNull();
+    expect(maskEnclosedPolygon(loop(0.9), TOL, MIN_AREA)).toBeNull();
+  });
+
+  it("合上圈之后又拖出去的尾巴不进多边形", () => {
+    const ring = maskEnclosedPolygon(loop(1, 60, 8), TOL, MIN_AREA);
+    expect(ring).toBeTruthy();
+    // 那截尾巴在 y=100 上，一圈里不该有它
+    expect(ring!.some((p) => p.y === 100)).toBe(false);
+  });
+
+  it("起终点重合但一点没围住（原地来回蹭）不算闭合，不许凭空多一块遮罩", () => {
+    expect(maskEnclosedPolygon([{ x: 500, y: 400 }, { x: 520, y: 400 }, { x: 500, y: 400 }], TOL, MIN_AREA)).toBeNull();
+    const there = Array.from({ length: 9 }, (_, i) => ({ x: 500 + i * 10, y: 400 }));
+    const back = Array.from({ length: 9 }, (_, i) => ({ x: 580 - i * 10, y: 400 }));
+    expect(maskEnclosedPolygon([...there, ...back], TOL, MIN_AREA)).toBeNull();
+  });
+
+  it("少于三个点、半径为零的小圈都不填", () => {
+    expect(maskEnclosedPolygon([{ x: 0, y: 0 }, { x: 1, y: 1 }], TOL, MIN_AREA)).toBeNull();
+    // 半径 0 时容差仍有 6px 下限，但围出的面积要过 minArea，针尖大的圈过不去
+    expect(maskEnclosedPolygon([{ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 0, y: 0 }], TOL, MIN_AREA)).toBeNull();
+  });
+
+  it("容差跟着笔刷粗细和画面大小走，并有 6px 下限", () => {
+    expect(TOL).toBeGreaterThanOrEqual(MASK_CLOSE_TOL_MIN);
+    expect(maskCloseTolerance(200, W, H)).toBeGreaterThan(maskCloseTolerance(10, W, H)); // 粗笔更宽容
+    expect(maskCloseTolerance(0, 10, 10)).toBe(MASK_CLOSE_TOL_MIN); // 极小图不许要求像素级对准
+    expect(maskCloseTolerance(0, 4096, 4096)).toBeGreaterThan(maskCloseTolerance(0, 512, 512));
+  });
+
+  it("要求围出的面积比笔刷自己那团圆还大，画面越大要求越大", () => {
+    expect(maskMinEnclosedArea(60, W, H)).toBeGreaterThanOrEqual(Math.PI * 60 * 60); // 不比笔刷那团圆小
+    expect(maskMinEnclosedArea(1, 4096, 4096)).toBeGreaterThan(maskMinEnclosedArea(1, 512, 512));
+    expect(maskMinEnclosedArea(0, 0, 0)).toBeGreaterThanOrEqual(0);
+  });
+
+  it("鞋带公式：正方形一万格，顺逆时针只差个符号", () => {
+    const ccw = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }];
+    const cw = [...ccw].reverse();
+    expect(Math.abs(maskPolygonArea(ccw))).toBeCloseTo(10000, 6);
+    expect(maskPolygonArea(cw)).toBeCloseTo(-10000, 6);
+    expect(maskPolygonArea([])).toBe(0);
+  });
+
+  it("填充只写遮罩层，且跟着笔迹栈重放（撤销/换显示色/反转都得照填）", () => {
+    const editor = readFileSync(resolve(srcRoot, "components", "MaskEditor.svelte"), "utf8");
+    const fill = editor.slice(editor.indexOf("function fillPoly"), editor.indexOf("function commitPending"));
+    expect(fill).toContain("c.beginPath();");
+    expect(fill).toContain("c.closePath();");
+    expect(fill).toContain("c.fill();");
+    // 只认 alpha：填的是不透明白，绝不许拿显示层的遮罩色去填（那是绕过派生层自己叠色）
+    expect(fill).toContain('c.fillStyle = "rgb(255, 255, 255)"');
+    expect(fill).not.toContain("MASK_INK_RGB");
+    expect(fill).toContain('op === "erase" ? "destination-out" : "source-over"'); // 橡皮闭合同样对称：圈里挖空
+    const applyFn = editor.slice(editor.indexOf("function apply("), editor.indexOf("function drawSeed"));
+    expect(applyFn).toContain("if (s.fill && from === 0) fillPoly(m, s.op, s.fill);");
+  });
+
+  it("松手那一刻判闭合、当场填、当场重染给人看", () => {
+    const editor = readFileSync(resolve(srcRoot, "components", "MaskEditor.svelte"), "utf8");
+    const up = editor.slice(editor.indexOf("function onUp"), editor.indexOf("function undo"));
+    expect(up).toContain("maskEnclosedPolygon(");
+    expect(up).toContain("stroke.fill = ring;");
+    expect(up).toContain("fillPoly(m, stroke.op, ring);");
+    expect(up).toContain("if (ring) paintInk();");
+    expect(up).toContain("recount(m);");
+  });
+
+  it("提示里要说出「涂到闭合自动填中间」，别让人自己发现", () => {
+    const editor = readFileSync(resolve(srcRoot, "components", "MaskEditor.svelte"), "utf8");
+    expect(editor).toContain("涂到闭合自动填中间");
+    expect(editor).toContain("松手自动把中间填上");
   });
 });

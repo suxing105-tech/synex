@@ -27,7 +27,8 @@
   import {
     MASK_BRUSH_DEFAULT, MASK_BRUSH_MAX, MASK_BRUSH_MIN, MASK_INK_DEFAULT, MASK_INK_MAX, MASK_INK_MIN,
     MASK_REDO_LIMIT, MASK_TINTS, MASK_TINT_DEFAULT, countMaskPixels, isMaskEmpty, maskBrushRadius,
-    maskCanvasScale, maskCanvasSize, maskIsClick, maskPixelsInSource, maskRectContains, maskRectIsReal, maskRectMove,
+    maskCanvasScale, maskCanvasSize, maskCloseTolerance, maskEnclosedPolygon, maskIsClick,
+    maskMinEnclosedArea, maskPixelsInSource, maskRectContains, maskRectIsReal, maskRectMove,
     maskRectOp, maskRectSelect, maskSquareSelect, maskTintRgb, strokePoints, stripDataUrl,
     type MaskEdit, type MaskOp, type MaskPoint, type MaskRect, type MaskTool,
   } from "../lib/mask";
@@ -68,6 +69,9 @@
     pts: MaskPoint[];
     rect?: MaskRect;
     invert?: boolean;
+    /** 这一笔涂到闭合时圈里要填的那圈点（松手那一刻判的，见 maskEnclosedPolygon）；
+     *  没闭合就没有这个键。它跟着笔迹进栈，所以撤销/重做/反转重放都填得出来。 */
+    fill?: MaskPoint[];
   }
 
   let rootEl = $state<HTMLDivElement | null>(null);
@@ -178,6 +182,23 @@
     c.restore();
   }
 
+  /** 把闭合那一圈填进遮罩层：只写遮罩层，给人看的那层照旧从它派生，
+   *  所以填出来的必然与笔迹同色同浓度，不会又冒出第三种样子（见 paintInk 那条护栏）。
+   *  canvas 默认非零绕数：圈里全算、圈外不算。橡皮闭合同样对称——圈里挖空。 */
+  function fillPoly(c: CanvasRenderingContext2D, op: Op, ring: MaskPoint[]) {
+    if (ring.length < 3) return;
+    c.save();
+    c.globalAlpha = 1;
+    c.globalCompositeOperation = op === "erase" ? "destination-out" : "source-over";
+    c.fillStyle = "rgb(255, 255, 255)";
+    c.beginPath();
+    c.moveTo(ring[0].x, ring[0].y);
+    for (let i = 1; i < ring.length; i += 1) c.lineTo(ring[i].x, ring[i].y);
+    c.closePath();
+    c.fill();
+    c.restore();
+  }
+
   /** 把悬着的那一框落进遮罩层（选框工具拖完的框先悬着，到这里才算数） */
   function commitPending() {
     if (!pending) return;
@@ -251,6 +272,9 @@
       return;
     }
     dab(m, "rgb(255, 255, 255)", 1, s.op, s.r, from > 0 ? s.pts.slice(from) : s.pts);
+    // 填充只属于「整笔」：撤销重放、换显示色、反转之后重画都要照填，
+    // 但拖动中那截增量补点（from > 0）不能重复填一次。
+    if (s.fill && from === 0) fillPoly(m, s.op, s.fill);
   }
 
   /** 上一次的遮罩落进遮罩层（种子那份只有 alpha 有用），给人看的那层随后由它派生 */
@@ -501,10 +525,23 @@
     lastClient = null;
     if (!drawing || !live) return;
     drawing = false;
-    strokes = [...strokes, live];
+    const stroke = live;
     live = null;
+    // 松手这一下才判闭合（拖到一半谁也不知道你要不要合上）：合上了就把圈里填进遮罩层。
+    // 圈外那截带子照旧留着，所以填完的形状＝圈里 + 你画的那条边。
+    const ring = maskEnclosedPolygon(
+      stroke.pts,
+      maskCloseTolerance(stroke.r, size.width, size.height),
+      maskMinEnclosedArea(stroke.r, size.width, size.height),
+    );
+    if (ring) stroke.fill = ring;
+    strokes = [...strokes, stroke];
     const m = ctx(maskCanvas);
-    if (m) recount(m);
+    if (m) {
+      if (ring) fillPoly(m, stroke.op, ring);
+      recount(m);
+    }
+    if (ring) paintInk(); // 填了老大一块，当场就得看见，不排到下一帧
     if (undone.length) undone = [];
   }
 
@@ -703,9 +740,9 @@
     <div class="me-line">
       <div class="me-group" role="group" aria-label="工具">
         <button class="me-btn" class:is-on={tool === "paint"} aria-pressed={tool === "paint"}
-          title="画笔（B）：涂上的地方＝要改的地方" onclick={() => pickTool("paint")}>画笔</button>
+          title="画笔（B）：涂上的地方＝要改的地方；涂一圈回到起点，松手自动把中间填上" onclick={() => pickTool("paint")}>画笔</button>
         <button class="me-btn" class:is-on={tool === "erase"} aria-pressed={tool === "erase"}
-          title="橡皮擦（E）：擦掉涂错的地方" onclick={() => pickTool("erase")}>橡皮擦</button>
+          title="橡皮擦（E）：擦掉涂错的地方；橡皮涂一圈回到起点，松手把圈里挖空" onclick={() => pickTool("erase")}>橡皮擦</button>
         <button class="me-btn" class:is-on={tool === "select"} aria-pressed={tool === "select"}
           title="选框（S）：拖一个框圈住一整块；拖完按框里可以挪，在框外单击取消"
           onclick={() => pickTool("select")}>选框</button>
@@ -737,7 +774,7 @@
       {#if hasPending}<span class="me-pending">框已选中：按框里拖可挪 · 框外单击取消 · 回车落定</span>{/if}
       <span class="me-count" class:is-none={emptyMask}>{emptyMask ? "还没涂" : `已涂 ${paintedSource.toLocaleString("zh-CN")} 处像素`}</span>
     </div>
-    <p class="me-hint">{hint || "左键涂 · Shift+左键拖框加一块 · Alt+左键拖框减一块 · E 换橡皮 · 没涂的地方一个字都不动"}</p>
+    <p class="me-hint">{hint || "左键涂 · 涂到闭合自动填中间 · Shift+左键拖框加一块 · Alt+左键拖框减一块 · E 换橡皮 · 没涂的地方一个字都不动"}</p>
   </header>
 
   <div class="me-view" class:is-hand={handing} class:is-erase={tool === "erase"}

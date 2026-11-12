@@ -36,6 +36,18 @@ export interface CloneSlot {
    * names 是还能续的槽名，弹窗按它自动补出「+ 参考」格，生成时后端克隆 LoadImage 接上去。
    */
   grow?: { node: string; group: string; names: string[]; type?: string } | null;
+  /**
+   * image 专用：这一格那台加载器的 MASK 输出被下游接走了，弹窗里就能给它画遮罩。
+   * 后端按连线检测（clone_templates._mask_consumers），值只有 "alpha" 一种；
+   * 没把遮罩接出去的工作流不会带这个键，前端也就不许摆画笔。
+   */
+  mask?: string;
+  /** prompt 专用：留空是这份工作流的一个模式（局部重绘那条＝留空走移除），生成不再拦空提示词 */
+  allow_empty?: boolean;
+  /** prompt 专用：留空时界面要说的那句话，由工作流自己写在前头，前端不替它编 */
+  empty_hint?: string;
+  /** number 专用：一颗旋钮要同时写进这几个「节点.输入」（同一个参数铺在两台节点上时用它，前端只管提交一次） */
+  sync_to?: [string, string][];
   /** select 专用：导入时从 ComfyUI 缓存下来的可选项，ComfyUI 没开也能画下拉 */
   options?: string[];
   value?: string | number | null;
@@ -985,6 +997,8 @@ export interface RefCell {
   ordinal?: number;
   /** H3 原生标签：<Picture 1> / <Audio 2> / <Video 1>。只有视频工作流会插进提示词 */
   tag?: string;
+  /** 这一格吃不吃遮罩（"alpha" = 吃）。画笔摆不摆出来只看它，判定在 lib/mask.ts。 */
+  mask?: string;
 }
 
 /**
@@ -1004,6 +1018,8 @@ export interface RefCellWire {
   /** 这一格最终喂给哪台加载器（节点标题） */
   slot_label?: string;
   tag?: string;
+  /** 后端 _cell() 给的遮罩标记，照原样收下来 */
+  mask?: string;
 }
 
 const TAG_TEMPLATES: Record<RefKind, string> = {
@@ -1049,6 +1065,7 @@ export function referenceCells(template: CloneTemplate | null | undefined): RefC
         slotLabel: cell.slot_label || cell.label || cell.key,
         kind,
         ordinal,
+        mask: cell.mask ?? "",
         // 本机：后端没带标签就按老规则补一个 <Picture n>，行为和历史一字不差。
         // 云端：空串是模型自己报的「我不认标签」（TTS 把 <Audio 1> 念出来就是事故），照空串留着。
         tag: cell.tag || (isCloudTemplate(template) ? "" : refTag(kind, ordinal || 1, template?.soundtracks ?? 0)),
@@ -1068,7 +1085,7 @@ export function referenceCells(template: CloneTemplate | null | undefined): RefC
       ordinal += 1;
       cells.push({
         key: slotKey(slot), label: `${REF_KIND_NAMES[kind]}${ordinal}`, slotLabel: label(slot),
-        kind, ordinal, tag: refTag(kind, ordinal, soundtracks),
+        kind, ordinal, tag: refTag(kind, ordinal, soundtracks), mask: slot.mask ?? "",
       });
     }
     const claimed = new Set<string>();
@@ -1079,8 +1096,11 @@ export function referenceCells(template: CloneTemplate | null | undefined): RefC
         claimed.add(target);
         ordinal += 1;
         cells.push({
+          // 扩位是照着这台加载器克隆出来的新加载器，MASK 也跟着接：所以遮罩能力跟着母槽走，
+          // 与后端 reference_cells() 同一口径，别在这儿把扩位当成不能画遮罩的格子。
           key: `${slotKey(slot)}::${name}`, label: `${REF_KIND_NAMES[kind]}${ordinal}`,
           slotLabel: label(slot), kind, ordinal, tag: refTag(kind, ordinal, soundtracks),
+          mask: slot.mask ?? "",
         });
       }
     }
@@ -1283,6 +1303,8 @@ export interface GenerateRequest {
   references: { slot: string; image_id: number }[];
   controls: Record<string, string | number>;
   source_image_id: number | null;
+  /** 画了遮罩的格子 → 灰度 PNG 的 base64（白＝要改的地方）。没画就整个键都不带。 */
+  masks?: Record<string, string>;
 }
 
 /**
@@ -1299,6 +1321,8 @@ export function buildGenerateRequest(args: {
   cellOrder?: string[];
   /** 附框（参考音频的原话等）填的内容；空的那几条不提交，让后端回落成主提示词 */
   slotPrompts?: Record<string, string>;
+  /** { 参考位: 灰度 PNG base64 }；只提交真画了的格子（maskRequestPayload 已经筛过一遍） */
+  masks?: Record<string, string>;
 }): GenerateRequest {
   const rawReferences: { slot: string; image_id: number }[] = [];
   for (const [slot, image] of Object.entries(args.references)) {
@@ -1312,6 +1336,10 @@ export function buildGenerateRequest(args: {
   const order = new Map((args.cellOrder ?? Object.keys(args.references)).map((key, index) => [key, index]));
   const references = rawReferences
     .sort((a, b) => (order.get(a.slot) ?? 0) - (order.get(b.slot) ?? 0));
+  const masks: Record<string, string> = {};
+  for (const [key, value] of Object.entries(args.masks ?? {})) {
+    if (typeof value === "string" && value.trim()) masks[key] = value;
+  }
   const slotPrompts: Record<string, string> = {};
   for (const [key, value] of Object.entries(args.slotPrompts ?? {})) {
     if (typeof value === "string" && value.trim()) slotPrompts[key] = value;
@@ -1319,6 +1347,8 @@ export function buildGenerateRequest(args: {
   const request: GenerateRequest = { template_id: args.templateId, prompt: args.prompt.trim(), references, controls, source_image_id: args.sourceImageId };
   // 没有附框的工作流不该凭空多出一个键：老请求体一字不改，测试与后端都按原样认。
   if (Object.keys(slotPrompts).length) request.slot_prompts = slotPrompts;
+  // 同理：一张遮罩都没画就不许凭空多出一个 masks 键，老请求体保持一字不差
+  if (Object.keys(masks).length) request.masks = masks;
   return request;
 }
 

@@ -896,6 +896,17 @@ describe("文字位分框：台词与参考音频的原话不能共用一个框"
     expect("slot_prompts" in plain).toBe(false);
   });
 
+  it("请求体：画了遮罩才带 masks，值就是灰度 PNG 的 base64", () => {
+    const painted = buildGenerateRequest({
+      templateId: 12, prompt: "", references: {}, controls: {}, sourceImageId: null,
+      masks: { "193.image": "YWJj", "200.image": "   " },
+    });
+    expect(painted.masks).toEqual({ "193.image": "YWJj" });
+    // 一张没画就不许多一个键：老请求体保持一字不差，后端与既有测试都按原样认
+    const bare = buildGenerateRequest({ templateId: 1, prompt: "p", references: {}, controls: {}, sourceImageId: null });
+    expect("masks" in bare).toBe(false);
+  });
+
   it("附框的解释只给认得出用途的那种，别的附框不该瞎指挥", () => {
     expect(promptGroupHint("参考音频的文本")).toContain("跑偏");
     expect(promptGroupHint("完整提示词")).toBe("");

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { updateStatus, updateError, updateAction, isUpdateBusy, downloadPercent } from "../lib/updates";
   import SettingsRow from "./SettingsRow.svelte";
+  import { dateTimeLabel } from "../lib/ws";
   let confirmInstall = $state(false);
   const busy = $derived(isUpdateBusy($updateStatus?.phase ?? ""));
   const percent = $derived(downloadPercent($updateStatus?.downloaded ?? 0, $updateStatus?.total ?? null));
@@ -44,7 +45,7 @@
         {#if $updateStatus.last_check}
           <SettingsRow title="上次检查" description="发现新版本时，左侧栏会出现更新入口。">
             {#snippet control()}
-              <span>{new Date($updateStatus.last_check * 1000).toLocaleString("zh-CN")}</span>
+              <span>{dateTimeLabel($updateStatus.last_check)}</span>
             {/snippet}
           </SettingsRow>
         {/if}

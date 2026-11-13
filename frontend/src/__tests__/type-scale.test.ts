@@ -170,7 +170,9 @@ describe("脱档字号棘轮：只许降，不许升", () => {
   // 一轮迁不完。往下改组件时顺手把这个数调小，别调大。
   // 2026-11-13 oil-ui 评审第一刀：文本卡那三处（12 / 11 / 9.5）迁上档位，详情栏两栏六个
   // 小节标题从 text-[11px] 换成共用类里的 var(--fs-xs)，280 → 270。
-  const BASELINE = 270;
+  // 2026-11-13 oil-ui 评审第三刀：右栏那族微标签六处 text-[11px] 收进 .detail-section-title
+// （App / WorkflowCard / VideoPromptPanel / MetadataCard×2 / ParamsCard），270 → 264。
+const BASELINE = 264;
 
   it("全站写在六档之外的字号不超过基线", () => {
     const { total, offenders } = countOffScale();
@@ -215,7 +217,16 @@ describe("详情栏共用一把尺子（2026-11-13 oil-ui 评审第一刀 T4 + T
   it("小节标题只有一套：h4 + --fs-xs + 同一字距，四类素材共用一个类", () => {
     // 定稿前是两套：媒体 h4 + tracking-wider（0.05em）、文本 h3 + tracking-wide（0.025em），
     // 字号还都写在六档之外（text-[11px]）。
-    for (const rel of ["components/DetailPanel.svelte", "components/TextDetailPanel.svelte"]) {
+    for (const rel of [
+        "components/DetailPanel.svelte",
+        "components/TextDetailPanel.svelte",
+        // 第三刀 T9：右栏里同一族微标签还有四处各写各的，一并收进共用类
+        "components/WorkflowCard.svelte",
+        "components/VideoPromptPanel.svelte",
+        "components/MetadataCard.svelte",
+        "components/ParamsCard.svelte",
+        "App.svelte",
+      ]) {
       const src = read(rel);
       expect(src, rel + " 的小节标题没走共用类").not.toMatch(/<h[34] class="text-\[11px\]/);
       expect(src, rel + " 还在用 h3 当小节标题").not.toMatch(/<h3 class="text-\[/);
@@ -224,6 +235,15 @@ describe("详情栏共用一把尺子（2026-11-13 oil-ui 评审第一刀 T4 + T
     expect(declOf(appCss, ".detail-section-title", "font-size")).toBe("var(--fs-xs)");
     expect(declOf(appCss, ".detail-section-title", "letter-spacing")).toBe("0.05em");
     expect(declOf(appCss, ".detail-section-title", "color")).toBe("var(--text-3)");
+  });
+
+  it("右栏那族微标签全站只剩一套写法（第三刀 T9）", () => {
+    // OnboardingModal 那一处是弹窗里的表单标签，不是详情栏小节，登记在评审总账里没动
+    const hits = collectSourceFiles(srcRoot)
+      .filter((f) => f.endsWith(".svelte"))
+      .filter((f) => /text-\[11px\][^"]*uppercase|uppercase[^"]*text-\[11px\]/.test(readFileSync(f, "utf8")))
+      .map((f) => f.slice(srcRoot.length + 1).replace(/\\/g, "/"));
+    expect(hits, "又长出第二套微标签写法：" + hits.join("、")).toEqual(["components/OnboardingModal.svelte"]);
   });
 
   it("文本卡三段字号全在六档上（这张卡以前整张自己挑档外值）", () => {

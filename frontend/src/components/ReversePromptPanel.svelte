@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { modelConfigs, reverseSettings, reverseJobs, refreshReverseConfig, reverseApi, generateReverse, errorMessage } from "../lib/reverse-prompts";
   import type { ReverseRecord } from "../lib/reverse-prompts";
-  import { copyText } from "../lib/ws";
+  import { copyText, dateTimeLabel } from "../lib/ws";
   import { pushToast } from "../lib/toast";
   import ModelPicker from "./ModelPicker.svelte";
   let { imageId }: { imageId: number } = $props();
@@ -111,7 +111,7 @@
   <p class="text-[10px] text-muted">点击反推会将图片发送至所选 API 服务。结果是画面描述，不保证还原原始提示词。</p>
   {#if error || job?.error}<p class="text-xs text-danger" role="alert">{error || job?.error}</p>{/if}
   {#if current}
-    <div class="text-[10px] text-muted break-all">{current.model_name} · {current.model}<br />{new Date(current.created_at).toLocaleString()} · {current.source === "edited" ? "手动编辑" : "模型生成"}</div>
+    <div class="text-[10px] text-muted break-all">{current.model_name} · {current.model}<br />{dateTimeLabel(current.created_at)} · {current.source === "edited" ? "手动编辑" : "模型生成"}</div>
     {#if current.image_changed}<p class="text-xs text-amber-400">图片内容已变化或文件不可用，此版本对应此前图片。</p>{/if}
     {#if editing}
       <label class="text-xs">中文<textarea aria-label="编辑中文提示词" rows="6" bind:value={editZh}></textarea></label>
@@ -139,7 +139,7 @@
           <div class="flex items-center gap-1">
             <button class="block min-w-0 flex-1 text-left truncate" aria-pressed={current.id === record.id}
               onclick={() => selectedVersion = record.id}>
-              {new Date(record.created_at).toLocaleString()} · {record.source === "edited" ? "手动编辑" : "模型生成"} · {record.model_name}
+              {dateTimeLabel(record.created_at)} · {record.source === "edited" ? "手动编辑" : "模型生成"} · {record.model_name}
             </button>
             {#if confirmId === record.id}
               <span class="text-[10px] text-amber-400 whitespace-nowrap">删除这版？</span>
@@ -169,6 +169,6 @@
   }
   button:disabled { opacity: .5; cursor: default; }
   /* 删除是不可逆的，按钮与二次确认都要压成红色，别和"选择版本"混在一起 */
-  button.danger { color: #f87171; border-color: #7f1d1d; background: #2a1414; }
+  button.danger { color: var(--danger); border-color: rgb(var(--danger-rgb) / 45%); background: rgb(var(--danger-rgb) / 8%); }
   textarea { display: block; width: 100%; margin-top: 6px; padding: 8px; font-size: 12px; color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 5px; }
 </style>

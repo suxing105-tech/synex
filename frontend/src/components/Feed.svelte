@@ -1475,7 +1475,7 @@ import { hoverPlay } from "../lib/hover-play";
   .dialog-actions button { border: 1px solid #49424c; border-radius: 6px; background: #26262b; color: #dddce4; padding: 6px 12px; font-size: 12px; cursor: pointer; }
   .dialog-actions button:disabled { opacity: .45; cursor: default; }
   .dialog-actions .primary { background: #6d4c4c; border-color: #8a5f5f; }
-  .dialog-actions .danger { background: #5b2723; border-color: #7d3a34; }
+  .dialog-actions .danger { background: var(--danger); border-color: var(--danger); color: var(--accent-ink); }
   .text-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   /* 格式徽标：TXT / MD / SRT 这种技术标识留着等宽小字，但朱红撤了 —— 项目定的是
      「朱红只用于选中 · 进行中 · 主动作」，一张常驻徽标不算任何一样。

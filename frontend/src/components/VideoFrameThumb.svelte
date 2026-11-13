@@ -78,7 +78,7 @@
   }
   .vt-caption { display: flex; flex-direction: column; gap: 3px; }
   .vt-meta { font-size: 10px; color: #a1a1aa; }
-  .vt-danger { color: #f87171; }
+  .vt-danger { color: var(--danger); }
   .vt-actions { display: flex; gap: 4px; flex-wrap: wrap; }
   .vt-button {
     font-size: 10px; padding: 3px 6px; border: 1px solid #3f3f46; border-radius: 5px; background: #202024;

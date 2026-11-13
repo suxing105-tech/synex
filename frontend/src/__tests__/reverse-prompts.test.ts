@@ -7,7 +7,12 @@ import ModelApiSettings from "../components/ModelApiSettings.svelte";
 import { reverseApi, reverseJobs, modelConfigs, reverseSettings, generateReverse } from "../lib/reverse-prompts";
 import { copyText } from "../lib/ws";
 import { cloudApi } from "../lib/clone";
-vi.mock("../lib/ws", () => ({ copyText: vi.fn().mockResolvedValue(true) }));
+// 面板还要用 dateTimeLabel（第三刀 T4 之后日期只有一支笔）：整模块 mock 会把它抹成 undefined，
+// 所以铺开真实模块，只替换 copyText 这一颗
+vi.mock("../lib/ws", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/ws")>()),
+  copyText: vi.fn().mockResolvedValue(true),
+}));
 
 const model = { id: 1, name: "测试视觉", base_url: "https://example.com/v1", model: "vision", timeout: 120, provider: null, has_api_key: true, key_persistence: "encrypted" as const };
 const preset = { id: "qwen", name: "通义千问 Qwen", base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1", models: [{ id: "qwen2.5-vl-72b-instruct", label: "Qwen2.5-VL-72B", recommended: true }], default_timeout: 120, note: "" };

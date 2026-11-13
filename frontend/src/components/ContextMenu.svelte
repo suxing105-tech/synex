@@ -73,5 +73,5 @@
   .ctx-item span:first-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .ctx-item:hover, .ctx-item:focus-visible, .ctx-item[aria-expanded="true"] { background: #38383d; outline: none; }
   .ctx-item:disabled { opacity: .45; cursor: default; }
-  .danger { color: #f07178; } .separator { border-top: 1px solid #3b3b40; margin: 4px 2px; }
+  .danger { color: var(--danger); } .separator { border-top: 1px solid #3b3b40; margin: 4px 2px; }
 </style>

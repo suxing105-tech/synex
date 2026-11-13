@@ -62,7 +62,7 @@
 <section class="metadata-card space-y-3">
   <!-- 标签 -->
   <div>
-    <div class="text-[11px] uppercase text-muted tracking-wider mb-1.5 flex items-center gap-1">
+    <div class="detail-section-title mb-2 flex items-center gap-1">
       <Icon name="tag" size={12} />
       <span>标签</span>
     </div>
@@ -97,7 +97,7 @@
 
   <!-- 文件夹 -->
   <div>
-    <div class="text-[11px] uppercase text-muted tracking-wider mb-1.5 flex items-center gap-1">
+    <div class="detail-section-title mb-2 flex items-center gap-1">
       <Icon name="folder" size={12} />
       <span>所属文件夹</span>
       <button

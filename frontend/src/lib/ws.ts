@@ -93,8 +93,28 @@ export function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
+/**
+ * 日期时间全站只有一支笔（2026-11-13 oil-ui 评审第三刀 T14）。
+ *
+ * 动手前三套写法并存：详情栏 formatDate() 走 toLocaleString("zh-CN")（单日不补零，
+ * 2026-11-9）、卡片页脚 footerTimeLabel() 走补零斜杠的 MM/DD、反推与视频面板那 7 处
+ * 裸 toLocaleString() 连 locale 都不给，跟着宿主 UI locale 走 —— 非中文系统上同一份
+ * 数据会渲染成 "11/9/2026, 6:49:39 PM"。toLocaleString 的产物还取决于 ICU 版本。
+ * 这里锁死成 YYYY-MM-DD HH:mm:ss（每段补零），不再依赖 locale 与 ICU。
+ * 入参两种都收：秒级时间戳（mtime / created）与后端 SQLite 的 ISO 串（created_at）。
+ */
+export function dateTimeLabel(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "";
+  const ms = typeof value === "number" ? value * 1000 : Date.parse(value);
+  if (!Number.isFinite(ms)) return "";
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
 export function formatDate(mtime: number): string {
-  return new Date(mtime * 1000).toLocaleString("zh-CN");
+  return dateTimeLabel(mtime);
 }
 
 export function paramsToKv(params: Record<string, unknown>): [string, string][] {

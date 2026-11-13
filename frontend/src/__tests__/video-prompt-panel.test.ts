@@ -7,7 +7,12 @@ import { segmentQueue, translationJobs, videoPromptApi, videoPromptJobs, videoPr
 import type { PromptMode, PromptReference, PromptRun, SegmentRecord, VideoPromptHistory, VideoPromptSettings } from "../lib/video-prompts";
 import { copyText } from "../lib/ws";
 
-vi.mock("../lib/ws", () => ({ copyText: vi.fn().mockResolvedValue(true) }));
+// 面板还要用 dateTimeLabel（第三刀 T4 之后日期只有一支笔）：整模块 mock 会把它抹成 undefined，
+// 所以铺开真实模块，只替换 copyText 这一颗
+vi.mock("../lib/ws", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/ws")>()),
+  copyText: vi.fn().mockResolvedValue(true),
+}));
 vi.mock("../lib/toast", () => ({ pushToast: vi.fn(() => 1), updateToast: vi.fn(), dismissToast: vi.fn() }));
 vi.mock("../lib/image-clipboard", () => ({
   copyDataUrlImage: vi.fn().mockResolvedValue(undefined),

@@ -12,7 +12,7 @@
   } from "../lib/video-prompts";
   import type { PromptMode, PromptRun, PromptTarget, PromptUnit, SegmentRecord } from "../lib/video-prompts";
   import type { PromptReference } from "../lib/video-prompts";
-  import { copyText } from "../lib/ws";
+  import { copyText, dateTimeLabel } from "../lib/ws";
   import ModelPicker from "./ModelPicker.svelte";
   import VideoFrameThumb from "./VideoFrameThumb.svelte";
   import { countSlots, overSlots, plannedReferences, refFileTag, SLOT_LABELS, unitFrameAt } from "../lib/video-prompts";
@@ -292,7 +292,7 @@
 
 <section class="rounded-md border border-border bg-surface-2 p-3 space-y-3" aria-label="AI 反推视频提示词">
   <div class="flex items-baseline justify-between gap-2">
-    <h4 class="text-[11px] uppercase tracking-wider text-muted">AI 反推视频提示词</h4>
+    <h4 class="detail-section-title">AI 反推视频提示词</h4>
     <span class="text-[10px] text-muted">{secondsText}</span>
   </div>
 
@@ -350,7 +350,7 @@
     <div class="space-y-2 border-t border-border pt-3">
       <div class="flex items-center gap-2 flex-wrap">
         <span class="text-[10px] text-muted">
-          {new Date(run.created_at).toLocaleString()} · {run.model_name} · {units.length} 段
+          {dateTimeLabel(run.created_at)} · {run.model_name} · {units.length} 段
         </span>
         {#if run.video_changed}<span class="vp-badge vp-warn">视频文件已变化</span>{/if}
         {#if run.sound_note}<span class="vp-badge">已提供参考声音</span>
@@ -533,7 +533,7 @@
                 {#if viewing}
                   <div class="flex items-center gap-2 flex-wrap text-[10px] text-amber-400">
                     <span>
-                      正在看历史版本 #{viewing.id}（{new Date(viewing.created_at).toLocaleString()}），
+                      正在看历史版本 #{viewing.id}（{dateTimeLabel(viewing.created_at)}），
                       当前版本 #{recordFor(unit.index, tab)?.id}。复制与编辑都针对这一版；编辑会存成新版本。
                     </span>
                     <button class="vp-button" onclick={() => backToCurrent(unit.index, tab)}>回到当前版本</button>
@@ -628,7 +628,7 @@
                       <div class="flex items-center gap-1">
                         <button class="vp-version min-w-0 flex-1 text-left" aria-pressed={record?.id === version.id}
                           title="查看这一版正文" onclick={() => toggleView(version)}>
-                          #{version.id} {new Date(version.created_at).toLocaleString()} ·
+                          #{version.id} {dateTimeLabel(version.created_at)} ·
                           {version.source === "edited" ? "手动编辑" : "模型生成"} · {version.model_name}
                           {#if version.id === recordFor(unit.index, tab)?.id}<span class="vp-badge">当前</span>{/if}
                         </button>
@@ -664,7 +664,7 @@
           {#each runs as item}
             <button class="block w-full text-left text-[11px]" aria-pressed={run?.id === item.id}
               onclick={() => activeRunId = item.id}>
-              {new Date(item.created_at).toLocaleString()} ·
+              {dateTimeLabel(item.created_at)} ·
               {item.status === "planned" ? `${item.units.length} 段` : "失败"} ·
               {item.model_name} · {TARGET_LABELS.seedance2}{item.versions.seedance2}/H3{item.versions.h3}
             </button>
@@ -688,7 +688,7 @@
   .vp-label { font-size: 11px; color: #a1a1aa; flex: none; white-space: nowrap; }
   .vp-version { font-size: 10px; padding: 4px 6px; border: 1px solid #3f3f46; border-radius: 5px; background: #18181b; }
   .vp-version[aria-pressed="true"] { border-color: #f24e4e; color: #fda4a4; }
-  .vp-danger { color: #f87171; border-color: #7f1d1d; background: #2a1414; }
+  .vp-danger { color: var(--danger); border-color: rgb(var(--danger-rgb) / 45%); background: rgb(var(--danger-rgb) / 8%); }
   .vp-button {
     font-size: 11px; padding: 5px 8px; border: 1px solid #3f3f46; border-radius: 5px; background: #202024;
   }

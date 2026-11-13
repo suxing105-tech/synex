@@ -63,7 +63,7 @@
 <section class="params-card space-y-3">
   {#each groups as g (g.id)}
     <div class="border border-border rounded-md">
-      <div class="px-2 py-1 text-[11px] uppercase text-muted tracking-wider bg-surface-2 border-b border-border rounded-t-md">
+      <div class="detail-section-title px-2 py-1 bg-surface-2 border-b border-border rounded-t-md">
         {g.label}
       </div>
       {#if g.id === "lora"}

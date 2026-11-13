@@ -354,7 +354,7 @@ import Icon from "./components/Icon.svelte";
       {:else}
         <div class="flex items-center justify-between px-3 py-[10px] border-b border-border shrink-0">
           <!-- 这一栏现在有四页，标题再写「详情」就会在看队列那一页说一句假话 -->
-          <span class="text-[11px] uppercase text-muted tracking-wider">工作台</span>
+          <span class="detail-section-title">工作台</span>
           <button class="collapse-sidebar" onclick={() => (detailCollapsed = true)} title="收起右侧栏" aria-label="收起右侧栏">
             <Icon name="panel-right-collapse" size={20} />
           </button>

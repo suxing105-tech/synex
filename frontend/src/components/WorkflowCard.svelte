@@ -59,7 +59,7 @@
 </script>
 
 <section>
-  <h4 class="text-[11px] uppercase text-muted mb-1.5 tracking-wider">Workflow JSON</h4>
+  <h4 class="detail-section-title mb-2">Workflow JSON</h4>
   <details class="bg-surface-2 border border-border rounded-md">
     <summary class="cursor-pointer text-[12px] text-muted hover:text-zinc-200 px-2 py-1.5 flex items-center gap-2 select-none">
       <Icon name="chevron-right" size={12} />

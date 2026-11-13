@@ -9,10 +9,10 @@ describe("工具函数", () => {
     expect(formatSize(1024 * 1024 * 1024 * 1.5)).toBe("1.50 GB");
   });
 
-  it("formatDate 返回本地化字符串", () => {
-    const s = formatDate(1700000000);
-    expect(typeof s).toBe("string");
-    expect(s.length).toBeGreaterThan(0);
+  // 第三刀 T14：输出锁死成 YYYY-MM-DD HH:mm:ss。原来只断言「是个非空字符串」，那种写法连 Invalid Date 都放过。
+  it("formatDate 输出固定形状且各段补零", () => {
+    expect(formatDate(new Date(2026, 10, 9, 8, 5, 3).getTime() / 1000)).toBe("2026-11-09 08:05:03");
+    expect(formatDate(1700000000)).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
   });
 
   it("paramsToKv 转换为 [k, v][]", () => {

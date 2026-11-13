@@ -10,7 +10,9 @@
   import { copyText, formatDate } from "../lib/ws";
   import { pushToast } from "../lib/toast";
   import { revealLocation } from "../lib/reveal";
+
   import { textFormatLabel } from "../lib/text-reading";
+  import { pathBreakSegments } from "../lib/path-segments";
 
   const message = (e: unknown) => e instanceof Error ? e.message : String(e);
   let busy = $state(false);
@@ -118,6 +120,7 @@
 
 {#if $selectedText}
   {@const it = $selectedText}
+  {@const pathSegs = pathBreakSegments(it?.path)}
   <div class="h-full flex flex-col overflow-hidden">
     <!-- 操作带：占的是媒体那栏 tab 行那一条（同高 --ctl-lg = 实测 38px），
          四类素材右栏的正文起点因此在一条线上。阅读 / 编辑 / ⋯ 从标题那一行挪出来 ——
@@ -172,7 +175,7 @@
       {#if confirming}
         <div class="rounded border border-danger/40 bg-surface-2 p-3 space-y-2" role="alertdialog" aria-label="确认移入回收站">
           <p>会把磁盘原文件一起移入系统回收站：</p>
-          <p class="font-mono text-[11px] break-all text-muted">{it.path}</p>
+          <p class="font-mono text-[11px] break-words text-muted">{#each pathSegs as seg, i}{seg}{#if i !== pathSegs.length - 1}<wbr />{/if}{/each}</p>
           <div class="flex gap-2">
             <button type="button" class="dock-btn is-danger hover:bg-surface-3 disabled:opacity-40" disabled={busy} onclick={() => void trash()}>确认移入回收站</button>
             <button type="button" class="dock-btn hover:bg-surface-3" onclick={() => (confirming = false)}>取消</button>
@@ -188,7 +191,7 @@
       <section>
         <h4 class="detail-section-title mb-2">路径</h4>
         <div class="flex items-start gap-2">
-          <code class="flex-1 min-w-0 break-all font-mono text-[11px] rounded-md border border-border bg-surface-2 p-2.5">{it.path}</code>
+          <code class="flex-1 min-w-0 break-words font-mono text-[11px] rounded-md border border-border bg-surface-2 p-2.5">{#each pathSegs as seg, i}{seg}{#if i !== pathSegs.length - 1}<wbr />{/if}{/each}</code>
           <button type="button" class="dock-btn hover:bg-surface-3 shrink-0" aria-label="复制路径" onclick={() => void copyText(it.path).then(ok => pushToast(ok ? "已复制路径" : "复制失败", { kind: ok ? "success" : "error" }))}>复制</button>
         </div>
       </section>

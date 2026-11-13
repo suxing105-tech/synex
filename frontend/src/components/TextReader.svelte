@@ -10,6 +10,7 @@
   import { get } from 'svelte/store';
   import { backendUrl } from '../lib/backend-url';
 import { basenameOnly } from '../lib/media-format';
+  import { dateTimeLabel } from "../lib/ws";
   import { imagesApi, videosApi } from '../lib/api';
   import { isTextItem } from '../lib/items';
   import { isTypingTarget, modalFocus } from '../lib/modal-focus';
@@ -502,7 +503,7 @@ import { basenameOnly } from '../lib/media-format';
       {:else if modal === 'history'}
         <div class="history-layout">
           <aside>
-            {#each historyItems as entry (entry.id)}<button class:chosen={entry.id === historyId} onclick={() => void previewHistory(entry.id)}>{new Date(entry.created * 1000).toLocaleString()}</button>{/each}
+            {#each historyItems as entry (entry.id)}<button class:chosen={entry.id === historyId} onclick={() => void previewHistory(entry.id)}>{dateTimeLabel(entry.created)}</button>{/each}
             {#if !historyItems.length}<p>尚无历史版本。修改并保存后，会保留修改前的内容。</p>{/if}
           </aside>
           <pre>{historyId ? historyBody || '（空白文档）' : '选择一个历史版本预览'}</pre>
@@ -590,7 +591,7 @@ import { basenameOnly } from '../lib/media-format';
   .text-modal button { border: 1px solid #49424c; border-radius: 6px; background: #26262b; color: #dddce4; padding: 6px 10px; margin: 3px; cursor: pointer; font-size: 12px; }
   .text-modal button:disabled { opacity: .45; cursor: default; }
   .text-modal .primary { background: #6d4c4c; border-color: #8a5f5f; }
-  .text-modal .danger { background: #5b2723; border-color: #7d3a34; }
+  .text-modal .danger { background: var(--danger); border-color: var(--danger); color: var(--accent-ink); }
   .text-modal pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.8 Consolas, 'Microsoft YaHei', monospace; background: #0e0e10; padding: 14px; border-radius: 6px; }
   .history-layout { display: grid; grid-template-columns: 190px 1fr; height: 340px; gap: 16px; }
   .history-layout aside, .history-layout pre { overflow: auto; }

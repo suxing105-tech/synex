@@ -930,3 +930,41 @@ body,
   color: var(--text-3);
 }
 
+/* ── 详情栏共用件：次要按钮 + 小节标题 ──────────────────────────────────────
+   2026-11-13 oil-ui 只读评审第一刀（T4 + T9）。右栏本来各写各的：
+   · 按钮 —— 媒体面板 .dock-btn 是 --ctl-md（实测 32px），文本面板用 p-1.5 撑，实测 38px，
+     比媒体的主动作还大一号，主次视觉重量是反的；同面板那颗「复制」又是 29px，三档里没这个数。
+   · 小节标题 —— 媒体是 h4 + tracking-wider，文本是 h3 + tracking-wide，字号 11px 还写在六档之外。
+   .dock-btn 从 DetailPanel 的 scoped style 整块搬上来：类名不变，两处 markup 指同一份定义，
+   同一个尺寸口径不许有两个真源。下边距留在 markup 里（mb-2 = 8px）：元数据那行标题和「标签」
+   按钮同排，边距写进共用类会和行容器叠成两层。 */
+.dock-btn {
+  height: var(--ctl-md);
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-1);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* 破坏性动作：项目自己已经有 --danger 这一档语义色（再次创作的删除按钮同一套写法），
+   不再借 Tailwind 的 cool red（red-200 / red-300 / red-800 与品牌朱红不是一族）。
+   --danger 压在 ink-2 上是 6.2:1，比原来那颗 red-200 还高一档。 */
+.dock-btn.is-danger {
+  border-color: rgb(var(--danger-rgb) / 45%);
+  color: var(--danger);
+}
+
+/* 小节标题：四类素材的右栏共用一套——同 tag（h4）、同字号（--fs-xs，原来那 11px 在六档之外，
+   这是往档位上迁、不是新挑值）、同字距（0.05em = 原 tracking-wider）、同灰（--text-3，
+   即 tailwind 的 text-muted）。下边距不写在这儿，见上面那条说明。 */
+.detail-section-title {
+  font-size: var(--fs-xs);
+  line-height: 1.35;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}

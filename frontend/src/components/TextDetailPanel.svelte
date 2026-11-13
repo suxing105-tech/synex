@@ -140,16 +140,16 @@
         </div>
       </div>
       <div class="shrink-0 flex items-center gap-1" data-text-menu-root>
-        <button type="button" class="p-1.5 rounded border border-border hover:bg-surface-3 transition-colors" title="打开阅读" aria-label="打开阅读" onclick={read}>阅读</button>
-        <button type="button" class="p-1.5 rounded border border-border hover:bg-surface-3 transition-colors" title="就地编辑" aria-label="就地编辑" onclick={edit}>编辑</button>
-        <button type="button" class="p-1.5 rounded border border-border hover:bg-surface-3 transition-colors" title="更多操作" aria-label="更多操作" aria-haspopup="menu" aria-expanded={menuOpen} onclick={() => (menuOpen = !menuOpen)}>⋯</button>
+        <button type="button" class="dock-btn hover:bg-surface-3 transition-colors" title="打开阅读" aria-label="打开阅读" onclick={read}>阅读</button>
+        <button type="button" class="dock-btn hover:bg-surface-3 transition-colors" title="就地编辑" aria-label="就地编辑" onclick={edit}>编辑</button>
+        <button type="button" class="dock-btn hover:bg-surface-3 transition-colors" title="更多操作" aria-label="更多操作" aria-haspopup="menu" aria-expanded={menuOpen} onclick={() => (menuOpen = !menuOpen)}>⋯</button>
         {#if menuOpen}
           <div class="absolute right-4 top-14 z-20 min-w-[150px] rounded-md border border-border bg-surface-2 shadow-lg py-1 text-[12px]" role="menu" aria-label="文本更多操作">
             <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={startRename}>重命名</button>
             <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={() => void copyFile()}>复制文本文件</button>
             <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={() => void copyFull()}>复制全文</button>
             <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={() => void reveal()}>文件位置</button>
-            <button type="button" class="w-full px-3 py-1.5 text-left text-red-300 hover:bg-surface-3" role="menuitem" onclick={() => { confirming = true; menuOpen = false; }}>移入回收站</button>
+            <button type="button" class="w-full px-3 py-1.5 text-left text-danger hover:bg-surface-3" role="menuitem" onclick={() => { confirming = true; menuOpen = false; }}>移入回收站</button>
           </div>
         {/if}
       </div>
@@ -158,37 +158,37 @@
     <div class="flex-1 overflow-y-auto p-4 space-y-4 detail-body text-[12.5px]">
       {#if renaming}
         <div class="flex gap-2">
-          <button type="button" class="px-2.5 py-1 rounded border border-border hover:bg-surface-3 disabled:opacity-40" disabled={busy} onclick={() => void saveRename()}>保存</button>
-          <button type="button" class="px-2.5 py-1 rounded border border-border hover:bg-surface-3" onclick={() => (renaming = false)}>取消</button>
+          <button type="button" class="dock-btn hover:bg-surface-3 disabled:opacity-40" disabled={busy} onclick={() => void saveRename()}>保存</button>
+          <button type="button" class="dock-btn hover:bg-surface-3" onclick={() => (renaming = false)}>取消</button>
         </div>
       {/if}
       {#if notice}<div class="rounded border border-border bg-surface-2 p-2 text-[11.5px] text-amber-200" role="status">{notice}</div>{/if}
       {#if confirming}
-        <div class="rounded border border-red-900 bg-surface-2 p-3 space-y-2" role="alertdialog" aria-label="确认移入回收站">
+        <div class="rounded border border-danger/40 bg-surface-2 p-3 space-y-2" role="alertdialog" aria-label="确认移入回收站">
           <p>会把磁盘原文件一起移入系统回收站：</p>
           <p class="font-mono text-[11px] break-all text-muted">{it.path}</p>
           <div class="flex gap-2">
-            <button type="button" class="px-2.5 py-1 rounded border border-red-800 text-red-200 hover:bg-surface-3 disabled:opacity-40" disabled={busy} onclick={() => void trash()}>确认移入回收站</button>
-            <button type="button" class="px-2.5 py-1 rounded border border-border hover:bg-surface-3" onclick={() => (confirming = false)}>取消</button>
+            <button type="button" class="dock-btn is-danger hover:bg-surface-3 disabled:opacity-40" disabled={busy} onclick={() => void trash()}>确认移入回收站</button>
+            <button type="button" class="dock-btn hover:bg-surface-3" onclick={() => (confirming = false)}>取消</button>
           </div>
         </div>
       {/if}
 
       <section>
-        <h3 class="text-[11px] uppercase tracking-wide text-muted mb-1.5">摘录</h3>
+        <h4 class="detail-section-title mb-2">摘录</h4>
         <p class="whitespace-pre-wrap leading-relaxed rounded-md border border-border bg-surface-2 p-3 max-h-72 overflow-auto">{it.excerpt || "（空）"}</p>
       </section>
 
       <section>
-        <h3 class="text-[11px] uppercase tracking-wide text-muted mb-1.5">路径</h3>
+        <h4 class="detail-section-title mb-2">路径</h4>
         <div class="flex items-start gap-2">
           <code class="flex-1 min-w-0 break-all font-mono text-[11px] rounded-md border border-border bg-surface-2 p-2.5">{it.path}</code>
-          <button type="button" class="px-2 py-1 rounded border border-border hover:bg-surface-3 shrink-0" aria-label="复制路径" onclick={() => void copyText(it.path).then(ok => pushToast(ok ? "已复制路径" : "复制失败", { kind: ok ? "success" : "error" }))}>复制</button>
+          <button type="button" class="dock-btn hover:bg-surface-3 shrink-0" aria-label="复制路径" onclick={() => void copyText(it.path).then(ok => pushToast(ok ? "已复制路径" : "复制失败", { kind: ok ? "success" : "error" }))}>复制</button>
         </div>
       </section>
 
       <section>
-        <h3 class="text-[11px] uppercase tracking-wide text-muted mb-1.5">标签</h3>
+        <h4 class="detail-section-title mb-2">标签</h4>
         <div class="flex flex-wrap gap-1.5">
           {#each it.tags as tag}
             <button type="button" class="px-2 py-0.5 rounded-full border border-border hover:bg-surface-3" onclick={() => searchTag(tag)}>{tag}</button>

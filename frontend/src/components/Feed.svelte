@@ -1424,17 +1424,24 @@ import { hoverPlay } from "../lib/hover-play";
   .image-rename { min-width: 0; border: 1px solid #888; border-radius: 3px; background: #222; color: #eee; padding: 1px 3px; outline: none; font: inherit; }
   .import-progress { position: sticky; top: 0; z-index: 25; width: fit-content; margin: 0 auto 8px; padding: 6px 12px; background: #292929; border-radius: 16px; font-size: 12px; color: #ddd; }
   /* 「所有素材」里的文本卡：21:9 横幅只读入口。徽标 + 标题一行 + 摘录两行，点开进中间栏的阅读层。
-     卡片只有约 1/3 列宽那么高，装不下第四行，所以悬停提示整行删掉（标题 tooltip 够用）。 */
+     卡片只有约 1/3 列宽那么高，装不下第四行，所以悬停提示整行删掉（标题 tooltip 够用）。
+
+     底色在 2026-11-13 评审第一刀（T2）里收回墨阶。原来是这张卡自己挑的
+     #232326→#1c1c1f 渐变：两个值都不在 ink 阶上（ink-2 是 #1d1d22、ink-3 是 #28282e），
+     而且把 --text-3 的地板从 4.9:1 削到 4.56:1。现在卡底就是卡片页脚那一档
+     --thumb-bg（= ink-2），和图片卡同一张脸；hover 抬一档到 ink-3，动作还是「只换底色」。
+     行间距从 3px 收到 2px：3 不在 4px 网格上，2 是 §3.1 那半步（只用在图标和文字之间），
+     徽标和标题、标题和摘录正是这两处。字号往档位上迁会多占的 2px 也由这里还回去。 */
   .text-card {
-    position: relative; display: flex; flex-direction: column; gap: 3px; flex: none; min-height: 0;
+    position: relative; display: flex; flex-direction: column; gap: 2px; flex: none; min-height: 0;
     padding: 8px 10px; border: 0; border-radius: var(--thumb-radius); overflow: hidden;
-    background: linear-gradient(180deg, #232326, #1c1c1f); color: #d8d8dc;
+    background: var(--thumb-bg); color: var(--text-1);
     text-align: left; cursor: pointer; user-select: none;
     transition: box-shadow 160ms ease;
   }
   /* hover 不描边：文本卡没有可放大的画面，只换一档底色 */
   .text-card:hover {
-    background: linear-gradient(180deg, #27272b, #1f1f22);
+    background: var(--ink-3);
   }
   /* 选中的文本卡与图片卡同一套 1px 描边，右侧栏随之切换成文本详情 */
   .text-card.is-selected {
@@ -1465,16 +1472,27 @@ import { hoverPlay } from "../lib/hover-play";
   .dialog-actions button:disabled { opacity: .45; cursor: default; }
   .dialog-actions .primary { background: #6d4c4c; border-color: #8a5f5f; }
   .dialog-actions .danger { background: #5b2723; border-color: #7d3a34; }
-  .text-card:focus-visible { outline: 2px solid #f24e4e; outline-offset: 1px; }
+  .text-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* 格式徽标：TXT / MD / SRT 这种技术标识留着等宽小字，但朱红撤了 —— 项目定的是
+     「朱红只用于选中 · 进行中 · 主动作」，一张常驻徽标不算任何一样。
+     底色走 --raise-2（海拔那一族本来就是给「比所在面亮一点」准备的）：常驻时压在 ink-2 上
+     得到 #2d2d31，hover 卡底抬到 ink-3 时它跟着抬到 #37373d，两种状态都稳压卡底一档。
+     先前在这儿写死 ink-3，hover 那一下卡底也是 ink-3，徽标整颗融进卡里——这条由
+     target-size-contrast.test.ts 钉住（叠色后比底色，撞色就红）。
+     字 --text-2：压在 #2d2d31 上 5.4:1、压在 #37373d 上 4.6:1，两种状态都够正文地板。
+     字号 9.5px 是「比 10.5 更小的存量」，这一处迁掉之后全站只剩 9px 两颗。
+     圆角走 --r-pill：4px 不在圆角四档里，chip 该是胶囊。 */
   .text-format {
-    align-self: flex-start; padding: 1px 5px; border-radius: 4px; background: #f24e4e1f;
-    color: #f2a0a0; font-size: 9.5px; letter-spacing: .04em;
+    align-self: flex-start; padding: 1px 5px; border-radius: var(--r-pill); background: var(--raise-2);
+    color: var(--text-2); font-size: var(--fs-2xs); letter-spacing: .04em;
   }
   .text-name {
-    font-size: 12px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-size: var(--fs-sm); line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
+  /* 摘录是正文不是元数据条，而且 hover 时压在 ink-3 上：--text-3 在那一档只剩 4.3:1，
+     所以按 §3.1 的口径用 --text-2（ink-2 上 6.6:1、ink-3 上 5.7:1）。 */
   .text-excerpt {
-    margin: 0; flex: 1; font-size: 11px; line-height: 1.4; color: #8a8a8e;
+    margin: 0; flex: 1; font-size: var(--fs-xs); line-height: 1.4; color: var(--text-2);
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
   /* 播放中的音频卡不描红边 —— 边框与图片/视频完全一致，只靠顶部进度线和暂停图标表意 */

@@ -610,7 +610,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
 
         <!-- 音频信息卡 -->
         <section class="bg-surface-2 border border-border rounded-md p-3">
-          <h4 class="text-[11px] uppercase text-muted mb-2 tracking-wider">音频信息</h4>
+          <h4 class="detail-section-title mb-2">音频信息</h4>
           <dl class="space-y-1.5 text-[12px]">
             {#each audioInfoRows(d) as row}
               <div class="flex justify-between gap-2">
@@ -638,8 +638,8 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
         <div class="detail-pane" id="detail-pane-detail" role="tabpanel" aria-labelledby="detail-tab-detail" hidden={detailTab !== "detail"}>
         <!-- 元数据：标签 + 文件夹 -->
         <section>
-          <div class="flex items-center justify-between mb-1.5">
-            <h4 class="text-[11px] uppercase text-muted tracking-wider">元数据</h4>
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="detail-section-title">元数据</h4>
             <button
               type="button"
               class="text-[11px] text-muted hover:text-zinc-200 inline-flex min-h-6 items-center gap-1"
@@ -708,7 +708,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
         <div class="detail-pane" id="detail-pane-params" role="tabpanel" aria-labelledby="detail-tab-params" hidden={detailTab !== "params"}>
         <!-- 参数分组（含 LoRA） -->
         <section>
-          <h4 class="text-[11px] uppercase text-muted mb-1.5 tracking-wider">生成参数</h4>
+          <h4 class="detail-section-title mb-2">生成参数</h4>
           <ParamsCard
             parameters={d.parameters}
             detail={{
@@ -885,17 +885,8 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
     color: var(--text-3);
   }
 
-  .dock-btn {
-    height: var(--ctl-md);
-    padding: 0 10px;
-    border: 1px solid var(--line);
-    border-radius: var(--r-1);
-    background: transparent;
-    color: var(--text-2);
-    font-size: var(--fs-sm);
-    cursor: pointer;
-    white-space: nowrap;
-  }
+  /* .dock-btn 搬进 app.css 了：文本详情栏的头部按钮要用同一档尺寸（2026-11-13 评审第一刀 T4），
+     留在这里就是私有定义，两处各改各的，尺寸口径迟早又分叉。 */
   /* 菜单往上开：操作条贴着视口底边，再往下就掉出屏幕了。 */
   .dock-menu {
     position: absolute;

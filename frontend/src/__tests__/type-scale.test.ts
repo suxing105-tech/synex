@@ -168,7 +168,9 @@ describe("脱档字号棘轮：只许降，不许升", () => {
 
   // 2026-11-11 定稿时的存量：六档定得下来，但存量（class 任意值 + <style> 里的裸 px）
   // 一轮迁不完。往下改组件时顺手把这个数调小，别调大。
-  const BASELINE = 280;
+  // 2026-11-13 oil-ui 评审第一刀：文本卡那三处（12 / 11 / 9.5）迁上档位，详情栏两栏六个
+  // 小节标题从 text-[11px] 换成共用类里的 var(--fs-xs)，280 → 270。
+  const BASELINE = 270;
 
   it("全站写在六档之外的字号不超过基线", () => {
     const { total, offenders } = countOffScale();
@@ -178,5 +180,56 @@ describe("脱档字号棘轮：只许降，不许升", () => {
         "class 用 text-2xs/xs2/sm2/base2/md2/lg2，<style> 用 font-size: var(--fs-*)。" +
         " 现存分布：" + offenders.map(([k, v]) => k + "×" + v).join(" "),
     ).toBeLessThanOrEqual(BASELINE);
+  });
+});
+
+describe("详情栏共用一把尺子（2026-11-13 oil-ui 评审第一刀 T4 + T9）", () => {
+  const read = (rel: string) => readFileSync(join(srcRoot, rel), "utf8");
+  /** 抠某条规则块里的一个声明；抠不到就报错，不许放宽成 toBeTruthy。 */
+  function declOf(css: string, selector: string, prop: string) {
+    const at = css.indexOf(selector + " {");
+    if (at < 0) throw new Error("找不到规则块 " + selector);
+    const block = css.slice(at, css.indexOf("}", at));
+    const hit = block.match(new RegExp("(?<![-\\w])" + prop + ":\\s*([^;]+);"));
+    if (!hit) throw new Error(selector + " 里没有 " + prop);
+    return hit[1].trim();
+  }
+
+  it("右栏的次要按钮只有一档高度：--ctl-md，文本面板不再自己撑出 38px", () => {
+    // 定稿前实测：文本头那三颗（阅读 / 编辑 / ⋯）38px，同面板那颗「复制」29px，
+    // 媒体的主动作倒是老实的 32px —— 次要动作比人家的主动作还大一号，主次是反的。
+    expect(declOf(appCss, ".dock-btn", "height"), "详情栏的按钮必须落在控件三档上")
+      .toBe("var(--ctl-md)");
+
+    // 定义只许有一份：搬进 app.css 之后组件里再留一份私有的，尺寸迟早又分叉
+    expect(read("components/DetailPanel.svelte"), ".dock-btn 又变回 DetailPanel 私有定义")
+      .not.toMatch(/\.dock-btn\s*\{/);
+
+    // 文本面板不许再拿 padding 凑控件高度：凑出来的数落不进 26 / 32 / 38 任何一档
+    const textPanel = read("components/TextDetailPanel.svelte");
+    expect(textPanel, "文本详情栏还有拿 padding 凑高度的按钮")
+      .not.toMatch(/class="[^"]*(?:p-1\.5|py-1) rounded/);
+    expect(textPanel.match(/class="dock-btn/g) || []).toHaveLength(8);
+  });
+
+  it("小节标题只有一套：h4 + --fs-xs + 同一字距，四类素材共用一个类", () => {
+    // 定稿前是两套：媒体 h4 + tracking-wider（0.05em）、文本 h3 + tracking-wide（0.025em），
+    // 字号还都写在六档之外（text-[11px]）。
+    for (const rel of ["components/DetailPanel.svelte", "components/TextDetailPanel.svelte"]) {
+      const src = read(rel);
+      expect(src, rel + " 的小节标题没走共用类").not.toMatch(/<h[34] class="text-\[11px\]/);
+      expect(src, rel + " 还在用 h3 当小节标题").not.toMatch(/<h3 class="text-\[/);
+      expect(src, rel + " 的小节标题缺共用类").toContain("detail-section-title");
+    }
+    expect(declOf(appCss, ".detail-section-title", "font-size")).toBe("var(--fs-xs)");
+    expect(declOf(appCss, ".detail-section-title", "letter-spacing")).toBe("0.05em");
+    expect(declOf(appCss, ".detail-section-title", "color")).toBe("var(--text-3)");
+  });
+
+  it("文本卡三段字号全在六档上（这张卡以前整张自己挑档外值）", () => {
+    const feed = read("components/Feed.svelte");
+    expect(declOf(feed, ".text-format", "font-size")).toBe("var(--fs-2xs)");
+    expect(declOf(feed, ".text-name", "font-size")).toBe("var(--fs-sm)");
+    expect(declOf(feed, ".text-excerpt", "font-size")).toBe("var(--fs-xs)");
   });
 });

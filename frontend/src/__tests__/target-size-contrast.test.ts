@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { tokenValue } from "./fixtures/css-tokens";
+import { resolveCssVar, tokenValue } from "./fixtures/css-tokens";
 
 /**
  * 2026-11-11 无障碍审计第二批：文本对比度下限 + 点击目标尺寸下限。
@@ -206,4 +206,61 @@ it("--text-3 压不住 ink-3（控件底），不许和 surface-3 配在同一�
     }
   }
   expect(offenders, "text-3 压在控件底上：" + offenders.join("；")).toEqual([]);
+});
+
+it("文本卡的底色落在墨阶上，摘录压在常态底和 hover 底上都够 4.5:1", () => {
+  // 2026-11-13 oil-ui 评审第一刀（T2）。这张卡原先是全站唯一一张自己挑底色的卡：
+  // #232326→#1c1c1f 的渐变，两档都不在 ink 阶上，还顺手把摘录那行 --text-3 的地板
+  // 从 4.9:1 削到实测 4.56:1。「新挑一个灰」这件事以前没有任何 lint 抓得到，这里补上：
+  // 卡底和 hover 底必须落在六档墨阶里，文字压在这两档上都得够正文对比度。
+  const feed = readFileSync("src/components/Feed.svelte", "utf8");
+  const ladder = ["--ink-0", "--ink-1", "--ink-2", "--ink-3", "--ink-4", "--ink-5"].map(tokenValue);
+  const rest = resolveCssVar(decl(feed, ".text-card", "background")) as string;
+  const hover = resolveCssVar(decl(feed, ".text-card:hover", "background")) as string;
+  expect(ladder, ".text-card 的底色不在墨阶上：" + rest).toContain(rest);
+  expect(ladder, ".text-card:hover 的底色不在墨阶上：" + hover).toContain(hover);
+
+  // 摘录是正文不是元数据条：hover 抬到 ink-3 之后 --text-3 在那一档只剩 4.3:1，
+  // 所以这张卡的正文用 --text-2（§3.1 给 ink-3 场合开的就是这一档）。
+  const excerpt = resolveCssVar(decl(feed, ".text-excerpt", "color")) as string;
+  for (const bg of [rest, hover]) {
+    expect(contrast(excerpt, bg), "文本卡摘录压在 " + bg + " 上").toBeGreaterThanOrEqual(4.5);
+  }
+
+  expect(hover, "hover 没换档：卡底和 hover 底同一档，等于没有反馈").not.toBe(rest);
+
+  // 徽标是压在卡面上的抬起面，底色走 --raise-* 那一族：半透明，得先叠到实际卡底上，
+  // 才知道眼里看到的到底是哪个颜色。hover 抬一档时它必须跟着走。
+  const badgeRaw = decl(feed, ".text-format", "background");
+  expect(badgeRaw, "徽标底色又不是 token 了").toMatch(/^var\(--/);
+  const badgeDecl = resolveCssVar(badgeRaw) as string;
+  const badgeFg = resolveCssVar(decl(feed, ".text-format", "color")) as string;
+
+  const badgeOn = (cardBg: string) => {
+    const m = badgeDecl.match(/rgb\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\/\s*([\d.]+)%\s*\)/);
+    if (!m) return badgeDecl;
+    const alpha = Number(m[4]) / 100;
+    const baseRgb = hexToRgb(cardBg);
+    return "#" + [1, 2, 3]
+      .map((i) => Math.round(Number(m[i]) * alpha + baseRgb[i - 1] * (1 - alpha)))
+      .map((v) => v.toString(16).padStart(2, "0"))
+      .join("");
+  };
+  for (const [state, cardBg] of [["常态", rest], ["hover", hover]] as const) {
+    const on = badgeOn(cardBg);
+    expect(on, state + " 时徽标底色和卡底撞成一档，徽标整颗会消失").not.toBe(cardBg);
+    expect(contrast(badgeFg, on), "徽标字压在 " + state + " 底 " + on + " 上").toBeGreaterThanOrEqual(4.5);
+  }
+});
+
+it("格式徽标不再借朱红当常驻装饰，焦点环仍旧走 --accent", () => {
+  // 项目定的是「朱红只用于选中 · 进行中 · 主动作」。原先这颗徽标是 #f2a0a0 压在
+  // rgba(242,78,78,.12) 上：一张常驻的技术标识，上面三样它一样都不占。
+  // 焦点环是另一回事——那是键盘可见性，app.css 的 .thumb.media-card:focus-visible 同一条口径。
+  const feed = readFileSync("src/components/Feed.svelte", "utf8");
+  const at = feed.indexOf(".text-format {");
+  if (at < 0) throw new Error("Feed.svelte 里找不到 .text-format");
+  const badge = feed.slice(at, feed.indexOf("}", at));
+  expect(badge, "徽标又用回朱红了：" + badge).not.toMatch(/accent|#f24e4e|#f2a0a0|242,? ?78,? ?78/i);
+  expect(feed).toMatch(/\.text-card:focus-visible \{ outline: 2px solid var\(--accent\)/);
 });

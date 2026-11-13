@@ -631,6 +631,14 @@ def control_slot(node_id: str, key: str, spec: dict, current: Any = None) -> dic
     return None
 
 
+def node_pixel_multiple(node: Any) -> float | int | None:
+    """那台节点自己带的对齐步长；没有这个输入、或者值不像个数就返回 None（宁缺毋滥）。"""
+    multiple = node_inputs(node).get("multiple")
+    if isinstance(multiple, bool) or not isinstance(multiple, (int, float)) or multiple <= 0:
+        return None
+    return int(multiple) if float(multiple).is_integer() else multiple
+
+
 def attach_pixel_multiple(control: dict, node: Any) -> None:
     """百万像素那台节点上的对齐步长（ResolutionSelector 的 multiple）跟着槽位一起带走。
 
@@ -641,10 +649,9 @@ def attach_pixel_multiple(control: dict, node: Any) -> None:
     """
     if control.get("input") != "megapixels":
         return
-    multiple = node_inputs(node).get("multiple")
-    if isinstance(multiple, bool) or not isinstance(multiple, (int, float)) or multiple <= 0:
-        return
-    control["multiple"] = int(multiple) if float(multiple).is_integer() else multiple
+    multiple = node_pixel_multiple(node)
+    if multiple is not None:
+        control["multiple"] = multiple
 
 
 def _duration_control(nodes: dict, used: set[str]) -> dict | None:
@@ -1120,11 +1127,17 @@ def normalize_slots(raw: Any, nodes: dict) -> list[dict]:
             if presets:
                 slot["presets"] = presets[:12]
             # 对齐步长也得活着过一遍存库：弹窗靠它算「这一趟出多大」，丢了就退回 8，
-            # 把 32 对齐的工作流报成 8 对齐的尺寸（几十像素的差）。范围卡在节点给得出口的区间。
-            multiple = item.get("multiple")
-            if (not isinstance(multiple, bool) and isinstance(multiple, (int, float))
-                    and 1 <= multiple <= 1024):
-                slot["multiple"] = int(multiple)
+            # 把 32 对齐的工作流报成 8 对齐的尺寸（几十像素的差）。
+            # 谁说了算：节点。真跑起来用的是工作流里那个数，作者写的（内置槽位文件里那一份、
+            # 换 JSON 时一起传上来的旧槽位）只是备胎，节点压根没这个输入时才轮到它——
+            # 内置那几份槽位是这个键还没加的时候检测的，正文里明写 32 而槽位空着，
+            # 光守作者那份会永远报 8 对齐的数。备胎照样卡区间，别把怪值存进库。
+            authored = item.get("multiple")
+            attach_pixel_multiple(slot, nodes[node])
+            if "multiple" not in slot and (
+                    not isinstance(authored, bool) and isinstance(authored, (int, float))
+                    and 1 <= authored <= 1024):
+                slot["multiple"] = int(authored)
         if kind == "image" and str(item.get("mask") or "") == "alpha":
             # 这台加载器把「这张图」和「只改哪一块」一起收进同一个文件的透明通道，
             # 弹窗里因此多一个画遮罩的入口。只认 alpha 这一种投递方式：
@@ -1170,6 +1183,43 @@ def normalize_slots(raw: Any, nodes: dict) -> list[dict]:
     if not any(s["kind"] == "prompt" for s in out):
         raise ValueError("这份工作流里没有可写入提示词的文本输入，去设置里手动绑一个提示词槽。")
     return out
+
+
+def migrate_slot_multiples(conn) -> int:
+    """给库里存着的槽位补上对齐步长（`multiple`），返回补了几条模板。
+
+    这个键是后加的：老槽位没有它，弹窗算「这一趟会出多大」就退回默认 8，把 32 对齐的
+    工作流报小几十像素——闪寻视频生成那条实际出 1440×800，缺它时报的是 1432×808。
+    内置模板本来靠 clone_bundled.seed 随版本刷新槽位，可 seed 只动「用户没改过正文」的
+    那几条，改过正文的那条（正是闪寻视频生成）刷不到，所以这里扫全表，照正文补一次。
+
+    值只从工作流节点取：那是真会跑的数。节点没这个输入就不动作者原来那份，不猜。
+    只动这一个键，槽位里别的内容原样写回；补完之后再启动就没有可补的，不落笔。
+    """
+    healed = 0
+    for row in conn.execute("SELECT id, workflow, slots FROM clone_templates").fetchall():
+        slots = _load_slots(row["slots"])
+        targets = [s for s in slots
+                   if s.get("kind") == "number" and s.get("input") == "megapixels"]
+        if not targets:
+            continue
+        try:
+            nodes = parse_workflow(row["workflow"])
+        except Exception:  # noqa: BLE001 - 正文坏了自有导入那条路吵，别在这儿拦启动
+            continue
+        changed = False
+        for slot in targets:      # targets 里是同一批 dict，改完从 slots 整体写回
+            want = node_pixel_multiple(nodes.get(str(slot.get("node") or "")))
+            if want is None or slot.get("multiple") == want:
+                continue
+            slot["multiple"] = want
+            changed = True
+        if not changed:
+            continue
+        conn.execute("UPDATE clone_templates SET slots=? WHERE id=?",
+                     (json.dumps(slots, ensure_ascii=False), int(row["id"])))
+        healed += 1
+    return healed
 
 
 # ---------- 生成用：把弹窗里填的东西注进工作流 ----------

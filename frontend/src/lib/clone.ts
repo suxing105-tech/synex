@@ -1660,7 +1660,14 @@ export function controlSummary(
     .join(" / ");
 }
 
-/** ResolutionSelector 没有 multiple 输入时的对齐步长，与 ComfyUI 那台节点的默认值一致。 */
+/**
+ * 槽位带不上对齐步长时的兜底：8 就是 ComfyUI 那台节点自己的默认值
+ * （comfy_extras/nodes_resolution.py 里 `multiple` 是 default 8、min 8、max 128、step 4）。
+ *
+ * 别照某一条工作流把它改成 32：内置那两条本来就不一样（图片那条 8、视频那条 32），
+ * 写死任何一个都会把另一条报歪几十像素。真值在槽位上，后端从工作流节点读
+ * （clone_templates.attach_pixel_multiple），这个数只在节点真的没这个输入时才用得上。
+ */
 const DEFAULT_PIXEL_MULTIPLE = 8;
 
 export interface TargetPixelSize {

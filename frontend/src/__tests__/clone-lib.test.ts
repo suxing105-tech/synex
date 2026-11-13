@@ -272,6 +272,16 @@ describe("将生成的尺寸：弹窗在提交之前先把 ResolutionSelector �
     const aligned = tpl([promptSlot, wide, { ...megaSlot, value: 2, multiple: 32 }]);
     expect(formatTargetSize(plain, { "13.aspect_ratio": "21:9", "13.megapixels": 2 })).toBe("2216×952");
     expect(formatTargetSize(aligned, { "13.aspect_ratio": "21:9", "13.megapixels": 2 })).toBe("2208×960");
+    // 内置那条「闪寻视频生成」就是这一档：工作流写着 multiple 32，16:9 @1.1MP 出 1440×800。
+    // 槽位丢了步长就会退回 8 报成 1432×808——差 8 个像素也是报错，用户照数排版就歪。
+    const videoTpl = tpl([promptSlot,
+      { kind: "select", node: "228", input: "aspect_ratio", label: "比例", options: ["16:9 (Widescreen)"], value: "16:9 (Widescreen)" },
+      { kind: "number", node: "228", input: "megapixels", label: "分辨率", value: 1.1, multiple: 32 }]);
+    expect(formatTargetSize(videoTpl, { "228.aspect_ratio": "16:9 (Widescreen)", "228.megapixels": 1.1 })).toBe("1440×800");
+    expect(formatTargetSize(tpl([promptSlot,
+      { kind: "select", node: "228", input: "aspect_ratio", label: "比例", options: ["16:9 (Widescreen)"], value: "16:9 (Widescreen)" },
+      { kind: "number", node: "228", input: "megapixels", label: "分辨率", value: 1.1 }]),
+    { "228.aspect_ratio": "16:9 (Widescreen)", "228.megapixels": 1.1 })).toBe("1432×808");
   });
 
   it("算不出来的那些一律空串——没把握的那行就不排（云端 / 没有 MP / 比例认不出 / MP 空着）", () => {

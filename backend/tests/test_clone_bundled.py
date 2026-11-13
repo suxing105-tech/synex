@@ -157,6 +157,26 @@ def test_shipped_slots_point_at_real_nodes():
             assert str(slot.get("node")) in nodes, (entry["key"], slot)
 
 
+def test_shipped_slots_can_report_the_real_output_size():
+    """带比例/百万像素旋钮的内置模板必须说得出对齐步长：弹窗靠它报「这一趟会出多大」。
+
+    缺这个键前端就退回 8（ComfyUI 那台节点自己的默认值），而包里视频那条正文写的是 32，
+    报出来差几十像素。顺带钉住「两条内置模板的步长本来就不一样」：所以那个兜底值不许
+    照着其中一条改成 32，那样只是把报错挪到另一条上。
+    """
+    declared = {}
+    for entry in clone_bundled.entries():
+        nodes, slots = clone_bundled._prepare(entry)
+        for slot in slots:
+            if slot.get("input") != "megapixels":
+                continue
+            want = clone_templates.node_pixel_multiple(nodes[str(slot["node"])])
+            assert want is not None, (entry["key"], "正文里没写对齐步长")
+            assert slot.get("multiple") == want, (entry["key"], slot)
+            declared[entry["key"]] = want
+    assert declared[VIDEO_KEY] == 32 and declared[IMAGE_KEY] == 8
+
+
 # ---------- 装进库 ----------
 
 def test_fresh_install_seeds_every_family(seeded):
@@ -411,6 +431,67 @@ def test_deleting_the_active_one_promotes_a_sibling(seeded):
     audio = [r for r in rows if r["media_kind"] == "audio"]
     assert sum(1 for r in audio if r["is_active"]) == 1, "声音三条里仍只有一条是当前"
     assert len(audio) == 3, "删掉视频不会牵连声音那三条"
+
+
+# ---------- 老库里存着的槽位缺「对齐步长」 ----------
+
+
+def _strip_multiples(pool, row_id: int, slots: list[dict]) -> None:
+    """把库里的槽位退回「这个键还没加」时存的那版。"""
+    stale = [{k: v for k, v in s.items() if k != "multiple"} for s in slots]
+    pool.main().execute("UPDATE clone_templates SET slots=? WHERE id=?",
+                        (json.dumps(stale, ensure_ascii=False), row_id))
+    return stale
+
+
+def _megapixels_slots(pool, key: str) -> list[dict]:
+    return [s for s in json.loads(_row_of_key(pool, key)["slots"]) if s.get("input") == "megapixels"]
+
+
+def test_a_stale_slot_gets_its_multiple_back_even_when_seed_skips_it(seeded):
+    """老库里的槽位没有对齐步长 → 弹窗退回 8：视频那条实际出 1440×800，报出来是 1432×808。
+
+    偏偏它就是用户动过正文的那条内置模板——seed 认成「用户改过」整条跳过，随版本刷新
+    到不了它，所以启动时那趟 migrate_slot_multiples 得自己把它照正文补回来。
+    """
+    conn = seeded.main()
+    row = _row_of_key(seeded, VIDEO_KEY)
+    stale = _strip_multiples(seeded, int(row["id"]), json.loads(row["slots"]))
+    assert _megapixels_slots(seeded, VIDEO_KEY)[0].get("multiple") is None
+    conn.execute("UPDATE clone_templates SET bundled_sha='他改过正文' WHERE id=?", (int(row["id"]),))
+    assert VIDEO_KEY not in clone_bundled.seed(conn)["updated"], "seed 本来就不该碰它"
+
+    assert clone_templates.migrate_slot_multiples(conn) == 1
+    assert [s.get("multiple") for s in _megapixels_slots(seeded, VIDEO_KEY)] == [32]
+    assert clone_templates.migrate_slot_multiples(conn) == 0, "补完就稳，别每次启动都重写一遍"
+    # 只许动这一个键：其余槽位（连同一格的其他字段）都得原样
+    after = [{k: v for k, v in s.items() if k != "multiple"}
+             for s in json.loads(_row_of_key(seeded, VIDEO_KEY)["slots"])]
+    assert after == stale
+
+
+def test_a_workflow_without_the_input_gets_no_invented_multiple(seeded):
+    """正文里没有对齐步长就不补：猜一个只会把尺寸报错，宁缺毋滥（前端退回 8）。"""
+    row = _row_of_key(seeded, IMAGE_KEY)
+    nodes = json.loads(row["workflow"])
+    nodes[str(_megapixels_slots(seeded, IMAGE_KEY)[0]["node"])]["inputs"].pop("multiple", None)
+    stale = _strip_multiples(seeded, int(row["id"]), json.loads(row["slots"]))
+    seeded.main().execute("UPDATE clone_templates SET workflow=? WHERE id=?",
+                          (json.dumps(nodes, ensure_ascii=False), int(row["id"])))
+    assert clone_templates.migrate_slot_multiples(seeded.main()) == 0
+    assert "multiple" not in _megapixels_slots(seeded, IMAGE_KEY)[0]
+    assert [{k: v for k, v in s.items() if k != "multiple"}
+            for s in json.loads(_row_of_key(seeded, IMAGE_KEY)["slots"])] == stale
+
+
+def test_migrating_leaves_templates_without_a_resolution_knob_alone(seeded):
+    """音色那几条压根没有比例/分辨率旋钮，一趟下来不该被写一个字。"""
+    before = {str(r["id"]): str(r["slots"]) for r in seeded.main()
+              .execute("SELECT id, slots FROM clone_templates").fetchall()}
+    assert clone_templates.migrate_slot_multiples(seeded.main()) == 0
+    after = {str(r["id"]): str(r["slots"]) for r in seeded.main()
+             .execute("SELECT id, slots FROM clone_templates").fetchall()}
+    assert after == before
 
 
 # ---------- 开关 ----------

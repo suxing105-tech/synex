@@ -274,6 +274,29 @@ def test_normalize_slots_keeps_the_alignment_multiple():
         assert "multiple" not in only_multiple(bad), bad
 
 
+def test_normalize_slots_takes_the_multiple_from_the_workflow():
+    """节点里那个数才是真会跑的数：作者那份（内置槽位文件、换 JSON 时一起传上来的旧槽位）只是备胎。
+
+    内置那几份槽位是「对齐步长」这个键还没加的时候检测出来的，正文里明写着 32 而槽位空着。
+    守作者那份就永远报 8 对齐的尺寸，所以这里必须先问节点。
+    """
+    nodes = sample_nodes()
+    nodes["13"]["inputs"]["multiple"] = 32
+
+    def mega(item: dict) -> dict:
+        base = {"kind": "number", "node": "13", "input": "megapixels", "value": 1.1}
+        base.update(item)
+        return ct.normalize_slots([{"kind": "prompt", "node": "582", "input": "prompt"}, base],
+                                  nodes)[1]
+
+    assert mega({})["multiple"] == 32            # 槽位空着：照正文补
+    assert mega({"multiple": 8})["multiple"] == 32  # 槽位是旧值：仍以正文为准
+    # 节点压根没这个输入才轮到备胎（上面那条 keeps 用例走的就是这条路）
+    nodes["13"]["inputs"].pop("multiple")
+    assert mega({"multiple": 32})["multiple"] == 32
+    assert "multiple" not in mega({})
+
+
 # ---------- build_workflow ----------
 
 

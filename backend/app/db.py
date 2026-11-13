@@ -196,6 +196,16 @@ class ConnectionPool:
                 seed_bundled_templates(self._main)
             except Exception as exc:  # noqa: BLE001 - 内置模板缺失不该让图库打不开
                 logger.warning("内置再次创作工作流装载失败：%s", exc)
+            # 老库里存的槽位没有「对齐步长」这个键（它是后加的），弹窗算「这一趟出多大」
+            # 会退回默认 8，把 32 对齐的工作流报小几十像素。照正文补一次：seed 只刷新
+            # 用户没动过的内置模板，动过的那条要靠这里。补不上无非是尺寸报得不准，不拦启动。
+            try:
+                from .clone_templates import migrate_slot_multiples
+                healed = migrate_slot_multiples(self._main)
+                if healed:
+                    logger.info("再次创作模板：补上 %d 条的对齐步长", healed)
+            except Exception as exc:  # noqa: BLE001 - 尺寸报不准不该让图库打不开
+                logger.warning("再次创作模板的对齐步长没补上：%s", exc)
             # 「图片API / 视频API / 音频API」三条快捷方式：只在第一次装库时种。
             # 用户删掉说明他不想看见，每次启动又长回来等于告诉他这一行不归他管。
             try:

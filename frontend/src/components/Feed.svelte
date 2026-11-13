@@ -9,7 +9,7 @@
   import FeedSkeleton from "./FeedSkeleton.svelte";
   import TypeChips from "./TypeChips.svelte";
   import { copyOriginalImage } from "../lib/image-clipboard";
-  import { footerHeightFor, footerMetaBits, footerTierFor, parentFolderPath, isAcceptedMediaFile, THUMB_GAP, isPsdFilename, mediaKindOfFilename, thumbnailAspectRatio, thumbnailHeightToWidthRatio, thumbnailObjectFit } from "../lib/media-format";
+  import { footerHeightFor, footerMetaBits, footerTierFor, textCardHeightFor, parentFolderPath, isAcceptedMediaFile, THUMB_GAP, isPsdFilename, mediaKindOfFilename, thumbnailAspectRatio, thumbnailHeightToWidthRatio, thumbnailObjectFit } from "../lib/media-format";
   import { mediaSummary, selectionSummary } from "../lib/counts";
   import { isTextItem, itemUid, kindsIn } from "../lib/items";
   import { matchesAction, shortcutBlocked } from "../lib/shortcut-settings";
@@ -201,8 +201,10 @@ import { hoverPlay } from "../lib/hover-play";
   // 文本卡与图片卡同构：单击 = 选中并在右侧出详情，双击 / 回车 = 在中间栏就地打开。
   // 选中状态必须走 selectedText，不能借 selectedId —— texts.id 与 images.id 会撞车。
   // 文本不参与多选与批量移动 / 删除，选区始终只覆盖媒体子序列。
-  const TEXT_CARD_ASPECT = "21 / 9";
-  const TEXT_CARD_RATIO_H = 9 / 21;
+  // 文本卡的高度不写在这儿：它和媒体页脚共用同一套档位，见 lib/media-format.ts 的
+  // textCardHeightFor / textCardLinesFor。2026-11-13 评审第二刀（T1 + T6）撤掉了原来的
+  // 21/9 定比例 —— 那条比例在窄列里把卡压扁（12 列时整卡 36px 高，内容被 overflow 切光），
+  // 在宽列里又多出一截空白，摘录连省略号都露不出来。
 
   /** 文本口径 = 侧栏选「全部文本」或类型筛选只勾了文本。 */
   const isTextScope = $derived($scope === "text" || $kindFilter === "text");
@@ -569,14 +571,14 @@ import { hoverPlay } from "../lib/hover-play";
   }
 
 
-  function aspectFor(it: ItemSummary): string {
-    if (it.item_type === "text") return TEXT_CARD_ASPECT;
+  /** 缩略图区的高宽比（只服务媒体卡：文本卡整卡高度走 textCardHeightFor，不走比例）。 */
+  function aspectFor(it: MediaFeedItem): string {
     return thumbnailAspectRatio(it.filename, it.kind, it.width, it.height);
   }
 
-  /** 贪心分列用的高度口径：文本卡与音频波形都固定 21:9。 */
-  function ratioFor(it: ItemSummary): number {
-    if (it.item_type === "text") return TEXT_CARD_RATIO_H;
+  /** 贪心分列用的缩略图高宽比（音频波形固定 21:9 由 media-format 给）。
+   *  文本卡不在这儿 —— 它整卡高度走 textCardHeightFor，不是「比例 × 列宽」。 */
+  function ratioFor(it: MediaFeedItem): number {
     return thumbnailHeightToWidthRatio(it.filename, it.kind, it.width, it.height);
   }
 
@@ -1003,9 +1005,10 @@ import { hoverPlay } from "../lib/hover-play";
       () => ({ items: [], height: 0 }),
     );
     for (const it of $feedItems) {
-      const ratio = ratioFor(it);
-      // 页脚是实体高度，必须算进贪心分列，否则列高系统性偏矮、卡片互相重叠
-      const h = w * ratio + COL_GAP + footerHeightFor(w);
+      // 页脚是实体高度，必须算进贪心分列，否则列高系统性偏矮、卡片互相重叠。
+      // 文本卡没有页脚：整卡高度由 textCardHeightFor 一把给（徽标 + 文件名 + 摘录几行）。
+      // 先前这里也给文本卡加了一份 footerHeightFor，等于替它预留了它根本不占的高度。
+      const h = (it.item_type === "text" ? textCardHeightFor(w) : w * ratioFor(it) + footerHeightFor(w)) + COL_GAP;
       // 找当前最矮的列
       let target = cols[0];
       for (let i = 1; i < n; i++) if (cols[i].height < target.height) target = cols[i];
@@ -1187,10 +1190,10 @@ import { hoverPlay } from "../lib/hover-play";
               {#if it.item_type === "text"}
                 <button
                   type="button"
-                  class="text-card"
+                  class="text-card text-card--t{footerTier}"
                   class:is-selected={$selectedText?.id === it.id}
                   aria-pressed={$selectedText?.id === it.id}
-                  style="aspect-ratio: {aspectFor(it)}; width: 100%;"
+                  style="height: {textCardHeightFor(columnWidth)}px; width: 100%;"
                   title={it.filename}
                   aria-label={it.filename}
                   onclick={() => selectTextItem(it)}
@@ -1423,8 +1426,9 @@ import { hoverPlay } from "../lib/hover-play";
      .media-card* 上，Feed 与详情面板、参考帧、素材选择器共用同一套，这里不再各自定义。 */
   .image-rename { min-width: 0; border: 1px solid #888; border-radius: 3px; background: #222; color: #eee; padding: 1px 3px; outline: none; font: inherit; }
   .import-progress { position: sticky; top: 0; z-index: 25; width: fit-content; margin: 0 auto 8px; padding: 6px 12px; background: #292929; border-radius: 16px; font-size: 12px; color: #ddd; }
-  /* 「所有素材」里的文本卡：21:9 横幅只读入口。徽标 + 标题一行 + 摘录两行，点开进中间栏的阅读层。
-     卡片只有约 1/3 列宽那么高，装不下第四行，所以悬停提示整行删掉（标题 tooltip 够用）。
+  /* 「所有素材」里的文本卡：没有画面的一条横幅，徽标 + 文件名 + 摘录，点开进中间栏的阅读层。
+     摘录取几行随列宽降级（t2 两行 / t1 一行 / t0 收掉），整卡高度与贪心分列同源于
+     lib/media-format.ts 的 textCardHeightFor，所以窄列里不再出现「内容比卡高」。
 
      底色在 2026-11-13 评审第一刀（T2）里收回墨阶。原来是这张卡自己挑的
      #232326→#1c1c1f 渐变：两个值都不在 ink 阶上（ink-2 是 #1d1d22、ink-3 是 #28282e），
@@ -1493,8 +1497,14 @@ import { hoverPlay } from "../lib/hover-play";
      所以按 §3.1 的口径用 --text-2（ink-2 上 6.6:1、ink-3 上 5.7:1）。 */
   .text-excerpt {
     margin: 0; flex: 1; font-size: var(--fs-xs); line-height: 1.4; color: var(--text-2);
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden;
   }
+  /* 档位降级（2026-11-13 评审第二刀 T1 + T6）。行数与卡高同源于 lib/media-format.ts：
+     先前在这儿写死 clamp 2，可 157px 列宽只给到 13px 可用高度（不到一行），
+     省略号永远落在被 overflow 切掉的那一行里 —— 看着就是「字被齐腰砍断」。 */
+  .text-card--t2 .text-excerpt { -webkit-line-clamp: 2; }
+  .text-card--t1 .text-excerpt { -webkit-line-clamp: 1; }
+  .text-card--t0 .text-excerpt { display: none; }
   /* 播放中的音频卡不描红边 —— 边框与图片/视频完全一致，只靠顶部进度线和暂停图标表意 */
   /* ---------- 音频缩略图：全站一套「频谱波形」 ----------
      后端那张 PNG 是透明底的单色波形，这里只把它当蒙版，颜色与发光全由 CSS 给：

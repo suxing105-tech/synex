@@ -968,3 +968,19 @@ body,
   text-transform: uppercase;
   color: var(--text-3);
 }
+
+/* 文本面板顶部的操作带（2026-11-13 oil-ui 评审第二刀 T3）：它替的是媒体那栏 .detail-tabs
+   占的那一条，所以高、内边距、下沿那条 hairline 全部照抄 —— 四类右栏的正文起点因此在一条线上。
+   按钮靠右：这里是动作不是导航，跟 tab 抢左边会把「这是页签」的错觉做出来。 */
+.detail-text-actions {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  height: var(--ctl-lg);
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+

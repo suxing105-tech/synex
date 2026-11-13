@@ -20,9 +20,11 @@ import {
   scope,
   selectionAnchorId,
   stopAudio,
+  targetColumns,
   switchContent,
 } from "../lib/stores";
 import { itemUid } from "../lib/items";
+import { TEXT_CARD_HEIGHTS_BY_TIER, footerTierFor, textCardHeightFor } from "../lib/media-format";
 import type { ItemSummary, MediaFeedItem, TextFeedItem } from "../lib/types";
 
 const COUNTS = { image: 2, video: 0, audio: 1, text: 2 };
@@ -127,11 +129,29 @@ describe("统一网格：四类混排在一条流里", () => {
     expect(textCards(container)[1].querySelector(".text-excerpt")?.textContent).toBe("（空文档）");
   });
 
-  it("文本卡保持方形且不带图片缩略图", async () => {
+  it("文本卡高度按列宽档位给死（不再用 21:9 压扁），也不带图片缩略图", async () => {
     const { container } = renderFeed();
     await tick();
-    expect(textCards(container)[0].getAttribute("style")).toContain("21 / 9");
+    // 和 Feed 同一口径反算列宽：容器 clientWidth（上面 mock 成 900）均分掉列间距
+    const n = get(targetColumns);
+    const columnWidth = (900 - (n - 1) * 10) / n;
+    const style = textCards(container)[0].getAttribute("style") || "";
+    expect(style).toContain("height: " + textCardHeightFor(columnWidth) + "px");
+    expect(style).not.toContain("aspect-ratio");
+    expect(textCards(container)[0].className).toContain("text-card--t" + footerTierFor(columnWidth));
     expect(textCards(container)[0].querySelector("img")).toBeNull();
+  });
+
+  it("窄列文本卡退到只留徽标 + 文件名那一档，高度仍是同源的那个数（T6）", async () => {
+    targetColumns.set(5);
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(400);
+    // (400 - 4×10) / 5 = 72px 列宽 → 低于页脚单行档的 120px 下限 → 档位 0
+    const { container } = renderFeed();
+    await tick();
+    const card = textCards(container)[0];
+    expect(card.className).toContain("text-card--t0");
+    expect(card.getAttribute("style")).toContain("height: " + TEXT_CARD_HEIGHTS_BY_TIER[0] + "px");
+    expect(card.querySelector(".text-format")).not.toBeNull();
   });
 });
 

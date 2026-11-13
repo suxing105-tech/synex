@@ -119,6 +119,26 @@
 {#if $selectedText}
   {@const it = $selectedText}
   <div class="h-full flex flex-col overflow-hidden">
+    <!-- 操作带：占的是媒体那栏 tab 行那一条（同高 --ctl-lg = 实测 38px），
+         四类素材右栏的正文起点因此在一条线上。阅读 / 编辑 / ⋯ 从标题那一行挪出来 ——
+         三颗按钮实测吃掉 46+46+30px，312px 的面板里标题只剩 85px，文件名被切掉 52%
+         （2026-11-13 oil-ui 评审第二刀 T3）。 -->
+    <nav class="detail-text-actions" aria-label="文本操作">
+      <div class="flex items-center gap-1" data-text-menu-root>
+        <button type="button" class="dock-btn hover:bg-surface-3 transition-colors" title="打开阅读" aria-label="打开阅读" onclick={read}>阅读</button>
+        <button type="button" class="dock-btn hover:bg-surface-3 transition-colors" title="就地编辑" aria-label="就地编辑" onclick={edit}>编辑</button>
+        <button type="button" class="dock-btn hover:bg-surface-3 transition-colors" title="更多操作" aria-label="更多操作" aria-haspopup="menu" aria-expanded={menuOpen} onclick={() => (menuOpen = !menuOpen)}>⋯</button>
+        {#if menuOpen}
+          <div class="absolute right-4 top-full z-20 mt-1 min-w-[150px] rounded-md border border-border bg-surface-2 shadow-lg py-1 text-[12px]" role="menu" aria-label="文本更多操作">
+            <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={startRename}>重命名</button>
+            <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={() => void copyFile()}>复制文本文件</button>
+            <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={() => void copyFull()}>复制全文</button>
+            <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={() => void reveal()}>文件位置</button>
+            <button type="button" class="w-full px-3 py-1.5 text-left text-danger hover:bg-surface-3" role="menuitem" onclick={() => { confirming = true; menuOpen = false; }}>移入回收站</button>
+          </div>
+        {/if}
+      </div>
+    </nav>
     <header class="px-4 py-3 border-b border-border bg-surface-2 flex items-start gap-3">
       <div class="shrink-0 w-12 h-12 rounded-md bg-surface-3 border border-border flex items-center justify-center text-zinc-400 font-mono text-[11px]" title="文本素材" aria-label="文本徽标">
         {textFormatLabel(it.format)}
@@ -132,26 +152,12 @@
             onkeydown={(e) => { if (e.key === "Enter") void saveRename(); if (e.key === "Escape") renaming = false; }}
           />
         {:else}
-          <div class="text-[13px] font-mono font-semibold truncate" title={it.path}>{it.filename}</div>
+          <div class="text-[13px] font-mono font-semibold truncate" title={it.filename}>{it.filename}</div>
         {/if}
         <div class="text-[11px] text-muted mt-0.5 flex gap-2 flex-wrap">
           <span>{textFormatLabel(it.format)}</span>
           <span>{formatDate(it.mtime)}</span>
         </div>
-      </div>
-      <div class="shrink-0 flex items-center gap-1" data-text-menu-root>
-        <button type="button" class="dock-btn hover:bg-surface-3 transition-colors" title="打开阅读" aria-label="打开阅读" onclick={read}>阅读</button>
-        <button type="button" class="dock-btn hover:bg-surface-3 transition-colors" title="就地编辑" aria-label="就地编辑" onclick={edit}>编辑</button>
-        <button type="button" class="dock-btn hover:bg-surface-3 transition-colors" title="更多操作" aria-label="更多操作" aria-haspopup="menu" aria-expanded={menuOpen} onclick={() => (menuOpen = !menuOpen)}>⋯</button>
-        {#if menuOpen}
-          <div class="absolute right-4 top-14 z-20 min-w-[150px] rounded-md border border-border bg-surface-2 shadow-lg py-1 text-[12px]" role="menu" aria-label="文本更多操作">
-            <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={startRename}>重命名</button>
-            <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={() => void copyFile()}>复制文本文件</button>
-            <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={() => void copyFull()}>复制全文</button>
-            <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={() => void reveal()}>文件位置</button>
-            <button type="button" class="w-full px-3 py-1.5 text-left text-danger hover:bg-surface-3" role="menuitem" onclick={() => { confirming = true; menuOpen = false; }}>移入回收站</button>
-          </div>
-        {/if}
       </div>
     </header>
 

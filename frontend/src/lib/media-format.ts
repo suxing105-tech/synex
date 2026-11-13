@@ -97,6 +97,31 @@ export function footerHeightFor(columnWidth: number): number {
 }
 
 /**
+ * 文本卡的形态计划（2026-11-13 oil-ui 评审第二刀 T1 + T6）。
+ *
+ * 文本卡没有画面，原先按 21/9 定比例，窄列里高度被压平：12 列时列宽约 84px、卡只有 36px 高，
+ * 徽标 + 文件名 + 摘录装不下，被 overflow:hidden 砍成「只剩一颗徽标」（T6）；157px 列宽时卡 67px 高，
+ * 摘录只剩 13px 可用而一行要 15.4px，clamp 的省略号永远落在看不见的地方（T1）。
+ * 现在让文本卡走页脚那同一套档位：宽列两行摘录、窄列一行、极窄只留徽标 + 文件名，
+ * 高度由这里一把算死 —— 贪心分列和渲染读同一个数，规矩与上面 footerHeightFor / footerTierFor 一致。
+ *
+ * 数值不是新挑的，全是 3.1 尺度的加和：上下 padding 8+8，徽标 18（--fs-2xs 行高 15.75 + 上下 1px 内边距），
+ * 行间距 2+2（3.1 的半步档），文件名 17（--fs-sm 行高 16.875），摘录每行 16.1（--fs-xs 行高 16.1），向上取整：
+ *   档位 0 = 16+18+2+17 = 53；档位 1 再加一行 = 72；档位 2 再加两行 = 88。
+ */
+export const TEXT_CARD_LINES_BY_TIER = [0, 1, 2] as const;
+export const TEXT_CARD_HEIGHTS_BY_TIER = [53, 72, 88] as const;
+
+/** 该列宽下文本卡摘录取几行；0 表示不显示摘录，只留「徽标 + 文件名」。 */
+export function textCardLinesFor(columnWidth: number): number {
+  return TEXT_CARD_LINES_BY_TIER[footerTierFor(columnWidth)];
+}
+
+/** 文本卡总高：贪心分列预计算与 .text-card 的行内 height 共用这一颗，两边不许各写一份。 */
+export function textCardHeightFor(columnWidth: number): number {
+  return TEXT_CARD_HEIGHTS_BY_TIER[footerTierFor(columnWidth)];
+}
+/**
  * 页脚第一行：只去掉目录，**保留扩展名**（用户要看得出这是 .png 还是 .psd）。
  * 重命名输入框仍然只喂去掉扩展名的部分，改不到后缀。
  */

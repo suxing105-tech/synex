@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { modelConfigs, reverseSettings, reverseJobs, refreshReverseConfig, reverseApi, generateReverse, errorMessage } from "../lib/reverse-prompts";
+  import { modelConfigs, promptModelConfigs, reverseSettings, reverseJobs, refreshReverseConfig, reverseApi, generateReverse, errorMessage } from "../lib/reverse-prompts";
   import type { ReverseRecord } from "../lib/reverse-prompts";
   import { copyText } from "../lib/ws";
   import { pushToast } from "../lib/toast";
   import ModelPicker from "./ModelPicker.svelte";
+  import Icon from "./Icon.svelte";
   let { imageId }: { imageId: number } = $props();
   let modelId = $state<number | null>(null);   // 哪一家（一条配置 = 一家的地址与 Key）
   let modelName = $state("");                  // 这一家当前用哪个模型；空串＝还没挑
@@ -13,7 +14,7 @@
   let loading = $state(false);
   let error = $state("");
   let selectedVersion = $state<number | null>(null);
-  let tab = $state<"zh" | "en">("zh");
+  let outputLanguage = $state<"zh" | "en">("zh");
   let historyOpen = $state(false);
   let editing = $state(false);
   let editZh = $state(""); let editEn = $state("");
@@ -26,12 +27,19 @@
   const job = $derived($reverseJobs[imageId]);
   const running = $derived(job?.running || serverRunning);
   const current = $derived(records.find(r => r.id === selectedVersion) || records[0]);
+  // 正文当前展示哪种语言，单语复制就复制哪一种（展示英文时复制出来得是英文，不能永远是中文那条）。
+  const shownPrompt = $derived(current ? (outputLanguage === "zh" ? current.prompt_zh : current.prompt_en) : "");
+  const shownCopyLabel = $derived(outputLanguage === "zh" ? "复制中文提示词" : "复制英文提示词");
+  const textConfigs = $derived(promptModelConfigs($modelConfigs));
   $effect(() => {
-    if (!modelId || !$modelConfigs.some(m => m.id === modelId)) modelId = $reverseSettings?.default_model_id ?? $modelConfigs[0]?.id ?? null;
+    if (!modelId || !textConfigs.some(m => m.id === modelId)) {
+      const preferred = textConfigs.find(m => m.id === $reverseSettings?.default_model_id);
+      modelId = preferred?.id ?? textConfigs[0]?.id ?? null;
+    }
   });
   // 模型跟着这条配置走：它记住哪个就用哪个；没记住就空着，让人先挑，绝不拿空串去发请求。
   $effect(() => {
-    modelName = $modelConfigs.find(m => m.id === modelId)?.model ?? "";
+    modelName = textConfigs.find(m => m.id === modelId)?.model ?? "";
   });
   $effect(() => {
     const id = imageId;
@@ -93,7 +101,7 @@
 
 <section class="fill-interactions reverse-panel rounded-lg border border-border bg-surface-2 p-3 space-y-3" aria-label="AI 反推提示词">
   <div class="flex justify-between items-center"><h4 class="text-[13px] font-semibold">AI 反推提示词</h4><span class="text-[10px] text-muted">中英双语</span></div>
-  {#if !$modelConfigs.length}
+  {#if !textConfigs.length}
     <button onclick={() => window.dispatchEvent(new CustomEvent("open-model-settings"))}>配置模型</button>
   {:else}
     <div class="flex gap-2">
@@ -108,27 +116,35 @@
       <p class="text-[10px] text-amber-400">还没挑模型：点上面那个下拉，先选服务商、再点它家的模型。</p>
     {/if}
   {/if}
-  <p class="text-[10px] text-muted">点击反推会将图片发送至所选 API 服务。结果是画面描述，不保证还原原始提示词。</p>
   {#if error || job?.error}<p class="text-xs text-danger" role="alert">{error || job?.error}</p>{/if}
   {#if current}
-    <div class="text-[10px] text-muted break-all">{current.model_name} · {current.model}<br />{new Date(current.created_at).toLocaleString()} · {current.source === "edited" ? "手动编辑" : "模型生成"}</div>
     {#if current.image_changed}<p class="text-xs text-amber-400">图片内容已变化或文件不可用，此版本对应此前图片。</p>{/if}
     {#if editing}
       <label class="text-xs">中文<textarea aria-label="编辑中文提示词" rows="6" bind:value={editZh}></textarea></label>
       <label class="text-xs">English<textarea aria-label="编辑英文提示词" rows="6" bind:value={editEn}></textarea></label>
       <div class="flex gap-2"><button disabled={saving || !editZh.trim() || !editEn.trim()} onclick={saveEdit}>保存为新版本</button><button disabled={saving} onclick={() => editing = false}>取消编辑</button></div>
     {:else}
-      <div class="space-y-3">
+      <div class="space-y-2">
       {#if current.status === "complete"}
-        <div class="flex gap-2"><button aria-pressed={tab === "zh"} onclick={() => tab = "zh"}>中文</button><button aria-pressed={tab === "en"} onclick={() => tab = "en"}>English</button></div>
-        <div class="text-xs leading-6 whitespace-pre-wrap break-words max-h-80 overflow-auto">{tab === "zh" ? current.prompt_zh : current.prompt_en}</div>
-        <div class="flex gap-2"><button onclick={() => copy(tab === "zh" ? current.prompt_zh : current.prompt_en)}>复制{tab === "zh" ? "中文" : "英文"}</button><button onclick={() => copy(`中文\n${current.prompt_zh}\n\nEnglish\n${current.prompt_en}`)}>复制双语</button></div>
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <button class="language-label" class:language-active={outputLanguage === "zh"} aria-pressed={outputLanguage === "zh"} onclick={() => outputLanguage = "zh"}>中文</button>
+          <button class="language-label" class:language-active={outputLanguage === "en"} aria-pressed={outputLanguage === "en"} onclick={() => outputLanguage = "en"}>English</button>
+          <button class="icon-button ml-auto" aria-label={shownCopyLabel} title={shownCopyLabel} onclick={() => copy(shownPrompt)}><Icon name="copy" size={12} /></button>
+          <button class="icon-button" aria-label="复制双语提示词" title="复制双语提示词" onclick={() => copy(`中文\n${current.prompt_zh}\n\nEnglish\n${current.prompt_en}`)}><Icon name="copy" size={12} /><span>双语</span></button>
+        </div>
+        <div class="reverse-prompt-content">
+          {#if outputLanguage === "zh"}
+            <div aria-label="中文反推提示词" class="prompt-copy text-xs leading-6 whitespace-pre-wrap break-words">{current.prompt_zh}</div>
+          {:else}
+            <div aria-label="English reverse prompt" class="prompt-copy text-xs leading-6 whitespace-pre-wrap break-words">{current.prompt_en}</div>
+          {/if}
+        </div>
       {:else}
         <p class="text-xs text-amber-400">返回内容未符合双语格式，可复制原文或编辑整理。</p>
-        <div class="text-xs whitespace-pre-wrap break-words max-h-80 overflow-auto">{current.raw_text}</div>
-        <button onclick={() => copy(current.raw_text)}>复制原文</button>
+        <div class="prompt-copy text-xs whitespace-pre-wrap break-words">{current.raw_text}</div>
+        <div class="flex items-center gap-2"><button onclick={() => copy(current.raw_text)}>复制原文</button></div>
       {/if}
-      <div class="flex gap-2">
+      <div class="flex gap-2 justify-end">
         <button disabled={running} onclick={() => { editZh = current.prompt_zh; editEn = current.prompt_en; editing = true; }}>编辑</button><button onclick={() => historyOpen = !historyOpen}>历史版本（{total}）</button>
       </div>
       </div>
@@ -137,7 +153,7 @@
       <div class="space-y-1 max-h-48 overflow-auto" aria-label="历史版本">
         {#each records as record}
           <div class="flex items-center gap-1">
-            <button class="block min-w-0 flex-1 text-left truncate" aria-pressed={current.id === record.id}
+            <button class="version-item block min-w-0 flex-1 text-left truncate" aria-current={current.id === record.id ? "true" : undefined}
               onclick={() => selectedVersion = record.id}>
               {new Date(record.created_at).toLocaleString()} · {record.source === "edited" ? "手动编辑" : "模型生成"} · {record.model_name}
             </button>
@@ -160,15 +176,29 @@
 
 <style>
   button { font-size: 11px; padding: 5px 8px; border: 1px solid #3f3f46; border-radius: 5px; background: #202024; }
-  /* 选好模型后（按钮启用），悬停“反推提示词”按钮底色变品牌色 */
-  .reverse-panel button.generate-reverse:enabled:hover,
-  .reverse-panel button.generate-reverse:enabled:focus-visible {
+  .reverse-panel button.generate-reverse {
     background-color: #f24e4e;
-    color: #0e0e10;
+    color: #fff;
     border-color: #f24e4e;
+    font-weight: 600;
   }
+  .reverse-panel button.generate-reverse:enabled:hover,
+  .reverse-panel button.generate-reverse:enabled:focus-visible { background-color: #ff6262; border-color: #ff6262; color:#09090b; }
+  .language-label { color:var(--text-2); font-size:10px; padding:3px 6px; border-color:transparent; background:transparent; }
+  .language-label.language-active { color:var(--text-1); background:#303036; }
+  .icon-button { display:inline-flex; align-items:center; gap:4px; }
+  .icon-button span { font-size:10px; }
+  .reverse-prompt-content { min-width:0; }
+  .prompt-copy { height:350px; min-height:56px; max-height:40vh; overflow:auto; resize:vertical; padding:7px; border:1px solid #303036; border-radius:5px; background:#18181b; text-align:justify; text-justify:inter-ideograph; }
   button:disabled { opacity: .5; cursor: default; }
   /* 删除是不可逆的，按钮与二次确认都要压成红色，别和"选择版本"混在一起 */
   button.danger { color: #f87171; border-color: #7f1d1d; background: #2a1414; }
+  /* 历史版本这一列只是"当前在看哪一版"，不该靠底色喊：全局 .fill-interactions button[aria-pressed="true"]
+     会把选中项整颗刷成品牌红底黑字，所以选中态改走 aria-current，底色保持普通按钮底，
+     只用描边和字色区分——颜色一律引 :root token，别再新造裸 hex。 */
+  .reverse-panel button.version-item[aria-current="true"] {
+    border-color: var(--accent);
+    color: var(--accent-strong);
+  }
   textarea { display: block; width: 100%; margin-top: 6px; padding: 8px; font-size: 12px; color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 5px; }
 </style>

@@ -21,7 +21,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app import clone_jobs, clone_sources, clone_templates
+from app import clone_jobs, clone_sources, clone_templates, reverse_prompts
 from app.cloud import accounts as cloud_accounts
 from app.cloud import engine as cloud_engine
 from app.cloud import spec as cloud_spec
@@ -328,6 +328,279 @@ async def test_full_cloud_image_run_pays_downloads_and_books_it(hub, account, so
     # 点一次按钮就是拿云端号来查本地账本，永远 404（见 test_progress_…）。
     assert state["task_row_id"] == task["id"]
     assert cloud_tasks.spend_today_coins() == pytest.approx(12.0)
+
+
+async def test_minimax_image_api_edits_and_imports_result(monkeypatch, init_db, source_image, tmp_path):
+    """MiniMax 官方同步 edits 接口：Key、data URI 参考图、下载与图库认领全链路。"""
+    import httpx
+
+    reverse_prompts.save_config({"provider": "minimax", "api_key": "sk-minimax-test"})
+    row = cloud_rows.ensure_minimax_image_template()
+    assert row
+    template = clone_templates.get_template(row["id"])
+    assert template["provider"] == "minimax"
+    public_template = next(t for t in clone_templates.list_templates() if t["id"] == row["id"])
+    assert public_template["cloud"]["provider_label"] == "MiniMax"
+    template["reference_cells"] = clone_templates.reference_cells(template["slots"])
+    seen = []
+    image_bytes = make_png(tmp_path / "minimax-response.png", width=6, height=6).read_bytes()
+    transport = httpx.MockTransport(lambda request: _minimax_response(
+        request, seen, image_bytes))
+    real_client = httpx.AsyncClient
+
+    def mock_client(*args, **kwargs):
+        kwargs["transport"] = transport
+        return real_client(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", mock_client)
+    await clone_jobs.start(
+        template_id=int(template["id"]), prompt="按参考图重绘",
+        references=ref_args(template, 1, source_image),
+        controls={"model.ratio": "9:16", "model.quality": "2K"},
+        source_image_id=source_image)
+    state = await finish()
+    assert state["state"] == "done", state
+    assert state["engine"] == "cloud" and len(state["image_ids"]) == 1
+    post = next(request for request in seen if request["method"] == "POST")
+    assert post["path"] == "/v1/images/edits"
+    assert post["authorization"] == "Bearer sk-minimax-test"
+    assert post["payload"]["model"] == "MiniMax-H3-Image"
+    assert post["payload"]["prompt"] == "按参考图重绘"
+    assert post["payload"]["area"] == "2K"
+    assert post["payload"]["aspect_ratio"] == "9:16"
+    assert post["payload"]["images"][0]["image_url"].startswith("data:image/png;base64,")
+    assert any(request["method"] == "GET" for request in seen)
+    image = get_pool().main().execute("SELECT path FROM images WHERE id=?",
+                                      (state["image_ids"][0],)).fetchone()
+    assert Path(image["path"]).read_bytes() == image_bytes
+    assert clone_sources.lookup(state["image_ids"][0])["prompt"] == "按参考图重绘"
+
+
+def test_configured_minimax_seeds_all_three_vendor_templates(init_db):
+    reverse_prompts.save_config({"provider": "minimax", "api_key": "sk-minimax-test"})
+    created = cloud_rows.ensure_minimax_templates()
+    by_model = {row["model"]: row for row in clone_templates.list_templates()
+                if str(row.get("model") or "").startswith("minimax-")}
+
+    assert {row["model"] for row in created} == {"minimax-image", "minimax-video", "minimax-audio"}
+    assert {key: (item["provider"], item["cloud"]["provider_label"])
+            for key, item in by_model.items()} == {
+                "minimax-image": ("minimax", "MiniMax"),
+                "minimax-video": ("minimax", "MiniMax"),
+                "minimax-audio": ("minimax", "MiniMax"),
+            }
+    assert {key: item["media_kind"] for key, item in by_model.items()} == {
+        "minimax-image": "image",
+        "minimax-video": "video",
+        "minimax-audio": "audio",
+    }
+    audio = by_model["minimax-audio"]
+    assert "参考音频的文本" in [slot["label"] for slot in audio["slots"]]
+    voice_slot = next(slot for slot in audio["slots"] if slot["input"] == "voice_id")
+    emotion_slot = next(slot for slot in audio["slots"] if slot["input"] == "emotion")
+    assert voice_slot["option_labels"] == {
+        "female-tianmei": "女声·甜美",
+        "male-qn-qingse": "男声·青涩",
+    }
+    assert emotion_slot["option_labels"] == {
+        "neutral": "中性", "happy": "开心", "sad": "悲伤",
+        "angry": "愤怒", "fearful": "恐惧", "surprised": "惊讶",
+    }
+
+
+def test_template_api_adds_minimax_video_and_audio_after_key_is_saved(init_db):
+    reverse_prompts.save_config({"provider": "minimax", "api_key": "sk-minimax-test"})
+    response = TestClient(fastapi_app).get("/api/clone/templates")
+    assert response.status_code == 200
+    minimax_rows = [row for row in response.json()["items"]
+                    if row.get("provider") == "minimax"]
+    assert {(row["model"], row["cloud"]["provider_label"]) for row in minimax_rows} == {
+        ("minimax-image", "MiniMax"), ("minimax-video", "MiniMax"),
+        ("minimax-audio", "MiniMax"),
+    }
+
+
+async def test_minimax_audio_tts_uses_native_speech_api(monkeypatch, init_db):
+    reverse_prompts.save_config({"provider": "minimax", "api_key": "sk-minimax-test"})
+    row = cloud_rows.ensure_minimax_template("minimax-audio")
+    assert row
+    seen = []
+    audio_bytes = b"ID3 minimax audio bytes"
+
+    def handler(request):
+        seen.append(request)
+        assert request.url.path == "/v1/t2a_v2"
+        assert request.headers["authorization"] == "Bearer sk-minimax-test"
+        body = json.loads(request.content)
+        assert body["model"] == "speech-2.8-hd"
+        assert body["text"] == "你好，欢迎来到闪寻空间。"
+        assert body["voice_setting"]["voice_id"] == "female-tianmei"
+        return httpx.Response(200, json={"data": {"audio": audio_bytes.hex()},
+                                        "base_resp": {"status_code": 0, "status_msg": "success"}})
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *args, **kwargs:
+                        real_client(*args, transport=transport, **kwargs))
+    result = await cloud_engine.generate({
+        "template_id": row["id"], "job_id": "audio-test", "mode": "text",
+        "prompt": "你好，欢迎来到闪寻空间。", "controls": {"model.voice_id": "female-tianmei"},
+        "references": [],
+    })
+
+    assert len(seen) == 1
+    assert result["files"][0].read_bytes() == audio_bytes
+
+
+async def test_minimax_audio_reference_uploads_and_clones_voice(monkeypatch, init_db, tmp_path):
+    reverse_prompts.save_config({"provider": "minimax", "api_key": "sk-minimax-test"})
+    row = cloud_rows.ensure_minimax_template("minimax-audio")
+    assert row
+    path = tmp_path / "参考音色.wav"
+    path.write_bytes(b"RIFF" + b"\x00" * 40)
+    media_id = get_pool().main().execute(
+        "INSERT INTO images(path,filename,size_bytes,mtime,kind,duration_seconds,format) "
+        "VALUES(?,?,?,?,?,?,?)", (str(path), path.name, path.stat().st_size, 0, "audio", 12, "wav")
+    ).lastrowid
+    calls = []
+    audio_bytes = b"ID3 voice cloned preview"
+
+    def handler(request):
+        calls.append(request)
+        if request.url.path == "/v1/files/upload":
+            assert b"name=\"purpose\"" in request.content and b"voice_clone" in request.content
+            assert b"name=\"file\"" in request.content
+            return httpx.Response(200, json={"file": {"file_id": 1234},
+                                             "base_resp": {"status_code": 0}})
+        if request.url.path == "/v1/voice_clone":
+            body = json.loads(request.content)
+            assert body["file_id"] == 1234
+            assert body["voice_id"].startswith("SeekX")
+            assert body["text"] == "大家好。"
+            assert body["text_validation"] == "这是一段参考音频里的原话。"
+            assert body["accuracy"] == 0.8 and body["need_noise_reduction"] is True
+            return httpx.Response(200, json={"demo_audio": "https://cdn.test/clone.mp3",
+                                             "base_resp": {"status_code": 0}})
+        return httpx.Response(200, content=audio_bytes)
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *args, **kwargs:
+                        real_client(*args, transport=transport, **kwargs))
+    template = clone_templates.get_template(row["id"])
+    audio_slot = next(slot for slot in template["slots"] if slot["kind"] == "audio")
+    result = await cloud_engine.generate({
+        "template_id": row["id"], "job_id": "clone-test", "mode": "single",
+        "prompt": "大家好。", "controls": {"model.accuracy": 0.8,
+                                          "model.need_noise_reduction": "开"},
+        "references": [{"slot": clone_templates.slot_key(audio_slot), "image_id": media_id}],
+        "slot_prompts": {"model.reference_text": "这是一段参考音频里的原话。"},
+    })
+
+    assert [call.url.path for call in calls] == ["/v1/files/upload", "/v1/voice_clone", "/clone.mp3"]
+    assert result["files"][0].read_bytes() == audio_bytes
+
+
+async def test_minimax_video_uploads_reference_creates_polls_and_downloads_h3_result(
+    monkeypatch, init_db, source_image
+):
+    reverse_prompts.save_config({"provider": "minimax", "api_key": "sk-minimax-test"})
+    row = cloud_rows.ensure_minimax_template("minimax-video")
+    assert row
+    calls = []
+    mp4 = b"mini-max-h3-mp4"
+
+    def handler(request):
+        calls.append(request)
+        if request.url.path == "/v1/files/upload":
+            assert b"video_generation_input" in request.content
+            return httpx.Response(200, json={"file": {"file_id": 789},
+                                             "base_resp": {"status_code": 0}})
+        if request.method == "POST":
+            assert request.url.path == "/v2/video_generation"
+            body = json.loads(request.content)
+            assert body["model"] == "MiniMax-H3"
+            assert body["content"] == [
+                {"type": "text", "text": "一只猫跳上窗台"},
+                {"type": "image_url", "image_url": {"url": "mm_file://789"},
+                 "role": "reference_image"},
+            ]
+            assert body["ratio"] == "adaptive"
+            return httpx.Response(200, json={"task_id": "mm-video-11"})
+        if request.url.path == "/v2/query/video_generation/mm-video-11":
+            return httpx.Response(200, json={"task": {"id": "mm-video-11", "status": "succeeded",
+                                                       "content": {"url": "https://cdn.test/out.mp4"}}})
+        return httpx.Response(200, content=mp4, headers={"content-type": "video/mp4"})
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *args, **kwargs:
+                        real_client(*args, transport=transport, **kwargs))
+    monkeypatch.setattr(cloud_engine, "asyncio", SimpleNamespace(sleep=lambda delay: _instant(delay)))
+    template = clone_templates.get_template(row["id"])
+    image_slot = next(slot for slot in template["slots"] if slot["kind"] == "image")
+    result = await cloud_engine.generate({
+        "template_id": row["id"], "job_id": "video-test", "mode": "single",
+        "prompt": "一只猫跳上窗台", "controls": {"model.ratio": "adaptive", "model.duration": 5},
+        "references": [{"slot": clone_templates.slot_key(image_slot), "image_id": source_image}],
+    })
+
+    assert [call.url.path for call in calls] == [
+        "/v1/files/upload", "/v2/video_generation",
+        "/v2/query/video_generation/mm-video-11", "/out.mp4",
+    ]
+    assert result["remote_task_id"] == "mm-video-11"
+    assert result["files"][0].read_bytes() == mp4
+
+
+async def _instant(_delay):
+    return None
+
+
+def test_existing_minimax_template_provider_metadata_is_repaired(init_db):
+    """旧模板也要显示 MiniMax，不能只修新建出来的模板。"""
+    reverse_prompts.save_config({"provider": "minimax", "api_key": "sk-minimax-test"})
+    row = cloud_rows.ensure_minimax_image_template()
+    assert row
+    conn = get_pool().main()
+    conn.execute("UPDATE clone_templates SET provider='runninghub' WHERE id=?", (row["id"],))
+
+    cloud_rows.ensure_minimax_image_template()
+    template = clone_templates.get_template(row["id"])
+    public_template = next(t for t in clone_templates.list_templates() if t["id"] == row["id"])
+
+    assert template["provider"] == "minimax"
+    assert public_template["cloud"]["provider_label"] == "MiniMax"
+
+
+def test_existing_minimax_audio_template_refreshes_chinese_option_labels(init_db):
+    """已有数据库里的音频快捷模板也应拿到当前中文显示名。"""
+    reverse_prompts.save_config({"provider": "minimax", "api_key": "sk-minimax-test"})
+    row = cloud_rows.ensure_minimax_template("minimax-audio")
+    conn = get_pool().main()
+    template = clone_templates.get_template(row["id"])
+    slots = template["slots"]
+    for slot in slots:
+        slot.pop("option_labels", None)
+    conn.execute("UPDATE clone_templates SET slots=? WHERE id=?",
+                 (json.dumps(slots, ensure_ascii=False), row["id"]))
+
+    cloud_rows.ensure_minimax_template("minimax-audio")
+    refreshed = clone_templates.get_template(row["id"])
+    voice = next(slot for slot in refreshed["slots"] if slot["input"] == "voice_id")
+    assert voice["option_labels"]["female-tianmei"] == "女声·甜美"
+
+
+def _minimax_response(request, seen, image_bytes):
+    import httpx
+
+    seen.append({"method": request.method, "path": request.url.path,
+                 "authorization": request.headers.get("authorization", ""),
+                 "payload": json.loads(request.content) if request.method == "POST" else None})
+    if request.method == "POST":
+        return httpx.Response(200, json={"output_format": "png", "data": [
+            {"url": f"{HUB}/signed/minimax.png", "size": "1536x2720"}]})
+    return httpx.Response(200, content=image_bytes, headers={"content-type": "image/png"})
 
 
 async def test_multiple_references_keep_their_declared_order(hub, account, source_image):

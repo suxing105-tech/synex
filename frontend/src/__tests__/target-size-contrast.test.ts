@@ -123,15 +123,18 @@ function declAll(source: string, selector: string, prop: string): string {
   throw new Error(selector + " 里没有 " + prop);
 }
 
-it("点击目标够 24×24 第二批：详情栏页签、两处文字按钮、侧栏行内菜单、快捷键清除、内置厂商筛选、参考格移除", () => {
+it("点击目标够 24×24 第二批：右栏操作、两处文字按钮、侧栏行内菜单、快捷键清除、内置厂商筛选、参考格移除", () => {
   // 这六处是 design-QA 那轮在浏览器里按 getBoundingClientRect 实测挑出来的：
   // 数值都在 16~20px 之间，肉眼在暗色面板上看不出毛病，量出来全部够不着 WCAG 2.5.8。
   const detail = readFileSync("src/components/DetailPanel.svelte", "utf8");
-  expect(px(decl(detail, ".detail-tab", "min-width"))).toBeGreaterThanOrEqual(24);
-  // 两处 11px 的文字按钮走 Tailwind 的 min-h-6（=1.5rem=24px，根字号 16px）。
-  // 必须配 items-center：不然字贴在 24 高盒子上沿，看着就是往上跳了一截
-  const detailTag = readFileSync("src/components/DetailPanel.svelte", "utf8");
-  expect(detailTag).toMatch(/class="text-\[11px\][^"]*inline-flex min-h-6 items-center/);
+  expect(decl(detail, ".dock-btn", "height")).toBe("var(--ctl-md)");
+  expect(px(tokenValue("--ctl-md"))).toBeGreaterThanOrEqual(24);
+  // 11px 的文字按钮走 Tailwind 的 min-h-6（=1.5rem=24px，根字号 16px）。
+  // 必须配 items-center：不然字贴在 24 高盒子上沿，看着就是往上跳了一截。
+  // 2026-11-14：详情面板顶部那批 11px 文字按钮已被 .dock-btn 一套图标按钮取代
+  // （dock-btn 的 --ctl-md ≥24 上一条已经钉过），活着的 11px 文字按钮在 Feed 顶栏的「清空选区」上。
+  const feedTag = readFileSync("src/components/Feed.svelte", "utf8");
+  expect(feedTag).toMatch(/class="[^"]*text-\[11px\][^"]*inline-flex min-h-6 items-center/);
   const meta = readFileSync("src/components/MetadataCard.svelte", "utf8");
   expect(meta).toMatch(/class="ml-auto inline-flex min-h-6 min-w-6 items-center/);
 

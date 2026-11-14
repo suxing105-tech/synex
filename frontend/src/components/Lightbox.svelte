@@ -251,6 +251,7 @@
     return [
       { label: "复制图片", onClick: () => copyImage(it) },
       { label: "重命名", onClick: () => renameImage(it) },
+      { label: "复制文件所在位置", onClick: () => copyLocation(it.path) },
       { label: "图片所在位置", onClick: () => revealImage(it) },
       { kind: "sep" },
       { label: "删除图片", danger: true, onClick: () => deleteImage(it) },
@@ -260,6 +261,11 @@
   async function copyImage(it: { id: number; filename: string }) {
     try { await copyOriginalImage(it.id); notify(isPsdFilename(it.filename) ? "已复制 PSD 合成画面" : "已复制原图到剪贴板"); }
     catch (e) { notify(`复制原图失败：${(e as Error).message}`); }
+  }
+
+  async function copyLocation(path: string) {
+    const ok = await copyText(path);
+    notify(ok ? "已复制文件所在位置" : "复制文件位置失败");
   }
 
   async function renameImage(it: any) {

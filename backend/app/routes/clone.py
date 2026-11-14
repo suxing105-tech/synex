@@ -145,6 +145,9 @@ def _suggested_name(path: str | None) -> str:
 
 @router.get("/templates")
 def list_templates() -> dict:
+    # MiniMax 三类快捷方式只在用户已配置该服务商时加入，RunningHub 快捷方式不变。
+    if cloud_engine.minimax_config():
+        cloud_template_rows.ensure_minimax_templates()
     return {"items": clone_templates.list_templates()}
 
 

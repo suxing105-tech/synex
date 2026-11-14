@@ -91,6 +91,17 @@ describe("API 那一屏的两列级联", () => {
     expect(groups[1].rows[0].label).toBe("别家出图");
   });
 
+  it("MiniMax 模型显示在 MiniMax 服务商行", () => {
+    const minimax = cloudTpl({
+      id: 94, name: "MiniMax 图片API", provider: "minimax", model: "minimax-image",
+      cloud: { provider_label: "MiniMax", model_label: "MiniMax-H3-Image" },
+    });
+    const groups = cloudMenuGroups(workflowMenuRows([minimax]), [minimax]);
+    expect(groups.map((g) => [g.key, g.label, g.rows[0].label])).toEqual([
+      ["minimax", "MiniMax", "MiniMax-H3-Image"],
+    ]);
+  });
+
   it("服务商那行的老底照样拼得出来：能干什么 + 扣什么钱，整句只进悬浮提示", () => {
     const items = [
       cloudTpl({ id: 90, cloud: { provider_label: "RunningHub" } }),

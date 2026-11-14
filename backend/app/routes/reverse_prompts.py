@@ -247,7 +247,10 @@ async def generate(image_id: int, payload: GenerateInput):
         config_id = payload.model_config_id or settings["default_model_id"]
         if config_id is None:
             raise HTTPException(400, "请先配置并选择模型")
-        config = service.with_model(service.get_config(config_id), payload.model)
+        config = service.get_config(config_id)
+        if "text" not in providers.capabilities_for(config.get("provider")):
+            raise HTTPException(422, "该服务商配置仅支持图片、视频或音频生成，不能用于提示词反推。")
+        config = service.with_model(config, payload.model)
         key = service.key_for(config)
         instruction = settings["instruction"]
         if key:

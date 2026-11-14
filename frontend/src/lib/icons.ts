@@ -44,10 +44,9 @@ export const ICON_PATHS: Record<string, string> = {
     '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/>' +
     '<path d="M18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/>',
 
-  // 文本文档
+  // 文本类型标记：小尺寸侧栏与筛选 chip 使用清晰的 T 字母
   text:
-    '<rect x="4" y="3" width="16" height="18" rx="2"/>' +
-    '<path d="M8 8h8M8 12h8M8 16h5"/>',
+    '<path d="M5 5h14M12 5v14"/>',
 
   // 文件夹
   folder:

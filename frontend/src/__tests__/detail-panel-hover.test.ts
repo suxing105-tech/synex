@@ -37,14 +37,11 @@ const detailPanelTargets: Array<{ name: string; anchor: RegExp }> = [
   { name: "Header 缩略图按钮", anchor: /title=\{headerThumbLabel\(d\.kind\)\}/ },
   { name: "Header 视频播放按钮", anchor: /aria-label="播放视频"/ },
   { name: "音频播放按钮", anchor: /onclick=\{toggleSelectedAudio\}/ },
-  { name: "ComfyUI 打开按钮", anchor: /aria-label="在 ComfyUI 中打开工作流"/ },
   { name: "更多菜单按钮", anchor: /aria-haspopup="menu"/ },
 ];
 
 // Workflow JSON 卡片已抽成 WorkflowCard.svelte（图片与视频共用），hover 设计锁跟着搬。
 const workflowCardTargets: Array<{ name: string; anchor: RegExp }> = [
-  { name: "Workflow 复制按钮", anchor: /copy\(workflow, "Workflow JSON"\)/ },
-  { name: "Workflow 格式化并复制按钮", anchor: /onclick=\{copyFormatted\}/ },
   { name: "Workflow 下载按钮", anchor: /onclick=\{download\}/ },
 ];
 
@@ -95,25 +92,13 @@ describe("详情面板 hover 行为（参考 PromptCard 834e0e1）", () => {
       ).toBe(0);
     });
 
-    for (const { name, anchor } of workflowCardTargets) {
-      it(name + "：hover 时底色变化（hover:bg-*）", () => {
-        const classAttr = findOpenTagClass(workflowCardRaw, anchor, "<button");
-        expect(classAttr, name + " 必须能在 WorkflowCard.svelte 中匹配到").toBeTruthy();
-        expect(
-          /hover:bg-/.test(classAttr!),
-          name + " 应使用 hover:bg-* 改变底色，实际类：" + classAttr,
-        ).toBe(true);
-      });
-
-      it(name + "：hover 不再高亮边框（不应出现 hover:border-*）", () => {
-        const classAttr = findOpenTagClass(workflowCardRaw, anchor, "<button");
-        expect(classAttr, name + " 必须能在 WorkflowCard.svelte 中匹配到").toBeTruthy();
-        expect(
-          /hover:border-/.test(classAttr!),
-          name + " 不应使用 hover:border-* 高亮边框，实际类：" + classAttr,
-        ).toBe(false);
-      });
-    }
+    it("仅保留一个下载入口，并有悬停底色反馈", () => {
+      expect(workflowCardTargets).toHaveLength(1);
+      expect(workflowCardRaw).toContain("下载工作流");
+      expect(workflowCardRaw).toContain(".workflow-download:hover { background:");
+      expect(workflowCardRaw).not.toContain("格式化并复制");
+      expect(workflowCardRaw).not.toContain("Workflow JSON");
+    });
   });
 
   describe("MetadataCard.svelte 标签 chip hover 行为", () => {

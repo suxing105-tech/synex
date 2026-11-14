@@ -58,10 +58,10 @@ describe("工具栏结构：图标内容靠左，滑块靠右", () => {
     expect(toolbar.children[2]).toBe(container.querySelector(".toolbar-actions"));
   });
 
-  it("控件组只有类型 chips 与列数滑块，滑块永远在最右（整组贴右，chips 挨着滑块）", () => {
+  it("控件组按类型 chips、列数滑块、右栏切换按钮排列", () => {
     const { container } = render(Feed, { selectedId: null, lightboxOpen: false, lightboxIndex: 0 });
     const kids = [...container.querySelectorAll<HTMLElement>(".toolbar-actions > *")];
-    expect(kids.map((el) => el.className.split(" ")[0])).toEqual(["type-chips", "columns-slider"]);
+    expect(kids.map((el) => el.className.split(" ")[0])).toEqual(["type-chips", "columns-slider", "detail-toggle"]);
   });
 
   it("排序按钮已经撤掉：统一流只有「新的在前」一个口径", () => {
@@ -71,12 +71,13 @@ describe("工具栏结构：图标内容靠左，滑块靠右", () => {
     expect(container.textContent).not.toContain("名称");
   });
 
-  it("单一类型不渲染 chips，滑块仍然在最右", () => {
+  it("单一类型不渲染 chips，右栏切换按钮仍在滑块后", () => {
     scope.set("audio");
     const { container } = render(Feed, { selectedId: null, lightboxOpen: false, lightboxIndex: 0 });
     expect(container.querySelector(".type-chips")).toBeNull();
     const kids = [...container.querySelectorAll<HTMLElement>(".toolbar-actions > *")];
-    expect(kids.at(-1)!.className).toContain("columns-slider");
+    expect(kids.at(-2)!.className).toContain("columns-slider");
+    expect(kids.at(-1)!.className).toContain("detail-toggle");
   });
 
   it("滑块仍然工作：拖动改列数", async () => {

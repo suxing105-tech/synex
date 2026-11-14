@@ -1,4 +1,4 @@
-"""预设服务商注册表：OpenAI 兼容视觉模型，用户只需填 API Key 即可使用。
+"""预设服务商注册表：OpenAI 兼容文本/视觉模型，用户只需填 API Key 即可使用。
 
 - id: 存库的稳定标识；custom 表示手动配置。
 - base_url: OpenAI 兼容根地址（后端会自动拼接 /chat/completions）。
@@ -127,7 +127,7 @@ PRESETS: dict[str, dict] = {
         "credential_scope": "cloud",
         "default_timeout": 120,
         "format": "openai",
-        # 这一家除了文本（反推）还真接了图像/视频/音频三条收费模型 API，别的家没有 → 别虚报能力
+        # 这一家除文本反推外，还接了图像/视频/音频生成 API。
         "capabilities": ("text", "image", "video", "audio"),
         # 第二把 Key（工作流 API 密钥·消费级-会员）：官方要求工作流与模型 API 各用一把
         "workflow_key": True,
@@ -136,6 +136,24 @@ PRESETS: dict[str, dict] = {
                 "在任一处改都一起生效。反推按 token 计价（CNY / 1M tokens），"
                 "不吃云端生成那两道 RH币花费上限；官方要求两类接口都用企业级-共享 API Key。"
                 "云端工作流不算在内——它要另配「工作流 API 密钥（消费级-会员）」，扣的是 RH币。",
+    },
+    "minimax": {
+        "id": "minimax",
+        "name": "MiniMax",
+        "base_url": "https://api.minimax.cn/v1",
+        "models": {
+            "MiniMax-H3-Image": {"label": "MiniMax-H3-Image", "recommended": True, "capability": "image"},
+            "MiniMax-H3": {"label": "MiniMax-H3 视频", "recommended": True, "capability": "video"},
+            "speech-2.8-hd": {"label": "Speech 2.8 HD", "recommended": True, "capability": "audio"},
+            "MiniMax-M3.1-Flash": {"label": "MiniMax M3.1 Flash", "recommended": True, "capability": "text"},
+            "MiniMax-M3": {"label": "MiniMax M3", "recommended": False, "capability": "text"},
+        },
+        "default_timeout": 600,
+        "format": "openai",
+        "capabilities": ("text", "image", "video", "audio"),
+        "console_url": "https://platform.minimax.cn",
+        "note": "文本模型使用 MiniMax-M3.1-Flash 或 MiniMax-M3；图片使用 MiniMax-H3-Image，视频使用 MiniMax-H3，音频使用 Speech 2.8 HD；"
+                "Key 在 MiniMax 开放平台创建。H3 视频需账号开通对应的按量 API；参考音频复刻需完成官方个人或企业认证。",
     },
 }
 
@@ -174,6 +192,12 @@ def get_preset(preset_id):
     if preset is None:
         raise HTTPException(422, "不支持的服务商预设")
     return preset
+
+
+def capabilities_for(provider_id):
+    """预设服务商公开声明的用途；自定义地址默认作为文本/视觉模型使用。"""
+    preset = get_preset(provider_id)
+    return list((preset or {}).get("capabilities") or ["text"])
 
 
 def model_label(preset, model_id):

@@ -8,7 +8,7 @@
    *
    * 清单是服务商自己报的，随时可能拉不到，所以右列底下永远留一条直接输入模型 ID 的路。
    */
-  import { reverseApi, errorMessage, modelConfigs, rememberConfigModel } from "../lib/reverse-prompts";
+  import { reverseApi, errorMessage, modelConfigs, promptModelConfigs, rememberConfigModel } from "../lib/reverse-prompts";
 import Icon from "./Icon.svelte";
   import type { ProviderModel } from "../lib/reverse-prompts";
 
@@ -38,7 +38,7 @@ import Icon from "./Icon.svelte";
   let trigger = $state<HTMLButtonElement | null>(null);
   let pos = $state({ left: 8, top: 8, width: 320, up: false });
 
-  const configs = $derived($modelConfigs);
+  const configs = $derived(promptModelConfigs($modelConfigs));
   const chosen = $derived(configs.find(item => item.id === value) ?? null);
   const previewConfig = $derived(configs.find(item => item.id === preview) ?? null);
   const previewList = $derived(preview !== null ? lists[preview] : undefined);

@@ -129,20 +129,22 @@ describe("reverse prompts", () => {
     await waitFor(() => expect(panel.queryByText("新版花朵")).toBeNull());
     expect(panel.getByText("旧版花朵")).toBeTruthy();
   });
-  it("copies the selected language or both without changing history", async () => {
+  it("switches one prompt between Chinese and English and copies either form from icon buttons", async () => {
     vi.mocked(reverseApi.history).mockResolvedValue({ items: [record], total: 1, running: false });
     const panel = render(ReversePromptPanel, { imageId: 1 });
-    await waitFor(() => expect(panel.getByText("复制中文")).toBeTruthy());
-    await fireEvent.click(panel.getByText("复制中文"));
+    await waitFor(() => expect(panel.getByLabelText("复制中文提示词")).toBeTruthy());
+    await fireEvent.click(panel.getByLabelText("复制中文提示词"));
     expect(copyText).toHaveBeenLastCalledWith("红色花朵");
-    await fireEvent.click(panel.getByText("English"));
-    expect(panel.getByText("English").getAttribute("aria-pressed")).toBe("true");
-    expect(panel.getByText("中文").getAttribute("aria-pressed")).toBe("false");
-    await fireEvent.click(panel.getByText("复制英文"));
-    expect(copyText).toHaveBeenLastCalledWith("red flower");
-    await fireEvent.click(panel.getByText("复制双语"));
+    expect(panel.getByLabelText("中文反推提示词").textContent).toBe("红色花朵");
+    expect(panel.queryByLabelText("English reverse prompt")).toBeNull();
+    await fireEvent.click(panel.getByRole("button", { name: "English" }));
+    expect(panel.getByLabelText("English reverse prompt").textContent).toBe("red flower");
+    expect(panel.container.querySelector(".reverse-prompt-columns")).toBeNull();
+    await fireEvent.click(panel.getByLabelText("复制双语提示词"));
     expect(copyText).toHaveBeenLastCalledWith("中文\n红色花朵\n\nEnglish\nred flower");
     expect(panel.getByText("历史版本（1）")).toBeTruthy();
+    expect(panel.queryByText("展开全文")).toBeNull();
+    expect(panel.container.querySelector(".prompt-copy")).toBeTruthy();
   });
   it("cancels edits without saving and disables empty versions", async () => {
     vi.mocked(reverseApi.history).mockResolvedValue({ items: [record], total: 1, running: false });
@@ -167,8 +169,8 @@ describe("reverse prompts", () => {
     const save = vi.spyOn(reverseApi, "saveModel").mockResolvedValue(model);
     const panel = render(ModelApiSettings);
     await waitForReady(panel);
-    await fireEvent.click(panel.getByText("测试视觉"));
-    expect(panel.getByText("测试视觉").getAttribute("aria-pressed")).toBe("true");
+    await pickProvider(panel, "qwen");
+    expect(panel.getByText("当前服务商：通义千问 Qwen")).toBeTruthy();
     expect((panel.getByLabelText("API Key") as HTMLInputElement).value).toBe("");
     await fireEvent.click(panel.getByText("保存配置"));
     await waitFor(() => expect(save).toHaveBeenCalled());
@@ -181,6 +183,59 @@ describe("reverse prompts", () => {
     await waitForReady(panel);
     expect(panel.queryByText("＋ 添加模型")).toBeNull();
     expect(panel.queryAllByRole("button", { name: /自定义（手动填写）/ })).toHaveLength(1);
+  });
+
+  it("已配置模型不在设置页顶部重复显示，文本厂商列表包含 MiniMax", async () => {
+    vi.mocked(reverseApi.models).mockResolvedValue([
+      { ...model, id: 1, name: "视觉配置", provider: "qwen", has_api_key: true },
+    ]);
+    vi.mocked(reverseApi.providers).mockResolvedValue([
+      preset,
+      { id: "minimax", name: "MiniMax", base_url: "https://api.minimax.cn/v1",
+        models: [{ id: "MiniMax-M3.1-Flash", label: "MiniMax M3.1 Flash", recommended: true }],
+        default_timeout: 600, capabilities: ["text", "image", "video", "audio"] },
+    ]);
+    const panel = render(ModelApiSettings);
+    await waitForReady(panel);
+    expect(panel.queryByRole("button", { name: "视觉配置" })).toBeNull();
+    await fireEvent.click(panel.getByRole("button", { name: "文本" }));
+    expect(panel.container.querySelector('[data-provider="minimax"]')).toBeTruthy();
+  });
+
+  it("图像、视频、音频筛选都能选 MiniMax 并保存统一 API Key", async () => {
+    const minimax = {
+      id: "minimax", name: "MiniMax", base_url: "https://api.minimax.cn/v1",
+      models: [
+        { id: "MiniMax-H3-Image", label: "MiniMax-H3-Image", recommended: true },
+        { id: "MiniMax-H3", label: "MiniMax-H3 视频", recommended: true },
+        { id: "speech-2.8-hd", label: "Speech 2.8 HD", recommended: true },
+      ],
+      default_timeout: 600, capabilities: ["image", "video", "audio"], console_url: "https://platform.minimax.cn",
+    };
+    vi.mocked(reverseApi.providers).mockResolvedValue([preset, minimax]);
+    const save = vi.spyOn(reverseApi, "saveModel").mockResolvedValue({
+      ...model, id: 2, name: "MiniMax", base_url: minimax.base_url, model: "",
+      provider: "minimax", has_api_key: true,
+    });
+    const panel = render(ModelApiSettings);
+    await waitForReady(panel);
+    await fireEvent.click(panel.getByRole("button", { name: "图像" }));
+    expect(panel.getByRole("button", { name: /MiniMax/ })).toBeTruthy();
+    await fireEvent.click(panel.getByRole("button", { name: "视频" }));
+    expect(panel.getByRole("button", { name: /MiniMax/ })).toBeTruthy();
+    await fireEvent.click(panel.getByRole("button", { name: "音频" }));
+    expect(panel.getByRole("button", { name: /MiniMax/ })).toBeTruthy();
+    await fireEvent.click(panel.getByRole("button", { name: "图像" }));
+    await pickProvider(panel, "minimax");
+    expect(panel.getByText("再次创作可用 MiniMax-H3-Image 图片、MiniMax-H3 视频与 Speech 2.8 HD 音频 API。保存 API Key 后，对应项目会出现在再次创作的云端 API 列表。")).toBeTruthy();
+    expect(panel.queryByRole("button", { name: "检查 API Key" })).toBeNull();
+    expect(panel.getByText("MiniMax API Key 会在再次创作生成时校验；这里不发试生成请求。")).toBeTruthy();
+    await fireEvent.input(panel.getByLabelText("API Key"), { target: { value: "sk-minimax-test" } });
+    await fireEvent.click(panel.getByText("保存配置"));
+    await waitFor(() => expect(save).toHaveBeenCalled());
+    expect(save.mock.calls[0][0]).toMatchObject({
+      provider: "minimax", base_url: "https://api.minimax.cn/v1", api_key: "sk-minimax-test",
+    });
   });
 
   it("选中的厂商卡片文字不许被全局按钮配色涂黑：选中态自己声明浅色", async () => {
@@ -206,11 +261,14 @@ describe("reverse prompts", () => {
   });
 
   it("非共用厂商点「清除」：即时删这条配置自己的 Key，不用先保存", async () => {
+    const qwenModel = { ...model, provider: "qwen" };
+    vi.spyOn(reverseApi, "models").mockResolvedValue([qwenModel]);
+    modelConfigs.set([qwenModel]);
     const clear = vi.spyOn(reverseApi, "clearModelKey").mockResolvedValue({ ...model, has_api_key: false });
     const save = vi.spyOn(reverseApi, "saveModel").mockResolvedValue(model);
     const panel = render(ModelApiSettings);
     await waitForReady(panel);
-    await fireEvent.click(panel.getByText("测试视觉"));
+    await pickProvider(panel, "qwen");
     await fireEvent.input(panel.getByLabelText("Base URL"), { target: { value: "https://example.com/v1/chat/completions/" } });
     expect(panel.getByText("请求地址：https://example.com/v1/chat/completions")).toBeTruthy();
     await fireEvent.click(panel.getByRole("button", { name: "清除这把 Key" }));
@@ -223,7 +281,7 @@ describe("reverse prompts", () => {
     const save = vi.spyOn(reverseApi, "saveModel").mockResolvedValue(model);
     const panel = render(ModelApiSettings);
     await waitForReady(panel);
-    await fireEvent.click(panel.getByText("测试视觉"));
+    await pickProvider(panel, "qwen");
     await fireEvent.click(panel.getByText("保存配置"));
     await waitFor(() => expect(save).toHaveBeenCalled());
     expect("api_key" in save.mock.calls[0][0]).toBe(false);
@@ -294,10 +352,9 @@ describe("reverse prompts", () => {
       .mockResolvedValue({ shared_has_key: false, shared_has_workflow_key: false });
     const save = vi.spyOn(reverseApi, "saveModel");
     const panel = render(ModelApiSettings);
-    // 服务商下拉里也有这一个词，所以要按角色点那颗配置按钮；等偏好读回来，在那之前整张卡是禁用的
+    // 通过服务商卡打开已有配置；等偏好读回来，在那之前整张卡是禁用的
     await waitForReady(panel);
-    await waitFor(() => expect((panel.getByRole("button", { name: "RunningHub" }) as HTMLButtonElement).disabled).toBe(false));
-    await fireEvent.click(panel.getByRole("button", { name: "RunningHub" }));
+    await pickProvider(panel, "runninghub");
     await fireEvent.click(panel.getByRole("button", { name: "清除这把 Key" }));
     // 删的是云端那一行账号，不是这条模型配置：一把 Key 走天下，只能有一个家
     await waitFor(() => expect(clear).toHaveBeenCalledWith("runninghub", "model"));
@@ -415,12 +472,15 @@ describe("reverse prompts", () => {
     expect(panel.container.querySelector("a.api-console")?.textContent).toContain("获取 API Key");
   });
   it("「设为默认服务商」点了就存住，不用再去「反推指令」那一页再点一次保存", async () => {
+    const qwenModel = { ...model, provider: "qwen" };
+    vi.spyOn(reverseApi, "models").mockResolvedValue([qwenModel]);
+    modelConfigs.set([qwenModel]);
     // 挂载时会重新拉一次偏好，所以「当前默认不是这条」要在接口那一层成立
     vi.spyOn(reverseApi, "settings").mockResolvedValue({ ...settings, default_model_id: 2 });
     const save = vi.spyOn(reverseApi, "saveSettings").mockResolvedValue({ ...settings, default_model_id: 1 });
     const panel = render(ModelApiSettings);
     await waitForReady(panel);
-    await fireEvent.click(panel.getByRole("button", { name: "测试视觉" }));
+    await pickProvider(panel, "qwen");
     // 「设为默认服务商」要等偏好读回来才亮（canSetDefault 认 $reverseSettings），所以等它本身，不等页面
     const btn = await waitFor(() => {
       const found = panel.getByRole("button", { name: "设为默认服务商" }) as HTMLButtonElement;
@@ -484,6 +544,19 @@ describe("reverse prompts", () => {
     await waitFor(() => expect((panel.getByText("反推提示词") as HTMLButtonElement).hasAttribute("disabled")).toBe(false));
     await fireEvent.click(panel.getByText("反推提示词"));
     await waitFor(() => expect(generate).toHaveBeenCalledWith(1, 1, "b/qwen2.5-vl"));
+  });
+  it("图片提示词反推的模型列表不显示 MiniMax 生图、视频和音频 API", async () => {
+    const minimax = {
+      ...model, id: 2, name: "MiniMax", provider: "minimax", model: "",
+      capabilities: ["image", "video", "audio"],
+    };
+    modelConfigs.set([{ ...model, model: "" }, minimax]);
+    vi.mocked(reverseApi.models).mockResolvedValue([{ ...model, model: "" }, minimax]);
+    const panel = render(ReversePromptPanel, { imageId: 1 });
+    await fireEvent.click(panel.getByLabelText("反推模型"));
+    await waitFor(() => expect(panel.container.querySelectorAll(".mp-provider").length).toBeGreaterThan(0));
+    expect(panel.container.querySelector(".mp-providers")?.textContent).not.toContain("MiniMax");
+    expect(panel.container.querySelector(".mp-providers")?.textContent).toContain("测试视觉");
   });
   it("清单拉不到时不拦人：右列报原因，底下照样能手输模型 ID", async () => {
     // 苏醒真机就撞上一次 APIKEY_USER_NOT_FOUND——清单这条路随时可能断，手填不能被下拉堵死

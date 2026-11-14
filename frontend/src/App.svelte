@@ -295,8 +295,9 @@ import Icon from "./components/Icon.svelte";
     class="flex-1 min-h-0 grid app-grid"
     class:drawer-mode={narrowMode}
     class:sidebar-collapsed={sidebarCollapsed}
+    class:detail-collapsed={detailCollapsed}
     class:immersive={immersive}
-    style="--sidebar-width: {sidebarCollapsed ? 44 : 260}px; grid-template-columns: {immersive ? '1fr' : `var(--sidebar-width) 1fr 6px ${detailCollapsed ? 44 : detailWidth}px`};"
+    style="--sidebar-width: {sidebarCollapsed ? 44 : 260}px; grid-template-columns: {immersive ? '1fr' : `var(--sidebar-width) 1fr ${detailCollapsed ? '0px 0px' : `6px ${detailWidth}px`}`};"
   >
     <aside class="border-r border-border bg-surface flex flex-col min-h-0">
       {#if sidebarCollapsed}
@@ -326,6 +327,8 @@ import Icon from "./components/Icon.svelte";
         bind:lightboxIndex
         overlayOpen={lightboxOpen || videoPlayerOpen || Boolean($readerItem) || settingsOpen}
         immersive={immersive}
+        detailCollapsed={detailCollapsed}
+        onToggleDetail={() => detailCollapsed = !detailCollapsed}
         cloneCanvas={cloneCanvas}
         onOpenSettings={(tab) => { settingsTab = tab; settingsOpen = true; }}
       />
@@ -344,23 +347,12 @@ import Icon from "./components/Icon.svelte";
       onpointerdown={startDetailDrag}
     ></div>
     <aside
-      class="border-l border-border bg-surface min-h-0 flex flex-col"
+      class="bg-surface min-h-0 flex flex-col"
       class:drawer-hidden={narrowMode && !drawerOpen}
     >
-      {#if detailCollapsed}
-        <button class="sidebar-expand" title="展开右侧栏" aria-label="展开右侧栏" onclick={() => (detailCollapsed = false)}>
-          <Icon name="panel-right-expand" size={20} />
-        </button>
-      {:else}
-        <div class="flex items-center justify-between px-3 py-[10px] border-b border-border shrink-0">
-          <!-- 这一栏现在有四页，标题再写「详情」就会在看队列那一页说一句假话 -->
-          <span class="text-[11px] uppercase text-muted tracking-wider">工作台</span>
-          <button class="collapse-sidebar" onclick={() => (detailCollapsed = true)} title="收起右侧栏" aria-label="收起右侧栏">
-            <Icon name="panel-right-collapse" size={20} />
-          </button>
-        </div>
+      {#if !detailCollapsed}
         <div class="flex-1 min-h-0">
-          <DetailPanel />
+          <DetailPanel active={!detailCollapsed && (!narrowMode || drawerOpen)} />
         </div>
       {/if}
     </aside>
@@ -394,13 +386,11 @@ import Icon from "./components/Icon.svelte";
   /* 沉浸满屏：左右两栏和分隔线整块退场，网格独占整屏（0 宽会漏出内容，所以直接 display:none）。 */
   .app-grid.immersive > aside,
   .app-grid.immersive .splitter { display: none; }
+  .app-grid.detail-collapsed > aside:last-child,
+  .app-grid.detail-collapsed .splitter { display: none; }
   .desktop-shell :global(.fixed.inset-0) { top: var(--desktop-titlebar-height); }
 
   main { container-type:inline-size; }
-  .sidebar-expand { margin: 13px auto; padding: 4px; border: 0; background: transparent; color: #888; box-shadow: none; outline: none; }
-  .sidebar-expand:hover, .sidebar-expand:focus-visible { color: #eee; border: 0; background: transparent; box-shadow: none; outline: none; }
-  .collapse-sidebar { border: 0; background: transparent; color: #888; padding: 4px; cursor: pointer; outline: none; box-shadow: none; }
-  .collapse-sidebar:hover, .collapse-sidebar:focus-visible { color: #eee; background: transparent; border: 0; outline: none; box-shadow: none; }
   .splitter {
     cursor: col-resize;
     background: transparent;
@@ -450,6 +440,9 @@ import Icon from "./components/Icon.svelte";
   @media (max-width: 1100px) {
     .app-grid {
       grid-template-columns: var(--sidebar-width) 1fr 6px 320px !important;
+    }
+    .app-grid.detail-collapsed:not(.drawer-mode) {
+      grid-template-columns: var(--sidebar-width) 1fr 0px 0px !important;
     }
   }
 

@@ -1,11 +1,11 @@
 <script lang="ts">
   /**
-   * 右侧栏「队列」那一页（方案 3 · 生产力工作台第三批，2026-11-11）。
+   * 右侧工作台的队列区块。
    *
    * 按「现在要不要看着它 / 要不要动手 / 东西去哪了」回答三个问题：
    *   1. 现在这一条跑到哪一步——读全局 cloneJob（WS 的 clone_progress 与 jobs/current 都汇到它）；
    *   2. 有没有一条云端任务钱花了、产物还没回来——GET /api/clone/cloud/pending，只在这一页露着时取；
-   *   3. 这一轮跑出来的批次去哪了——读 cloneHistory，点缩略图直接回图库看那一张。
+   *   3. 这一轮跑出来的批次去哪了——读 cloneHistory，最近三批常显，更早产出按需展开。
    *
    * 三条都是一个真源读一遍：不自己数进度、不自己拼缩略图地址、不另开一条状态通路。
    *
@@ -180,7 +180,7 @@
   <section class="queue-block">
     <h4 class="queue-label">本次运行</h4>
     {#if $cloneHistory.length}
-      {#each $cloneHistory as entry}
+      {#each $cloneHistory.slice(0, 3) as entry}
         <div class="queue-row">
           <div class="queue-thumbs">
             {#each entry.outputs.slice(0, 4) as o}
@@ -209,6 +209,37 @@
           </div>
         </div>
       {/each}
+      {#if $cloneHistory.length > 3}
+        <details class="queue-older">
+          <summary>更早的产出（{$cloneHistory.length - 3} 批）</summary>
+          {#each $cloneHistory.slice(3) as entry}
+            <div class="queue-row">
+              <div class="queue-thumbs">
+                {#each entry.outputs.slice(0, 4) as o}
+                  {#if o.kind === "image" || o.kind === "video"}
+                    <button
+                      type="button"
+                      class="queue-out-btn"
+                      title={o.filename || "看这一张"}
+                      aria-label={"看 " + (o.filename || "这一张") + " 产出"}
+                      onclick={() => openOutput(o)}
+                    >
+                      {#if thumbOf(o)}<img src={thumbOf(o)} alt="" loading="lazy" class="queue-out" />
+                      {:else}<Icon name={o.kind === "video" ? "video" : "image"} size={14} />{/if}
+                    </button>
+                  {:else}
+                    <span class="queue-out-btn is-plain" title={o.filename || "音频产出"}><Icon name="music" size={14} /></span>
+                  {/if}
+                {/each}
+              </div>
+              <div class="queue-row-main">
+                <span class="queue-row-title">{entry.outputs.length} {counterFor(entry.mediaKind)} · {entry.engine === "cloud" ? "云端" : "本机"}</span>
+                <span class="queue-row-sub">{footerTimeLabel(entry.at / 1000)}{costOf(entry.costCoins)}</span>
+              </div>
+            </div>
+          {/each}
+        </details>
+      {/if}
     {:else if !job.running && !attention && !pending.length}
       <div class="queue-empty">
         <Icon name="wand" size={20} />
@@ -221,6 +252,11 @@
 
 <style>
   .queue { padding: 0; }
+  .queue-older { border-top: 1px solid var(--line); padding-top: 6px; }
+  .queue-older > summary { min-height: 28px; display: flex; align-items: center; cursor: pointer; color: var(--text-3); font-size: var(--fs-2xs); list-style: none; }
+  .queue-older > summary::-webkit-details-marker { display: none; }
+  .queue-older > summary::before { content: ""; width: 5px; height: 5px; margin-right: 7px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(-45deg); }
+  .queue-older[open] > summary::before { transform: rotate(45deg); }
   .queue-card {
     border: 1px solid var(--line);
     border-radius: var(--r-2);

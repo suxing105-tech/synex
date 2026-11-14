@@ -34,7 +34,7 @@ afterEach(() => {
 
 describe("DetailPanel 位置接线", () => {
   it("位置能力接在顶栏「更多操作」菜单上：能打开所在文件夹、能复制所在文件夹路径", () => {
-    // 2026-11-14 那轮重构把详情区（MetadataCard）整块拆掉，位置行跟着一起没了，
+    // 2026-11-14 那轮重构把原先的「详情区」整块拆掉，位置行跟着一起没了，
     // revealLocation / copyLocation 一度变成没人调用的死函数。现在位置能力收进顶栏「更多操作」菜单。
     expect(raw).not.toContain('data-workbench-section="details"');
     // 两个函数都得真的被菜单点到（不能只定义没人用）

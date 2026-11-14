@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve, dirname } from "node:path";
 
-// 回归：详情面板（DetailPanel.svelte + MetadataCard.svelte + WorkflowCard.svelte）
+// 回归：详情面板（DetailPanel.svelte + WorkflowCard.svelte）
 // 中所有交互按钮 / chip
 // 的 hover 效果必须改为底色变化（hover:bg-*），不能再用 hover:border-accent
 // 高亮边框。用户反馈边框高亮在视觉上太突兀，参考 PromptCard 复制按钮
@@ -11,17 +11,15 @@ import { resolve, dirname } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const detailPanelPath = resolve(here, "..", "components", "DetailPanel.svelte");
-const metadataCardPath = resolve(here, "..", "components", "MetadataCard.svelte");
 const workflowCardPath = resolve(here, "..", "components", "WorkflowCard.svelte");
 const detailPanelRaw = readFileSync(detailPanelPath, "utf8");
-const metadataCardRaw = readFileSync(metadataCardPath, "utf8");
 const workflowCardRaw = readFileSync(workflowCardPath, "utf8");
 
 // 通过「位于按钮内部」的唯一标识符定位按钮起始标签 \<button\，再从
 // 该起始位置起 300 字符内抓取第一个 class="..."。这种方式可以跨多行 +
 // onclick 中的 \=>\ （不能简单用 [^>]*），并能锁定到具体按钮。
 
-function findOpenTagClass(raw: string, anchor: RegExp, openTag: "<button" | "<span"): string | null {
+function findOpenTagClass(raw: string, anchor: RegExp, openTag: "<button"): string | null {
   const m = raw.match(anchor);
   if (!m) return null;
   const idx = m.index ?? -1;
@@ -44,11 +42,6 @@ const detailPanelTargets: Array<{ name: string; anchor: RegExp }> = [
 const workflowCardTargets: Array<{ name: string; anchor: RegExp }> = [
   { name: "Workflow 下载按钮", anchor: /onclick=\{download\}/ },
 ];
-
-const metadataCardTarget: { name: string; anchor: RegExp } = {
-  name: "标签 chip",
-  anchor: /onclick=\{\(\) => onTagClick/,
-};
 
 describe("详情面板 hover 行为（参考 PromptCard 834e0e1）", () => {
   describe("DetailPanel.svelte 全局回归", () => {
@@ -98,34 +91,6 @@ describe("详情面板 hover 行为（参考 PromptCard 834e0e1）", () => {
       expect(workflowCardRaw).toContain(".workflow-download:hover { background:");
       expect(workflowCardRaw).not.toContain("格式化并复制");
       expect(workflowCardRaw).not.toContain("Workflow JSON");
-    });
-  });
-
-  describe("MetadataCard.svelte 标签 chip hover 行为", () => {
-    it("文件中不应再出现 hover:border-accent", () => {
-      const matches = metadataCardRaw.match(/hover:border-accent/g) || [];
-      expect(
-        matches.length,
-        "MetadataCard.svelte 还残留 " + matches.length + " 处 hover:border-accent",
-      ).toBe(0);
-    });
-
-    it(metadataCardTarget.name + "：hover 时底色变化（hover:bg-*）", () => {
-      const classAttr = findOpenTagClass(metadataCardRaw, metadataCardTarget.anchor, "<span");
-      expect(classAttr, metadataCardTarget.name + " 必须能在 MetadataCard.svelte 中匹配到").toBeTruthy();
-      expect(
-        /hover:bg-/.test(classAttr!),
-        metadataCardTarget.name + " 应使用 hover:bg-* 改变底色，实际类：" + classAttr,
-      ).toBe(true);
-    });
-
-    it(metadataCardTarget.name + "：hover 不再高亮边框（不应出现 hover:border-*）", () => {
-      const classAttr = findOpenTagClass(metadataCardRaw, metadataCardTarget.anchor, "<span");
-      expect(classAttr, metadataCardTarget.name + " 必须能在 MetadataCard.svelte 中匹配到").toBeTruthy();
-      expect(
-        /hover:border-/.test(classAttr!),
-        metadataCardTarget.name + " 不应使用 hover:border-* 高亮边框，实际类：" + classAttr,
-      ).toBe(false);
     });
   });
 });

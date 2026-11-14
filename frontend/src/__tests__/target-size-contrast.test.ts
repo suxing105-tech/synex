@@ -135,8 +135,6 @@ it("点击目标够 24×24 第二批：右栏操作、两处文字按钮、侧�
   // （dock-btn 的 --ctl-md ≥24 上一条已经钉过），活着的 11px 文字按钮在 Feed 顶栏的「清空选区」上。
   const feedTag = readFileSync("src/components/Feed.svelte", "utf8");
   expect(feedTag).toMatch(/class="[^"]*text-\[11px\][^"]*inline-flex min-h-6 items-center/);
-  const meta = readFileSync("src/components/MetadataCard.svelte", "utf8");
-  expect(meta).toMatch(/class="ml-auto inline-flex min-h-6 min-w-6 items-center/);
 
   const tree = readFileSync("src/components/FolderTree.svelte", "utf8");
   expect(px(decl(tree, ":global(.folder-item .menu-btn)", "min-height"))).toBeGreaterThanOrEqual(24);

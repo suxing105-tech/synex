@@ -49,7 +49,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File outputs\preview-v1\launch-pr
 powershell -NoProfile -ExecutionPolicy Bypass -File frontend\scripts\build-update.ps1 -OutputDirectory outputs\release-0.2.21
 ```
 
-发布前自动跑版本一致性测试，不一致直接中止。产出签名安装包、`.sig`、`latest.json`。
+发布前自动跑版本一致性测试
+打包前先确认 Tauri CLI 在（脚本里 `Assert-TauriCli` 会先报错）：
+
+```powershell
+cargo install tauri-cli                       # 得到 cargo tauri
+cd frontend; pnpm add -D @tauri-apps/cli      # 得到 node_modules\.bin\tauri.cmd
+```
+
+两者选一个就行；脚本优先用本地的 `@tauri-apps/cli`，没有才回退到 `cargo tauri`。
+，不一致直接中止。产出签名安装包、`.sig`、`latest.json`。
 
 ## 4. 推到 GitHub 并发 Release
 
@@ -57,7 +66,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File frontend\scripts\build-updat
 
 ```powershell
 git tag v0.2.21
-git push origin codex/tauri-app
 git push origin HEAD:main
 git push origin v0.2.21
 
@@ -78,6 +86,7 @@ python frontend\scripts\verify-public-release.py --version 0.2.21 --dir outputs\
 用已安装客户端读的同一个 `releases/latest/download/latest.json`，下载资产并比对
 签名与本地文件，任何一项不符都非零退出。
 
+
 ## 更新签名私钥
 
 - 仓库内：`outputs\auto-update-v1\private\updater.key`（已 gitignore，Git 不跟踪）
@@ -85,3 +94,18 @@ python frontend\scripts\verify-public-release.py --version 0.2.21 --dir outputs\
 
 丢了私钥就再也签不出能自动更新的版本（已发布客户端只认这把公钥）。
 新增副本时同步更新上面两处路径的记录。
+
+### 2026-11-15 重新生成了一次
+
+旧公钥（`25446741BFDF8FD0`）是 Tauri 公开的**测试密钥**，不能用来签正式发布；
+对应的私钥也已丢失（仓库内与 `F:\` 备份都是空的）。
+本次重新生成了一对密钥，并把 `tauri.conf.json` 里的 `pubkey` 换成新公钥：
+
+- 新密钥 ID：`8C00E93C8F6C6093`
+- 生成命令：`pnpm tauri signer generate --ci -w outputs/auto-update-v1/private/updater.key`
+
+**影响：旧版客户端内嵌的是旧公钥，验不上新密钥签的更新包。**
+旧版必须手动安装一次含新公钥的版本（本次 v0.2.37 就是），之后才能走自动更新。
+
+仓库名也从 `suxing105-tech/synex` 改到 `virsux/synex`（全部脚本、`tauri.conf.json`、
+`updates.rs`、README 一并改完，`backend/tests/test_update_manifest.py` 也同步改了）。

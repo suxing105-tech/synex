@@ -96,7 +96,7 @@
 
 ## 🚀 安装
 
-从 [GitHub Releases](https://github.com/suxing105-tech/synex/releases) 下载最新版 `suxing-gallery_<版本>_x64-setup.exe` 安装即可。已装用户可通过应用内更新自动升级。
+从 [GitHub Releases](https://github.com/virsux/synex/releases) 下载最新版 `suxing-gallery_<版本>_x64-setup.exe` 安装即可。已装用户可通过应用内更新自动升级。
 
 ### 从源码构建
 

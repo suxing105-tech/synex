@@ -11,7 +11,7 @@ def test_feed_encodes_asset_name_and_signature(tmp_path):
     installer = tmp_path / "苏醒图库_0.2.0_x64-setup.exe"
     installer.write_bytes(b"fixture")
     Path(str(installer) + ".sig").write_text("signature\n")
-    feed = module.manifest("0.2.0", "suxing105-tech/synex", installer, "更新说明")
+    feed = module.manifest("0.2.0", "virsux/synex", installer, "更新说明")
     asset = feed["platforms"]["windows-x86_64"]
     assert "/releases/download/v0.2.0/%E8%8B%8F" in asset["url"]
     assert asset["signature"] == "signature"
@@ -27,9 +27,9 @@ def test_ascii_release_asset_url_matches_uploaded_filename(tmp_path):
     installer = tmp_path / "suxing-gallery_0.2.2_x64-setup.exe"
     installer.write_bytes(b"fixture")
     Path(str(installer) + ".sig").write_text("signature\n")
-    feed = module.manifest("0.2.2", "suxing105-tech/synex", installer, "更新说明")
+    feed = module.manifest("0.2.2", "virsux/synex", installer, "更新说明")
     assert feed["platforms"]["windows-x86_64"]["url"] == (
-        "https://github.com/suxing105-tech/synex/releases/download/v0.2.2/" + installer.name
+        "https://github.com/virsux/synex/releases/download/v0.2.2/" + installer.name
     )
 
 @pytest.mark.parametrize("version,repo", [("0.2.0-beta", "owner/repo"), ("garbage", "owner/repo"), ("0.2.0", "../bad/path")])

@@ -524,7 +524,7 @@ mod tests {
     #[test]
     fn rejects_insecure_or_invalid_urls() {
         assert!(https(
-            "https://github.com/suxing105-tech/synex/releases/latest/download/latest.json"
+            "https://github.com/virsux/synex/releases/latest/download/latest.json"
         ));
         for url in [
             "http://example.org/a",

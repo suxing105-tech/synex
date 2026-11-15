@@ -26,7 +26,7 @@ def manifest(version: str, repository: str, installer: Path, notes: str) -> dict
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", required=True)
-    parser.add_argument("--repository", default="suxing105-tech/synex")
+    parser.add_argument("--repository", default="virsux/synex")
     parser.add_argument("--installer", type=Path, required=True)
     parser.add_argument("--notes", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)

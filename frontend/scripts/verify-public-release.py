@@ -16,7 +16,7 @@ from pathlib import Path
 
 import httpx
 
-REPO = "suxing105-tech/synex"
+REPO = "virsux/synex"
 FEED = "https://github.com/" + REPO + "/releases/latest/download/latest.json"
 
 

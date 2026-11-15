@@ -23,7 +23,7 @@ from pathlib import Path
 
 import httpx
 
-REPO = "suxing105-tech/synex"
+REPO = "virsux/synex"
 
 
 def asset_names(version: str) -> list:

@@ -13,6 +13,12 @@ $env:CARGO_NET_OFFLINE = 'true'
 $Python = Join-Path $Repo 'backend\.venv\Scripts\python.exe'
 $fail = @()
 
+# 后端那批用例要 ffmpeg / ffprobe 在 PATH 上，否则海报帧、波形、音视频元数据那批会集体
+# FileNotFoundError——看着像一百多个用例坏了，其实只是 subprocess 找不到 ffmpeg。
+# 仓库自带 vendor\media-tools，命中就把它挂到 PATH 最前面。
+$MediaTools = Join-Path $Repo 'vendor\media-tools'
+if (Test-Path -LiteralPath $MediaTools) { $env:PATH = $MediaTools + ';' + $env:PATH }
+
 # Native commands write INFO lines to stderr; with Stop mode PowerShell would treat them as
 # terminating errors, so relax the preference and judge by $LASTEXITCODE instead.
 function RunNative([scriptblock]$sb, [string]$log) {

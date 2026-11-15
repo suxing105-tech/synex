@@ -13,7 +13,7 @@
   import { audioApi, imagesApi } from "../lib/api";
   import { backendUrl } from "../lib/backend-url";
   import { hoverPlay } from "../lib/hover-play";
-  import { playAudio, playingAudio, stopAudio } from "../lib/stores";
+  import { pickerOpen, playAudio, playingAudio, stopAudio } from "../lib/stores";
   import { pushToast } from "../lib/toast";
   import { basenameOnly, splitIntoColumns, thumbnailAspectRatio, thumbnailHeightToWidthRatio, thumbnailObjectFit } from "../lib/media-format";
   import { cloneError, REF_DISPLAY_ORDER, REF_KIND_COUNTERS, REF_KIND_NAMES, type RefKind } from "../lib/clone";
@@ -130,6 +130,15 @@
       loading = false;
     }
   }
+
+  /**
+   * 开着的时候把右侧详情栏让掉（App 读这个 store）：弹窗是模态，背后的详情栏还在显示
+   * 上一张卡的提示词与参数，既是干扰也是错的信息。
+   */
+  $effect(() => {
+    pickerOpen.set(open);
+    return () => pickerOpen.set(false);
+  });
 
   /**
    * 每次打开都回到调用方指定的那一族。组件关闭后不销毁，tab 是组件内状态，

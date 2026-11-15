@@ -1,8 +1,11 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { get } from "svelte/store";
 import { cleanup, fireEvent, render } from "@testing-library/svelte";
 import { tick } from "svelte";
 import MediaPickerModal from "../components/MediaPickerModal.svelte";
 import { imagesApi, foldersApi } from "../lib/api";
+import { pickerOpen } from "../lib/stores";
 
 /**
  * 素材选择器左边的文件夹分类。
@@ -42,6 +45,7 @@ vi.mock("../lib/api", () => ({
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  pickerOpen.set(false);
 });
 
 /** 最后一次发给后端的查询参数：文件夹筛选有没有生效，只看这一处最准。 */
@@ -85,6 +89,28 @@ it("点子目录也算一次筛选：按它自己的 id 走", async () => {
   const screen = await opened();
   await fireEvent.click(screen.getByRole("button", { name: "动漫角色" }));
   await vi.waitFor(() => expect(lastQuery()).toMatchObject({ folder_id: 11 }));
+});
+
+/**
+ * 右侧那块详情栏在选择器开着时必须让位：
+ * 它显示的还是「上一张选中卡」的提示词与参数，挑新素材时纯属干扰，而且是错的信息。
+ */
+it("选择器开着的时候右侧详情栏让位，关掉就还回去", async () => {
+  (imagesApi.list as ReturnType<typeof vi.fn>).mockResolvedValue({ items: [], total: 0 });
+  const screen = render(MediaPickerModal, { open: true, onPick: () => {}, onClose: () => {} });
+  await vi.waitFor(() => expect(get(pickerOpen)).toBe(true));
+
+  await screen.rerender({ open: false });
+  await vi.waitFor(() => expect(get(pickerOpen)).toBe(false));
+});
+
+it("App 在选择器开着时把右侧栏与分隔条一起收掉", () => {
+  const app = readFileSync("src/App.svelte", "utf8");
+  // 规则本身：右侧那个 aside 与 splitter 都不能再占位
+  expect(app).toMatch(/\.app-grid\.picker-active\s*>\s*aside:last-child/);
+  expect(app).toMatch(/\.app-grid\.picker-active\s*\.splitter/);
+  // 列宽也得一起收：只 display:none 的话，中间列右边会留一段空白
+  expect(app).toMatch(/grid-template-columns:[^;]*detailHidden/);
 });
 
 it("切换素材族：每行右侧的数字跟着换成那一族的数量", async () => {

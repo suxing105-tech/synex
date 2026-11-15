@@ -206,7 +206,7 @@ def pick_skill_md(entries: list[dict]) -> tuple[dict | None, list[dict]]:
     return next(item for item in rebased if item["path"].lower() == "skill.md"), rebased
 
 
-def compose_refs_block(entries: list[dict], body: str) -> tuple[str, list[dict], int]:
+def compose_refs_block(entries: list[dict], body: str, skill_path: str = "") -> tuple[str, list[dict], int]:
     """把文本类附属文件拼成一段参考资料，返回（文本块, 每个文件的去处）。
 
     顺序：SKILL.md 正文里点名过的文件先放（作者显然是想让模型看它的），
@@ -214,8 +214,10 @@ def compose_refs_block(entries: list[dict], body: str) -> tuple[str, list[dict],
     悄悄少给一份资料是最难查的一类问题。
     """
     body_text = str(body or "")
+    # 只把「这一条技能自己的 SKILL.md」排除掉。包里的子技能（skills/xxx/SKILL.md）
+    # 是另一条技能，它们是正经参考资料，不能跟着被排除。
     texts = [item for item in entries
-             if item.get("is_text") and PurePosixPath(item["path"]).name.lower() != "skill.md"]
+             if item.get("is_text") and item["path"] != skill_path]
 
     def priority(item: dict) -> int:
         """点名越具体，排得越前。

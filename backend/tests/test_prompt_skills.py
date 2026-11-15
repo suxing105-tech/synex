@@ -495,3 +495,14 @@ def test_package_refs_order_follows_how_specifically_the_body_names_them(client,
     assert order.index("notes.md") < order.index("deep/style.md")
     assert order.index("deep/style.md") < order.index("references/other.md")
     assert order.index("references/other.md") < order.index("unrelated.md")
+
+
+
+def test_nested_skill_md_counts_as_reference_not_as_the_instruction(client, tmp_path):
+    # 包里套着别的技能（skills/other/SKILL.md）：那是参考资料，不是这一条的写法
+    root = make_package(tmp_path / "pack", extra={"skills/other/SKILL.md": "另一条技能的正文"})
+    imported = client.post("/api/prompt-skills/import-package", json={"path": str(root)}).json()
+    files = {item["path"]: item for item in imported["package"]["files"]}
+    assert files["SKILL.md"]["role"] == "写法"
+    assert files["skills/other/SKILL.md"]["role"] == "参考"
+    assert files["skills/other/SKILL.md"]["included"] is True

@@ -358,7 +358,7 @@ def remove_package_dir(package_dir: str | None) -> None:
     shutil.rmtree(target, ignore_errors=True)
 
 
-def _package_manifest(entries: list[dict], files_meta: list[dict]) -> list[dict]:
+def _package_manifest(entries: list[dict], files_meta: list[dict], skill_path: str = "") -> list[dict]:
     """清单：包里每个文件最后去了哪儿。
 
     三种角色分清楚，界面上才不会把「这条技能本身」说成「被预算挤掉」：
@@ -371,7 +371,8 @@ def _package_manifest(entries: list[dict], files_meta: list[dict]) -> list[dict]
     manifest: list[dict] = []
     for item in entries:
         path = item["path"]
-        if PurePosixPath(path).name.lower() == "skill.md":
+        # 只有「这一条技能自己的」SKILL.md 算写法；包里的子技能是另一条技能，算参考资料。
+        if path == skill_path:
             manifest.append({"path": path, "size": item.get("size", 0), "role": "写法",
                              "included": False, "truncated": False, "reason": "就是这条技能的写法"})
             continue
@@ -402,7 +403,8 @@ def _ingest_package(root_name: str, entries: list[dict], source_dir: str = "") -
     truncated = len(body) > MAX_IMPORT_CHARS
     # 资料优先级要用**完整**正文来判断：作者在文档后半段点名的文件也算数，
     # 哪怕那半截没发给模型——不然截断会把「作者想让我们看什么」这件事切掉一半。
-    refs_block, files_meta, refs_chars = skill_packages.compose_refs_block(entries, body)
+    skill_path = skill_md.get("path") or ""
+    refs_block, files_meta, refs_chars = skill_packages.compose_refs_block(entries, body, skill_path)
     if truncated:
         body = body[:MAX_IMPORT_CHARS].rstrip() + "\n\n（技能原文过长，到这里为止。）"
 
@@ -434,7 +436,7 @@ def _ingest_package(root_name: str, entries: list[dict], source_dir: str = "") -
             tx.execute("DELETE FROM prompt_skills WHERE id=?", (skill_id,))
         raise HTTPException(500, "技能包落盘失败：" + str(exc))
 
-    manifest = _package_manifest(entries, files_meta)
+    manifest = _package_manifest(entries, files_meta, skill_path)
     meta = {
         "root": root_name,
         "source_dir": source_dir,

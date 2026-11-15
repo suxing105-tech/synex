@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
@@ -12,6 +14,7 @@ from PIL import Image
 
 from app import prompt_skills as service
 from app import reverse_prompts
+from app import skill_packages
 from app.routes import reverse_prompts as reverse_routes
 from app.routes.prompt_skills import router
 
@@ -315,3 +318,180 @@ def test_helpers_stay_pure():
     with pytest.raises(HTTPException) as blocked:
         service.normalize_kinds([])
     assert blocked.value.status_code == 422
+
+
+# ---------- 技能包（Codex 那种一整个目录） ----------
+
+
+def make_package(root, name="电商视觉包", body="# 电商视觉包\n\n先定光，再定镜头。",
+                 description="影驰电商主图的写法", extra=None, binary=None):
+    """在 root 下铺一个技能包目录，返回它的根路径。"""
+    root = Path(root)
+    (root / "references").mkdir(parents=True, exist_ok=True)
+    front = "---\nname: " + name + "\ndescription: " + description + "\nlicense: MIT\n"
+    front += "allowed-tools: [Read, Write]\n---\n\n"
+    (root / "SKILL.md").write_text(front + body, encoding="utf-8")
+    files = {"references/style.md": "金属质感要写清楚反射。"} if extra is None else extra
+    for rel, text in files.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    for rel, blob in (binary or {}).items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(blob)
+    return root
+
+
+def test_package_import_reads_frontmatter_body_and_text_files(client, tmp_path):
+    root = make_package(tmp_path / "shop-skill")
+    result = client.post("/api/prompt-skills/import-package", json={"path": str(root)})
+    assert result.status_code == 200, result.text
+    data = result.json()
+    assert data["name"] == "电商视觉包"
+    assert data["source"] == "package"
+    # frontmatter 剥掉，description 落到「一句话说明」，正文才是指令
+    assert data["instruction"].startswith("# 电商视觉包")
+    assert "description:" not in data["instruction"]
+    assert data["note"] == "影驰电商主图的写法"
+    package = data["package"]
+    assert package["license"] == "MIT"
+    assert package["allowed_tools"] == ["Read", "Write"]
+    paths = {item["path"] for item in package["files"]}
+    assert paths == {"SKILL.md", "references/style.md"}
+    included = {item["path"] for item in package["files"] if item["included"]}
+    assert included == {"references/style.md"}
+
+
+def test_package_without_skill_md_is_refused(client, tmp_path):
+    empty = tmp_path / "no-skill"
+    empty.mkdir()
+    (empty / "readme.md").write_text("这里没有 SKILL.md", encoding="utf-8")
+    result = client.post("/api/prompt-skills/import-package", json={"path": str(empty)})
+    assert result.status_code == 422 and "SKILL.md" in result.json()["detail"]
+
+
+def test_package_scan_skips_hidden_dirs_and_node_modules(client, tmp_path):
+    root = make_package(tmp_path / "pack")
+    (root / ".git").mkdir()
+    (root / ".git" / "config").write_text("不该被读到", encoding="utf-8")
+    (root / "node_modules").mkdir()
+    (root / "node_modules" / "left-pad.js").write_text("也不该被读到", encoding="utf-8")
+    result = client.post("/api/prompt-skills/import-package", json={"path": str(root)})
+    assert result.status_code == 200
+    paths = {item["path"] for item in result.json()["package"]["files"]}
+    assert ".git/config" not in paths and "node_modules/left-pad.js" not in paths
+
+
+def test_package_binary_files_are_listed_but_not_sent(client, tmp_path):
+    root = make_package(tmp_path / "pack", binary={"assets/palette.png": b"\x89PNG\r\n\x1a\n"})
+    result = client.post("/api/prompt-skills/import-package", json={"path": str(root)})
+    files = {item["path"]: item for item in result.json()["package"]["files"]}
+    assert files["assets/palette.png"]["included"] is False
+    assert "二进制" in files["assets/palette.png"]["reason"]
+
+
+def test_package_refs_are_budgeted_and_referenced_files_win(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(skill_packages, "MAX_REFS_CHARS", 120)
+    root = make_package(tmp_path / "pack",
+                        body="# 正文\n\n详见 references/wanted.md，其余自便。",
+                        extra={"references/wanted.md": "甲" * 80,
+                               "references/other.md": "乙" * 80})
+    result = client.post("/api/prompt-skills/import-package", json={"path": str(root)})
+    files = {item["path"]: item for item in result.json()["package"]["files"]}
+    # 正文点名过的那份先进来，且是整份进来；另一份只能拿剩下的预算
+    assert files["references/wanted.md"]["included"] is True
+    assert files["references/wanted.md"]["truncated"] is False
+    other = files["references/other.md"]
+    assert other["included"] is False or other["truncated"] is True
+    assert result.json()["package"]["refs_chars"] <= skill_packages.MAX_REFS_CHARS
+
+
+def test_package_refs_reach_the_model_in_the_right_order(client, model, tmp_path, monkeypatch):
+    capture = Capture()
+    monkeypatch.setattr(reverse_prompts, "request_model", capture)
+    root = make_package(tmp_path / "pack", body="# 电商视觉包\n\n细则见 references/style.md。",
+                        extra={"references/style.md": "金属质感要写清楚反射。"})
+    imported = client.post("/api/prompt-skills/import-package", json={"path": str(root)}).json()
+    result = optimize(client, imported["id"], prompt="一个显卡")
+    assert result.status_code == 200, result.text
+    instruction = capture.calls[0]["instruction"]
+    # 顺序：正文 → 资料 → 硬规矩。硬规矩垫底，规矩被吞掉就会开始吃 @图片N
+    assert instruction.startswith("# 电商视觉包")
+    assert "金属质感要写清楚反射。" in instruction
+    assert instruction.index("金属质感") < instruction.index("输出要求")
+    assert "references/style.md" in instruction
+
+
+def test_package_without_refs_keeps_the_old_system_prompt(client, model, tmp_path, monkeypatch):
+    capture = Capture()
+    monkeypatch.setattr(reverse_prompts, "request_model", capture)
+    root = make_package(tmp_path / "pack", extra={})
+    imported = client.post("/api/prompt-skills/import-package", json={"path": str(root)}).json()
+    optimize(client, imported["id"], prompt="一个显卡")
+    instruction = capture.calls[0]["instruction"]
+    assert "技能包参考资料" not in instruction
+    assert instruction.startswith("# 电商视觉包")
+
+
+def test_package_upload_channel_matches_path_channel(client, tmp_path):
+    root = make_package(tmp_path / "pack")
+    files = []
+    for path in sorted(root.rglob("*")):
+        if path.is_file():
+            rel = path.relative_to(root).as_posix()
+            files.append({"path": rel, "content": path.read_text(encoding="utf-8")})
+    uploaded = client.post("/api/prompt-skills/import-package/upload",
+                            json={"root": "pack", "files": files}).json()
+    from_path = client.post("/api/prompt-skills/import-package", json={"path": str(root)}).json()
+    # 名字撞了会加序号（两条通道导的是同一个包），比的是内容
+    assert uploaded["name"].split(" (")[0] == from_path["name"].split(" (")[0]
+    assert uploaded["instruction"] == from_path["instruction"]
+    assert {item["path"] for item in uploaded["package"]["files"]} == {
+        item["path"] for item in from_path["package"]["files"]}
+
+
+def test_deleting_a_package_skill_removes_its_folder(client, tmp_path):
+    root = make_package(tmp_path / "pack")
+    imported = client.post("/api/prompt-skills/import-package", json={"path": str(root)}).json()
+    package_dir = Path(imported["package_dir"])
+    assert package_dir.exists() and (package_dir / "SKILL.md").exists()
+    client.delete(f"/api/prompt-skills/{imported['id']}")
+    assert not package_dir.exists(), "包是随这条技能一起进来的，删技能就该一起带走"
+
+
+def test_deleting_a_plain_skill_leaves_other_folders_alone(client, tmp_path):
+    created = client.post("/api/prompt-skills", json={"name": "普通技能", "instruction": "写"}).json()
+    assert client.delete(f"/api/prompt-skills/{created['id']}").status_code == 200
+
+
+def test_migration_adds_package_columns_to_old_table(init_db):
+    conn = init_db.main()
+    conn.execute("DROP TABLE prompt_skills")
+    conn.execute("""CREATE TABLE prompt_skills (
+     id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, note TEXT NOT NULL DEFAULT '',
+     kinds TEXT NOT NULL DEFAULT 'image,video', instruction TEXT NOT NULL,
+     language TEXT NOT NULL DEFAULT 'auto', with_refs INTEGER NOT NULL DEFAULT 1,
+     builtin_key TEXT, sort INTEGER NOT NULL DEFAULT 0,
+     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))""")
+    service.initialize(conn)
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(prompt_skills)").fetchall()}
+    assert {"source", "package_dir", "package_meta", "package_refs"} <= columns
+    rows = conn.execute("SELECT source FROM prompt_skills").fetchall()
+    assert all(row["source"] == "manual" for row in rows), "老行补成 manual：不能猜它是包"
+
+
+def test_package_refs_order_follows_how_specifically_the_body_names_them(client, tmp_path):
+    root = make_package(tmp_path / "pack",
+                        body="# 正文\n\n看 notes.md 与 style.md，其余在 references/ 里。",
+                        extra={"notes.md": "甲", "deep/style.md": "乙",
+                               "references/other.md": "丙", "unrelated.md": "丁"})
+    imported = client.post("/api/prompt-skills/import-package", json={"path": str(root)}).json()
+    refs = imported["package"]
+    order = [item["path"] for item in sorted(refs["files"], key=lambda i: i.get("order") or 99)
+             if item["included"]]
+    # 点名越具体排得越前：写全路径 > 只写文件名 > 只指目录 > 没提到
+    assert order.index("notes.md") < order.index("deep/style.md")
+    assert order.index("deep/style.md") < order.index("references/other.md")
+    assert order.index("references/other.md") < order.index("unrelated.md")

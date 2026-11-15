@@ -18,6 +18,19 @@ vi.mock("../lib/api", () => ({
 }));
 (globalThis as any).__http = http;
 
+// 桌面壳那层在这个文件里要能切换：导入技能包是走原生对话框还是走目录上传，就看 isTauri。
+vi.mock("../lib/tauri", () => ({
+  isTauri: () => (globalThis as any).__tauri.isTauri,
+  selectSkillPackageDir: () => (globalThis as any).__tauri.pickDir(),
+  selectImportDirectory: async () => null,
+  selectTextPaths: async () => [],
+  getSidecarStatus: async () => null,
+  onSidecarReady: async () => () => {},
+  onSidecarDied: async () => () => {},
+  restartSidecar: async () => null,
+}));
+(globalThis as any).__tauri = { isTauri: false, pickDir: async () => null };
+
 /** 按「METHOD 路径」预演，长的键先匹配：PATCH 与 POST 落在同一个前缀上。 */
 function routes(map: Record<string, unknown>) {
   http.mockImplementation(async (path: string, init?: RequestInit) => {
@@ -35,6 +48,7 @@ function skill(over: Partial<PromptSkill> = {}): PromptSkill {
   return {
     id: 1, name: "镜头补全", note: "只补镜头与光影", kinds: ["image"], instruction: "补上景别与光影",
     language: "auto", with_refs: true, builtin_key: null, sort: 0, created_at: "", updated_at: "",
+    source: "manual", package_dir: null, package: null,
     ...over,
   };
 }
@@ -225,5 +239,100 @@ describe("版面口径", () => {
     const source = readFileSync("src/components/PromptSkillModal.svelte", "utf8");
     expect(source.match(/#[0-9a-fA-F]{3,8}\b/g) || []).toEqual([]);
     expect(source).toMatch(/font-size:\s*var\(--fs-/);
+  });
+});
+
+describe("导入技能包", () => {
+  const packageSkill = (over: Partial<PromptSkill> = {}) =>
+    skill({
+      id: 7,
+      name: "电商视觉包",
+      source: "package",
+      package_dir: "D:/data/skills/7",
+      package: {
+        root: "电商视觉包",
+        source_dir: "C:/skills/shop",
+        description: "影驰电商主图写法",
+        license: "MIT",
+        allowed_tools: [],
+        version: "",
+        extra_fields: {},
+        files: [
+          { path: "SKILL.md", size: 120, role: "写法", included: false, truncated: false, reason: "就是这条技能的写法", order: 0 },
+          { path: "references/style.md", size: 80, role: "参考", included: true, truncated: false, reason: "", order: 1 },
+          { path: "assets/palette.png", size: 900, role: "资源", included: false, truncated: false, reason: "二进制文件，不发给模型", order: 0 },
+        ],
+        refs_chars: 80,
+        truncated: false,
+        dropped: ["assets/palette.png"],
+      },
+      ...over,
+    });
+
+  it("桌面版：选文件夹后按路径交给后端，回来那条进清单并被选中", async () => {
+    (globalThis as any).__tauri = { isTauri: true, pickDir: async () => "C:/skills/shop" };
+    routes({
+      ...baseRoutes(),
+      "POST /api/prompt-skills/import-package": () => packageSkill(),
+    });
+    const screen = await ready();
+    await fireEvent.click(screen.getByRole("button", { name: "导入技能包" }));
+    await vi.waitFor(() => expect(call("POST", "/api/prompt-skills/import-package")).toBeTruthy());
+    expect(bodyOf(call("POST", "/api/prompt-skills/import-package")?.[1] as RequestInit)).toEqual({
+      path: "C:/skills/shop",
+    });
+    await vi.waitFor(() => expect((screen.getByLabelText("技能名字") as HTMLInputElement).value).toBe("电商视觉包"));
+    expect(get(promptSkills).map((item) => item.name)).toContain("电商视觉包");
+  });
+
+  it("浏览器版：目录上传只送能读成文字的文件，带相对路径", async () => {
+    (globalThis as any).__tauri = { isTauri: false, pickDir: async () => null };
+    routes({
+      ...baseRoutes(),
+      "POST /api/prompt-skills/import-package/upload": () => packageSkill(),
+    });
+    const screen = await ready();
+    const inputs = screen.container.querySelectorAll(".psk-file");
+    const dirInput = inputs[inputs.length - 1] as HTMLInputElement;
+    const md = new File(["# 电商视觉包"], "SKILL.md");
+    Object.defineProperty(md, "webkitRelativePath", { value: "shop/SKILL.md" });
+    Object.defineProperty(md, "text", { value: async () => "# 电商视觉包" });
+    const png = new File([new Uint8Array([1, 2, 3])], "palette.png", { type: "image/png" });
+    Object.defineProperty(png, "webkitRelativePath", { value: "shop/assets/palette.png" });
+    Object.defineProperty(png, "text", { value: async () => "binary" });
+    Object.defineProperty(dirInput, "files", { value: [md, png], configurable: true });
+    await fireEvent.click(screen.getByRole("button", { name: "导入技能包" }));
+    await fireEvent.change(dirInput);
+    await vi.waitFor(() => expect(call("POST", "/api/prompt-skills/import-package/upload")).toBeTruthy());
+    const sent = bodyOf(call("POST", "/api/prompt-skills/import-package/upload")?.[1] as RequestInit);
+    expect(sent.root).toBe("shop");
+    // 二进制发过去就是乱码，前端先筛掉
+    expect(sent.files).toEqual([{ path: "shop/SKILL.md", content: "# 电商视觉包" }]);
+  });
+
+  it("包来源的技能：编辑区列出包内文件与它们的去处，并说明脚本不会执行", async () => {
+    (globalThis as any).__tauri = { isTauri: true, pickDir: async () => null };
+    promptSkills.set([skill(), packageSkill()]);
+    routes(baseRoutes());
+    const screen = await ready();
+    await fireEvent.click(screen.getByRole("option", { name: /电商视觉包/ }));
+    await vi.waitFor(() => expect(screen.getByText("references/style.md")).toBeTruthy());
+    const block = screen.getByText("references/style.md").closest(".psk-pkg") as HTMLElement;
+    expect(block.textContent).toContain("已带");
+    // 三种角色各标各的：写法 / 参考 / 资源
+    expect(block.textContent).toContain("写法");
+    expect(block.textContent).toContain("资源");
+    expect(block.textContent).toContain("脚本不会执行");
+  });
+
+  it("删技能包时先说清楚会连带删掉包内文件", async () => {
+    (globalThis as any).__tauri = { isTauri: true, pickDir: async () => null };
+    promptSkills.set([skill(), packageSkill()]);
+    routes({ ...baseRoutes(), "DELETE /api/prompt-skills/7": { deleted: 7 } });
+    const screen = await ready();
+    await fireEvent.click(screen.getByRole("option", { name: /电商视觉包/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "删除这条技能" }));
+    expect(screen.getByRole("button", { name: /连同包内文件/ })).toBeTruthy();
+    expect(call("DELETE", "/api/prompt-skills/7")).toBeFalsy();
   });
 });

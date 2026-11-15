@@ -16,6 +16,7 @@ vi.mock("../lib/api", () => ({
 (globalThis as any).__http = http;
 
 const {
+  isTextFilePath,
   loadPromptSkills,
   missingMarks,
   pickSkillFor,
@@ -32,11 +33,13 @@ function skill(over: Partial<PromptSkill> = {}): PromptSkill {
   return {
     id: 1, name: "镜头补全", note: "", kinds: ["image"], instruction: "补上景别与光影",
     language: "auto", with_refs: true, builtin_key: null, sort: 0, created_at: "", updated_at: "",
+    source: "manual", package_dir: null, package: null,
     ...over,
   };
 }
 
 /** 只数清单那一条：loadPromptSkills 一次会同时打清单和默认值两个接口。 */
+const bodyOf = (init?: RequestInit) => JSON.parse(String(init?.body));
 const listCalls = () => http.mock.calls.filter((call) => call[0] === "/api/prompt-skills").length;
 
 beforeEach(() => {
@@ -155,5 +158,31 @@ describe("接口拼装", () => {
     resetPromptSkills();
     expect(get(promptSkills)).toEqual([]);
     expect(get(promptSkillSettings)).toBeNull();
+  });
+});
+
+describe("技能包", () => {
+  it("只有能读成文字的文件才当文本送出去", () => {
+    expect(isTextFilePath("SKILL.md")).toBe(true);
+    expect(isTextFilePath("references/style.MARKDOWN")).toBe(true);
+    expect(isTextFilePath("scripts/check.py")).toBe(true);
+    expect(isTextFilePath("assets/palette.png")).toBe(false);
+    expect(isTextFilePath("data.bin")).toBe(false);
+  });
+
+  it("桌面版按路径导入：POST 打到 import-package，只带一个 path", async () => {
+    http.mockResolvedValue({});
+    await promptSkillsApi.importPackage("C:/skills/shop");
+    const [path, init] = http.mock.calls[0];
+    expect(path).toBe("/api/prompt-skills/import-package");
+    expect(bodyOf(init)).toEqual({ path: "C:/skills/shop" });
+  });
+
+  it("浏览器版上传：文件内容连相对路径一起交上去", async () => {
+    http.mockResolvedValue({});
+    await promptSkillsApi.importPackageUpload("shop", [{ path: "shop/SKILL.md", content: "# 写法" }]);
+    const [path, init] = http.mock.calls[0];
+    expect(path).toBe("/api/prompt-skills/import-package/upload");
+    expect(bodyOf(init)).toEqual({ root: "shop", files: [{ path: "shop/SKILL.md", content: "# 写法" }] });
   });
 });

@@ -10,6 +10,41 @@ import { http } from "./api";
 export type PromptSkillKind = "image" | "video";
 export type PromptSkillLanguage = "auto" | "zh" | "en";
 
+/** 技能包里一个文件的去处。丢掉的要看得见——悄悄少给一份资料最难查。 */
+export interface PromptSkillPackageFile {
+  path: string;
+  size: number;
+  /** 写法＝SKILL.md 本体，参考＝文本附属文件，资源＝二进制（不发） */
+  role: "写法" | "参考" | "资源";
+  /** 是否进了这次发给模型的资料块 */
+  included: boolean;
+  /** 进了但被预算截断了 */
+  truncated: boolean;
+  /** 没进去的原因（超预算、二进制文件……） */
+  reason: string;
+  /** 进资料块的先后次序（1 起）；没进去的是 0 */
+  order: number;
+}
+
+export interface PromptSkillPackage {
+  /** 包名：frontmatter 的 name，没有就取文件夹名 */
+  root: string;
+  /** 桌面上导入时那份文件夹的原始路径 */
+  source_dir: string;
+  description: string;
+  license: string;
+  allowed_tools: string | string[];
+  version: string;
+  extra_fields: Record<string, unknown>;
+  files: PromptSkillPackageFile[];
+  /** 真正发给模型的资料字数（不含标题与分隔线） */
+  refs_chars: number;
+  /** SKILL.md 正文是不是被截断了 */
+  truncated: boolean;
+  /** 没进资料块的文件 */
+  dropped: string[];
+}
+
 export interface PromptSkill {
   id: number;
   name: string;
@@ -20,6 +55,11 @@ export interface PromptSkill {
   with_refs: boolean;
   /** 有值＝内置那两条：能改、能恢复默认，但不能删 */
   builtin_key: string | null;
+  /** manual＝手写的，md＝导入的单个 SKILL.md，package＝一整个技能包 */
+  source: "manual" | "md" | "package";
+  /** 技能包在数据目录里的落盘位置 */
+  package_dir: string | null;
+  package: PromptSkillPackage | null;
   sort: number;
   created_at: string;
   updated_at: string;
@@ -53,6 +93,22 @@ export interface OptimizeResult {
   degraded_refs: { sent: number; dropped: number[] } | null;
 }
 
+/**
+ * 浏览器版目录上传时只送这些扩展名：其余是二进制，读成文字就是一堆乱码，
+ * 塞进系统提示只会浪费 token。后端还会再筛一遍，这里先筛是为了少传。
+ */
+export const TEXT_FILE_SUFFIXES = [
+  ".md", ".markdown", ".txt", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf",
+  ".csv", ".tsv", ".py", ".js", ".mjs", ".ts", ".tsx", ".jsx", ".sh", ".bash", ".bat", ".ps1",
+  ".html", ".css", ".xml", ".sql", ".tex", ".rst",
+];
+
+/** 这个路径像不像一个能读成文字的文件。 */
+export function isTextFilePath(path: string): boolean {
+  const lower = path.toLowerCase();
+  return TEXT_FILE_SUFFIXES.some((suffix) => lower.endsWith(suffix));
+}
+
 export const LANGUAGE_WORDS: Record<PromptSkillLanguage, string> = { auto: "跟随原文", zh: "中文", en: "英文" };
 export const KIND_WORDS: Record<PromptSkillKind, string> = { image: "图片", video: "视频" };
 
@@ -70,6 +126,23 @@ export const promptSkillsApi = {
   /** 导入的是读到的原文，截断规则只在后端一处 */
   import: (filename: string, content: string) =>
     http<PromptSkill & { truncated: boolean }>("/api/prompt-skills/import", json("POST", { filename, content })),
+  /** 桌面版：用户挑一个文件夹，后端按路径扫盘 */
+  importPackage: (path: string) =>
+    http<PromptSkill & { package: PromptSkillPackage }>(
+      "/api/prompt-skills/import-package",
+      json("POST", { path }),
+    ),
+  /** 浏览器版：前端读好的文件内容 */
+  importPackageUpload: (root: string, files: { path: string; content: string }[]) =>
+    http<PromptSkill & { package: PromptSkillPackage }>(
+      "/api/prompt-skills/import-package/upload",
+      json("POST", { root, files }),
+    ),
+  /** 一条技能背后的包：文件清单与元数据 */
+  packageDetail: (id: number) =>
+    http<{ id: number; source: string; package_dir: string | null; package: PromptSkillPackage | null }>(
+      `${skillPath(id)}/package`,
+    ),
   settings: () => http<PromptSkillSettings>("/api/prompt-skill-settings"),
   saveSettings: (value: PromptSkillSettings) =>
     http<PromptSkillSettings>("/api/prompt-skill-settings", json("PUT", value)),

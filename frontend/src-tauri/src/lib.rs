@@ -63,6 +63,7 @@ pub fn run() {
             commands::get_sidecar_status,
             folders::select_import_directory,
             folders::select_text_paths,
+            folders::select_skill_package_dir,
             commands::restart_sidecar,
             updates::get_update_status,
             updates::set_update_automatic,

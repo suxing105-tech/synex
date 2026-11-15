@@ -124,16 +124,16 @@
 <style>
   .pft { display: flex; flex-direction: column; gap: 1px; }
   .pft-row { display: flex; align-items: center; gap: 1px; }
-  .pft-toggle { flex: none; width: 17px; height: 24px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: #6f6f78; cursor: pointer; }
-  .pft-toggle:hover { background: rgb(255 255 255 / 7%); color: #e4e4e7; }
+  .pft-toggle { flex: none; width: 17px; height: 24px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: var(--text-3); cursor: pointer; }
+  .pft-toggle:hover { background: var(--raise-2); color: var(--text-1); }
   .pft-toggle-spacer { flex: none; width: 17px; }
-  .pft-item { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px 0 2px; border: 0; border-radius: 7px; background: transparent; color: #a1a1aa; font-size: 12.5px; font-family: inherit; text-align: left; cursor: pointer; transition: background-color 140ms ease, color 140ms ease; }
-  .pft-item:hover { background: #252529; color: #e4e4e7; }
-  .pft-item.active { background: #303036; color: #fafafa; }
-  .pft-icon { flex: none; display: flex; color: #8a8a93; }
-  .pft-item.active .pft-icon { color: #f24e4e; }
+  .pft-item { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px 0 2px; border: 0; border-radius: 7px; background: transparent; color: var(--text-2); font-size: 12.5px; font-family: inherit; text-align: left; cursor: pointer; transition: background-color 140ms ease, color 140ms ease; }
+  .pft-item:hover { background: var(--raise-1); color: var(--text-1); }
+  .pft-item.active { background: var(--ink-3); color: var(--text-1); }
+  .pft-icon { flex: none; display: flex; color: var(--text-3); }
+  .pft-item.active .pft-icon { color: var(--accent); }
   .pft-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pft-count { flex: none; font-size: 10.5px; color: #6f6f78; font-variant-numeric: tabular-nums; }
+  .pft-count { flex: none; font-size: 10.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
   .pft-count.zero { opacity: .4; }
-  .pft-group { margin: 10px 0 2px; padding: 0 8px; font-size: 11px; color: #6f6f78; letter-spacing: .04em; }
+  .pft-group { margin: 10px 0 2px; padding: 0 8px; font-size: 11px; color: var(--text-3); letter-spacing: .04em; }
 </style>

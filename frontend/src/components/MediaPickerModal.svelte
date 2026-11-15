@@ -354,7 +354,7 @@
   /* 窄窗口：左栏改成网格上方的一条横向带，不然两张图并排都放不下。 */
   @media (max-width: 760px) {
     .mp-body { flex-direction: column; }
-    .mp-side { width: 100%; max-height: 168px; border-bottom: 1px solid rgb(255 255 255 / 6%); padding-bottom: 8px; }
+    .mp-side { width: 100%; max-height: 168px; border-bottom: 1px solid var(--line-soft); padding-bottom: 8px; }
   }
   /* 分列容器：覆盖全局 .media-pick-grid 的 grid，列内自己往下堆。
      align-items 必须是 flex-start：stretch 会把每一列硬拉到容器高度，列里的卡片

@@ -50,6 +50,16 @@ Copy-Item -LiteralPath (Join-Path $ReleaseDir "suxing-gallery.exe") -Destination
 Copy-Item -LiteralPath $SidecarBin -Destination (Join-Path $pkg "app\python-backend.exe") -Force
 Copy-Item -LiteralPath $installer.FullName -Destination (Join-Path $pkg $installer.Name) -Force
 
+# ffmpeg / ffprobe 必须和 sidecar 同级：sidecar 是在 sys.executable 那一级找它们的
+# （backend/app/media_tools.py 的 exe-dir 优先级）。NSIS 安装包由 tauri 自己把这两个
+# 带进去，预览目录得手动补——少了它们，预览版的视频海报帧、音频波形、容器元数据全废，
+# 而视频照样能播，看着像"只坏了一半"。
+foreach ($tool in @("ffmpeg", "ffprobe")) {
+    $toolSrc = Get-ChildItem -LiteralPath $BinariesDir -Filter "$tool-*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $toolSrc) { throw "媒体工具缺失: $BinariesDir\$tool-*.exe" }
+    Copy-Item -LiteralPath $toolSrc.FullName -Destination (Join-Path $pkg "app\$tool.exe") -Force
+}
+
 # 启动脚本
 $launch = @'
 param([switch]$CheckOnly)
@@ -58,6 +68,11 @@ $previewExe = Join-Path $PSScriptRoot 'app\suxing-gallery.exe'
 $previewBackend = Join-Path $PSScriptRoot 'app\python-backend.exe'
 if (!(Test-Path -LiteralPath $previewExe -PathType Leaf) -or !(Test-Path -LiteralPath $previewBackend -PathType Leaf)) {
     throw '找不到新版程序，请保留启动入口旁的 app 文件夹。'
+}
+foreach ($tool in @('app\ffmpeg.exe', 'app\ffprobe.exe')) {
+    if (!(Test-Path -LiteralPath (Join-Path $PSScriptRoot $tool) -PathType Leaf)) {
+        throw "缺少媒体工具 $tool：视频海报帧、音频波形、容器元数据都会出不来。"
+    }
 }
 if ($CheckOnly) { Write-Output 'Preview launcher paths verified.'; exit 0 }
 try {
@@ -93,7 +108,7 @@ $sc.WindowStyle = 7
 $sc.Save()
 
 # 校验清单
-$artifacts = @("app\suxing-gallery.exe", "app\python-backend.exe", $installer.Name) | ForEach-Object {
+$artifacts = @("app\suxing-gallery.exe", "app\python-backend.exe", "app\ffmpeg.exe", "app\ffprobe.exe", $installer.Name) | ForEach-Object {
     $a = Get-Item -LiteralPath (Join-Path $pkg $_)
     [PSCustomObject]@{ file = $_.Replace('\','/'); bytes = $a.Length; sha256 = (Get-FileHash -LiteralPath $a.FullName -Algorithm SHA256).Hash }
 }

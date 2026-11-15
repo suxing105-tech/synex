@@ -8,7 +8,11 @@ it('starts the expanded detail pane at its minimum, independently of window widt
   expect(source).toContain('let detailWidth = $state(DETAIL_MIN);');
   expect(source).toContain('let detailCollapsed = $state(false);');
   expect(source).toContain('Math.max(DETAIL_MIN, Math.min(DETAIL_MAX, startW + dx))');
-  expect(source).toContain("detailCollapsed ? '0px 0px'");
+  // 收起右侧栏时，那两列（分隔条 + 详情）都给 0px。
+  // 判断从 detailCollapsed 换成 detailHidden：素材选择器开着时右侧栏也要让位，
+  // 两种「该收起」的情形收在同一个变量里，别再各写一份三元。
+  expect(source).toContain("detailHidden ? '0px 0px'");
+  expect(source).toContain('const detailHidden = $derived(detailCollapsed || $pickerOpen);');
 });
 
 it('points left to expand the right pane and right to collapse it', () => {

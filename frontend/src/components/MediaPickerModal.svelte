@@ -17,6 +17,7 @@
   import { pushToast } from "../lib/toast";
   import { basenameOnly, splitIntoColumns, thumbnailAspectRatio, thumbnailHeightToWidthRatio, thumbnailObjectFit } from "../lib/media-format";
   import { cloneError, REF_DISPLAY_ORDER, REF_KIND_COUNTERS, REF_KIND_NAMES, type RefKind } from "../lib/clone";
+  import PickerFolderTree from "./PickerFolderTree.svelte";
   import type { ImageSummary, MediaFeedItem } from "../lib/types";
 
   interface Props {
@@ -50,6 +51,11 @@
 
   const PAGE = 60;
   let query = $state("");
+  /**
+   * 左边那颗文件夹树选中的分类：null = 全部素材。
+   * 它跟搜索词、当前族是三个正交的过滤条件，后端 feed 一次全都认。
+   */
+  let pickerFolderId = $state<number | null>(null);
   let items = $state<ImageSummary[]>([]);
   let total = $state(0);
   let loaded = $state(0);
@@ -108,7 +114,13 @@
     error = "";
     try {
       const offset = append ? loaded : 0;
-      const res = await imagesApi.list({ kind: activeKind, q: query.trim() || undefined, limit: PAGE, offset });
+      const res = await imagesApi.list({
+        kind: activeKind,
+        q: query.trim() || undefined,
+        folder_id: pickerFolderId ?? undefined,
+        limit: PAGE,
+        offset,
+      });
       items = append ? [...items, ...res.items] : res.items;
       total = res.total;
       loaded = offset + res.items.length;
@@ -213,6 +225,15 @@
           <span class="mp-cols-num">{columnCount}</span>
         </label>
       </div>
+      <div class="mp-body">
+        <aside class="mp-side" aria-label="按文件夹筛选素材">
+          <PickerFolderTree
+            kind={activeKind}
+            value={pickerFolderId}
+            onSelect={(id) => { pickerFolderId = id; void load(); }}
+          />
+        </aside>
+        <div class="mp-main">
       {#if error}<p class="mp-note" role="status">{error}</p>{/if}
       {#if !loading && items.length === 0}
         <p class="mp-note" role="status">没有可选的{noun}。先把{noun}拖进图库，或直接把{noun}拖到这个弹窗里。</p>
@@ -284,13 +305,15 @@
           {loading ? "加载中…" : `加载更多（还有 ${total - loaded} ${counter}）`}
         </button>
       {/if}
+        </div>
+      </div>
     </div>
   </div>
 {/if}
 
 <style>
   .mp-backdrop { position: fixed; inset: 0; z-index: 70; background: rgba(0, 0, 0, 0.5); -webkit-backdrop-filter: blur(20px) saturate(110%); backdrop-filter: blur(20px) saturate(110%); display: flex; align-items: center; justify-content: center; padding: 16px; }
-  .mp-panel { width: min(1040px, 100%); max-height: 84vh; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 18px; border: 1px solid rgb(255 255 255 / 8%); border-radius: 16px; background: rgba(20 20 23 / 88%); -webkit-backdrop-filter: blur(34px); backdrop-filter: blur(34px); box-shadow: 0 30px 90px rgba(0, 0, 0, 0.6); color: #e4e4e7; }
+  .mp-panel { width: min(1160px, 100%); max-height: 84vh; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 18px; border: 1px solid rgb(255 255 255 / 8%); border-radius: 16px; background: rgba(20 20 23 / 88%); -webkit-backdrop-filter: blur(34px); backdrop-filter: blur(34px); box-shadow: 0 30px 90px rgba(0, 0, 0, 0.6); color: #e4e4e7; }
   /* 标题 + 三族 tab + 搜索 + 列数滑块挤在一行：窄窗口里宁可整块换行，也别把「图片」掰成竖排两个字。 */
   .mp-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .mp-head h3 { margin: 0; font-size: 15px; font-weight: 600; }
@@ -324,6 +347,15 @@
   .mp-btn:disabled { opacity: .55; cursor: default; }
   .mp-more { align-self: center; }
   .mp-note { margin: 0; font-size: 12.5px; color: #8a8a8e; }
+  /* 主体分左右两栏：左边是文件夹分类，右边才是素材网格。 */
+  .mp-body { display: flex; gap: 14px; align-items: flex-start; min-height: 0; }
+  .mp-side { flex: none; width: 196px; max-height: calc(84vh - 170px); overflow-y: auto; overflow-x: hidden; padding-right: 4px; }
+  .mp-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+  /* 窄窗口：左栏改成网格上方的一条横向带，不然两张图并排都放不下。 */
+  @media (max-width: 760px) {
+    .mp-body { flex-direction: column; }
+    .mp-side { width: 100%; max-height: 168px; border-bottom: 1px solid rgb(255 255 255 / 6%); padding-bottom: 8px; }
+  }
   /* 分列容器：覆盖全局 .media-pick-grid 的 grid，列内自己往下堆。
      align-items 必须是 flex-start：stretch 会把每一列硬拉到容器高度，列里的卡片
      作为 flex item 就被压扁（overflow:hidden 顺手把文件名那一条也裁没了）。 */

@@ -63,7 +63,7 @@ it("点击「所有视频」切到视频口径并清空 folder/tag/query", async
   expect(get(tag)).toBe(null);
 });
 
-it("口径小字跟着当前 scope 走", () => {
+it("分组头右边不留口径小字", () => {
   const screen = render(FolderTree);
-  expect(screen.container.querySelector(".scope-caption")?.textContent).toBe("计数 · 图片");
+  expect(screen.container.querySelector(".scope-caption")).toBeNull();
 });

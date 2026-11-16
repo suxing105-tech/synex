@@ -13,6 +13,7 @@
   import { mediaSummary, selectionSummary } from "../lib/counts";
   import { isTextItem, itemUid, kindsIn } from "../lib/items";
   import { matchesAction, shortcutBlocked } from "../lib/shortcut-settings";
+  import { firstBox, nearestInDirection, type GridBox, type GridDirection } from "../lib/grid-nav";
   import { backendUrl } from "../lib/backend-url";
   import { cardTitleMode, footerTitleFor } from "../lib/card-title";
   import {
@@ -892,6 +893,83 @@ import { hoverPlay } from "../lib/hover-play";
     return false;
   }
 
+  // ---------- 方向键在网格里移动选中（2026-11-15 苏醒） ----------
+  //
+  // 位置只从 DOM 量：masonry 的真实排布是贪心分列 + 卡片自然高度，
+  // 拿 $feedItems 的下标当左右邻居，屏幕上会斜着跳（判据本身见 lib/grid-nav.ts）。
+  const NAV_KEYS: Record<string, GridDirection> = {
+    ArrowLeft: "left",
+    ArrowRight: "right",
+    ArrowUp: "up",
+    ArrowDown: "down",
+  };
+
+  /** 每张卡在自己滚动容器坐标系里的方块。滚动不影响：两边都读同一时刻的视口矩形。 */
+  function navBoxes(): GridBox[] {
+    if (!scrollerEl) return [];
+    const host = scrollerEl.getBoundingClientRect();
+    const boxes: GridBox[] = [];
+    for (const el of Array.from(scrollerEl.querySelectorAll<HTMLElement>("[data-nav-id]"))) {
+      const r = el.getBoundingClientRect();
+      boxes.push({
+        id: el.dataset.navId as string,
+        left: r.left - host.left,
+        top: r.top - host.top,
+        width: r.width,
+        height: r.height,
+      });
+    }
+    return boxes;
+  }
+
+  /** 光标当前落在哪张卡：文本卡优先，它和媒体选区不共存。 */
+  function currentNavUid(): string | null {
+    if ($selectedText) return `text:${$selectedText.id}`;
+    return selectedId === null || selectedId === undefined ? null : `media:${selectedId}`;
+  }
+
+  function focusNavCard(uid: string) {
+    const el = scrollerEl?.querySelector<HTMLElement>(`[data-nav-id="${uid}"]`);
+    if (!el) return;
+    // preventScroll + 自己 scrollIntoView(nearest)：默认那一下会把卡片拽到视口正中，跳得太狠
+    el.focus({ preventScroll: true });
+    el.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }
+
+  /** 把「当前条目」落到某张卡上：媒体走选区，文本走文本详情，两者不共存。 */
+  function selectNavUid(uid: string, extend: boolean): boolean {
+    const item = $feedItems.find((x) => itemUid(x) === uid);
+    if (!item) return false;
+    if (isTextItem(item)) {
+      // 文本没有多选集合：Shift 在这儿只换当前条目，不扩选区
+      selectTextItem(item);
+    } else {
+      // Shift + 方向键 = 沿移动轨迹扩选区，与 Shift + 点击同一套语义（复用同一个 anchor）
+      applySelection($mediaItems, item.id, extend ? "shift" : "none");
+    }
+    focusNavCard(uid);
+    return true;
+  }
+
+  function moveSelection(e: KeyboardEvent, dir: GridDirection) {
+    const boxes = navBoxes();
+    if (!boxes.length) return;
+    const from = currentNavUid();
+    // 一张都没选中（或选中的那张已经不在这一屏）：第一下先落到最上、再最靠左的那张，
+    // 与资源管理器一致——先给人一个落点，第二下才开始走。
+    if (!from || !boxes.some((b) => b.id === from)) {
+      const start = firstBox(boxes);
+      if (!start) return;
+      e.preventDefault();
+      selectNavUid(start, false);
+      return;
+    }
+    const target = nearestInDirection(boxes, from, dir);
+    if (!target) return;
+    e.preventDefault();
+    selectNavUid(target, e.shiftKey);
+  }
+
   function handleKey(e: KeyboardEvent) {
     if (shortcutBlocked(e)) return;
     // 内嵌层（图片预览 / 文本阅读 / 视频播放）开着时，按键归它自己，网格不抢 Delete / Esc / 空格。
@@ -910,6 +988,11 @@ import { hoverPlay } from "../lib/hover-play";
         e.preventDefault();
         clearSelection();
       }
+      return;
+    }
+    const navDir = NAV_KEYS[e.key];
+    if (navDir && !e.ctrlKey && !e.altKey && !e.metaKey && !e.isComposing) {
+      moveSelection(e, navDir);
       return;
     }
     if (matchesAction(e, "preview")) {
@@ -1234,6 +1317,7 @@ import { hoverPlay } from "../lib/hover-play";
                   style="height: {textCardHeightFor(columnWidth)}px; width: 100%;"
                   title={it.filename}
                   aria-label={it.filename}
+                  data-nav-id={itemUid(it)}
                   onclick={() => selectTextItem(it)}
                   ondblclick={() => openTextReader(it)}
                   oncontextmenu={(e) => openTextCardMenu(e, it)}
@@ -1257,6 +1341,7 @@ import { hoverPlay } from "../lib/hover-play";
                 aria-pressed={$multiSelectedIds.has(it.id)}
                 aria-label={footerTitleFor(it, $cardTitleMode)}
                 title={it.filename}
+                data-nav-id={itemUid(it)}
                 onclick={(e) => { if (draggedOriginal) { draggedOriginal = false; return; } if (renamingId === it.id) return; onThumbClick(e, it); }}
                 onpointerdown={(e) => pointerOnImage(e, it)}
                 ondragstart={(e) => e.preventDefault()}
@@ -1485,9 +1570,9 @@ import { hoverPlay } from "../lib/hover-play";
   .text-card:hover {
     background: var(--ink-3);
   }
-  /* 选中的文本卡与图片卡同一套 1px 描边，右侧栏随之切换成文本详情 */
+  /* 选中的文本卡与图片卡同一套 1px 内描边，右侧栏随之切换成文本详情 */
   .text-card.is-selected {
-    box-shadow: 0 0 0 1px var(--thumb-ring), 0 4px 14px rgba(0, 0, 0, 0.45);
+    box-shadow: inset 0 0 0 1px var(--thumb-ring), 0 4px 14px rgba(0, 0, 0, 0.45);
   }
   .text-tool { border: 1px solid rgb(58 58 65); background: #232327; color: #d9d8e0; margin-left: 6px; }
   /* 搜索没结果 / 文件夹本来就空的空态。颜色一律走 token（这几条是 2026-11-11 无障碍那轮加的，
@@ -1661,7 +1746,7 @@ import { hoverPlay } from "../lib/hover-play";
     .gallery-toolbar { display: flex; flex-wrap: wrap; }
     .toolbar-info { flex: 1 1 150px; }
     /* GallerySearch 是另一个组件，样式拿不到作用域类，只能用 :global 命中 */
-    :global(.gallery-toolbar .gallery-search) { flex: 0 1 clamp(200px, 30%, 480px); }
+    :global(.gallery-toolbar .gallery-search) { flex: 0 1 268px; }
     /* 整组贴右：不占剩余空间，靠 margin-left:auto 顶到滑块那一侧，chips 与滑块之间只留一个 gap */
     .toolbar-actions { flex: 0 1 auto; margin-left: auto; justify-content: flex-end; min-width: 0; column-gap: 8px; row-gap: 6px; }
   }

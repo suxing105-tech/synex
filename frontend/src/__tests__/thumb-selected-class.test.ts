@@ -3,15 +3,16 @@ import { readFileSync } from "node:fs";
 import postcss from "postcss";
 import { tokenValue } from "./fixtures/css-tokens";
 
-it("选中缩略图用 1px 贴合描边 + 外阴影，且这是唯一的描边状态", () => {
-  // 描边从 outline 2px（显粗、离卡片 2px）改成 1px box-shadow 贴边画。
+it("选中缩略图用 1px 内描边 + 外阴影，且这是唯一的描边状态", () => {
+  // 描边从 outline 2px（显粗、离卡片 2px）改成 1px box-shadow，2026-11-15 再收进画面内侧（inset）：
+  // 外描边会啃掉卡片之间那 8px，贴边的两张还会被 scroller 裁掉半圈。
   // box-shadow 不占布局，所以 .masonry-scroller 只需给阴影留 2px 余量。
   const css = postcss.parse(readFileSync("src/app.css", "utf8"));
   const declarations: Record<string, string> = {};
   css.walkRules(".media-card.is-selected", rule => {
     rule.walkDecls(decl => { declarations[decl.prop] = decl.value; });
   });
-  expect(declarations["box-shadow"]).toBe("0 0 0 1px var(--thumb-ring), 0 4px 14px rgba(0, 0, 0, 0.45)");
+  expect(declarations["box-shadow"]).toBe("inset 0 0 0 1px var(--thumb-ring), 0 4px 14px rgba(0, 0, 0, 0.45)");
   expect(declarations.outline).toBeUndefined();
   expect(declarations["outline-offset"]).toBeUndefined();
 

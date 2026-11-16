@@ -98,13 +98,16 @@ describe("工具栏布局契约：宽列居中、窄列不裁切", () => {
     expect(rule![1]).not.toMatch(/minmax\(\d+px, 1fr\)/);
   });
 
-  it("搜索框在中间那一列，最大 480 且自身 mx-auto", () => {
-    expect(SEARCH_SOURCE).toContain("max-w-[480px] mx-auto");
+  it("搜索框在中间那一列，宽度收到 268 且自身 mx-auto", () => {
+    // 2026-11-15 苏醒：480 太宽，一行里搜索框抢了主角。中列网格不动（两侧等宽才真居中），
+    // 只把框本身的最大宽度压到 268。
+    expect(SEARCH_SOURCE).toContain("max-w-[268px] mx-auto");
+    expect(SEARCH_SOURCE).not.toContain("max-w-[480px]");
   });
 
   it("窄容器（详情栏打开、窗口变小）回退成可换行 flex，整组换行不裁切", () => {
     expect(FEED_SOURCE).toMatch(/@container \(max-width: 1280px\) \{\s*\.gallery-toolbar \{ display: flex; flex-wrap: wrap; \}/);
-    expect(FEED_SOURCE).toMatch(/:global\(\.gallery-toolbar \.gallery-search\) \{ flex: /);
+    expect(FEED_SOURCE).toMatch(/:global\(\.gallery-toolbar \.gallery-search\) \{ flex: 0 1 268px; \}/);
   });
 
   it("控件组整组贴右（宽列靠 justify-content，窄列再加 margin-left:auto，chips 始终挨着滑块）", () => {

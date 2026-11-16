@@ -5,12 +5,11 @@ import {
   countFor,
   formatCount,
   mediaSummary,
-  scopeCaption,
   selectionSummary,
   totalOf,
   unitFor,
 } from "../lib/counts";
-import type { FolderCounts, Scope } from "../lib/types";
+import type { FolderCounts } from "../lib/types";
 
 const counts: FolderCounts = { image: 40, video: 11, audio: 3, text: 40 };
 
@@ -110,20 +109,7 @@ describe("selectionSummary · 混合选区文案", () => {
   });
 });
 
-describe("scopeCaption / unitFor", () => {
-  it("口径小字随 scope 变化", () => {
-    const expected: Record<Scope, string> = {
-      all: "计数 · 全部素材",
-      image: "计数 · 图片",
-      video: "计数 · 视频",
-      audio: "计数 · 音频",
-      text: "计数 · 文本",
-    };
-    for (const scope of Object.keys(expected) as Scope[]) {
-      expect(scopeCaption(scope)).toBe(expected[scope]);
-    }
-  });
-
+describe("unitFor", () => {
   it("量词表覆盖四种类型，未知值回落中性", () => {
     expect(unitFor("image")).toBe("张图片");
     expect(unitFor("video")).toBe("个视频");

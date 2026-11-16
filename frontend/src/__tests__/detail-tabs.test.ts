@@ -73,11 +73,14 @@ describe("右侧工作台纵向信息层级", () => {
    * 历史版本项不要描边只要白字、两颗语种 chip 等宽且写 EN。
    * happy-dom 量不了布局，所以照本文件的老规矩钉源文本。
    */
-  it("右栏反推面板按 2026-11-15 批注收干净：无描边、标题无前缀、chip 等宽、头部与左栏同高", () => {
-    // 整圈边框去掉，只靠底色分区（只看最外面那个 section，里面的小格子该有边框的还有）
+  it("右栏反推面板按 2026-11-15 批注收干净：无描边、无底色、标题无前缀、chip 等宽、头部与左栏同高", () => {
+    // 整圈边框和整块底色都去掉（同日第二轮批注：「不用底色区分，内容要对齐」）：
+    // 分区只靠标题字重 + 留白，左边缘也不再内缩一格，才能和上面「提示词」标题齐平。
     const sectionTag = (src: string) => src.slice(src.indexOf("<section"), src.indexOf(">", src.indexOf("<section")));
-    expect(sectionTag(reversePrompt)).toContain('class="fill-interactions reverse-panel rounded-lg');
+    expect(sectionTag(reversePrompt)).toContain('class="fill-interactions reverse-panel');
     expect(sectionTag(reversePrompt)).not.toContain("border");
+    expect(sectionTag(reversePrompt)).not.toMatch(/bg-surface|rounded-lg|(^|\s)p-\d/);
+    expect(reversePrompt).not.toContain("中英双语</span>");
     expect(sectionTag(videoPrompt)).not.toContain("border border-border");
     // 标题就叫「反推提示词」，两级标题的口径（§3.1）之外不留第二套措辞
     expect(reversePrompt).toContain('aria-label="反推提示词"');

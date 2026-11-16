@@ -99,15 +99,3 @@ export function selectionSummary(count: number, kinds: readonly string[]): strin
   const only = kinds.length === 1 ? kinds[0] : null;
   return `已选 ${formatCount(count)} ${unitFor((only ?? NEUTRAL_UNIT) as Scope)}`;
 }
-
-/** 侧栏「系统」分组右侧的口径小字。 */
-export function scopeCaption(scope: Scope): string {
-  const label: Record<Scope, string> = {
-    all: "全部素材",
-    image: "图片",
-    video: "视频",
-    audio: "音频",
-    text: "文本",
-  };
-  return `计数 · ${label[scope]}`;
-}

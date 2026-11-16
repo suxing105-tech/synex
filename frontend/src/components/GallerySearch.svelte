@@ -16,7 +16,7 @@ import Icon from "./Icon.svelte";
     return () => registerGallerySearchElement(null);
   });
 </script>
-<div class="gallery-search relative w-full max-w-[480px] mx-auto min-w-0">
+<div class="gallery-search relative w-full max-w-[268px] mx-auto min-w-0">
   <Icon name="search" size={14} class="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
   <input bind:this={inputEl} type="search" aria-label={label} placeholder={focused ? '' : placeholder} onfocus={() => { focused = true; onfocus?.(); }} onblur={() => { focused = false; }} autocomplete="off" class="w-full bg-bg text-zinc-200 py-2 pl-9 pr-4 rounded-full text-xs outline-none border-0 focus:bg-surface-3" value={value ?? $query} oninput={(e) => onsearch ? onsearch(e.currentTarget.value) : query.set(e.currentTarget.value)} />
 </div>

@@ -6,7 +6,7 @@
   import { backendUrl } from "../lib/backend-url";
   import { associateTextPaths, folders, folderId, selectFolder, stats, query, tag, scope, switchContent, appBooting } from "../lib/stores";
   import { isTextFilePath } from "../lib/text-reading";
-  import { countBreakdown, countFor, formatCount, scopeCaption } from "../lib/counts";
+  import { countBreakdown, countFor, formatCount } from "../lib/counts";
   import type { FolderCounts, Scope } from "../lib/types";
   import Icon from "./Icon.svelte";
   import type { FolderNode } from "../lib/types";
@@ -386,7 +386,6 @@
   {/if}
   <div class="folder-group-bar">
     <span class="folder-group">系统</span>
-    <span class="scope-caption" title="下面每一行的数字都只数这一种素材">{scopeCaption($scope)}</span>
   </div>
   {#each systemRows as row (row.scope)}
     <div
@@ -789,11 +788,9 @@
   }
   .group-add:hover, .group-add:focus-visible { background: #ffffff14; color: #f0f0f3; }
   .group-add:disabled, .group-add.quiet { opacity: .45; cursor: default; }
-  .scope-caption {
-    font-size: 10.5px;
-    font-weight: 500;
-    color: var(--text-3);
-  }
+  /* 「系统」右边那行口径小字（计数 · 全部素材）删掉了（2026-11-15 苏醒）：
+     分组头右半边是空的，视觉上一条无意义的说明；每一行数字 hover 有 title 明细，
+     工具栏那一行也已经写明当前口径。 */
   .folder-title {
     font-size: 12px;
     font-weight: 500;

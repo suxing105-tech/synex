@@ -104,17 +104,12 @@ describe("侧栏系统区：一行 = 一个 scope", () => {
   });
 });
 
-describe("口径显式化：分组小字 + hover 明细", () => {
-  it("「系统」右侧的口径小字随 scope 变化", async () => {
+describe("口径显式化：hover 明细（分组小字已删）", () => {
+  it("「系统」分组头不再挂那行口径小字（2026-11-15 苏醒：右边小字删除）", () => {
     const { container } = render(FolderTree);
-    const caption = container.querySelector(".scope-caption") as HTMLElement;
-    expect(caption.textContent).toBe("计数 · 全部素材");
-    scope.set("audio");
-    await tick();
-    expect(caption.textContent).toBe("计数 · 音频");
-    scope.set("text");
-    await tick();
-    expect(caption.textContent).toBe("计数 · 文本");
+    expect(container.querySelectorAll(".scope-caption")).toHaveLength(0);
+    const bar = container.querySelector(".folder-group-bar") as HTMLElement;
+    expect(bar.textContent?.trim()).toBe("系统");
   });
 
   it("每个数字的 title 给出四类明细，含 0 项", async () => {
@@ -139,10 +134,6 @@ describe("口径显式化：分组小字 + hover 明细", () => {
     expect(countOf(container, "摄影").textContent).toBe("5");
   });
 
-  it("只有系统行带口径小字，文件夹分组不重复标注", () => {
-    const { container } = render(FolderTree);
-    expect(container.querySelectorAll(".scope-caption")).toHaveLength(1);
-  });
 });
 
 describe("侧栏导航：active 跟随 scope", () => {

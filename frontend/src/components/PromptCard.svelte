@@ -70,7 +70,7 @@
   </header>
   {#if expanded}
     <div
-      class="prompt-box bg-surface-2 border border-border rounded-md p-2 mt-1.5 max-h-96 overflow-y-auto"
+      class="prompt-box mt-2 max-h-96 overflow-y-auto"
       ondblclick={copy}
       onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); copy(); } }}
       role="button"
@@ -82,7 +82,7 @@
   {:else}
     <button
       type="button"
-      class="prompt-box bg-surface-2 border border-border rounded-md p-2 mt-1.5 max-h-16 overflow-hidden text-left w-full text-muted hover:text-zinc-200"
+      class="prompt-box mt-2 max-h-16 overflow-hidden text-left w-full text-muted hover:text-zinc-200"
       onclick={toggle}
       aria-expanded={expanded}
       title="展开全文"

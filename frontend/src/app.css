@@ -166,10 +166,11 @@ body,
 }
 
 /* hover 刻意什么都不加：卡片不动、不描边，反馈全在画面放大上（见下面 scale）。
-   选中用 1px box-shadow 描边而不是 outline：贴边、不占布局、不显得粗。
-   0 扩散 + 1px 的写法等价于画在盒子外沿，所以 .masonry-scroller 仍留 2px 余量。 */
+   选中用 1px box-shadow 描边而不是 outline：不占布局、不显得粗。
+   inset 把这一圈画在画面内侧（2026-11-15 苏醒：选中描边改内描边）：外描边会吃掉卡片间的 8px
+   间距，贴着 scroller 边缘那两张还会被裁掉半圈；内描边压在画面上，卡片轮廓本身一点不动。 */
 .media-card.is-selected {
-  box-shadow: 0 0 0 1px var(--thumb-ring), 0 4px 14px rgba(0, 0, 0, 0.45);
+  box-shadow: inset 0 0 0 1px var(--thumb-ring), 0 4px 14px rgba(0, 0, 0, 0.45);
 }
 /* 键盘焦点单独一条：选中环是 1px 浅灰（--thumb-ring），浏览器默认焦点环落在照片上
    既看不清、又和选中态长得一样——「这张是选中了还是光标在这」分不清。

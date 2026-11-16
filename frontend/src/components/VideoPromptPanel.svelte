@@ -302,7 +302,8 @@
 
 </script>
 
-<section class="rounded-md bg-surface-2 p-3 space-y-3" aria-label="反推视频提示词">
+<!-- 与图片那一块同一条口径（2026-11-15）：不铺底色、不内缩，分区靠标题字重与留白 -->
+<section class="space-y-3" aria-label="反推视频提示词">
   <div class="flex items-baseline justify-between gap-2">
     <h4 class="section-title is-card">反推视频提示词</h4>
     <span class="text-[10px] text-muted">{secondsText}</span>

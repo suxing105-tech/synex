@@ -111,12 +111,14 @@
   }
 </script>
 
-<section class="fill-interactions reverse-panel rounded-lg bg-surface-2 p-3 space-y-3" aria-label="反推提示词">
-  <div class="flex justify-between items-center"><h4 class="section-title is-card">反推提示词</h4><span class="text-[10px] text-muted">中英双语</span></div>
+<section class="fill-interactions reverse-panel space-y-2" aria-label="反推提示词">
+  <!-- 分区只靠标题字重和留白，不再铺一块底色、也不再往里缩一格（2026-11-15 苏醒：不用底色区分，内容要对齐）。
+       头部那颗「中英双语」删了：正文上面就有「中文 / EN」两颗切换，同一件事在同一块里说两遍。 -->
+  <h4 class="section-title is-card">反推提示词</h4>
   {#if !textConfigs.length}
     <button onclick={() => window.dispatchEvent(new CustomEvent("open-model-settings"))}>配置模型</button>
   {:else}
-    <div class="flex gap-2">
+    <div class="flex items-center gap-2">
       <ModelPicker value={modelId} model={modelName} label="反推模型" disabled={running}
         onpick={(configId, picked) => { modelId = configId; modelName = picked; }} />
       <button class="generate-reverse" disabled={running || !modelId || !modelName || editing}
@@ -125,7 +127,7 @@
       </button>
     </div>
     {#if !modelName}
-      <p class="text-[10px] text-amber-400">没认出这家的语言模型：打开上面的下拉能看到原因，或到设置里检查这把 Key。</p>
+      <p class="text-2xs text-amber-400">没认出这家的语言模型：打开上面的下拉能看到原因，或到设置里检查这把 Key。</p>
     {/if}
   {/if}
   {#if error || job?.error}<p class="text-xs text-danger" role="alert">{error || job?.error}</p>{/if}
@@ -170,7 +172,7 @@
               {dateTimeLabel(record.created_at)} · {record.source === "edited" ? "手动编辑" : "模型生成"} · {record.model_name}
             </button>
             {#if confirmId === record.id}
-              <span class="text-[10px] text-amber-400 whitespace-nowrap">删除这版？</span>
+              <span class="text-2xs text-amber-400 whitespace-nowrap">删除这版？</span>
               <button class="danger" aria-label="确认删除这一版" disabled={removing !== null} onclick={() => removeVersion(record)}>确认删除</button>
               <button onclick={() => confirmId = null}>取消</button>
             {:else}
@@ -201,7 +203,10 @@
   .icon-button { display:inline-flex; align-items:center; gap:4px; }
   .icon-button span { font-size:10px; }
   .reverse-prompt-content { min-width:0; }
-  .prompt-copy { height:350px; min-height:56px; max-height:40vh; overflow:auto; resize:vertical; padding:7px; border:1px solid #303036; border-radius:5px; background:#18181b; text-align:justify; text-justify:inter-ideograph; }
+  /* 350px 起手 + 纵向可拖高是 2026-11-14 定的（长提示词要一眼读完），留着。
+     这一轮去掉的是底色和边框：整块正文就这段的主角，不该再套一层「框中框」，
+     padding 也撤掉，正文左边缘和标题齐平（2026-11-15：不用底色区分，内容要对齐）。 */
+  .prompt-copy { height:350px; min-height:56px; max-height:40vh; overflow:auto; resize:vertical; color:var(--text-1); text-align:justify; text-justify:inter-ideograph; }
   button:disabled { opacity: .5; cursor: default; }
   /* 删除是不可逆的，按钮与二次确认都要压成红色，别和"选择版本"混在一起 */
   button.danger { color: var(--danger); border-color: rgb(var(--danger-rgb) / 45%); background: rgb(var(--danger-rgb) / 8%); }

@@ -58,12 +58,12 @@ it("唯一的 hover 反馈是画面推近，图片与 hover 播放的视频同�
   expect(decls(".media-card:hover .media-card-video").transform).toContain("scale(1.09)");
 });
 
-it("选中态是 1px 贴合描边 + 外阴影，不用 outline 免得显粗", () => {
+it("选中态是 1px 内描边 + 外阴影，不用 outline 免得显粗", () => {
   const selected = decls(".media-card.is-selected");
   expect(selected.outline).toBeUndefined();
   expect(selected["outline-offset"]).toBeUndefined();
-  // 0 扩散 + 1px 的 box-shadow 等价于贴外沿画一圈，不占布局、不会撑开卡片
-  expect(selected["box-shadow"]).toMatch(/^0 0 0 1px var\(--thumb-ring\)/);
+  // inset + 1px：圈画在画面内侧，不占布局、不啃卡片间距、也不会被 scroller 裁边
+  expect(selected["box-shadow"]).toMatch(/^inset 0 0 0 1px var\(--thumb-ring\)/);
   expect(selected["box-shadow"]).toContain("rgba(0, 0, 0, 0.45)");
 });
 

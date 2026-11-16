@@ -30,6 +30,8 @@ export interface ProviderModelList { models: ProviderModel[]; source: string; re
 export interface ModelConfig {
   id: number; name: string; base_url: string; model: string; timeout: number;
   provider: string | null; has_api_key: boolean; key_persistence: "encrypted" | "session";
+  /** 用于反推面板筛选：旧后端未返回时按文本/视觉配置兼容处理。 */
+  capabilities?: string[];
 }
 export type ModelDraft = {
   name?: string; base_url?: string;
@@ -79,6 +81,10 @@ export const reverseApi = {
 export const modelConfigs = writable<ModelConfig[]>([]);
 export const reverseSettings = writable<ReverseSettings | null>(null);
 export const providerPresets = writable<ProviderPreset[]>([]);
+/** 文字反推面板只列出声明支持 text 的配置；手动填写的自定义服务按旧行为放行。 */
+export function promptModelConfigs(configs: readonly ModelConfig[]): ModelConfig[] {
+  return configs.filter(item => !item.capabilities || item.capabilities.includes("text"));
+}
 export async function refreshProviderPresets() {
   try {
     providerPresets.set(await reverseApi.providers());

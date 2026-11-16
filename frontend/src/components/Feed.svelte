@@ -53,12 +53,14 @@ import { hoverPlay } from "../lib/hover-play";
     overlayOpen?: boolean;
     /** F 键沉浸满屏：只剩缩略图，工具栏（标题、搜索、类型 chips、列数）整条不渲染。 */
     immersive?: boolean;
+    detailCollapsed?: boolean;
+    onToggleDetail?: () => void;
     /** 打开设置页的某个分区（再次创作弹窗里没有模板时要去导入工作流）。 */
     onOpenSettings?: (tab: string) => void;
     /** 再次创作弹窗的上半区走画布原型（?cm_canvas=1，DEV only）。见 CloneModal 的 canvasPrototype。 */
     cloneCanvas?: boolean;
   }
-  let { selectedId = $bindable(), lightboxOpen = $bindable(), lightboxIndex = $bindable(), overlayOpen = false, immersive = false, onOpenSettings, cloneCanvas = false }: Props = $props();
+  let { selectedId = $bindable(), lightboxOpen = $bindable(), lightboxIndex = $bindable(), overlayOpen = false, immersive = false, detailCollapsed = false, onToggleDetail, onOpenSettings, cloneCanvas = false }: Props = $props();
 
   // 右键菜单状态
   let menuOpen = $state(false);
@@ -136,6 +138,20 @@ import { hoverPlay } from "../lib/hover-play";
     if (it.kind !== "image" && it.kind !== "video" && it.kind !== "audio") return;
     cloneTarget = it;
   }
+  function openCloneFromDetail(event: Event) {
+    const id = (event as CustomEvent<{ id?: number }>).detail?.id;
+    if (typeof id !== "number") return;
+    const item = $mediaItems.find((item) => item.id === id);
+    if (!item) {
+      notify("当前素材不在图库列表中，无法再次创作");
+      return;
+    }
+    openClone(item);
+  }
+  onMount(() => {
+    window.addEventListener("open-clone", openCloneFromDetail);
+    return () => window.removeEventListener("open-clone", openCloneFromDetail);
+  });
   /**
    * 点弹窗里的产出：出的是图就进「原图 vs 产出图」对比，出的是片子就进播放器。
    * 对比那条路说的是 Lightbox 已经认的规则——正好两张被选中就进对比态——
@@ -240,6 +256,7 @@ import { hoverPlay } from "../lib/hover-play";
       { label: "就地编辑", onClick: () => openTextReader(it, undefined, true) },
       { label: "复制文本文件", onClick: () => void copyTextFile(it) },
       { label: "复制全文", onClick: () => void copyTextBody(it) },
+      { label: "复制文件所在位置", onClick: () => void copyTextLocation(it.path) },
       { label: "文件位置", onClick: () => void revealTextFile(it) },
       { label: "重命名", onClick: () => startTextRename(it) },
       { kind: "sep" },
@@ -264,6 +281,10 @@ import { hoverPlay } from "../lib/hover-play";
   async function revealTextFile(it: TextFeedItem) {
     try { await revealInShell(it.path, true, () => textsApi.reveal(it.id)); }
     catch (e) { await copyText(it.path); notify(`${e instanceof Error ? e.message : String(e)}（已复制文件路径）`); }
+  }
+  async function copyTextLocation(path: string) {
+    const ok = await copyText(path);
+    notify(ok ? "已复制文件所在位置" : "复制文件位置失败");
   }
   function startTextRename(it: TextFeedItem) {
     textMenuTarget = it;
@@ -692,6 +713,7 @@ import { hoverPlay } from "../lib/hover-play";
           ? [{ label: "再次创作", onClick: () => openClone(t) }]
           : []),
         { label: "重命名", onClick: () => renameImage(t) },
+        { label: "复制文件所在位置", onClick: () => copyMediaLocation(t.path) },
         { label: `${noun}所在位置`, onClick: () => revealImage(t) },
         { label: "移动到…", children: moveMenu(items) },
         { kind: "sep" },
@@ -701,6 +723,7 @@ import { hoverPlay } from "../lib/hover-play";
     const noun = items[0].kind === "video" ? "视频" : items[0].kind === "audio" ? "音频" : "图片";
     return [
       { label: `复制 ${items.length} 个${noun}地址`, onClick: () => copyImageUrls(items) },
+      { label: "复制文件所在位置", onClick: () => copyMediaLocation(items.map((it) => it.path).join("\n")) },
       { label: "移动到…", children: moveMenu(items) },
       { kind: "sep" },
       { label: `批量删除 ${items.length} 个${noun}`, danger: true, onClick: () => deleteImages(items) },
@@ -821,6 +844,11 @@ import { hoverPlay } from "../lib/hover-play";
     const text = urls.join("\n");
     const ok = await copyText(text);
     notify(ok ? `已复制 ${items.length} 个图片地址` : "复制失败");
+  }
+
+  async function copyMediaLocation(path: string) {
+    const ok = await copyText(path);
+    notify(ok ? "已复制文件所在位置" : "复制文件位置失败");
   }
 
   function moveMenu(items: MediaFeedItem[]): ContextMenuItem[] {
@@ -1081,6 +1109,16 @@ import { hoverPlay } from "../lib/hover-play";
       class="columns-slider w-20"
       style="--value: {$targetColumns}"
     />
+    <button
+      type="button"
+      class="detail-toggle"
+      onclick={onToggleDetail}
+      title={detailCollapsed ? "展开右侧栏" : "收起右侧栏"}
+      aria-label={detailCollapsed ? "展开右侧栏" : "收起右侧栏"}
+      aria-expanded={!detailCollapsed}
+    >
+      <Icon name={detailCollapsed ? "panel-right-expand" : "panel-right-collapse"} size={20} />
+    </button>
   </div>
 </div>
   {/if}
@@ -1614,6 +1652,8 @@ import { hoverPlay } from "../lib/hover-play";
   .toolbar-info { min-width: 0; }
   .toolbar-actions { min-width: 0; justify-content: flex-end; column-gap: 8px; row-gap: 6px; }
   .toolbar-actions .columns-slider { flex-shrink: 0; }
+  .detail-toggle { display:flex; align-items:center; justify-content:center; flex-shrink:0; padding:4px; border:0; background:transparent; color:var(--text-3); box-shadow:none; outline:none; }
+  .detail-toggle:hover, .detail-toggle:focus-visible { color:var(--text-1); background:transparent; border:0; box-shadow:none; outline:none; }
   /* 侧轨要装下控件组（排序 + chips + 滑块约 416px），中列取 30% 才留得下：
      代数关系 sides = 0.35 * 内容宽 - 12 ≥ 416 → 容器要 ≥ 1255，这里取 1280。
      再窄就退回可换行 flex（0.2.22 的行为），不为了居中把滑块挤到第二行。 */

@@ -250,6 +250,14 @@ export async function closeTextReader(): Promise<void> {
 }
 
 export const folders = writable<FolderNode[]>([]);
+
+/**
+ * 素材选择器弹窗开着没有。
+ *
+ * 它开着的时候右侧那块详情栏要让位：那里面显示的还是「上一张选中卡」的提示词与参数，
+ * 用户正在挑新素材，眼睛却盯着不相干的内容。关掉弹窗就恢复原样，不动用户自己折叠的状态。
+ */
+export const pickerOpen = writable(false);
 export const stats = writable<Stats>({
   total_images: 0,
   total_videos: 0,

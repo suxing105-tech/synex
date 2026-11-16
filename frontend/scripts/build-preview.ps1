@@ -13,6 +13,29 @@ if (!$SigningKeyPath) { $SigningKeyPath = Join-Path $Repo 'outputs\auto-update-v
 if (!(Test-Path -LiteralPath $SigningKeyPath)) { throw 'missing updater signing key; pass -SigningKeyPath' }
 $step = 'init'
 
+# Tauri CLI 有两种装法：cargo install tauri-cli（得到 cargo tauri），
+# 或在 frontend 下装 @tauri-apps/cli（得到 node_modules\.bin\tauri.cmd）。
+# 两种都找不到就直接失败——签名打包必须有 tauri build，
+# 装不装得上得说清楚，不能拖到下面才报错。
+function Get-TauriCliPath {
+    $Local = Join-Path $Repo 'frontend\node_modules\.bin\tauri.cmd'
+    if (Test-Path -LiteralPath $Local) { return $Local }
+    return $null
+}
+
+function Assert-TauriCli {
+    if (Get-TauriCliPath) { return }
+    if (Get-Command cargo -ErrorAction SilentlyContinue) {
+        $prev = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            & cargo tauri --version *> $null
+            if ($LASTEXITCODE -eq 0) { return }
+        } finally { $ErrorActionPreference = $prev }
+    }
+    throw 'Tauri CLI not found: install cargo-tauri or run "pnpm add -D @tauri-apps/cli" in frontend'
+}
+
 # Native commands write INFO lines to stderr; with Stop mode PowerShell would treat them as
 # terminating errors, so relax the preference and judge by $LASTEXITCODE instead.
 function RunNative([scriptblock]$sb, [string]$log) {
@@ -60,9 +83,10 @@ try {
   $fresh = Join-Path $Out 'sidecar\python-backend.exe'
   Copy-Item -LiteralPath $fresh -Destination (Join-Path $Repo 'frontend\src-tauri\binaries\python-backend-x86_64-pc-windows-msvc.exe') -Force
 
+  Assert-TauriCli
   $step = 'desktop'
   Push-Location (Join-Path $Repo 'frontend')
-  try { $code = RunNative { cargo tauri build --ci } (Join-Path $Out 'build\desktop-build.log') } finally { Pop-Location }
+  try { $code = RunNative { $p = Get-TauriCliPath; if ($p) { & $p build --ci } else { cargo tauri build --ci } } (Join-Path $Out 'build\desktop-build.log') } finally { Pop-Location }
   if ($code) { throw ('cargo tauri build failed (' + $code + '), see build\desktop-build.log') }
   $env:TAURI_SIGNING_PRIVATE_KEY = $null
 

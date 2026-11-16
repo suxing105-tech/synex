@@ -181,7 +181,10 @@ def test_dev_launcher_only_stops_processes_it_started() -> None:
     """-Stop 认的是「命令行里带本仓库路径」，不是端口号：
     已安装正式版可能正占着同一个端口，按端口号杀就是删用户的窗口。"""
     script = (SCRIPTS / "launch-dev.ps1").read_text(encoding="utf-8-sig")
-    assert "CommandLine -like $RepoPattern" in script
+    # 2026-11-14：匹配前先把 Windows 习惯加的引号去掉，并且允许仓库路径出现在命令行任意位置——
+    # 可执行文件路径本身不一定在开头（"C:\...\python.exe -m uvicorn ..."），
+    # 原来那句「必须从头匹配」的写法会把自己起的进程也判成"不是本仓库的"，-Restart 就停不掉。
+    assert "'*' + $RepoPattern" in script
     assert "if (-not (Test-DevOwned -ProcId $owner))" in script
     assert "Stop-Process" in script
 

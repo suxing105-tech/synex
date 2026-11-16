@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { modelConfigs, refreshReverseConfig, reverseApi, reverseSettings, errorMessage } from "../lib/reverse-prompts";
+  import { modelConfigs, promptModelConfigs, refreshReverseConfig, reverseApi, reverseSettings, errorMessage } from "../lib/reverse-prompts";
   import type { ReverseSettings } from "../lib/reverse-prompts";
   import { H3_MODES, SEEDANCE_MODES, MODE_LABELS, videoPromptApi, videoPromptSettings, refreshVideoPromptSettings } from "../lib/video-prompts";
   import type { VideoPromptSettings } from "../lib/video-prompts";
@@ -15,6 +15,7 @@
   let busy = $state(false);
   let error = $state("");
   let notice = $state("");
+  const textConfigs = $derived(promptModelConfigs($modelConfigs));
   // 两份偏好在两张卡片里各自渲染，所以任一半读失败都单独标记，卡片给「重新加载」而不是卡在「正在读取…」。
   let loadFailed = $state(false);
   async function run(action: () => Promise<void>) {
@@ -61,7 +62,7 @@
         <fieldset disabled={busy} class="space-y-3">
           <label>默认服务商<select aria-label="默认服务商" bind:value={preferences.default_model_id}>
             <option value={null}>请选择服务商</option>
-            {#each $modelConfigs as model}<option value={model.id}>{model.model ? model.name + " · " + model.model : model.name}</option>{/each}
+            {#each textConfigs as model}<option value={model.id}>{model.model ? model.name + " · " + model.model : model.name}</option>{/each}
           </select></label>
           <label>反推指令<textarea aria-label="反推指令" rows="5" bind:value={preferences.instruction}></textarea></label>
           <p class="settings-hint">可修改内容和风格偏好，程序始终要求输出中文与英文两个版本。</p>
@@ -86,7 +87,7 @@
         <fieldset disabled={busy} class="space-y-3">
           <label>默认服务商<select aria-label="视频反推默认服务商" bind:value={videoPrefs.default_model_id}>
             <option value={null}>跟随图片反推默认模型</option>
-            {#each $modelConfigs as model}<option value={model.id}>{model.model ? model.name + " · " + model.model : model.name}</option>{/each}
+            {#each textConfigs as model}<option value={model.id}>{model.model ? model.name + " · " + model.model : model.name}</option>{/each}
           </select></label>
           <div class="grid grid-cols-2 gap-2">
             <label>默认 Seedance 模式<select aria-label="默认 Seedance 模式" bind:value={videoPrefs.default_mode_seedance}>

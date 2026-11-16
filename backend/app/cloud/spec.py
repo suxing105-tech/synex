@@ -57,6 +57,7 @@ class Param:
     label: str
     kind: str = "select"
     options: tuple[str, ...] = ()
+    option_labels: dict[str, str] = field(default_factory=dict)
     default: Any = None
     minimum: float | None = None
     maximum: float | None = None
@@ -96,6 +97,8 @@ class Param:
         if slot["kind"] == "select":
             options = list(self.options)
             slot["options"] = options
+            if self.option_labels:
+                slot["option_labels"] = dict(self.option_labels)
             slot["value"] = self.default if self.default in options else options[0]
         else:
             slot["value"] = self.default
@@ -141,6 +144,7 @@ class ModelSpec:
     poll: float = 2.0
     verified: bool = True
     notes: tuple[str, ...] = ()
+    extra_prompts: tuple[tuple[str, str], ...] = ()
 
     # ---------- 端点 ----------
 
@@ -171,6 +175,9 @@ class ModelSpec:
             "kind": "prompt", "node": SPEC_NODE, "input": "prompt",
             "label": PRIMARY_PROMPT_LABEL
         }]
+        for input_name, label in self.extra_prompts:
+            out.append({"kind": "prompt", "node": SPEC_NODE, "input": input_name,
+                        "label": label})
         for family in ("image", "audio", "video"):
             limit = int(self.refs.get(family) or 0)
             if limit <= 0:
@@ -302,6 +309,75 @@ IMAGE = ModelSpec(
     ),
 )
 
+# MiniMax-H3-Image uses its first-party OpenAI-compatible image endpoints rather than
+# RunningHub's asynchronous workflow API. The cloud engine dispatches this spec directly.
+MINIMAX_IMAGE = ModelSpec(
+    key="minimax-image", capability="image",
+    model_label="MiniMax-H3-Image",
+    blurb="MiniMax 官方图片生成与编辑；不放参考图即文生图。",
+    modes=("text", "single", "multi"),
+    endpoints={
+        "text": "/images/generations",
+        "single": "/images/edits",
+        "multi": "/images/edits",
+    },
+    refs={"image": 16}, ref_fields={"image": "images"},
+    tags={"image": "图{n}"},
+    params=(
+        Param(key="ratio", label="比例",
+              options=("auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:1", "1:3"),
+              default="auto"),
+        Param(key="quality", label="画质", options=("1K", "2K", "4K"), default="2K"),
+    ),
+    timeout=600.0, poll=2.0,
+)
+
+MINIMAX_VIDEO = ModelSpec(
+    key="minimax-video", capability="video", model_label="MiniMax-H3",
+    blurb="MiniMax H3 文生视频与多模态参考生视频。",
+    modes=("text", "single", "multi"),
+    endpoints={m: "/v2/video_generation" for m in ("text", "single", "multi")},
+    refs={"image": 9, "video": 3, "audio": 3},
+    ref_fields={"image": "image_url", "video": "video_url", "audio": "audio_url"},
+    tags={"image": "@Image {n}", "video": "@Video {n}", "audio": "@Audio {n}"},
+    params=(
+        Param(key="resolution", label="分辨率", options=("768P", "2K"), default="768P"),
+        Param(key="duration", label="时长", kind="number", default=5, minimum=4,
+              maximum=15, step=1, unit="秒"),
+        Param(key="ratio", label="比例",
+              options=("16:9", "9:16", "1:1", "4:3", "3:4", "21:9"), default="16:9"),
+    ),
+    timeout=1800.0, poll=5.0,
+)
+
+MINIMAX_AUDIO = ModelSpec(
+    key="minimax-audio", capability="audio", model_label="MiniMax Speech 2.8 HD",
+    blurb="MiniMax 语音合成；可用系统音色，或提供参考音频进行音色复刻。",
+    modes=("text", "single"),
+    endpoints={"text": "/v1/t2a_v2", "single": "/v1/voice_clone"},
+    refs={"audio": 1}, ref_fields={"audio": "file_id"}, ref_shapes={"audio": "single"},
+    tags={}, empty_tags=True,
+    params=(
+        Param(key="voice_id", label="系统音色",
+              options=("female-tianmei", "male-qn-qingse"),
+              option_labels={"female-tianmei": "女声·甜美", "male-qn-qingse": "男声·青涩"},
+              default="female-tianmei"),
+        Param(key="speed", label="语速", kind="number", default=1, minimum=0.5,
+              maximum=2, step=0.1, modes=("text",)),
+        Param(key="emotion", label="情绪",
+              options=("neutral", "happy", "sad", "angry", "fearful", "surprised"),
+              option_labels={"neutral": "中性", "happy": "开心", "sad": "悲伤",
+                             "angry": "愤怒", "fearful": "恐惧", "surprised": "惊讶"},
+              default="neutral", modes=("text",)),
+        Param(key="accuracy", label="复刻贴合度", kind="number", default=0.7,
+              minimum=0, maximum=1, step=0.1, modes=("single",)),
+        Param(key="need_noise_reduction", label="先降噪", options=SWITCH_OPTIONS,
+              default="关", switch=True, modes=("single",)),
+    ),
+    timeout=600.0, poll=2.0,
+    extra_prompts=(("reference_text", "参考音频的文本"),),
+)
+
 VIDEO = ModelSpec(
     key="video", capability="video",
     model_label="Seedance 2.0",
@@ -383,6 +459,8 @@ AUDIO = ModelSpec(
 
 SPECS: tuple[ModelSpec, ...] = (IMAGE, VIDEO, AUDIO)
 _BY_KEY = {s.key: s for s in SPECS}
+_MINIMAX_SPECS = (MINIMAX_IMAGE, MINIMAX_VIDEO, MINIMAX_AUDIO)
+_BY_KEY.update({s.key: s for s in _MINIMAX_SPECS})
 
 
 def all_specs() -> list[ModelSpec]:
@@ -390,7 +468,12 @@ def all_specs() -> list[ModelSpec]:
 
 
 def spec_by_key(key: str | None) -> ModelSpec | None:
-    return _BY_KEY.get(str(key or ""))
+    cleaned = str(key or "")
+    return _BY_KEY.get(cleaned)
+
+
+def minimax_specs() -> tuple[ModelSpec, ...]:
+    return _MINIMAX_SPECS
 
 
 def spec_or_raise(key: str | None) -> ModelSpec:
@@ -406,7 +489,15 @@ def specs_for(capability: str) -> list[ModelSpec]:
 
 def template_name(spec: ModelSpec) -> str:
     """模板名 = 族名 + API，与草图里那三行一字不差。"""
+    if spec.key.startswith("minimax-"):
+        return "MiniMax " + FAMILY_WORDS.get(spec.capability, spec.capability) + "API"
     return FAMILY_WORDS.get(spec.capability, spec.capability) + "API"
+
+
+def provider_for(spec: ModelSpec) -> tuple[str, str]:
+    if spec.key.startswith("minimax-"):
+        return "minimax", "MiniMax"
+    return PROVIDER, PROVIDER_LABEL
 
 
 def describe(spec: ModelSpec) -> dict:
@@ -415,6 +506,7 @@ def describe(spec: ModelSpec) -> dict:
     槽位直接复用 slots()——设置页与弹窗吃的是同一份，不另写一遍描述，
     否则「设置页说支持 2K、弹窗里根本没有 2K」这类分家迟早会出现。
     """
+    provider, provider_label = provider_for(spec)
     return {
         "key": spec.key,
         "capability": spec.capability,
@@ -423,8 +515,8 @@ def describe(spec: ModelSpec) -> dict:
         "name": template_name(spec),
         "model_label": spec.model_label,
         "blurb": spec.blurb,
-        "provider": PROVIDER,
-        "provider_label": PROVIDER_LABEL,
+        "provider": provider,
+        "provider_label": provider_label,
         "modes": list(spec.modes),
         "ref_limits": dict(spec.refs),
         "tags": spec.tag_templates(),

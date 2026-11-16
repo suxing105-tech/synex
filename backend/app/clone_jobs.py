@@ -243,15 +243,22 @@ async def start(
         job_id = uuid.uuid4().hex[:12]
         if engine == "cloud":
             # 云端这条路不碰 ComfyUI：ComfyUI 没开着也能出图，这正是要紧的场景。
-            status = cloud_engine.availability()
-            if not status["available"]:
-                raise CloneUnavailable(status["reason"])
-            quote = await cloud_engine.estimate(template, mode=mode, prompt=prompt,
-                                                controls=dict(controls or {}))
-            estimated = (quote or {}).get("coins")
-            blocked = cloud_engine.budget_check(estimated)
-            if blocked:
-                raise CloneUnavailable(blocked)
+            provider, _provider_label = cloud_engine.provider_for_template(template)
+            is_minimax = provider == "minimax"
+            if is_minimax:
+                if cloud_engine.minimax_config() is None:
+                    raise CloneUnavailable(
+                        "还没有可用的 MiniMax API Key，去设置 → 模型API配置 → MiniMax 保存 Key。")
+            else:
+                status = cloud_engine.availability()
+                if not status["available"]:
+                    raise CloneUnavailable(status["reason"])
+                quote = await cloud_engine.estimate(template, mode=mode, prompt=prompt,
+                                                    controls=dict(controls or {}))
+                estimated = (quote or {}).get("coins")
+                blocked = cloud_engine.budget_check(estimated)
+                if blocked:
+                    raise CloneUnavailable(blocked)
             params_snapshot = {
                 "template_id": template_id, "mode": mode, "prompt": prompt,
                 "references": [dict(ref) for ref in references],
@@ -259,11 +266,13 @@ async def start(
                 "controls": dict(controls or {}),
                 "source_image_id": source_image_id,
             }
-            cloud_task_id = cloud_tasks.start(
-                job_id=job_id, spec_key=str(template.get("model") or ""),
-                capability=str(template.get("media_kind") or "image"),
-                model=str(template.get("model") or ""), params=params_snapshot,
-                estimated_coins=estimated)
+            if not is_minimax or str(template.get("model") or "") == "minimax-video":
+                cloud_task_id = cloud_tasks.start(
+                    job_id=job_id, spec_key=str(template.get("model") or ""),
+                    capability=str(template.get("media_kind") or "image"),
+                    model=str(template.get("model") or ""), params=params_snapshot,
+                    estimated_coins=estimated,
+                    provider=provider or "runninghub")
         else:
             if not cfg.comfyui_enabled:
                 raise CloneUnavailable("ComfyUI 集成没打开，去设置 → ComfyUI 里启用。")

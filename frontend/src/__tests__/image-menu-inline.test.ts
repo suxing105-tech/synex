@@ -85,12 +85,13 @@ it('切换父项清理旧分支，键盘可以展开，菜单位置限制在窗�
   expect(screen.queryByText('二级')).toBeNull();
 });
 
-it('右键菜单不再有任何收藏入口，重命名后面直接是所在位置', async () => {
+it('媒体右键菜单提供复制文件所在位置，且保留重命名和打开位置', async () => {
   const screen = feed(); await fireEvent.contextMenu(screen.getByAltText('original.jpg'));
   const labels = screen.getAllByRole('menuitem').map(it => it.textContent?.trim());
   expect(labels).not.toContain('收藏');
   expect(labels).not.toContain('取消收藏');
-  expect(labels.indexOf('图片所在位置')).toBe(labels.indexOf('重命名') + 1);
+  expect(labels.indexOf('复制文件所在位置')).toBe(labels.indexOf('重命名') + 1);
+  expect(labels.indexOf('图片所在位置')).toBe(labels.indexOf('复制文件所在位置') + 1);
   expect(screen.queryByLabelText('已收藏')).toBeNull();
 });
 

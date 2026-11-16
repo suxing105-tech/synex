@@ -3,8 +3,8 @@
    * Prompt 卡片：正向 / 反向 prompt 通用容器。
    *
    * 设计：
-   * - 标题区显示「正向 Prompt / 反向 Prompt」+ 字数 + 行数 + 复制按钮。
-   * - 内容支持折叠（默认 max-h-32，展开 max-h-96）。
+   * - 标题区显示提示词名称与复制按钮。
+   * - 内容支持折叠（默认 max-h-16，展开 max-h-96）。
    * - 双击卡片 / 单击复制按钮 → 复制并通过 onCopy 回调通知外层 toast。
    */
   import { copyText } from "../lib/ws";
@@ -31,9 +31,6 @@
 
   let expanded = $state.raw(initiallyExpanded);
 
-  const chars = $derived(text ? text.length : 0);
-  const lines = $derived(text ? text.split(/\r?\n/).length : 0);
-
   async function copy() {
     if (!text) return;
     const ok = await copyText(text);
@@ -52,15 +49,15 @@
       class="flex items-center gap-1 text-muted hover:text-zinc-200"
       onclick={toggle}
       aria-expanded={expanded}
+      title={expanded ? "收起全文" : "展开全文"}
     >
       <Icon name={expanded ? "chevron-down" : "chevron-right"} size={12} />
       <span class="tracking-wider uppercase">{title}</span>
     </button>
-    <span class="text-muted">· {chars} 字 {lines} 行</span>
     <span class="ml-auto flex items-center gap-1">
       <button
         type="button"
-        class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-border hover:bg-surface-3 text-muted hover:text-zinc-200 disabled:opacity-40 disabled:hover:bg-transparent"
+        class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-muted hover:bg-surface-3 hover:text-zinc-100 disabled:opacity-40 disabled:hover:bg-transparent"
         onclick={copy}
         disabled={!text}
         title="复制"
@@ -87,7 +84,8 @@
       type="button"
       class="prompt-box bg-surface-2 border border-border rounded-md p-2 mt-1.5 max-h-16 overflow-hidden text-left w-full text-muted hover:text-zinc-200"
       onclick={toggle}
-      title="点击展开"
+      aria-expanded={expanded}
+      title="展开全文"
     >
       {text || "（空）"}
     </button>

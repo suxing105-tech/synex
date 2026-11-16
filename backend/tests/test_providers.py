@@ -125,19 +125,26 @@ def test_runninghub_offers_one_key_for_both_uses(client):
     assert "一把 Key 走天下" in preset["note"]
 
 
-def test_runninghub_only_claims_the_capabilities_we_actually_wired(client):
-    """服务商选择页按能力过滤，所以没接的路数一家都不许报。
+def test_providers_only_claim_capabilities_we_actually_wired(client):
+    """服务商选择页按能力过滤，只有已接入的生成能力可以声明。
 
-    只有 RunningHub 真接了图像/视频/音频三条收费模型 API，别家只有文本（反推）。
+    RunningHub 与 MiniMax 已接图像/视频/音频 API，MiniMax 也接文本模型；其余只有文本（反推）。
     虚报的代价是界面出现一张点进去什么都能选、试了才知道不行的卡。
     """
     presets = {p["id"]: p for p in client.get("/api/model-providers").json()}
     assert presets["runninghub"]["capabilities"] == ["text", "image", "video", "audio"]
     assert presets["runninghub"]["workflow_key"] is True
     assert presets["runninghub"]["console_url"] == "https://www.runninghub.cn"
-    others = [pid for pid in presets if pid != "runninghub"]
+    assert presets["minimax"]["capabilities"] == ["text", "image", "video", "audio"]
+    assert presets["minimax"]["models"][0]["id"] == "MiniMax-H3-Image"
+    others = [pid for pid in presets if pid not in ("runninghub", "minimax")]
     assert others and all(presets[pid]["capabilities"] == ["text"] for pid in others)
     assert all(presets[pid]["workflow_key"] is False for pid in others)
+
+
+def test_minimax_text_model_list_excludes_media_generation_models(client):
+    models = client.get("/api/model-providers/minimax/models").json()["models"]
+    assert [item["id"] for item in models] == ["MiniMax-M3.1-Flash", "MiniMax-M3"]
 
 
 def test_one_save_button_can_hand_over_both_keys(client):
@@ -399,6 +406,15 @@ def test_a_config_without_a_model_still_reports_its_models(client):
     row = client.post("/api/model-configs", json={"provider": "qwen", "api_key": "k"}).json()
     out = client.get(f'/api/model-configs/{row["id"]}/models').json()
     assert out["source"] == "preset" and out["models"][0]["id"] == "qwen2.5-vl-72b-instruct"
+
+
+def test_minimax_text_model_can_be_used_for_reverse_prompt_without_media_models(client):
+    row = client.post("/api/model-configs", json={
+        "provider": "minimax", "api_key": "minimax-generation-key"}).json()
+    assert row["capabilities"] == ["text", "image", "video", "audio"]
+    out = client.get(f'/api/model-configs/{row["id"]}/models').json()
+    assert out["source"] == "preset"
+    assert [item["id"] for item in out["models"]] == ["MiniMax-M3.1-Flash", "MiniMax-M3"]
 
 
 def test_a_config_model_list_for_a_missing_row_is_404(client):

@@ -7,12 +7,16 @@
 """
 from __future__ import annotations
 
+import json
 import re
+import shutil
+from pathlib import Path, PurePosixPath
 
 from fastapi import HTTPException
 from starlette.concurrency import run_in_threadpool
 
-from . import db, reverse_prompts
+from . import db, reverse_prompts, skill_packages
+from .config import skills_dir
 
 KINDS = ("image", "video")
 KIND_WORDS = {"image": "图片", "video": "视频"}
@@ -35,6 +39,7 @@ CREATE TABLE IF NOT EXISTS prompt_skills (
  kinds TEXT NOT NULL DEFAULT 'image,video', instruction TEXT NOT NULL,
  language TEXT NOT NULL DEFAULT 'auto', with_refs INTEGER NOT NULL DEFAULT 1,
  builtin_key TEXT, sort INTEGER NOT NULL DEFAULT 0,
+ source TEXT NOT NULL DEFAULT 'manual', package_dir TEXT, package_meta TEXT, package_refs TEXT,
  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
@@ -102,6 +107,17 @@ REF_NOTE = (
 
 def initialize(conn):
     conn.executescript(SCHEMA)
+    # 技能包那四列是后加的：新库建表时就有，老库得补。老行补完全是 'manual'——
+    # 「这条不是包来源」这件事不能猜，猜错就是把普通技能当成包删了。
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(prompt_skills)").fetchall()}
+    if "source" not in columns:
+        conn.execute("ALTER TABLE prompt_skills ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'")
+    if "package_dir" not in columns:
+        conn.execute("ALTER TABLE prompt_skills ADD COLUMN package_dir TEXT")
+    if "package_meta" not in columns:
+        conn.execute("ALTER TABLE prompt_skills ADD COLUMN package_meta TEXT")
+    if "package_refs" not in columns:
+        conn.execute("ALTER TABLE prompt_skills ADD COLUMN package_refs TEXT")
     conn.execute("INSERT OR IGNORE INTO prompt_skill_settings(id) VALUES(1)")
     # 按 builtin_key 补齐：老库升级、以及内置技能被改坏之外没有别的路径能造出内置技能。
     # 已经在的一律不动——用户改过的写法比我们的默认值值钱。
@@ -141,6 +157,8 @@ def public(row):
         "instruction": row["instruction"], "language": row["language"], "with_refs": bool(row["with_refs"]),
         "builtin_key": row["builtin_key"], "sort": row["sort"], "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+        "source": row["source"], "package_dir": row["package_dir"],
+        "package": json.loads(row["package_meta"]) if row["package_meta"] else None,
     }
 
 
@@ -207,6 +225,10 @@ def save_skill(values: dict, skill_id: int | None = None):
         columns.setdefault("kinds", ",".join(KINDS))
         columns.setdefault("language", "auto")
         columns.setdefault("with_refs", 1)
+        # source 只在建的时候定：'md' 是导入的单个文件，'package' 是技能包。
+        # 改技能内容不该改来源——来源决定的是「删它的时候连带删什么」。
+        if values.get("source"):
+            columns["source"] = str(values["source"])
         sort = conn.execute("SELECT COALESCE(MAX(sort),0)+10 FROM prompt_skills").fetchone()[0]
         keys = list(columns)
         with db.transaction() as tx:
@@ -234,6 +256,8 @@ def delete_skill(skill_id: int):
         raise HTTPException(409, "内置技能不能删除：可以改成自己的写法，或恢复默认")
     with db.transaction() as tx:
         tx.execute("DELETE FROM prompt_skills WHERE id=?", (skill_id,))
+    # 包是随这条技能一起进来的，删技能就把它一起带走：留着的是没人认领的一堆文件。
+    remove_package_dir(_row_get(row, "package_dir"))
     return {"deleted": skill_id}
 
 
@@ -286,17 +310,192 @@ def parse_import(content: str, filename: str = "") -> dict:
     return {"name": (name or "导入的技能")[:MAX_NAME], "instruction": body, "truncated": truncated}
 
 
-def import_skill(content: str, filename: str = ""):
-    """导入即落库，名字撞了就加序号：撞名时报一句「已存在」等于让人先改名再白跑一趟。"""
-    parsed = parse_import(content, filename)
-    base = parsed["name"]
+def unique_name(base: str) -> str:
+    """撞名就加序号：撞名时报一句「已存在」等于让人先改名再白跑一趟。"""
+    base = clean_name(base)
     taken = {row["name"] for row in db.get_pool().main().execute("SELECT name FROM prompt_skills").fetchall()}
     name, suffix = base, 1
     while name in taken:
         suffix += 1
         name = base[:MAX_NAME - len(str(suffix)) - 4] + " (" + str(suffix) + ")"
-    saved = save_skill({"name": name, "note": "从文件导入", "instruction": parsed["instruction"]})
+    return name
+
+
+def import_skill(content: str, filename: str = ""):
+    """导入即落库，名字撞了就加序号。"""
+    parsed = parse_import(content, filename)
+    saved = save_skill({"name": unique_name(parsed["name"]), "note": "从文件导入",
+                        "instruction": parsed["instruction"], "source": "md"})
     return {**saved, "truncated": parsed["truncated"]}
+
+
+# ---------- 技能包 ----------
+
+def _row_get(row, key: str, default=""):
+    """按列名取值，缺列就返回默认值：dict 与 sqlite3.Row 两种形状都吃得下。"""
+    try:
+        value = row[key]
+    except (KeyError, IndexError):
+        return default
+    return default if value is None else value
+
+
+def remove_package_dir(package_dir: str | None) -> None:
+    """删技能时把它落盘的包目录一起删掉。
+
+    只删 skills/ 底下自己的那个目录：路径是库里的旧值，万一被人手改过，
+    不能让它顺着删到别处去。
+    """
+    if not package_dir:
+        return
+    try:
+        root = skills_dir().resolve()
+        target = Path(package_dir).resolve()
+    except OSError:
+        return
+    if target == root or root not in target.parents:
+        return
+    shutil.rmtree(target, ignore_errors=True)
+
+
+def _package_manifest(entries: list[dict], files_meta: list[dict], skill_path: str = "") -> list[dict]:
+    """清单：包里每个文件最后去了哪儿。
+
+    三种角色分清楚，界面上才不会把「这条技能本身」说成「被预算挤掉」：
+    - 写法：SKILL.md，正文就是这条技能的写法，不算参考资料；
+    - 参考：文本类附属文件，能进资料块；
+    - 资源：二进制（图片、字体），只登记，不发给模型。
+    丢了要看得见——悄悄少给模型一份资料，是最难查的一类问题。
+    """
+    by_path = {item["path"]: item for item in files_meta}
+    manifest: list[dict] = []
+    for item in entries:
+        path = item["path"]
+        # 只有「这一条技能自己的」SKILL.md 算写法；包里的子技能是另一条技能，算参考资料。
+        if path == skill_path:
+            manifest.append({"path": path, "size": item.get("size", 0), "role": "写法",
+                             "included": False, "truncated": False, "reason": "就是这条技能的写法"})
+            continue
+        hit = by_path.get(path)
+        if hit is None:
+            manifest.append({"path": path, "size": item.get("size", 0), "role": "资源",
+                             "included": False, "truncated": False, "reason": "二进制文件，不发给模型"})
+        else:
+            manifest.append({"path": hit["path"], "size": item.get("size", 0), "role": "参考",
+                             "included": bool(hit.get("included")), "truncated": bool(hit.get("truncated")),
+                             "reason": hit.get("reason", ""), "order": hit.get("order", 0)})
+    return manifest
+
+
+def _ingest_package(root_name: str, entries: list[dict], source_dir: str = "") -> dict:
+    """把一份文件清单变成一条技能。
+
+    顺序不能换：先解析出正文与资料，再落库（要拿 id 才知道往哪写文件），
+    落盘失败就把刚插进去的那行删掉——不留一条指向空目录的技能。
+    """
+    skill_md, entries = skill_packages.pick_skill_md(entries)
+    if skill_md is None:
+        raise HTTPException(422, "这个文件夹里没有 SKILL.md：技能包的根目录得放着 SKILL.md")
+    fields, body = skill_packages.parse_frontmatter(skill_md.get("text") or "")
+    body = (body or "").strip()
+    if not body:
+        raise HTTPException(422, "SKILL.md 里没有正文，换一份或直接新建一条技能")
+    truncated = len(body) > MAX_IMPORT_CHARS
+    # 资料优先级要用**完整**正文来判断：作者在文档后半段点名的文件也算数，
+    # 哪怕那半截没发给模型——不然截断会把「作者想让我们看什么」这件事切掉一半。
+    skill_path = skill_md.get("path") or ""
+    refs_block, files_meta, refs_chars = skill_packages.compose_refs_block(entries, body, skill_path)
+    if truncated:
+        body = body[:MAX_IMPORT_CHARS].rstrip() + "\n\n（技能原文过长，到这里为止。）"
+
+    saved = save_skill({"name": unique_name(fields.get("name") or root_name or "导入的技能包"),
+                        "note": str(fields.get("description") or "").strip()[:MAX_NOTE],
+                        "instruction": body, "source": "package"})
+    skill_id = saved["id"]
+
+    package_dir = ""
+    try:
+        target = skills_dir() / str(skill_id)
+        target.mkdir(parents=True, exist_ok=True)
+        for item in entries:
+            rel = skill_packages.safe_rel_path(item.get("path") or "")
+            if not rel:
+                continue
+            dest = target / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if item.get("is_text") and item.get("text") is not None:
+                dest.write_text(item["text"], encoding="utf-8")
+            elif item.get("abs"):
+                try:
+                    shutil.copy2(item["abs"], dest)
+                except OSError:
+                    pass
+        package_dir = str(target)
+    except OSError as exc:
+        with db.transaction() as tx:
+            tx.execute("DELETE FROM prompt_skills WHERE id=?", (skill_id,))
+        raise HTTPException(500, "技能包落盘失败：" + str(exc))
+
+    manifest = _package_manifest(entries, files_meta, skill_path)
+    meta = {
+        "root": root_name,
+        "source_dir": source_dir,
+        "description": str(fields.get("description") or ""),
+        "license": str(fields.get("license") or ""),
+        "allowed_tools": fields.get("allowed-tools", ""),
+        "version": str(fields.get("version") or ""),
+        "extra_fields": {k: v for k, v in fields.items()
+                         if k not in ("name", "description", "license", "allowed-tools", "version")},
+        "files": manifest,
+        "refs_chars": refs_chars,
+        "truncated": truncated,
+        "dropped": [item["path"] for item in manifest
+                    if item["role"] == "参考" and not item["included"]],
+    }
+    with db.transaction() as tx:
+        tx.execute(
+            "UPDATE prompt_skills SET package_dir=?,package_meta=?,package_refs=?,"
+            "updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?",
+            (package_dir, json.dumps(meta, ensure_ascii=False), refs_block, skill_id),
+        )
+    return {**public(get_skill(skill_id)), "package": meta}
+
+
+def import_package_from_path(path: str) -> dict:
+    """桌面版：用户挑一个文件夹，后端按路径扫盘。"""
+    entries = skill_packages.scan_package_dir(path)
+    if not entries:
+        raise HTTPException(422, "这个文件夹里没有可用的文件，换一个技能包目录")
+    root_name = Path(str(path)).name or "技能包"
+    return _ingest_package(root_name, entries, source_dir=str(path))
+
+
+def import_package_from_upload(root: str, files: list[dict]) -> dict:
+    """浏览器开发模式：前端把读好的文件内容传上来。"""
+    entries: list[dict] = []
+    total = 0
+    for item in files or []:
+        rel = skill_packages.safe_rel_path(item.get("path") or "")
+        if not rel:
+            continue
+        content = item.get("content") or ""
+        size = len(content.encode("utf-8"))
+        if size > skill_packages.MAX_PACKAGE_FILE_BYTES or len(entries) >= skill_packages.MAX_PACKAGE_FILES:
+            continue
+        total += size
+        if total > skill_packages.MAX_PACKAGE_TOTAL_BYTES:
+            break
+        entries.append({"path": rel, "abs": "", "size": size, "text": content, "is_text": True})
+    if not entries:
+        raise HTTPException(422, "没有读到任何文件，换一个技能包目录")
+    return _ingest_package(root or "技能包", entries)
+
+
+def package_detail(skill_id: int) -> dict:
+    """一条技能背后的包：文件清单与元数据。"""
+    row = get_skill(skill_id)
+    meta = json.loads(row["package_meta"]) if row["package_meta"] else None
+    return {"id": skill_id, "source": row["source"], "package_dir": row["package_dir"], "package": meta}
 
 
 def settings():
@@ -324,13 +523,16 @@ def save_settings(*, default_image_skill, default_video_skill):
 
 
 def system_prompt(skill) -> str:
-    """一条技能 = 一句写法 + 两条谁都不许违反的硬规矩（引用标记、输出形态）。
+    """一条技能 = 一句写法 +（是包的话）一叠资料 + 两条谁都不许违反的硬规矩。
 
+    顺序有讲究：资料在正文之后（正文是主干，资料是补充），硬规矩永远垫底。
     硬规矩拼在这儿而不是写进技能正文：技能可以被用户改成一句话，
     规矩要是跟着正文一起被改没，优化就会开始吞 @图片N。
     """
     language = skill["language"] if skill["language"] in LANGUAGE_RULES else "auto"
-    return skill["instruction"].strip() + "\n" + OUTPUT_RULE.replace("{language}", LANGUAGE_RULES[language])
+    refs = _row_get(skill, "package_refs", "")
+    return (skill["instruction"].strip() + refs + "\n"
+            + OUTPUT_RULE.replace("{language}", LANGUAGE_RULES[language]))
 
 
 def build_content(prompt: str, refs: list[tuple[int, str]]) -> list[dict]:

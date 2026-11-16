@@ -11,9 +11,12 @@
 <script lang="ts">
   import { modalFocus } from "../lib/modal-focus";
   import { errorMessage, reverseApi } from "../lib/reverse-prompts";
+  import { revealError, revealLocation } from "../lib/reveal";
+  import { isTauri, selectSkillPackageDir } from "../lib/tauri";
   import { pushToast } from "../lib/toast";
   import Icon from "./Icon.svelte";
   import {
+    isTextFilePath,
     KIND_WORDS,
     LANGUAGE_WORDS,
     promptSkills,
@@ -24,6 +27,7 @@
     type PromptSkillDraft,
     type PromptSkillKind,
     type PromptSkillLanguage,
+    type PromptSkillPackage,
   } from "../lib/prompt-skills";
 
   interface Props {
@@ -41,6 +45,8 @@
   let error = $state("");
   let confirmDelete = $state(false);
   let fileEl = $state<HTMLInputElement | null>(null);
+  /** 浏览器版选技能包目录用的隐藏 input（webkitdirectory）。桌面版走原生对话框。 */
+  let dirEl = $state<HTMLInputElement | null>(null);
   let modelNote = $state("");
 
   // 草稿按字段摊平：bind:value 直连，省掉每敲一个字就 spread 一整个对象。
@@ -53,6 +59,16 @@
   let instruction = $state("");
 
   const selected = $derived(skills.find((item) => item.id === selectedId) ?? null);
+
+  /** 包内文件的展示顺序：写法在前，参考资料按进资料块的次序，资源垫后。 */
+  const packageFiles = $derived(
+    selected?.package
+      ? [...selected.package.files].sort((a, b) => {
+          const rank = (file: typeof a) => (file.role === "写法" ? 0 : file.role === "参考" ? 1 : 2);
+          return rank(a) - rank(b) || (a.order || 99) - (b.order || 99) || a.path.localeCompare(b.path);
+        })
+      : [],
+  );
 
   function fill(skill: PromptSkill | null) {
     name = skill?.name ?? "";
@@ -197,6 +213,93 @@
     }, "已导入「" + file.name + "」");
   }
 
+  /** 后端给的中文原因优先；本地抛的错就把 message 摆出来，别一律换成「请求失败」。 */
+  function failText(e: unknown): string {
+    const detail = (e as { detail?: string })?.detail;
+    if (detail) return detail;
+    if (e instanceof Error && e.message) return e.message;
+    return errorMessage(e);
+  }
+
+  /** 导入完一条技能包：进清单、选中它、把「没进预算的文件」说出来。 */
+  function afterPackageImported(saved: PromptSkill & { package: PromptSkillPackage | null }) {
+    promptSkills.update((list) => [...list, saved]);
+    selectedId = saved.id;
+    const dropped = saved.package?.dropped?.length ?? 0;
+    pushToast(
+      dropped
+        ? "已导入技能包「" + saved.name + "」，" + dropped + " 个文件没进预算"
+        : "已导入技能包「" + saved.name + "」",
+      dropped ? { kind: "error", ttl: 6000 } : { kind: "success" },
+    );
+  }
+
+  /**
+   * 导入一整个技能包。
+   *
+   * 桌面版选文件夹（后端按路径扫盘）；浏览器开发模式没有原生对话框，
+   * 退回到目录上传——只送能读成文字的文件，二进制发过去就是乱码。
+   */
+  async function importPackage() {
+    if (busy) return;
+    if (!isTauri()) {
+      dirEl?.click();
+      return;
+    }
+    let dir: string | null = null;
+    try {
+      dir = await selectSkillPackageDir();
+    } catch (e) {
+      error = failText(e);
+      return;
+    }
+    if (!dir) return;
+    busy = true;
+    error = "";
+    try {
+      afterPackageImported(await promptSkillsApi.importPackage(dir));
+    } catch (e) {
+      error = failText(e);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function onPackageDir(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const files = Array.from(input.files ?? []);
+    input.value = "";
+    if (!files.length || busy) return;
+    busy = true;
+    error = "";
+    try {
+      const payload: { path: string; content: string }[] = [];
+      for (const file of files) {
+        const rel = (file as any).webkitRelativePath || file.name;
+        if (!isTextFilePath(rel)) continue;
+        payload.push({ path: rel, content: await file.text() });
+      }
+      if (!payload.length) throw new Error("这个文件夹里没有能读成文字的文件");
+      const root = payload[0].path.split("/")[0] || "技能包";
+      afterPackageImported(await promptSkillsApi.importPackageUpload(root, payload));
+    } catch (e) {
+      error = failText(e);
+    } finally {
+      busy = false;
+    }
+  }
+
+  /** 在系统文件管理器里打开技能包落盘的那份。 */
+  async function revealPackage() {
+    const dir = selected?.package_dir;
+    if (!dir) return;
+    try {
+      await revealLocation(dir, false);
+    } catch (e) {
+      error = revealError(e).message;
+    }
+  }
+
   // 脚下一句「现在吃的是哪家哪个模型」。读失败就留空：它只是把人指回设置，不拦任何操作。
   $effect(() => {
     if (!open) {
@@ -246,12 +349,13 @@
                 </span>
               </button>
             {:else}
-              <p class="psk-hint">还没有技能。新建一条，或者直接导入一份现成的 SKILL.md。</p>
+              <p class="psk-hint">还没有技能。新建一条，或者导入一份 SKILL.md / 一整个技能包。</p>
             {/each}
           </div>
           <div class="psk-side-foot">
             <button class="psk-btn" disabled={busy} onclick={() => void create()}><Icon name="plus" size={12} />新建技能</button>
             <button class="psk-btn" disabled={busy} onclick={() => fileEl?.click()}><Icon name="folder" size={12} />导入 SKILL.md</button>
+            <button class="psk-btn" disabled={busy} onclick={() => void importPackage()}><Icon name="folder" size={12} />导入技能包</button>
           </div>
         </div>
 
@@ -291,6 +395,42 @@
                 placeholder={"交给模型的指令，例如：\n· 保留原有主体与动作，补上景别、机位、镜头焦段\n· 材质与光影各写一句\n· 只输出提示词本身，不要解释"}></textarea>
             </label>
 
+            {#if selected.source === "package" && selected.package}
+              <div class="psk-pkg">
+                <div class="psk-pkg-head">
+                  <span class="psk-label">技能包</span>
+                  <span class="psk-hint">
+                    {selected.package.root} · {selected.package.files.length} 个文件 · 带进模型 {selected.package.refs_chars} 字
+                  </span>
+                </div>
+                <ul class="psk-pkg-list">
+                  {#each packageFiles as file (file.path)}
+                    <li>
+                      <span class="psk-pkg-path">{file.path}</span>
+                      {#if file.role === "写法"}
+                        <i class="psk-tag">写法</i>
+                      {:else if file.role === "资源"}
+                        <i class="psk-tag is-default">资源</i>
+                      {:else if file.included && !file.truncated}
+                        <i class="psk-tag">已带</i>
+                      {:else if file.truncated}
+                        <i class="psk-tag">截断</i>
+                      {:else}
+                        <i class="psk-tag is-default">没带上</i>
+                      {/if}
+                    </li>
+                  {/each}
+                </ul>
+                <p class="psk-hint">
+                  附属文件只作参考文本发给模型，里面的脚本不会执行。
+                  {#if selected.package.license}授权：{selected.package.license}。{/if}
+                </p>
+                {#if isTauri() && selected.package_dir}
+                  <button class="psk-btn" disabled={busy} onclick={() => void revealPackage()}>在文件夹中显示</button>
+                {/if}
+              </div>
+            {/if}
+
             <div class="psk-edit-foot">
               <button class="psk-btn" disabled={busy || !useImage} onclick={() => void markDefault("image")}>设为图片默认</button>
               <button class="psk-btn" disabled={busy || !useVideo} onclick={() => void markDefault("video")}>设为视频默认</button>
@@ -298,7 +438,9 @@
                 <button class="psk-btn" disabled={busy} onclick={() => void restore()}>恢复默认写法</button>
               {:else}
                 <button class="psk-btn is-danger" class:is-armed={confirmDelete} disabled={busy} onclick={() => void remove()}>
-                  {confirmDelete ? "确认删除" : "删除这条技能"}
+                  {confirmDelete
+                    ? selected.source === "package" ? "确认删除（连同包内文件）" : "确认删除"
+                    : "删除这条技能"}
                 </button>
               {/if}
               <button class="psk-btn is-primary" disabled={busy || !dirty} onclick={() => void save()}>保存</button>
@@ -313,6 +455,8 @@
       <p class="psk-foot">模型沿用「反推提示词」那一份默认配置{modelNote ? "：现在吃的是 " + modelNote : "，目前还没配好"}。要换模型去 设置 › 反推提示词。</p>
       <input bind:this={fileEl} class="psk-file" type="file" accept=".md,.markdown,.txt" aria-label="选择 SKILL.md 文件"
         onchange={(e) => void onFile(e)} />
+      <input bind:this={dirEl} class="psk-file" type="file" webkitdirectory multiple aria-label="选择技能包文件夹"
+        onchange={(e) => void onPackageDir(e)} />
     </div>
   </div>
 {/if}
@@ -397,4 +541,18 @@
   .psk-error { margin: 0; color: var(--danger); font-size: var(--fs-sm); }
   .psk-foot { margin: 0; color: var(--text-2); font-size: var(--fs-xs); }
   .psk-file { display: none; }
+  .psk-pkg {
+    display: flex; flex-direction: column; gap: 6px; padding: 8px 10px;
+    border: 1px solid var(--line); border-radius: var(--r-2); background: var(--ink-2);
+  }
+  .psk-pkg-head { display: flex; align-items: baseline; gap: 8px; }
+  .psk-pkg-list {
+    display: flex; flex-direction: column; gap: 3px; margin: 0; padding: 0;
+    list-style: none; max-height: 132px; overflow-y: auto;
+  }
+  .psk-pkg-list li { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); }
+  .psk-pkg-path {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--text-2); direction: rtl; text-align: left;
+  }
 </style>

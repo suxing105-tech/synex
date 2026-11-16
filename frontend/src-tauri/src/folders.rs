@@ -22,6 +22,40 @@ pub async fn select_text_paths(window: WebviewWindow, directory: bool) -> Result
             .into_os_string().into_string().map_err(|_| "无法识别路径".to_string())).collect()
 }
 
+/// 选一个技能包文件夹（Codex 那种一整个目录：SKILL.md + references/ + scripts/）。
+///
+/// 只回路径，不在 Rust 这边读文件：扫盘、解析、落盘都是后端的事，
+/// 这里多读一遍等于把同一份内容搬两遍。
+#[tauri::command]
+pub async fn select_skill_package_dir(window: WebviewWindow) -> Result<Option<String>, String> {
+    if window.label() != "main" {
+        return Err("请从主窗口选择技能包".into());
+    }
+    let _guard = PICKER.try_lock().map_err(|_| "文件选择窗口已打开")?;
+    let (send, receive) = tokio::sync::oneshot::channel();
+    window
+        .app_handle()
+        .dialog()
+        .file()
+        .set_title("选择技能包文件夹")
+        .set_parent(&window)
+        .pick_folder(move |folder| {
+            let _ = send.send(folder);
+        });
+    let result = receive
+        .await
+        .map_err(|_| "文件选择窗口未能返回结果，请重试")?;
+    result
+        .map(|file| {
+            file.into_path()
+                .map_err(|_| "请选择本地路径".to_string())?
+                .into_os_string()
+                .into_string()
+                .map_err(|_| "无法识别路径".to_string())
+        })
+        .transpose()
+}
+
 fn initial_directory(current: Option<String>, previous: Option<String>) -> Option<PathBuf> {
     [current, previous]
         .into_iter()

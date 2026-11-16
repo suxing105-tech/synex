@@ -80,16 +80,17 @@ describe("文本卡的高度与降级：一个真源、三档形态", () => {
 });
 
 describe("文本详情栏的操作带：与媒体 tab 行同尺，标题拿回整条宽度", () => {
-  it("操作带的高 / 内边距 / 下沿 hairline 与 .detail-tabs 一致（四类右栏起点在一条线上）", () => {
+  it("操作带的高 / 内边距 / 下沿 hairline 还在 3.1 那把尺子上（页签取消后仍按档位钉死）", () => {
+    // 2026-11-13 定这条时，比的是「与媒体那一行的 .detail-tabs 同尺」。fork 的 0.2.35 把右栏页签
+    // 取消了（改成一条纵向工作台 + .detail-header），媒体侧不再有可对照的那一行，所以对照对象撤掉，
+    // 但操作带自己那三个数照钉：高度走 --ctl-lg、左右 16px、下沿一条 hairline，谁都不许顺手改掉。
     const band = ruleBody(appCss, ".detail-text-actions") || "";
-    const tabs = ruleBody(detailPanel, ".detail-tabs") || "";
-    expect(tabs).not.toBe("");
+    expect(band).not.toBe("");
     expect(band).toContain("height: var(--ctl-lg)");
-    expect(tabs).toContain("height: var(--ctl-lg)");
     expect(band).toContain("padding: 0 16px");
-    expect(tabs).toContain("padding: 0 16px");
     expect(band).toContain("border-bottom: 1px solid var(--line)");
-    expect(tabs).toContain("border-bottom: 1px solid var(--line)");
+    // 页签那一行确实没了：留着这条，是为了防止哪天又冒出一份第二套 tab 尺
+    expect(detailPanel).not.toContain('class="detail-tabs"');
   });
 
   it("阅读 / 编辑 / ⋯ 在操作带里而不是标题那一行；标题 tooltip 挂文件名而不是路径（T3）", () => {

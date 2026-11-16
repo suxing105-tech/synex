@@ -126,7 +126,8 @@ it('列容器不让卡片被拉伸：这两条规则少了任何一条，缩略�
 it('选择器按弹窗自己的高度撑开，不再被全局 .media-pick-grid 的 480px 压成一条窄带', () => {
   const css = readFileSync('src/components/MediaPickerModal.svelte', 'utf8');
   // 弹窗更宽 → 每张缩略图 ~240px，和图库页面上的观感一个量级
-  expect(css).toMatch(/\.mp-panel\s*\{[^}]*width:\s*min\(1040px/);
+  // （左边多了一栏文件夹分类，宽度从 1040 调到 1160，让出那一栏还剩得下）
+  expect(css).toMatch(/\.mp-panel\s*\{[^}]*width:\s*min\(1160px/);
   // 网格跟着弹窗高度走；少了这条就只剩四张可见，用户得一直滚
   expect(css).toMatch(/\.mp-grid\s*\{[^}]*max-height:\s*calc\(84vh/);
 });

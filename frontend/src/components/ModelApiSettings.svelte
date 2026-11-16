@@ -218,15 +218,6 @@
 <section class="fill-interactions model-settings" aria-label="模型API配置">
   <div class="settings-card">
     <div class="settings-model-body">
-      {#if $modelConfigs.length}
-        <!-- 只有库里真有多份配置时才摆这一排：新建的入口是下面的厂商卡片，
-             再留一颗「＋ 添加模型」等于给「自定义（手动填写）」那张卡安第二个入口。 -->
-        <div class="model-chips">
-          {#each $modelConfigs as model}
-            <button class="setting-button" aria-pressed={editingId === model.id} disabled={busy} onclick={() => choose(model)}>{model.name}</button>
-          {/each}
-        </div>
-      {/if}
       <fieldset disabled={busy} class="space-y-3">
         <!-- legend 只留给读屏；界面上的标题行是下面这一行（照苏醒贴的那张参考页）。 -->
         <legend class="api-legend">当前服务商：{preset ? preset.name : "自定义（手动填写）"}</legend>
@@ -309,7 +300,11 @@
         <!-- 这一页不再摆「识别模型」那一格：Key 是这家的入场券，用哪个模型是用的时候挑。
              挑模型的入口在图片/视频反推面板那两列（先点服务商、再点它报回的模型），
              那儿还留了一条直接输入模型 ID 的路，所以清单拉不到也不堵。 -->
-        <p class="settings-hint">模型不用在这里选：到图片详情页的反推面板里，先点服务商、再点它家的模型。</p>
+        {#if draft.provider === "minimax"}
+          <p class="settings-hint">再次创作可用 MiniMax-H3-Image 图片、MiniMax-H3 视频与 Speech 2.8 HD 音频 API。保存 API Key 后，对应项目会出现在再次创作的云端 API 列表。</p>
+        {:else}
+          <p class="settings-hint">模型不用在这里选：到图片详情页的反推面板里，先点服务商、再点它家的模型。</p>
+        {/if}
         {#if workflowCapable}
           <div class="api-key-section">
             <p class="api-key-title">工作流 API 密钥（消费级-会员）</p>
@@ -369,9 +364,13 @@
       {/if}
     </div>
     <div class="settings-card-footer">
-      <span class="settings-hint">「检查」只读这家的模型清单，不产生模型调用费用。</span>
+      <span class="settings-hint">{draft.provider === "minimax"
+        ? "MiniMax API Key 会在再次创作生成时校验；这里不发试生成请求。"
+        : "「检查」只读这家的模型清单，不产生模型调用费用。"}</span>
       {#if editingId}<button class="setting-button setting-button-ghost" onclick={() => (confirmDelete = true)}>删除配置</button>{/if}
-      <button class="setting-button" disabled={!canSave || busy} onclick={() => void checkKey()}>检查 API Key</button>
+      {#if draft.provider !== "minimax"}
+        <button class="setting-button" disabled={!canSave || busy} onclick={() => void checkKey()}>检查 API Key</button>
+      {/if}
       <button class="setting-button bg-accent text-bg" onclick={saveModel} disabled={!canSave}>保存配置</button>
     </div>
   </div>
@@ -387,7 +386,6 @@
   .settings-model-body { padding: 20px; }
   /* 竖排表单铺满卡片：右边缘要和卡片、右下角保存条对齐（固定宽度会在右边留一条空白）。 */
   .model-settings fieldset { max-width: none; }
-  .model-chips { display: flex; gap: 8px; flex-wrap: wrap; }
   /* 服务商卡片区：一厂商一卡，状态写在卡上。清单长度不由我们决定，所以给它一个会滚的筐。 */
   .api-filter { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
   .api-tabs { display: flex; gap: 6px; flex-wrap: wrap; }

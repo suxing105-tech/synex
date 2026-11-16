@@ -28,6 +28,12 @@ export async function selectImportDirectory(current = "", previous = ""): Promis
   return (window as any).__TAURI__.core.invoke("select_import_directory", { current, previous });
 }
 
+/** 选一个技能包文件夹（Codex 那种一整个目录）。取消返回 null。 */
+export async function selectSkillPackageDir(): Promise<string | null> {
+  if (!isTauri()) throw new Error("选文件夹仅在桌面版提供，浏览器里请用「导入技能包」的上传方式");
+  return (window as any).__TAURI__.core.invoke("select_skill_package_dir");
+}
+
 export async function selectTextPaths(directory: boolean): Promise<string[]> {
   if (!isTauri()) throw new Error('文件选择仅在桌面版提供，请输入本地路径');
   return (window as any).__TAURI__.core.invoke('select_text_paths', { directory });

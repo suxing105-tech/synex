@@ -1,7 +1,7 @@
 {
   "name": "suxing-gallery-frontend",
   "private": true,
-  "version": "0.2.34",
+  "version": "0.2.37",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,6 +12,7 @@
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^4.0.4",
+    "@tauri-apps/cli": "^2.12.4",
     "@testing-library/svelte": "^5.2.4",
     "@tsconfig/svelte": "^5.0.4",
     "@types/node": "^22.20.3",

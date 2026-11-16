@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.concurrency import run_in_threadpool
 
 from .. import prompt_skills as service
 from .reverse_prompts import SafeValidationRoute
@@ -47,6 +48,26 @@ class ImportInput(BaseModel):
     content: str = Field(min_length=1, max_length=2_000_000)
 
 
+class PackageImportInput(BaseModel):
+    """桌面版导入：用户挑了一个文件夹，后端按路径扫盘。"""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+    path: str = Field(min_length=1, max_length=2000)
+
+
+class PackageFileInput(BaseModel):
+    path: str = Field(min_length=1, max_length=1000)
+    content: str = Field(default="", max_length=2_000_000)
+
+
+class PackageUploadInput(BaseModel):
+    """浏览器开发模式导入：前端把读到的文件内容传上来。"""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+    root: str = Field(default="", max_length=200)
+    files: list[PackageFileInput] = Field(default_factory=list, max_length=500)
+
+
 class SettingsInput(BaseModel):
     default_image_skill: int | None = None
     default_video_skill: int | None = None
@@ -79,6 +100,23 @@ def create_skill(payload: SkillInput):
 @router.post("/prompt-skills/import")
 def import_skill(payload: ImportInput):
     return service.import_skill(payload.content, payload.filename)
+
+
+@router.post("/prompt-skills/import-package")
+async def import_package(payload: PackageImportInput):
+    # 扫盘是阻塞 IO：放线程池里，别把事件循环占住。
+    return await run_in_threadpool(service.import_package_from_path, payload.path)
+
+
+@router.post("/prompt-skills/import-package/upload")
+def import_package_upload(payload: PackageUploadInput):
+    return service.import_package_from_upload(payload.root,
+                                               [item.model_dump() for item in payload.files])
+
+
+@router.get("/prompt-skills/{skill_id}/package")
+def package_detail(skill_id: int):
+    return service.package_detail(skill_id)
 
 
 @router.patch("/prompt-skills/{skill_id}")

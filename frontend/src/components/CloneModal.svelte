@@ -220,6 +220,7 @@
   // 弹窗的行为跟工作流走，不跟卡片走：在图片卡上换成音频工作流，
   // @ 引用也不该突然开始插 H3 的尖括号标签。
   const mediaKind = $derived<MediaKind>(templateMediaKind(template));
+  const paramsLabel = $derived(mediaKind === "audio" ? "音频参数" : "画面参数");
   /* ── 云端那三条 API ─────────────────────────────────────────────────
      可用性只在开弹窗与打开工作流菜单时读一次：它管的是「这一行现在点不动，差点什么」，
      不是要盯着的进度。读不到就当不知道（不置灰、不报原因）——提交那一关后端会拦，
@@ -670,7 +671,7 @@
       // 同一把尺再量一份「往左长还剩多少」：画面参数那层贴胶囊右边缘往左长（见 .cm-pop-params），
       // 余量在左边——那颗右边缘到面板左内沿（22 内边距 + 1 描边）。窗口一窄胶囊被压扁，这一档
       // 跟着缩，不至于从左边被面板切第二次。弹层的外裹那一格就是胶囊自己的盒子，量同一只盒子。
-      const paramsPill = host.querySelector<HTMLElement>('.cm-pill[aria-label="画面参数"]');
+      const paramsPill = host.querySelector<HTMLElement>(".cm-params-pill");
       const paramsBox = paramsPill?.closest<HTMLElement>(".cm-pop-wrap") ?? paramsPill;
       host.style.setProperty(
         "--cm-pop-left",
@@ -1495,6 +1496,7 @@
 
   const cloudCostLine = $derived.by(() => {
     if (!isCloud || busy || cloudCost === undefined) return "";
+    if (template?.provider === "minimax") return "费用由 MiniMax 平台按账户规则结算";
     return cloudCost === null
       ? "这条云端 API 的价格没取到 · 跑完按余额差值记账"
       : `云端出一次预计 ${coinsLabel(cloudCost)}`;
@@ -2524,22 +2526,23 @@
                 </div>
                 {#if hasParams}
                   <div class="cm-pop-wrap">
-                    <button class="cm-pill" aria-label="画面参数" aria-haspopup="dialog" aria-expanded={popOpen} onclick={() => { closeWorkflowPop(); popOpen = !popOpen; }}>
+                    <button class="cm-pill cm-params-pill" aria-label={paramsLabel} aria-haspopup="dialog" aria-expanded={popOpen} onclick={() => { closeWorkflowPop(); popOpen = !popOpen; }}>
                       {#if pickedFace}
                         <img class="cm-pill-face" src={pickedFace} alt="" draggable="false" />
                       {/if}
-                      <span class="cm-pill-text">{summary || "设置画面参数"}</span>
+                      <span class="cm-pill-text">{summary || `设置${paramsLabel}`}</span>
                       <span class="cm-chevron" class:is-open={popOpen} aria-hidden="true"><Icon name="chevron-down" size={12} /></span>
                     </button>
                     {#if popOpen}
                       <div class="cm-pop-scrim" role="presentation" onclick={() => (popOpen = false)}></div>
-                      <div class="cm-pop cm-pop-params" role="dialog" aria-label="画面参数">
+                      <div class="cm-pop cm-pop-params" role="dialog" aria-label={paramsLabel}>
                         {#each selectSlots as slot (slotKey(slot))}
                           {@const key = slotKey(slot)}
                           <p class="cm-pop-title">{slot.label}</p>
                           <div class="cm-ratio-grid" role="group" aria-label={`${slot.label}选项`}>
                             {#each slot.options ?? [] as option (option)}
-                              {@const shape = ratioShape(option)}
+                              {@const optionLabel = slot.option_labels?.[option] ?? option}
+                              {@const shape = ratioShape(optionLabel)}
                               {@const face = voiceAvatar(option)}
                               {@const hearing = hearingVoice === option && voiceSample(option) !== null}
                               <button
@@ -2547,8 +2550,8 @@
                                 class:is-voice={face !== null}
                                 class:is-on={controls[key] === option}
                                 class:is-hearing={hearing}
-                                title={face ? `试听并选用：${option}` : option}
-                                aria-label={option}
+                                title={face ? `试听并选用：${optionLabel}` : optionLabel}
+                                aria-label={optionLabel}
                                 aria-pressed={controls[key] === option}
                                 onclick={() => pickVoiceValue(key, option)}
                               >

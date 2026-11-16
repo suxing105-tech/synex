@@ -20,6 +20,12 @@ from ..db import get_pool
 from . import spec as cloud_spec
 
 SEED_FLAG = "cloud_templates_seeded"
+MINIMAX_IMAGE_FLAG = "cloud_minimax_image_seeded"
+MINIMAX_SEEDED_FLAGS = {
+    "minimax-image": MINIMAX_IMAGE_FLAG,
+    "minimax-video": "cloud_minimax_video_seeded",
+    "minimax-audio": "cloud_minimax_audio_seeded",
+}
 # 与内置工作流同一把开关的写法：绝大多数用例的前提是「模板表一开始是空的」，
 # 测云端自己的用例自己把它打开。生产不设这个环境变量，照常种一次。
 SEED_ENV = "SUXING_SEED_CLOUD_TEMPLATES"
@@ -66,6 +72,7 @@ def sync(conn=None) -> dict:
     created: list[str] = []
     updated: list[str] = []
     for spec in cloud_spec.all_specs():
+        provider, _provider_label = cloud_spec.provider_for(spec)
         slots = json.dumps(spec.slots(), ensure_ascii=False)
         params = json.dumps(spec.default_controls(), ensure_ascii=False)
         existing = row_for(spec, conn)
@@ -73,7 +80,7 @@ def sync(conn=None) -> dict:
             conn.execute(
                 f"UPDATE clone_templates SET name=?, slots=?, params=?, provider=?, model=?,"
                 f" engine='cloud', workflow='', media_kind=?, updated_at={NOW_SQL} WHERE id=?",
-                (str(existing["name"]), slots, params, cloud_spec.PROVIDER, spec.key,
+                (str(existing["name"]), slots, params, provider, spec.key,
                  spec.capability, int(existing["id"])),
             )
             updated.append(str(existing["name"]))
@@ -86,10 +93,56 @@ def sync(conn=None) -> dict:
             " media_kind, engine, provider, model, params)"
             " VALUES(?, '', ?, '', ?, ?, 'cloud', ?, ?, ?)",
             (name, slots, 0, spec.capability,
-             cloud_spec.PROVIDER, spec.key, params),
+             provider, spec.key, params),
         )
         created.append(name)
     return {"created": created, "updated": updated}
+
+
+def ensure_minimax_image_template(conn=None) -> dict | None:
+    """兼容旧调用点：按需提供 MiniMax 图片 API 模板。"""
+    return ensure_minimax_template("minimax-image", conn)
+
+
+def ensure_minimax_templates(conn=None) -> list[dict]:
+    """按需提供 MiniMax 图片、视频、音频 API 行，不改变 RunningHub 快捷入口。"""
+    return [row for spec in cloud_spec.minimax_specs()
+            if (row := ensure_minimax_template(spec.key, conn)) is not None]
+
+
+def ensure_minimax_template(spec_key: str, conn=None) -> dict | None:
+    conn = conn or _conn()
+    spec = cloud_spec.spec_by_key(spec_key)
+    if spec is None:
+        return None
+    flag = MINIMAX_SEEDED_FLAGS.get(spec.key)
+    if not flag:
+        return None
+    existing = row_for(spec, conn)
+    if existing is not None:
+        provider, _ = cloud_spec.provider_for(spec)
+        slots = json.dumps(spec.slots(), ensure_ascii=False)
+        if (str(existing.get("provider") or "") != provider
+                or str(existing.get("media_kind") or "") != spec.capability
+                or str(existing.get("slots") or "") != slots):
+            conn.execute("UPDATE clone_templates SET provider=?, media_kind=?, slots=?, updated_at="
+                         + NOW_SQL + " WHERE id=?",
+                         (provider, spec.capability, slots, int(existing["id"])))
+        _meta_set(conn, flag, 1)
+        return None
+    if _meta_get(conn, flag, 0):
+        return None  # 用户曾删除这条快捷方式；不要在每次列模板时又长回来
+    provider, _ = cloud_spec.provider_for(spec)
+    name = _pick_name(spec, conn)
+    cursor = conn.execute(
+        "INSERT INTO clone_templates(name, workflow, slots, default_prompt, is_active,"
+        " media_kind, engine, provider, model, params) VALUES(?, '', ?, '', 0,"
+        " ?, 'cloud', ?, ?, ?)",
+        (name, json.dumps(spec.slots(), ensure_ascii=False), spec.capability, provider, spec.key,
+         json.dumps(spec.default_controls(), ensure_ascii=False)),
+    )
+    _meta_set(conn, flag, 1)
+    return {"id": int(cursor.lastrowid), "name": name, "model": spec.key}
 
 
 def _meta_get(conn, key: str, default: int = 0) -> int:

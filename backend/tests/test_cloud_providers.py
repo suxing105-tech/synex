@@ -131,6 +131,19 @@ def test_template_names_match_the_sketch():
            ["图片API", "视频API", "音频API"]
 
 
+@pytest.mark.parametrize(("key", "provider", "name", "capability"), [
+    ("minimax-image", "minimax", "MiniMax 图片API", "image"),
+    ("minimax-video", "minimax", "MiniMax 视频API", "video"),
+    ("minimax-audio", "minimax", "MiniMax 音频API", "audio"),
+])
+def test_minimax_specs_are_distinct_and_keep_the_vendor_identity(key, provider, name, capability):
+    item = spec(key)
+    assert cloud_spec.provider_for(item) == (provider, "MiniMax")
+    assert cloud_spec.template_name(item) == name
+    assert item.capability == capability
+    assert item.model_label
+
+
 # ---------- 请求体 ----------
 
 

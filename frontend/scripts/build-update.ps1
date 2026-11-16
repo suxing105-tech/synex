@@ -8,6 +8,29 @@ Set-StrictMode -Version Latest
 $RepoRoot = (Resolve-Path "$PSScriptRoot/../..").Path
 $OutputDir = if ($OutputDirectory) { [System.IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $RepoRoot "outputs/auto-update-v1" }
 $Python = Join-Path $RepoRoot "backend/.venv/Scripts/python.exe"
+
+# Tauri CLI 有两种装法：cargo install tauri-cli（得到 cargo tauri），
+# 或在 frontend 下装 @tauri-apps/cli（得到 node_modules\.bin\tauri.cmd）。
+# 两种都找不到就直接失败——签名打包必须有 tauri build，
+# 装不装得上得说清楚，不能拖到下面才报错。
+function Get-TauriCliPath {
+    $Local = Join-Path $RepoRoot 'frontend\node_modules\.bin\tauri.cmd'
+    if (Test-Path -LiteralPath $Local) { return $Local }
+    return $null
+}
+
+function Assert-TauriCli {
+    if (Get-TauriCliPath) { return }
+    if (Get-Command cargo -ErrorAction SilentlyContinue) {
+        $prev = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            & cargo tauri --version *> $null
+            if ($LASTEXITCODE -eq 0) { return }
+        } finally { $ErrorActionPreference = $prev }
+    }
+    throw 'Tauri CLI not found: install cargo-tauri or run "pnpm add -D @tauri-apps/cli" in frontend'
+}
 if (!$SigningKeyPath) { $SigningKeyPath = Join-Path $RepoRoot "outputs/auto-update-v1/private/updater.key" }
 if (!$ReleaseNotes) { $ReleaseNotes = Join-Path $OutputDir "release-notes.md" }
 if (!(Test-Path -LiteralPath $SigningKeyPath)) { throw "缺少更新签名私钥，不能构建发布包。" }
@@ -57,11 +80,14 @@ if ($LASTEXITCODE -ne 0) { throw "fetch-media-tools.ps1 failed" }
         if ($PyiExit) { throw "后台打包失败，查看 sidecar-build.log" }
         Copy-Item -LiteralPath "$OutputDir/sidecar/python-backend.exe" -Destination "$RepoRoot/frontend/src-tauri/binaries/python-backend-x86_64-pc-windows-msvc.exe" -Force
     } finally { Pop-Location }
+    Assert-TauriCli
     Push-Location "$RepoRoot/frontend"
     try {
         $PreviousEap = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
-        cargo tauri build --ci *> "$OutputDir/desktop-build.log"
+        $TauriCli = Get-TauriCliPath
+        if ($TauriCli) { & $TauriCli build --ci *> "$OutputDir/desktop-build.log" }
+        else { cargo tauri build --ci *> "$OutputDir/desktop-build.log" }
         $TauriExit = $LASTEXITCODE
         $ErrorActionPreference = $PreviousEap
         if ($TauriExit) { throw "桌面版打包失败，查看 desktop-build.log" }

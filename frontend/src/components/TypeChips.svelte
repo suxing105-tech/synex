@@ -43,11 +43,12 @@
         class:on={on}
         type="button"
         aria-pressed={on}
+        aria-label={titleFor(chip.kind, chip.label)}
         title={titleFor(chip.kind, chip.label)}
         onclick={() => selectKind(chip.kind)}
       >
         <Icon name={chip.icon} size={12} />
-        <span class="label">{chip.label}</span>
+        <span class="label sr-only">{chip.label}</span>
         <span class="n">{onCount(chip.kind).toLocaleString("en-US")}</span>
       </button>
     {/each}

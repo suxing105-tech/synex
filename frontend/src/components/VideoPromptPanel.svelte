@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { modelConfigs, refreshReverseConfig } from "../lib/reverse-prompts";
+  import { modelConfigs, promptModelConfigs, refreshReverseConfig } from "../lib/reverse-prompts";
   import {
     MODES_BY_TARGET, MODE_LABELS, MODE_HINTS, MODE_BADGES, TARGETS, TARGET_LABELS, TRANSLATION_LABELS,
     cjkCount, elapsedText, SEEDANCE_CHAR_GUIDE, slotLimitText,
@@ -57,6 +57,7 @@
   let loadSequence = 0;
 
   const prefs = $derived($videoPromptSettings);
+  const textConfigs = $derived(promptModelConfigs($modelConfigs));
   const planJob = $derived($videoPromptJobs[planKey(videoId)]);
   const planRunning = $derived(!!planJob?.running);
   const queue = $derived($segmentQueue);
@@ -70,13 +71,13 @@
   const baseName = $derived(filename.replace(/\.[^.]+$/, "") || `视频${videoId}`);
 
   $effect(() => {
-    if (modelId === null || !$modelConfigs.some(m => m.id === modelId)) {
-      modelId = prefs?.default_model_id ?? $modelConfigs[0]?.id ?? null;
+    if (modelId === null || !textConfigs.some(m => m.id === modelId)) {
+      modelId = textConfigs.find(m => m.id === prefs?.default_model_id)?.id ?? textConfigs[0]?.id ?? null;
     }
   });
   // 模型跟着这条配置走：它记住哪个就用哪个，图片反推那边换了模型这边也一起跟上。
   $effect(() => {
-    modelName = $modelConfigs.find(m => m.id === modelId)?.model ?? "";
+    modelName = textConfigs.find(m => m.id === modelId)?.model ?? "";
   });
   $effect(() => {
     if (prefs) mode = { seedance2: prefs.default_mode_seedance, h3: prefs.default_mode_h3 };
@@ -296,7 +297,7 @@
     <span class="text-[10px] text-muted">{secondsText}</span>
   </div>
 
-  {#if !$modelConfigs.length}
+  {#if !textConfigs.length}
     <button class="vp-button" onclick={() => window.dispatchEvent(new CustomEvent("open-model-settings"))}>配置模型</button>
     <p class="text-[10px] text-muted">需要先在「设置 · 模型API配置」里配置一个支持图片输入的模型。</p>
   {:else}

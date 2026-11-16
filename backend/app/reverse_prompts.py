@@ -105,6 +105,7 @@ def cloud_workflow_key(quiet: bool = True) -> str:
 
 def public_config(row):
     result = {k: row[k] for k in ("id", "name", "base_url", "model", "timeout", "provider")}
+    result["capabilities"] = providers.capabilities_for(row["provider"])
     if shares_cloud_key(row["provider"]):
         # 共用那把：照云端账号说「有没有」，这条配置自己那格永远是空的
         result["has_api_key"] = bool(cloud_key())
@@ -326,6 +327,7 @@ async def list_models(provider: str | None) -> dict:
         return {"models": [
             {"id": mid, "label": info["label"], "recommended": bool(info.get("recommended"))}
             for mid, info in preset["models"].items()
+            if info.get("capability", "text") == "text"
         ], "source": "preset", "reason": ""}
 
     cache_key = f'{preset["id"]}|{preset["base_url"]}'
@@ -348,6 +350,9 @@ async def list_config_models(config_id: int) -> dict:
     """
     row = get_config(config_id)
     if row.get("provider"):
+        if "text" not in providers.capabilities_for(row["provider"]):
+            return {"models": [], "source": "unsupported",
+                    "reason": "该服务商配置仅支持图片、视频或音频生成，不能用于提示词反推。"}
         return await list_models(row["provider"])
     return await fetch_models(row["base_url"], key_for(row), f'config|{row["id"]}|{row["base_url"]}')
 

@@ -50,6 +50,8 @@ export interface CloneSlot {
   sync_to?: [string, string][];
   /** select 专用：导入时从 ComfyUI 缓存下来的可选项，ComfyUI 没开也能画下拉 */
   options?: string[];
+  /** select 专用：仅改界面显示名，保存与提交仍使用 options 里的原值 */
+  option_labels?: Record<string, string>;
   value?: string | number | null;
   min?: number | null;
   max?: number | null;

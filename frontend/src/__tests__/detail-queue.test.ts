@@ -12,6 +12,7 @@ import {
   applyCloneProgress,
   clearCloneHistory,
   cloneApi,
+  cloneHistory,
   cloneJob,
   cloudApi,
 } from "../lib/clone";
@@ -191,6 +192,26 @@ describe("云端那条钱已经付了、产物还没回来的", () => {
 });
 
 describe("本次运行的那几批", () => {
+  it("默认显示最近三批，更早批次在展开后仍能打开产出", async () => {
+    cloneHistory.set(Array.from({ length: 5 }, (_, i) => ({
+      key: `job-${i}`, jobId: `job-${i}`, outputs: [out(100 + i)], mediaKind: "image",
+      engine: "comfyui", provider: "", costCoins: null, at: Date.now() - i * 60_000,
+    })));
+    const ui = render(CloneQueuePanel, { active: false });
+    expect(ui.getByRole("button", { name: "看 out-100.png 产出" })).toBeTruthy();
+    expect(ui.getByRole("button", { name: "看 out-102.png 产出" })).toBeTruthy();
+    const older = ui.container.querySelector(".queue-older") as HTMLDetailsElement;
+    expect(older.open).toBe(false);
+    await fireEvent.click(ui.getByText("更早的产出（2 批）"));
+    expect(ui.getByRole("button", { name: "看 out-103.png 产出" })).toBeTruthy();
+  });
+
+  it("默认只展示最近三批，更早的产出可以按需展开", () => {
+    expect(panelRaw).toContain("$cloneHistory.slice(0, 3)");
+    expect(panelRaw).toContain("更早的产出");
+    expect(panelRaw).toContain("$cloneHistory.slice(3)");
+  });
+
   it("跑完的批次留在列表里，点缩略图派发 open-lightbox 回到图库", async () => {
     applyCloneProgress({
       active: true, job_id: "j1", state: "done", media_kind: "image",

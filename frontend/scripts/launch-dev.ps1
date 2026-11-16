@@ -35,7 +35,10 @@ function Test-DevOwned([int]$ProcId) {
     if (-not $ProcId) { return $false }
     $row = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId=$ProcId" -ErrorAction SilentlyContinue
     if (-not $row) { return $false }
-    return [bool]($row.CommandLine -like $RepoPattern)
+    # Windows 经常把可执行文件路径包在双引号里；先去引号再匹配仓库前缀，
+    # 否则本脚本自己启动的 python/node 也会被误判为「不是本仓库进程」，-Restart 不会重启。
+    $commandLine = [string]$row.CommandLine -replace '"', ''
+    return [bool]($commandLine -like ('*' + $RepoPattern))
 }
 
 function Stop-DevPort([string]$Name, [int]$Port) {

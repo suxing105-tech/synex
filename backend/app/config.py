@@ -105,6 +105,17 @@ def cloud_output_root() -> Path:
     return p
 
 
+def skills_dir() -> Path:
+    """技能包的落盘根：<数据目录>/skills/<技能 id>/。
+
+    包里的文件原样存一份在这儿：二进制保真、能在文件管理器里打开看，
+    删技能时连它一起删。真正发给模型的是库里那一份文本，不读盘。
+    """
+    p = data_dir() / "skills"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def logs_dir() -> Path:
     p = data_dir() / "logs"
     p.mkdir(parents=True, exist_ok=True)

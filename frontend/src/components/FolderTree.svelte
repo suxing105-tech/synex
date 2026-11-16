@@ -455,7 +455,6 @@
     </button>
   </div>
 
-  <p class="folder-hint">单击展开 · 双击改名 · 长按拖动移动</p>
 
   {#if newFolderFor?.parent === null}{@render newFolderInput(0)}{/if}
   {#if !$appBooting && userFolders.length === 0 && !newFolderFor}
@@ -801,7 +800,6 @@
     letter-spacing: .04em;
     color: #7f7f88;
   }
-  .folder-hint { font-size: 10.5px; color: var(--text-3); padding: 4px 10px 10px; line-height: 1.7; }
   .folder-caret { width: 12px; height: 14px; display: flex; align-items: center; flex-shrink: 0; color: var(--text-3); }
   :global(.folder-item:focus-visible) { outline: none; background: #ffffff12; }
   :global(.folder-item.dragging) { opacity: .45; cursor: grabbing; }

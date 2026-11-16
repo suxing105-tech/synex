@@ -137,9 +137,9 @@ it('图片没带提示词时用最新一条中文反推提示词', async () => {
 it('比例与百万像素收进参数面板：默认值在面板里点得中，选完写回同一批槽位键', async () => {
   routes(baseRoutes());
   const screen = await ready();
-  expect(screen.queryByRole('dialog', { name: '画面参数' })).toBeNull();
-  await fireEvent.click(screen.getByRole('button', { name: '画面参数' }));
-  expect(await screen.findByRole('dialog', { name: '画面参数' })).toBeTruthy();
+  expect(screen.queryByRole('dialog', { name: /^(画面参数|音频参数)$/ })).toBeNull();
+  await fireEvent.click(screen.getByRole('button', { name: /^(画面参数|音频参数)$/ }));
+  expect(await screen.findByRole('dialog', { name: /^(画面参数|音频参数)$/ })).toBeTruthy();
   // 当前值以 aria-pressed 标出来，不再是一个看不出选了的 select
   expect(screen.getByRole('button', { name: '1:1' }).getAttribute('aria-pressed')).toBe('true');
   expect(screen.getByRole('button', { name: '1.4MP' }).getAttribute('aria-pressed')).toBe('true');
@@ -149,17 +149,54 @@ it('比例与百万像素收进参数面板：默认值在面板里点得中，�
   await fireEvent.click(screen.getByRole('button', { name: '2MP' }));
   expect((screen.getByLabelText('百万像素') as HTMLInputElement).value).toBe('2');
   // 底部那颗 pill 就是当前选择的汇总
-  expect(screen.getByRole('button', { name: '画面参数' }).textContent).toContain('16:9 / 2MP');
+  expect(screen.getByRole('button', { name: /^(画面参数|音频参数)$/ }).textContent).toContain('16:9 / 2MP');
+});
+
+it('MiniMax 音频参数用音频标题和中文选项，切换时保留可提交的音色值', async () => {
+  const audioTemplate = {
+    ...TPL,
+    id: 9,
+    name: 'MiniMax 音频API',
+    media_kind: 'audio',
+    engine: 'cloud',
+    is_cloud: true,
+    provider: 'minimax',
+    model: 'minimax-audio',
+    slots: [
+      { kind: 'prompt', node: 'model', input: 'prompt', label: '完整提示词' },
+      { kind: 'select', node: 'model', input: 'voice_id', label: '系统音色',
+        options: ['female-tianmei', 'male-qn-qingse'],
+        option_labels: { 'female-tianmei': '女声·甜美', 'male-qn-qingse': '男声·青涩' },
+        value: 'female-tianmei' },
+      { kind: 'select', node: 'model', input: 'emotion', label: '情绪',
+        options: ['neutral', 'happy'], option_labels: { neutral: '中性', happy: '开心' }, value: 'neutral' },
+    ],
+  };
+  routes({ ...baseRoutes(), '/api/clone/templates': { items: [audioTemplate] } });
+  const screen = await ready({ image: { ...SOURCE, kind: 'audio' } });
+
+  const pill = screen.getByRole('button', { name: '音频参数' });
+  expect(pill.textContent).toContain('设置音频参数');
+  await fireEvent.click(pill);
+  const dialog = await screen.findByRole('dialog', { name: '音频参数' });
+  expect(dialog).toBeTruthy();
+  expect(screen.getByRole('button', { name: '女声·甜美' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '中性' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'female-tianmei' })).toBeNull();
+
+  const maleVoice = screen.getByRole('button', { name: '男声·青涩' });
+  await fireEvent.click(maleVoice);
+  expect(maleVoice.getAttribute('aria-pressed')).toBe('true');
 });
 
 it('Esc 只收起参数面板，不会把整个再次创作弹窗关掉', async () => {
   routes(baseRoutes());
   const onClose = vi.fn();
   const screen = await ready({ onClose });
-  await fireEvent.click(screen.getByRole('button', { name: '画面参数' }));
-  await screen.findByRole('dialog', { name: '画面参数' });
+  await fireEvent.click(screen.getByRole('button', { name: /^(画面参数|音频参数)$/ }));
+  await screen.findByRole('dialog', { name: /^(画面参数|音频参数)$/ });
   await fireEvent.keyDown(window, { key: 'Escape' });
-  expect(screen.queryByRole('dialog', { name: '画面参数' })).toBeNull();
+  expect(screen.queryByRole('dialog', { name: /^(画面参数|音频参数)$/ })).toBeNull();
   expect(onClose).not.toHaveBeenCalled();
   expect(screen.getByLabelText('提示词')).toBeTruthy();
 });
@@ -576,8 +613,8 @@ it("「画面参数」那层贴右往左长：两栏那一档它是最右那颗�
   const left = panel.style.getPropertyValue("--cm-pop-left");
   expect(/^-?\d+px$/.test(left), left).toBe(true);
   expect(Number.parseInt(left, 10)).toBeGreaterThanOrEqual(240);
-  await fireEvent.click(screen.getByRole("button", { name: "画面参数" }));
-  const pop = await screen.findByRole("dialog", { name: "画面参数" });
+  await fireEvent.click(screen.getByRole("button", { name: /^(画面参数|音频参数)$/ }));
+  const pop = await screen.findByRole("dialog", { name: /^(画面参数|音频参数)$/ });
   expect(pop.className).toContain("cm-pop-params");
   cleanup();
 });
@@ -1697,8 +1734,8 @@ it('「+ 参考」不绑族：选择器出族 tab，挑到哪一族落哪一族�
 it('时长是滑块：3–15 秒拖到几秒就是几秒，数字框与胶囊跟着同步', async () => {
   routes({ ...videoRoutes(), '/api/clone/templates': { items: [H3] } });
   const screen = await ready({ image: VIDEO_CARD });
-  await fireEvent.click(screen.getByRole('button', { name: '画面参数' }));
-  const pop = await screen.findByRole('dialog', { name: '画面参数' });
+  await fireEvent.click(screen.getByRole('button', { name: /^(画面参数|音频参数)$/ }));
+  const pop = await screen.findByRole('dialog', { name: /^(画面参数|音频参数)$/ });
   expect(pop.textContent).toContain('视频时长（秒）');
   const slider = screen.getByLabelText('视频时长（秒）滑块') as HTMLInputElement;
   // 区间 3–15 秒（苏醒点名）；工作流自己给的 min/max 只收紧不放宽
@@ -1708,7 +1745,7 @@ it('时长是滑块：3–15 秒拖到几秒就是几秒，数字框与胶囊跟
   await fireEvent.input(slider);
   await tick();
   expect((screen.getByLabelText('视频时长（秒）') as HTMLInputElement).value).toBe('12');
-  expect(screen.getByRole('button', { name: '画面参数' }).textContent).toContain('16:9 / 12秒');
+  expect(screen.getByRole('button', { name: /^(画面参数|音频参数)$/ }).textContent).toContain('16:9 / 12秒');
   // 档位按钮不再管时长：整段区间滑块都能到，摆五颗反而像只有这五档
   expect(pop.querySelector('[aria-label="视频时长（秒）档位"]')).toBeNull();
 });
@@ -2206,10 +2243,10 @@ it('语种这类选项在面板上念中文，交回后端的仍是工作流里�
     },
   });
   const screen = await ready();
-  const pill = screen.getByRole('button', { name: '画面参数' });
+  const pill = screen.getByRole('button', { name: /^(画面参数|音频参数)$/ });
   expect(pill.textContent).toContain('自动');
   await fireEvent.click(pill);
-  const pop = await screen.findByRole('dialog', { name: '画面参数' });
+  const pop = await screen.findByRole('dialog', { name: /^(画面参数|音频参数)$/ });
   expect([...pop.querySelectorAll('.cm-ratio-label')].map((el) => el.textContent)).toEqual(['自动', '中文', '葡萄牙文']);
   // 可访问名与 title 保留工作流原值：界面说中文，不该把选项本来的名字弄丢
   const chinese = screen.getByRole('button', { name: 'Chinese' });
@@ -2308,8 +2345,8 @@ it('指定音色那条：参数面板里挑音色，选项读着不像代码名�
     },
   });
   const screen = await ready({ image: AUDIO_CARD });
-  await fireEvent.click(screen.getByRole('button', { name: '画面参数' }));
-  const pop = await screen.findByRole('dialog', { name: '画面参数' });
+  await fireEvent.click(screen.getByRole('button', { name: /^(画面参数|音频参数)$/ }));
+  const pop = await screen.findByRole('dialog', { name: /^(画面参数|音频参数)$/ });
   expect([...pop.querySelectorAll('.cm-pop-title')].map((el) => el.textContent)).toEqual(['音色', '语言']);
   const fu = screen.getByRole('button', { name: 'Uncle_Fu' });
   expect(fu.textContent).toContain('Uncle Fu');
@@ -2492,8 +2529,8 @@ it('指定音色那一格是九张脸：认得出的选项摆头像，语言格�
   // 选中谁，底部那颗胶囊就带上谁的脸——不用点开面板也知道现在用的是哪个音色
   const pillFace = screen.container.querySelector('.cm-pill-face') as HTMLImageElement | null;
   expect(pillFace?.getAttribute('src')).toBe('/voices/vivian.webp');
-  await fireEvent.click(screen.getByRole('button', { name: '画面参数' }));
-  const pop = await screen.findByRole('dialog', { name: '画面参数' });
+  await fireEvent.click(screen.getByRole('button', { name: /^(画面参数|音频参数)$/ }));
+  const pop = await screen.findByRole('dialog', { name: /^(画面参数|音频参数)$/ });
   const grids = [...pop.querySelectorAll('.cm-ratio-grid')];
   const faces = [...grids[0].querySelectorAll('img.cm-ratio-face')];
   expect(faces.map((img) => img.getAttribute('src'))).toEqual([
@@ -2528,8 +2565,8 @@ it('模型自带的其它音色（用户自己练的）不许乱配脸，仍走�
   });
   const screen = await ready({ image: AUDIO_CARD });
   expect(screen.container.querySelector('.cm-pill-face')).toBeNull();
-  await fireEvent.click(screen.getByRole('button', { name: '画面参数' }));
-  const pop = await screen.findByRole('dialog', { name: '画面参数' });
+  await fireEvent.click(screen.getByRole('button', { name: /^(画面参数|音频参数)$/ }));
+  const pop = await screen.findByRole('dialog', { name: /^(画面参数|音频参数)$/ });
   expect(pop.querySelectorAll('img.cm-ratio-face').length).toBe(0);
   expect(pop.querySelectorAll('.cm-ratio-flat').length).toBe(1);
 });
@@ -2549,8 +2586,8 @@ function watch(el: HTMLAudioElement) {
 
 /** 打开底部那颗胶囊上面的参数面板。 */
 async function openPop(screen: Awaited<ReturnType<typeof ready>>) {
-  await fireEvent.click(screen.getByRole('button', { name: '画面参数' }));
-  return screen.findByRole('dialog', { name: '画面参数' });
+  await fireEvent.click(screen.getByRole('button', { name: /^(画面参数|音频参数)$/ }));
+  return screen.findByRole('dialog', { name: /^(画面参数|音频参数)$/ });
 }
 
 const sampleOf = (screen: Awaited<ReturnType<typeof ready>>) =>
@@ -2635,7 +2672,7 @@ it('收起参数面板必须停音：重开面板不许还有人挂着在放', a
   const sample = watch(sampleOf(screen));
   await fireEvent.click(voiceCell(screen, 'Eric'));
   await tick();
-  await fireEvent.click(screen.getByRole('button', { name: '画面参数' }));
+  await fireEvent.click(screen.getByRole('button', { name: /^(画面参数|音频参数)$/ }));
   await tick();
   expect(sample.pause).toHaveBeenCalledTimes(1);
   const pop = await openPop(screen);
@@ -2746,7 +2783,7 @@ const nineLang = () => routes({ ...baseRoutes(), '/api/clone/templates': { items
 it('点 Ryan 就把语种换成英文：官方表里他 native 就是 English', async () => {
   nineLang();
   const screen = await ready({ image: AUDIO_CARD });
-  const pill = screen.getByRole('button', { name: '画面参数' });
+  const pill = screen.getByRole('button', { name: /^(画面参数|音频参数)$/ });
   await openPop(screen);
   watch(sampleOf(screen));
   // 载入时已经落在默认那位（Vivian）的母语上，不再是工作流自带那份「自动」
@@ -2843,7 +2880,7 @@ it('载入默认就是 Ryan 的工作流：语种已经是英文，不用先点�
   expect(pressed(screen, 'English')).toBe('true');
   expect(pressed(screen, 'Auto')).toBe('false');
   // 胶囊那行字跟着母语走，不点开面板也知道这次说什么语种
-  expect(screen.getByRole('button', { name: '画面参数' }).textContent).toContain('Ryan / 英文');
+  expect(screen.getByRole('button', { name: /^(画面参数|音频参数)$/ }).textContent).toContain('Ryan / 英文');
 });
 
 it('载入时语种格里没有英文就不动：还是工作流自带那份自动', async () => {
@@ -3438,7 +3475,7 @@ it('生成中那一格跟着所选比例出形状：16:9 不等成竖板，认�
   expect(stage().className).toContain('is-ratio');
   expect(arOf(stage())).toEqual(['1', '1']);
   // 换到 16:9：不用等跑完，形状当场变横（提交时交出去的那颗比例就是这一格的形状，同一个来源）
-  await fireEvent.click(screen.getByRole('button', { name: '画面参数' }));
+  await fireEvent.click(screen.getByRole('button', { name: /^(画面参数|音频参数)$/ }));
   await fireEvent.click(screen.getByRole('button', { name: '16:9' }));
   await tick();
   expect(arOf(stage())).toEqual(['16', '9']);

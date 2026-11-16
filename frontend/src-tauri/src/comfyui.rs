@@ -630,9 +630,14 @@ mod tests {
     fn comfyui_windows_hand_drops_and_clipboard_to_the_page() {
         // 这两个 webview flag 只在运行时生效，单元测试跑不出来，所以监住源码：
         // 工作流窗口和弹窗窗口都必须同时关掉 Tauri 拖拽、打开剪贴板读取。
+        // 按行数，别按字节串找：Windows 上 core.autocrlf=true，工作区是 CRLF，
+        // 写死 "\n        .xxx()\n" 这种模式一个都匹配不上（仓库在 LF 下提交，工作区是 CRLF）。
         let source = include_str!("comfyui.rs");
-        let drops = source.matches("\n        .disable_drag_drop_handler()\n").count();
-        let clipboard = source.matches("\n        .enable_clipboard_access()\n").count();
+        let count_calls = |needle: &str| {
+            source.lines().filter(|line| line.trim() == needle).count()
+        };
+        let drops = count_calls(".disable_drag_drop_handler()");
+        let clipboard = count_calls(".enable_clipboard_access()");
         assert_eq!(drops, 2, "ComfyUI 窗口丢了 disable_drag_drop_handler");
         assert_eq!(clipboard, 2, "ComfyUI 窗口丢了 enable_clipboard_access");
     }

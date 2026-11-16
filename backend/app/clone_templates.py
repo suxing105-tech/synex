@@ -1408,7 +1408,7 @@ def public(row: Any) -> dict:
         # 设置页与弹窗要说清这是哪条模型、有没有实测过；notes 是「待实测」那句话的内容。
         data["cloud"] = {"model_label": spec.model_label, "blurb": spec.blurb,
                          "verified": spec.verified, "notes": list(spec.notes),
-                         "provider_label": spec_provider_label(),
+                         "provider_label": spec_provider_label(spec),
                          # mentions=false 时弹窗要禁掉 @ 引用：TTS 会把 <Audio 1> 念出来
                          "mentions": not spec.empty_tags,
                          "ref_limits": dict(spec.refs)}
@@ -1440,10 +1440,10 @@ def public(row: Any) -> dict:
     return data
 
 
-def spec_provider_label() -> str:
+def spec_provider_label(spec) -> str:
     from .cloud import spec as cloud_spec
 
-    return cloud_spec.PROVIDER_LABEL
+    return cloud_spec.provider_for(spec)[1]
 
 
 def list_templates() -> list[dict]:

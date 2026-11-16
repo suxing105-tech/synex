@@ -28,7 +28,7 @@ function innerSvg(el?: Element | null): string {
 
 function chipByText(container: HTMLElement, text: string): HTMLButtonElement {
   const el = [...container.querySelectorAll<HTMLButtonElement>(".chip")]
-    .find((b) => b.textContent?.includes(text));
+    .find((b) => b.getAttribute("aria-label")?.includes(text));
   if (!el) throw new Error(`没有「${text}」chip`);
   return el;
 }
@@ -60,6 +60,7 @@ describe("菜单什么时候出现", () => {
     const { container } = render(TypeChips);
     const labels = [...container.querySelectorAll(".chip .label")].map((el) => el.textContent);
     expect(labels).toEqual(["全部", "图片", "视频", "音频", "文本"]);
+    expect([...container.querySelectorAll(".chip .label")].every((el) => el.classList.contains("sr-only"))).toBe(true);
   });
 
   it("没选文件夹时切到单一类型就不渲染：那种屏的类型控件就是侧栏那五行", async () => {

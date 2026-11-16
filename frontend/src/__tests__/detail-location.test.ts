@@ -8,7 +8,8 @@ import { selectedDetail, refreshSelectedDetail } from "../lib/stores";
 import type { ImageDetail } from "../lib/types";
 
 // 「所属文件夹 = 文件真实位置」这条链路的另外两环：
-// 1) DetailPanel 把 d.path 和 reveal/复制回调一起交给 MetadataCard（图片、视频都要有）；
+// 1) DetailPanel 顶栏「更多操作」菜单里能打开所在文件夹、能复制所在文件夹路径
+//    （图片、视频、音频共用这一套）；
 // 2) 文件被真实移动后，store 负责重拉详情，位置行才不会停在旧目录。
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -32,18 +33,13 @@ afterEach(() => {
 });
 
 describe("DetailPanel 位置接线", () => {
-  it("图片和视频两个分支都把 path 与 reveal/复制回调传给 MetadataCard", () => {
-    const videoIdx = raw.indexOf('{#if d.kind === "video"}');
-    const elseIdx = raw.indexOf("{:else}", videoIdx);
-    expect(videoIdx).toBeGreaterThan(0);
-    expect(elseIdx).toBeGreaterThan(videoIdx);
-    const videoBranch = raw.slice(videoIdx, elseIdx);
-    expect(videoBranch).toContain("path={d.path}");
-    expect(videoBranch).toContain("onRevealLocation={revealLocation}");
-    expect(videoBranch).toContain("onCopyLocation={copyLocation}");
-    expect(raw.slice(elseIdx)).toContain("path={d.path}");
-    expect(raw.slice(elseIdx)).toContain("onRevealLocation={revealLocation}");
-    expect(raw.slice(elseIdx)).toContain("onCopyLocation={copyLocation}");
+  it("位置能力接在顶栏「更多操作」菜单上：能打开所在文件夹、能复制所在文件夹路径", () => {
+    // 2026-11-14 那轮重构把原先的「详情区」整块拆掉，位置行跟着一起没了，
+    // revealLocation / copyLocation 一度变成没人调用的死函数。现在位置能力收进顶栏「更多操作」菜单。
+    expect(raw).not.toContain('data-workbench-section="details"');
+    // 两个函数都得真的被菜单点到（不能只定义没人用）
+    expect(raw.match(/\{\s*revealLocation\(\);\s*closeMenu\(\);\s*\}/g)?.length).toBe(1);
+    expect(raw.match(/\{\s*copyLocation\(\);\s*closeMenu\(\);\s*\}/g)?.length).toBe(1);
   });
 
   it("点击位置先走桌面壳（才能让资源管理器盖在应用上），浏览器版才回退后端 reveal", () => {

@@ -386,6 +386,10 @@ import Icon from "./components/Icon.svelte";
 <style>
   .sidebar-actions { gap: 8px; }
   .sidebar-actions.collapsed-actions { flex-direction: column-reverse; gap: 4px; }
+  /* 收起时这一列底部的「设置」和「更新」要跟上面的导航图标同一副底框。两颗平时写死
+     w-10 h-10（40），只有 .collapsed-actions 在场时才收到 --rail-btn，展开态不动。
+     :global 是因为更新那颗在 SidebarUpdateButton 里，scoped 样式进不去别人的组件。 */
+  .sidebar-actions.collapsed-actions :global(button) { width: var(--rail-btn); height: var(--rail-btn); }
   .app-shell { height: 100%; padding-top: var(--desktop-titlebar-height); }
   /* 沉浸满屏：左右两栏和分隔线整块退场，网格独占整屏（0 宽会漏出内容，所以直接 display:none）。 */
   .app-grid.immersive > aside,

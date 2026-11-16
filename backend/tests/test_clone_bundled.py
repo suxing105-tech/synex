@@ -25,6 +25,9 @@ DESIGN_KEY = "qwen3-tts-voice-design"
 CUSTOM_KEY = "qwen3-tts-custom-voice"
 ALL_KEYS = [IMAGE_KEY, MASK_KEY, VIDEO_KEY, AUDIO_KEY, DESIGN_KEY, CUSTOM_KEY]
 AUDIO_LABELS = {"闪寻参考音色", "闪寻音色描述", "闪寻指定音色"}
+# 局部编辑那条的参考位：图片1 是被改的图（吃遮罩），图片2～图片5 是额外参考图。
+MASK_CELLS = ["193.image", "400.image", "401.image", "402.image", "403.image"]
+MASK_CELL_LABELS = ["图片1", "图片2", "图片3", "图片4", "图片5"]
 
 
 @pytest.fixture
@@ -198,8 +201,9 @@ def test_the_mask_template_is_seeded_but_not_the_default(seeded):
     assert len(image) == 2
     assert [r["name"] for r in image if r["is_active"]] == ["闪寻图片"]
     mask = rows[MASK_LABEL]
-    assert [c["key"] for c in mask["reference_cells"]] == ["193.image"]
-    assert [c["kind"] for c in mask["reference_cells"]] == ["image"]
+    assert [c["key"] for c in mask["reference_cells"]] == MASK_CELLS
+    assert [c["label"] for c in mask["reference_cells"]] == MASK_CELL_LABELS
+    assert [c["kind"] for c in mask["reference_cells"]] == ["image"] * len(MASK_CELLS)
 
 
 def test_the_mask_template_ships_the_slot_contracts(seeded):
@@ -271,6 +275,61 @@ def test_a_slot_only_update_still_reaches_an_untouched_builtin(seeded):
     assert [s for s in after if s.get("kind") == "prompt"] == [
         s for s in after if clone_templates.slot_key(s) == "307.value"]
     assert clone_bundled.seed(conn)["updated"] == [], "刷完就稳了，别每次启动都重写一遍"
+
+
+def test_the_extra_reference_cells_reach_the_repaint_branch():
+    """图片2～图片5 是真接进重绘分支的参考位，不是弹窗里摆着好看的四张空框。
+
+    一格一格对得上才算数：弹窗里编号 N 的那格必须接进 255（局部重绘那台文本编码）的
+    image_0N——孤海节点就是按 image_01、image_02… 的顺序把参考图摆进上下文的，错位一格，
+    用户写的「@图片2」指的就是另一张图，而且一声不吭。
+    移除分支（118 那台，指令是写死的）不吃参考图：给它接参考是白跑一趟视觉编码。
+    """
+    entry = [e for e in clone_bundled.entries() if e["key"] == MASK_KEY][0]
+    nodes, slots = clone_bundled._prepare(entry)
+    cells = clone_templates.reference_cells(slots)
+    assert [c["key"] for c in cells] == MASK_CELLS
+    assert [c["mask"] for c in cells] == ["alpha", "", "", "", ""], "只有图片1吃遮罩"
+    for index, cell in enumerate(cells[1:], start=2):
+        loader = str(cell["key"].split(".", 1)[0])
+        assert nodes[loader]["class_type"] == "LoadImage", loader
+        assert nodes["255"]["inputs"][f"image_{index:02d}"] == [loader, 0], cell["label"]
+    assert [k for k in nodes["118"]["inputs"] if str(k).startswith("image")] == ["image_01"], \
+        "移除分支不该被塞进参考图"
+
+
+def test_unfilled_reference_cells_are_cut_before_submit():
+    """只喂两张时，空着的加载器必须整条摘掉，连 255 上那几根线一起断。
+
+    留着没喂图的 LoadImage，ComfyUI 会安静地拿工作流里那份占位素材出片：弹窗里只放了两张，
+    出图却参考了五张，这种「看着对、其实错」最难查。摘完还不许留下指向已删节点的连线——
+    ComfyUI 会为一个悬空输入把整条请求打回。
+    """
+    entry = [e for e in clone_bundled.entries() if e["key"] == MASK_KEY][0]
+    nodes, slots = clone_bundled._prepare(entry)
+    keys = [c["key"] for c in clone_templates.reference_cells(slots)]
+    loaders = [key.split(".", 1)[0] for key in keys[1:]]
+    for filled in (1, 2, 5):
+        refs = {key: f"up{i}.png" for i, key in enumerate(keys[:filled])}
+        workflow, _titles = clone_templates.build_workflow(
+            nodes, slots, prompt="换成图片2里的东西", references=refs, info=None,
+            randomize_seed=False)
+        assert [nid for nid in loaders if nid in workflow] == loaders[:filled - 1], filled
+        want = ["image_01"] + [f"image_{i:02d}" for i in range(2, filled + 1)]
+        assert [k for k in workflow["255"]["inputs"]
+                if str(k).startswith("image")] == want, filled
+        dangling = [(nid, key) for nid, node in workflow.items()
+                    for key, value in (node.get("inputs") or {}).items()
+                    if isinstance(value, list) and str(value[0]) not in workflow]
+        assert dangling == [], filled
+        assert workflow["38"]["inputs"]["images"] == ["262", 0], "出图那条链不能被剪断"
+
+
+def test_the_mask_template_offers_multi_reference(seeded):
+    """加了参考格就得真的给出「多图编辑」这一档，否则弹窗里那几格是摆设。"""
+    rows = {r["name"]: r for r in clone_templates.list_templates()}
+    modes = rows[MASK_LABEL]["modes"]
+    assert "single" in modes and "multi" in modes, modes
 
 
 def test_the_mask_template_is_the_only_one_with_a_brush(seeded):
@@ -538,12 +597,14 @@ def test_a_builtin_refuses_redetect(seeded, monkeypatch):
         res = client.post(f"/api/clone/templates/{mask['id']}/redetect")
         assert res.status_code == 409
         assert "导入一份属于自己" in res.json()["detail"]
-        # 没动库：槽位还是随包那一套（五个槽位、图片1 能画遮罩）
+        # 没动库：槽位还是随包那一套（1 条提示词 + 5 个参考位 + 3 颗旋钮）
         after = client.get("/api/clone/templates").json()["items"]
         row = [r for r in after if r["name"] == MASK_LABEL][0]
-        assert len(row["slots"]) == 5
+        assert len(row["slots"]) == 9
         assert row["control_count"] == 3
-        assert [s.get("mask") for s in row["slots"] if s.get("kind") == "image"] == ["alpha"]
+        images = [s for s in row["slots"] if s.get("kind") == "image"]
+        masks = [str(s.get("mask") or "") for s in images]
+        assert masks == ["alpha", "", "", "", ""], "五格里只有图片1 能画遮罩"
 
 
 

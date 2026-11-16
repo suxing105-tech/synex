@@ -763,7 +763,7 @@
   }
   .vp-progress-top { display: flex; align-items: center; gap: var(--sp-2); }
   .vp-progress-title { font-size: var(--fs-2xs); font-weight: 600; color: #fda4a4; }
-  .vp-progress-time { margin-left: auto; font-size: var(--fs-2xs); color: #a1a1aa; font-variant-numeric: tabular-nums; }
+  .vp-progress-time { margin-left: auto; font-size: var(--fs-2xs); color: #a1a1aa; font-family: var(--font-condensed); font-variant-numeric: tabular-nums; }
   .vp-progress-note { font-size: var(--fs-2xs); line-height: var(--lh-ui); color: #a1a1aa; }
   .vp-bar { position: relative; display: block; height: 3px; border-radius: var(--r-pill); background: #2a2a30; overflow: hidden; }
   .vp-bar i {

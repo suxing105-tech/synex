@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""子集化「寒蝉德黑体 ChillDINGothic」，产出随包分发的三个 woff2 字重。
+"""子集化「寒蝉德黑体 ChillDINGothic」，产出随包分发的 woff2 字面。
 
 用法（正常情况由 frontend/scripts/fetch-fonts.ps1 调用，不用手打）：
 
@@ -8,7 +8,12 @@
         --src vendor\\fonts\\extracted --out frontend\\src\\assets\\fonts ^
         --face Regular=ChillDINGothic_Regular.ttf:400 ^
         --face Medium=ChillDINGothic_Medium.ttf:500 ^
-        --face SemiBold=ChillDINGothic_SemiBold.ttf:600
+        --face SemiBold=ChillDINGothic_SemiBold.ttf:600 ^
+        --face Regular=ChillDINGothic_ConRegular.ttf:400@"SeekX Sans Condensed"
+
+@字族名（可省）= 从同一个上游再派生一颗内部字族。窄体（Con 系列）不是多出来的字重，
+是同一字重的另一套宽度，CSS 里靠 font-family 选、不靠 font-weight，所以它得有自己的名字；
+名字同样不许沿用上游保留名，写法是在 --family 后面接后缀（"SeekX Sans" + " Condensed"）。
 
 为什么要自己子集化：上游发布包是整族全字库（多字重 × 多格式），原样进安装包不现实；
 但只切「界面用字」又不够——本程序要渲染用户自己的文件名、提示词和文本库正文，
@@ -258,8 +263,9 @@ def main() -> int:
         "--face",
         action="append",
         required=True,
-        metavar="STEM=FILE:WEIGHT",
-        help="一个字重一条，如 Regular=ChillDINGothic_Regular.ttf:400",
+        metavar="STEM=FILE:WEIGHT[@FAMILY]",
+        help="一个字面一条，如 Regular=ChillDINGothic_Regular.ttf:400；"
+        "同一字重的另一套宽度（窄体）在后面接 @内部字族名",
     )
     ap.add_argument("--family", default="SeekX Sans", help="改名后的内部字族名")
     ap.add_argument("--upstream", default="", help="上游名字，写进 manifest")
@@ -268,7 +274,7 @@ def main() -> int:
     ap.add_argument("--archive-sha256", default="", help="上游 zip 的 sha256")
     ap.add_argument("--license", default="vendor/fonts/OFL-1.1.txt", help="官方 OFL 1.1 原文模板")
     ap.add_argument("--license-name", default="OFL-SeekX-Sans.txt")
-    ap.add_argument("--budget-kb", type=int, default=12288, help="三档合计体积上限（KB），超了硬失败")
+    ap.add_argument("--budget-kb", type=int, default=12288, help="全部字面合计体积上限（KB），超了硬失败")
     args = ap.parse_args()
 
     src_dir = Path(args.src)
@@ -276,7 +282,7 @@ def main() -> int:
     codes, groups = build_charset()
     print(f"==> 字符集 {len(codes)} 码位（{', '.join(f'{k} {v}' for k, v in groups.items())}）")
 
-    # 上游缺哪些码位是字族层面的事实，报一次就够，别按字重重复三遍。
+    # 上游缺哪些码位是字族层面的事实，报一次就够，别按字面逐条重复。
     probe = TTFont(str(src_dir / args.face[0].split("=", 1)[1].rsplit(":", 1)[0]), fontNumber=0, lazy=True)
     missing = sorted(codes - font_chars(probe))
     if missing:
@@ -291,22 +297,30 @@ def main() -> int:
     for spec in args.face:
         stem, _, rest = spec.partition("=")
         filename, _, weight = rest.rpartition(":")
-        faces.append((stem.strip(), filename.strip(), int(weight)))
+        weight, _, fam = weight.partition("@")
+        faces.append((stem.strip(), filename.strip(), int(weight), fam.strip() or args.family))
 
     files = []
-    for stem, filename, weight in faces:
+    for stem, filename, weight, fam in faces:
         src = src_dir / filename
         if not src.is_file():
             print(f"ERROR 找不到上游原件：{src}", file=sys.stderr)
             return 2
-        out = out_dir / f"seekx-sans-{stem.lower()}.woff2"
-        print(f"==> {stem} ({weight}) ← {filename}")
-        subset_one(src, out, codes, args.family, stem, weight)
+        if fam == args.family:
+            out = out_dir / f"seekx-sans-{stem.lower()}.woff2"
+        else:
+            # 派生字族：拿字族名相对 --family 多出来的那段当文件名后缀，于是窄体 Regular
+            # 落到 seekx-sans-condensed-regular.woff2，不会盖掉常规档同名的那只。
+            alias = fam[len(args.family) :].strip().lower().replace(" ", "-") or fam.lower().replace(" ", "-")
+            out = out_dir / f"seekx-sans-{alias}-{stem.lower()}.woff2"
+        print(f"==> {stem} ({weight}) [{fam}] ← {filename}")
+        subset_one(src, out, codes, fam, stem, weight)
         size = out.stat().st_size
         print(f"    {out.as_posix()}  {size / 1024:.0f} KB")
         files.append(
             {
                 "file": out.name,
+                "family": fam,
                 "subfamily": stem,
                 "weight": weight,
                 "bytes": size,
@@ -325,8 +339,9 @@ def main() -> int:
         )
         return 2
     first = probe
+    families = sorted({f["family"] for f in files})
     note = (
-        "本程序随包分发的字体是上述字体的子集化改名版，内部字族名 " + args.family + "："
+        "本程序随包分发的字体是上述字体的子集化改名版，内部字族名 " + "、".join(families) + "："
         "只保留界面与常用中文所需码位，并去掉未用到的字重。\n"
         "上游：" + args.upstream + " " + args.version + "（" + args.url + "）。"
         "改名依据 OFL 1.1 的 Reserved Font Name 条款——子集不得沿用原字族名。"
@@ -337,6 +352,7 @@ def main() -> int:
 
     manifest = {
         "family": args.family,
+        "families": families,
         "upstream": {
             "name": args.upstream,
             "familyNames": font_family_names(first),

@@ -911,7 +911,7 @@
   .me-btn.is-on { background: var(--accent); color: var(--accent-ink); }
   .me-btn-go { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
   .me-btn-go:hover { background: var(--accent-strong); }
-  .me-zoom { min-width: 44px; text-align: center; color: var(--text-1); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+  .me-zoom { min-width: 44px; text-align: center; color: var(--text-1); font-size: var(--fs-sm); font-family: var(--font-condensed); font-variant-numeric: tabular-nums; }
   .me-slider { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--text-2); font-size: var(--fs-xs); }
   .me-slider input { width: 96px; height: 24px; accent-color: var(--accent); }
   .me-slider b { min-width: 34px; color: var(--text-1); font-weight: 500; font-variant-numeric: tabular-nums; }

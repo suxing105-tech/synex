@@ -1,5 +1,9 @@
 {
   "family": "SeekX Sans",
+  "families": [
+    "SeekX Sans",
+    "SeekX Sans Condensed"
+  ],
   "upstream": {
     "name": "ChillDINGothic",
     "familyNames": [
@@ -15,38 +19,50 @@
   "charsetGroups": {
     "latin+punct": 2898,
     "gb2312": 6763,
-    "source": 1590
+    "source": 1591
   },
-  "totalBytes": 4787936,
+  "totalBytes": 5937620,
   "licenseFile": "frontend/src-tauri/resources/OFL-SeekX-Sans.txt",
   "files": [
     {
       "file": "seekx-sans-regular.woff2",
+      "family": "SeekX Sans",
       "subfamily": "Regular",
       "weight": 400,
-      "bytes": 1169868,
-      "sha256": "68734005c5de9cbc489927f2af24858bc50a24be802757247850fa70be8bd5b8"
+      "bytes": 1169664,
+      "sha256": "2e18cb6c5778d3ca630831f7ec7e4e5997cc1b109392f86517243339977b5da2"
     },
     {
       "file": "seekx-sans-medium.woff2",
+      "family": "SeekX Sans",
       "subfamily": "Medium",
       "weight": 500,
-      "bytes": 1199136,
-      "sha256": "813f025f306dd47b753ddf0216662d0b14960bf5a0e6897ba7b7a5409aa2fe0b"
+      "bytes": 1198836,
+      "sha256": "446cbe436ad0574319a42323a617f44cca10333c072672e854dfab87e8dc6645"
     },
     {
       "file": "seekx-sans-semibold.woff2",
+      "family": "SeekX Sans",
       "subfamily": "SemiBold",
       "weight": 600,
-      "bytes": 1209808,
-      "sha256": "c05cee05542a009f6a3d7ebb381bc36ca6b8983845732483a4337fc7b1845a92"
+      "bytes": 1209524,
+      "sha256": "39cbdda5765087a98abd675eaf1b64c54fc0b19afb33c9097ba67fffd6af7d09"
     },
     {
       "file": "seekx-sans-bold.woff2",
+      "family": "SeekX Sans",
       "subfamily": "Bold",
       "weight": 700,
-      "bytes": 1209124,
-      "sha256": "2093200a2a7f5e1131aa15698edd23d0bb10f371e5c814e92d752f27f7a8c7b7"
+      "bytes": 1209668,
+      "sha256": "bb13ce0fd093bb711f4ef857ed50c16ce981e5798afaf9ddc9d9b710d36f1fbe"
+    },
+    {
+      "file": "seekx-sans-condensed-regular.woff2",
+      "family": "SeekX Sans Condensed",
+      "subfamily": "Regular",
+      "weight": 400,
+      "bytes": 1149928,
+      "sha256": "c849dc1edf61fb2124b7d882cc2443b93ba56681865c6669dfa11836e4071d95"
     }
   ]
 }

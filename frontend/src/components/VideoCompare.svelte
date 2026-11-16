@@ -257,7 +257,7 @@
   .bar-btn { width: 34px; height: 34px; border-radius: var(--r-circle); background: #fff2; color: #fff; display: flex; align-items: center; justify-content: center; }
   .bar-btn:hover { background: #fff4; }
   .seek { flex: 1; accent-color: #f24e4e; }
-  .time { color: #ccc; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .time { color: #ccc; font-size: var(--fs-xs); font-family: var(--font-condensed); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .sync-badge { font-size: var(--fs-2xs); color: #9fe0a0; background: #2e7d3226; border: 1px solid #2e7d3255; border-radius: var(--r-pill); padding: var(--sp-05) var(--sp-2); white-space: nowrap; }
   .sync-badge.off { color: #bbb; background: #ffffff14; border-color: #ffffff22; }
   .side-stage { flex: 1; min-height: 0; display: flex; gap: var(--sp-3); }

@@ -30,13 +30,15 @@ const manifest = JSON.parse(
   readFileSync(join(fontDir, "fonts-manifest.json"), "utf8"),
 ) as {
   family: string;
+  /** 内部字族的全部名字：常规档 + 窄体（窄体不是字重，是另一颗字族）。 */
+  families: string[];
   upstream: { name: string; familyNames: string[]; version: string; archiveSha256: string };
   renamedBecause: string;
   codepoints: number;
   charsetGroups: Record<string, number>;
   totalBytes: number;
   licenseFile: string;
-  files: { file: string; subfamily: string; weight: number; bytes: number; sha256: string }[];
+  files: { file: string; family: string; subfamily: string; weight: number; bytes: number; sha256: string }[];
 };
 
 /**
@@ -45,8 +47,14 @@ const manifest = JSON.parse(
  * 「要 700」只能拿 600 顶着，弹窗标题和加粗的按钮文字其实是同一个重量——这一档买的是真层级。
  */
 const WEIGHTS = [400, 500, 600, 700];
-/** 四档合计 4.6 MB，预算 12 MB；超了就是安装包变胖，得先讨论。 */
+/** 五只字面合计约 5.7 MB，预算 12 MB；超了就是安装包变胖，得先讨论。 */
 const BUDGET_BYTES = 12 * 1024 * 1024;
+
+/**
+ * 内部字族只有这两颗。窄体（上游 ConRegular）不是第五档字重，是同一档 400 的另一套宽度，
+ * CSS 靠 font-family 选它，所以它必须有自己的名字，也只能自己出现在这份清单里。
+ */
+const FAMILIES = ["SeekX Sans", "SeekX Sans Condensed"];
 
 const tokenBlock = (() => {
   const start = appCss.indexOf(":root {");
@@ -62,13 +70,21 @@ const tokenOf = (name: string) => {
 };
 
 describe("随包字体：来源可追", () => {
-  it("manifest 记全了上游身份，字重四档、按序、不重复", () => {
+  it("manifest 记全了上游身份，字面清单逐条对得上", () => {
     expect(manifest.family).toBe("SeekX Sans");
     expect(manifest.upstream.version).toMatch(/^v\d+\.\d+$/);
     expect(manifest.upstream.archiveSha256).toMatch(/^[0-9a-f]{64}$/);
     // 上游自报的字族名（含中文）由脚本从字体 name 表里读，不靠人抄
     expect(manifest.upstream.familyNames.length).toBeGreaterThan(0);
-    expect(manifest.files.map((f) => f.weight)).toEqual([...WEIGHTS].sort((a, b) => a - b));
+    expect(manifest.families).toEqual(FAMILIES);
+    // 逐条钉住「谁家的哪一档」：加一只字面得先在这里说清楚，再去看体积代价。
+    expect(manifest.files.map((f) => f.family + " " + f.weight)).toEqual([
+      "SeekX Sans 400",
+      "SeekX Sans 500",
+      "SeekX Sans 600",
+      "SeekX Sans 700",
+      "SeekX Sans Condensed 400",
+    ]);
   });
 
   it("woff2 都在，字节数和 manifest 一致（手塞一只进来会红在这里）", () => {
@@ -99,8 +115,10 @@ describe("随包字体：SIL OFL 义务履行到位", () => {
   it("内部字族名已按 Reserved Font Name 条款改掉", () => {
     expect(manifest.renamedBecause).toContain("Reserved Font Name");
     // 上游的保留名（manifest 里从字体 name 表读来的那一个）不许当内部名用
-    for (const upstream of manifest.upstream.familyNames) {
-      expect(manifest.family).not.toBe(upstream);
+    for (const internal of manifest.families) {
+      for (const upstream of manifest.upstream.familyNames) {
+        expect(internal, "内部字族名沿用了上游保留名：" + internal).not.toBe(upstream);
+      }
     }
   });
 
@@ -150,6 +168,15 @@ describe("字族只有一个入口", () => {
     expect(stack).toContain("Microsoft YaHei");
   });
 
+  it("--font-condensed 第一档是窄体，缺字先回常规字族，最后才轮到中文兜底", () => {
+    const stack = tokenOf("--font-condensed");
+    expect(stack.startsWith('"' + FAMILIES[1] + '"'), "--font-condensed 第一档不是窄体").toBe(true);
+    // 窄体和常规档切的是同一套码位，但它是另一颗字族：真掉字时必须先回到 SeekX Sans，
+    // 直接掉到雅黑会让同一行换一种骨架，那比缺字还显眼。
+    expect(stack.indexOf('"SeekX Sans"'), "--font-condensed 没把常规字族放在第二档").toBeGreaterThan(0);
+    expect(stack).toContain("Microsoft YaHei");
+  });
+
   it("--font-mono 真的被定义了（改之前有人引用它，但全站没定义过）", () => {
     expect(tokenOf("--font-mono")).toContain("ui-monospace");
     const detailPanel = readFileSync(join(srcRoot, "components", "DetailPanel.svelte"), "utf8");
@@ -164,12 +191,13 @@ describe("字族只有一个入口", () => {
     const block = tailwindConfig.slice(at, tailwindConfig.indexOf("},", at));
     expect(block).toContain('sans: ["var(--font-sans)"]');
     expect(block).toContain('mono: ["var(--font-mono)"]');
+    expect(block).toContain('condensed: ["var(--font-condensed)"]');
     // 出现具体字族名就是第二份真源，:root 改了它不会跟着改
     expect(block.match(/"(?:Segoe|PingFang|Microsoft|Consolas|monospace|sans-serif)/g) || [],
       "fontFamily 里又写了一份具体字体栈").toEqual([]);
   });
 
-  it("四档 @font-face 与 manifest 一一对应", () => {
+  it("@font-face 与 manifest 一一对应（按字族+字重配对，400 会出现两次）", () => {
     const faces = [...appCss.matchAll(
       /@font-face\s*\{([^}]+)\}/g,
     )].map((m) => {
@@ -181,12 +209,21 @@ describe("字族只有一个入口", () => {
         src: pick("src"),
       };
     });
-    expect(faces.map((f) => f.weight).sort((a, b) => a - b)).toEqual(WEIGHTS);
+    expect(faces.length, "@font-face 的只数和 manifest 不一致").toBe(manifest.files.length);
+    for (const fam of FAMILIES) {
+      expect(faces.some((f) => f.family === '"' + fam + '"'), "app.css 里没有 " + fam + " 的 @font-face").toBe(true);
+    }
+    // 常规字族四档必须齐；窄体只带 400，想多一档先谈体积（一只约 1.2MB）。
+    expect(
+      faces.filter((f) => f.family === '"' + manifest.family + '"').map((f) => f.weight).sort((a, b) => a - b),
+      "常规字族的字重档变了",
+    ).toEqual(WEIGHTS);
     for (const face of faces) {
-      expect(face.family).toBe('"' + manifest.family + '"');
       expect(face.src, "缺 format(\"woff2\")").toContain('format("woff2")');
-      const declared = manifest.files.find((f) => f.weight === face.weight);
-      expect(declared, "字重 " + face.weight + " 在 manifest 里没有对应文件").toBeTruthy();
+      const declared = manifest.files.find(
+        (f) => '"' + f.family + '"' === face.family && f.weight === face.weight,
+      );
+      expect(declared, "字面 " + face.family + " " + face.weight + " 在 manifest 里没有对应文件").toBeTruthy();
       expect(face.src).toContain("./assets/fonts/" + declared!.file);
     }
   });

@@ -149,16 +149,17 @@ describe("字族只有一个入口", () => {
   const FAMILY_ALLOWED = [
     // @font-face 是在**声明**这颗字体本身，不是引用一个栈。
     { file: "app.css", why: "@font-face 声明 SeekX Sans 自己", re: /^"SeekX Sans"$/ },
+    { file: "app.css", why: "@font-face 声明窄体自己（另一颗内部字族）", re: /^"SeekX Sans Condensed"$/ },
   ];
 
-  it("font-family 只引用 var(--font-sans)/var(--font-mono)/inherit", () => {
+  it("font-family 只引用 var(--font-sans)/--font-mono/--font-condensed/inherit", () => {
     const offenders: string[] = [];
     for (const f of SOURCES) {
       f.lines.forEach((line, i) => {
         const m = line.match(/(?<![-\w])font-family:\s*([^;}\n]+)/);
         if (!m) return;
         const value = m[1].trim().replace(/;$/, "");
-        if (/^var\(--font-(?:sans|mono)\)$/.test(value) || value === "inherit") return;
+        if (/^var\(--font-(?:sans|mono|condensed)\)$/.test(value) || value === "inherit") return;
         const ok = FAMILY_ALLOWED.some((a) => a.file === f.rel && a.re.test(value));
         if (!ok) offenders.push(f.rel + ":" + (i + 1) + "  " + value);
       });
@@ -169,8 +170,82 @@ describe("字族只有一个入口", () => {
   it("站内不存在指向不存在 token 的字族引用", () => {
     // 右键菜单曾经写的是 var(--font-ui, sans-serif)：--font-ui 从来没人定义过，
     // 于是那一片界面一直在用系统 sans，12.5px 也不在七档里。这类 bug 只有查引用才会红。
-    const hits = find(/var\(--font-(?!sans|mono)[\w-]+/g);
+    const hits = find(/var\(--font-(?!sans|mono|condensed)[\w-]+/g);
     expect(hits, "引用了没定义过的字族 token：\n" + hits.join("\n")).toEqual([]);
+  });
+});
+
+describe("窄体只落在整行数据读出", () => {
+  /**
+   * 窄体（SeekX Sans Condensed）是同一档 400 的另一套宽度，不是第五档字重，所以它按**整行**给：
+   * 这个元素整段都是数字 / 尺寸 / 时长 / 大小，才换。嵌在中文里的孤立数字不许单独换字族——
+   * 一个 12px 的数字挨着中文标签，省不出宽度，只会让中英两种宽度打架。
+   *
+   * 于是这里同时钉三件事：落点不许变多（也不许悄悄变少，少了一处就是那个读数掉回常规字族）、
+   * 每处必须自己带上等宽数字（换字族不解决数字跳位，两件事必须一起来）、
+   * 窄体只带 400 一档（别拿它当「小一号的字」，那是字号档位的事）。
+   *
+   * 故意没进来的，连同理由：滑块旁那一两位的值回显（.mp-cols-num、.me-slider b）和省不出宽度的
+   * 计数（.chip .n、.pft-count、.me-count、.cm-hero-count、.queue-elapsed）；已经走 font-mono 的
+   * 参数值（ParamsCard）保持等宽栈，别在同一行里混进第三种宽度。
+   */
+  const CONDENSED_ALLOWED = [
+    { file: "app.css", sel: ".media-card-meta", why: "瀑布流卡片页脚：尺寸/时长/时间整行" },
+    { file: "app.css", sel: ".viewer-zoom-readout", why: "查看器倍率读数" },
+    { file: "components/CloneModal.svelte", sel: ".cm-hero-dims", why: "主图下面的尺寸/大小行" },
+    { file: "components/CloneModal.svelte", sel: ".cm-stage-clock", why: "跑图阶段的已用时读数" },
+    { file: "components/CloneModal.svelte", sel: ".cm-pop-size", why: "参数弹层里的大小读数" },
+    { file: "components/VideoCompare.svelte", sel: ".time", why: "对比视图的播放时间" },
+    { file: "components/VideoPromptPanel.svelte", sel: ".vp-progress-time", why: "反推进度的时间读数" },
+    { file: "components/MaskEditor.svelte", sel: ".me-zoom", why: "蒙版编辑器的倍率读数" },
+  ];
+
+  /** 把「哪条规则在用窄体」抽出来：整块规则 + 它自己的选择器。 */
+  const condensedRules = () => {
+    const found: { file: string; sel: string; block: string }[] = [];
+    for (const path of FILES) {
+      const text = stripComments(readFileSync(path, "utf8"));
+      for (const m of text.matchAll(/\{([^{}]*)\}/g)) {
+        const body = m[1];
+        if (!/font-family:\s*var\(--font-condensed\)/.test(body)) continue;
+        const head = text.slice(0, m.index ?? 0).split("\n").pop() || "";
+        found.push({ file: rel(path), sel: head.replace(/\{/, "").trim(), block: body });
+      }
+    }
+    return found;
+  };
+
+  it("用窄体的规则就是白名单那些，且每处自带等宽数字", () => {
+    const found = condensedRules();
+    const unlisted = found.filter(
+      (f) => !CONDENSED_ALLOWED.some((a) => a.file === f.file && a.sel === f.sel),
+    );
+    expect(
+      unlisted.map((f) => f.file + "  " + f.sel),
+      "窄体又散到别的元素上了。它是数据档，不是「看起来挤就换一款」：\n" + unlisted.map((f) => f.file + "  " + f.sel).join("\n"),
+    ).toEqual([]);
+    const gone = CONDENSED_ALLOWED.filter(
+      (a) => !found.some((f) => f.file === a.file && f.sel === a.sel),
+    );
+    expect(
+      gone.map((a) => a.file + "  " + a.sel),
+      "登记过的数据读出掉回了常规字族（白名单里的理由还在吗）：\n" + gone.map((a) => a.file + "  " + a.sel + "  " + a.why).join("\n"),
+    ).toEqual([]);
+    for (const f of found) {
+      expect(
+        f.block,
+        f.file + "  " + f.sel + " 用窄体却没带 font-variant-numeric: tabular-nums：换了字族数字照样跳",
+      ).toContain("font-variant-numeric: tabular-nums");
+    }
+  });
+
+  it("窄体只带 400 一档", () => {
+    const css = stripComments(readFileSync(join(srcRoot, "app.css"), "utf8"));
+    const faces = [...css.matchAll(/@font-face\s*\{([^}]+)\}/g)]
+      .map((m) => m[1])
+      .filter((body) => /font-family:\s*"SeekX Sans Condensed"/.test(body));
+    expect(faces.length, "窄体的 @font-face 只数变了").toBe(1);
+    expect(faces[0], "窄体多出了字重档：数据读出不需要加粗，多一档多 1.2MB").toMatch(/font-weight:\s*400;/);
   });
 });
 

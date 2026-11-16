@@ -2874,7 +2874,7 @@
      被挤的只许是名字——省略号本来就长在它身上；尺寸不许被顶出这一行。 */
   .cm-hero-meta { display: flex; align-items: baseline; gap: var(--sp-2); max-width: 100%; min-width: 0; }
   .cm-hero-meta .cm-hero-name { flex: 0 1 auto; min-width: 0; }
-  .cm-hero-dims { flex: none; margin: var(--sp-05) 0 0; font-size: var(--fs-xs); line-height: var(--lh-label); color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cm-hero-dims { flex: none; margin: var(--sp-05) 0 0; font-size: var(--fs-xs); line-height: var(--lh-label); color: var(--text-3); font-family: var(--font-condensed); font-variant-numeric: tabular-nums; white-space: nowrap; }
   /* 波形是一张扁的后端 PNG：照搬 cm-hero 的 contain 会把它拉成一大块模糊，这里锁住高度。 */
   .cm-hero-wave { width: min(100%, 560px); height: clamp(88px, 18vh, 148px); object-fit: cover; }
   .cm-hero-audio { width: min(100%, 560px); margin-top: var(--sp-3); height: 36px; }
@@ -2925,7 +2925,7 @@
   .cm-stage-orb i:nth-child(2) { animation-delay: .16s; }
   .cm-stage-orb i:nth-child(3) { animation-delay: .32s; }
   .cm-stage-line { margin: 0; font-size: var(--fs-base); font-weight: 600; color: #f4f4f5; }
-  .cm-stage-clock { margin: 0; font-size: var(--fs-xs); color: #9d9da4; font-variant-numeric: tabular-nums; }
+  .cm-stage-clock { margin: 0; font-size: var(--fs-xs); color: #9d9da4; font-family: var(--font-condensed); font-variant-numeric: tabular-nums; }
   /* 台阶条：只在换档时走一段（900ms 缓动），中间不许自己爬——后端不给整条工作流的剩余时间，
      编一条会自己往前蹭的假百分比比诚实的台阶更坏。两条缝钉在 34% 与 76%：跑最久那一段一眼认得出。 */
   .cm-stage-bar { position: relative; width: 212px; height: 3px; border-radius: var(--r-pill); overflow: hidden; background: rgb(255 255 255 / 10%); }
@@ -3258,7 +3258,7 @@
   .cm-pop-title { margin: var(--sp-05) 0 0; font-size: var(--fs-sm); color: #a1a1aa; }
   /* 弹层最底那行是上面那几颗的合算结果：只写数字，不套「尺寸：」这类前缀（2026-11-12 定稿）。
      用 --text-2 不用 --text-3：这行压在 #1a1a1e 的弹层底上还要读得出，是结论不是注脚。 */
-  .cm-pop-size { margin: 0; font-size: var(--fs-sm); line-height: var(--lh-label); color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .cm-pop-size { margin: 0; font-size: var(--fs-sm); line-height: var(--lh-label); color: var(--text-2); font-family: var(--font-condensed); font-variant-numeric: tabular-nums; }
   /* 弹层锚点跟着胶囊在这一排里的位置走。竖排之后这颗恒在底部那一排的最左边（先挑来源、再定参数），
      所以一律贴它左边缘往右长——贴右长会顶穿面板左边界。横排时代它贴着右栏的右边缘，才有 right:0 那条。
      1478×902 实测：本机屏 352..620、API 屏 352..804，面板内容框 351..1127；820/560 宽同样在框里。 */

@@ -4,7 +4,7 @@
 # system stack (Segoe UI / Microsoft YaHei). That is a different typeface on every machine, so the
 # UI had no visual identity and CJK metrics drifted between installs. The upstream release archive
 # is a 75 MB full family, far too heavy to ship, so we vendor it here, subset it to the glyphs the
-# app can actually draw, and commit only the three woff2 faces.
+# app can actually draw, and commit only the woff2 faces.
 #
 # The pins below are what makes this reproducible and reviewable: the archive hash and the license
 # template hash are checked before anything is used. Nothing is fetched at build time -- run this
@@ -13,7 +13,7 @@
 # Layout produced:
 #   vendor\fonts\ChillDINGothic.v1.300.zip        upstream archive      (gitignored)
 #   vendor\fonts\OFL-1.1.txt                     official OFL template (gitignored)
-#   vendor\fonts\extracted\*.otf                 the three weights      (gitignored)
+#   vendor\fonts\extracted\*.otf            the faces we ship         (gitignored)
 #   frontend\src\assets\fonts\seekx-sans-*.woff2 committed; Vite hashes the filename
 #   frontend\src\assets\fonts\fonts-manifest.json committed; upstream + rename provenance
 #   frontend\src-tauri\resources\OFL-SeekX-Sans.txt committed; ships inside the installer
@@ -45,8 +45,28 @@ $OflSha = '1d361a8f8e8ce6e68457dcd93fb56e162e6baa3bbb7e7573a290d44399f6b57e'
 # Bold(700) is the display/key-action tier: with font-synthesis off on <html>, a 700 request with no
 # 700 face silently renders SemiBold(600), so modal titles and the primary button could never get
 # the weight the type spec asks for. One extra face costs about 1.2 MB in the installer.
-$SourceFiles = @('ChillDINGothic_Regular.otf', 'ChillDINGothic_Medium.otf', 'ChillDINGothic_SemiBold.otf', 'ChillDINGothic_Bold.otf')
-$Faces = @('Regular=ChillDINGothic_Regular.otf:400', 'Medium=ChillDINGothic_Medium.otf:500', 'SemiBold=ChillDINGothic_SemiBold.otf:600', 'Bold=ChillDINGothic_Bold.otf:700')
+#
+# The last entry is not a weight. ConRegular is the same 400 in upstream's condensed width class
+# (usWidthClass 4 -> 3; measured -17.8% on "1920x1080", -19.3% on "2.4 MB", CJK glyphs about as
+# narrow as latin), so CSS selects it with font-family, never with font-weight -- that is what the
+# @Family suffix is for, and the OFL rename applies to it too (a subset may not keep the reserved
+# upstream name). subset_fonts.py writes it out as seekx-sans-condensed-regular.woff2 under the
+# internal family "SeekX Sans Condensed". It is for whole data readouts (dimensions, file sizes,
+# timestamps) where the horizontal gain actually shows; see the landing whitelist in app.css.
+$SourceFiles = @(
+    'ChillDINGothic_Regular.otf',
+    'ChillDINGothic_Medium.otf',
+    'ChillDINGothic_SemiBold.otf',
+    'ChillDINGothic_Bold.otf',
+    'ChillDINGothic_ConRegular.otf'
+)
+$Faces = @(
+    'Regular=ChillDINGothic_Regular.otf:400',
+    'Medium=ChillDINGothic_Medium.otf:500',
+    'SemiBold=ChillDINGothic_SemiBold.otf:600',
+    'Bold=ChillDINGothic_Bold.otf:700',
+    'Regular=ChillDINGothic_ConRegular.otf:400@SeekX Sans Condensed'
+)
 
 Write-Host '=== fetch-fonts ===' -ForegroundColor Cyan
 

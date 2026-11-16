@@ -1,7 +1,7 @@
 © 2025 ChillType, with Reserved Font Name 'ChillDINGothic'.
 © 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'.
 
-本程序随包分发的字体是上述字体的子集化改名版，内部字族名 SeekX Sans：只保留界面与常用中文所需码位，并去掉未用到的字重。
+本程序随包分发的字体是上述字体的子集化改名版，内部字族名 SeekX Sans、SeekX Sans Condensed：只保留界面与常用中文所需码位，并去掉未用到的字重。
 上游：ChillDINGothic v1.300（https://github.com/Warren2060/ChillDIN-ChillDINGothic/releases/tag/ChillDINGothic_v1.300）。改名依据 OFL 1.1 的 Reserved Font Name 条款——子集不得沿用原字族名。
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.

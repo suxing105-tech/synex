@@ -15,7 +15,7 @@
       frontend/scripts/fetch-fonts.ps1 生成（下载 → 校验 sha256 → 切子集 → 改名 → 写 manifest）。
       上游 zip 与原件在 vendor/fonts/（不入库），来源和码位口径一律以 fonts-manifest.json 为准。
    2. 改名是授权要求，不是审美选择。字体自己的版权声明写着 with Reserved Font Name
-      'ChillDINGothic'，SIL OFL 1.1 不许子集沿用保留字族名，所以内部只叫 SeekX Sans。
+      'ChillDINGothic'，SIL OFL 1.1 不许子集沿用保留字族名，所以内部只叫 SeekX Sans，窄体那颗叫 SeekX Sans Condensed。
       授权原文随包在 resources/OFL-SeekX-Sans.txt，设置·关于里有看得见的入口。
    3. 子集只覆盖拉丁标点 + GB2312 常用汉字 + 本程序源码里出现过的字。用户素材里没进子集的字
       （全角字母数字、生僻人名用字）会掉给栈里的下一档，所以下一档必须还是中文字体，
@@ -53,6 +53,21 @@
   font-family: "SeekX Sans";
   src: url("./assets/fonts/seekx-sans-bold.woff2") format("woff2");
   font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* 窄体不是第五档字重，是同一档宽度。上游 Con 系列把 usWidthClass 从 4 改到 3，实测：
+   中文平均 advance 882.7→732.7、数字 499.3→410.3；整串 1920×1080 窄 17.8%、2.4 MB 窄 19.3%、
+   提示词反推 窄 16.9%——中英一起压，整行换才不会一行里两种宽度打架。它靠 font-family
+   选、不靠 font-weight，所以是另一颗内部字族，只给整行都是数据读出的地方（卡片页脚、
+   倍率、尺寸、时长、大小）。它只带 400 一档：数据读出不需要加粗，多一档多 1.2MB 不值。
+   上游的 tnum 只是近似等宽（ConRegular 的 tnum 只把 1 调近，7 仍然窄），所以窄体里的
+   数字对齐是近似的；真要严格对齐的地方别用它。 */
+@font-face {
+  font-family: "SeekX Sans Condensed";
+  src: url("./assets/fonts/seekx-sans-condensed-regular.woff2") format("woff2");
+  font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
@@ -127,12 +142,15 @@
   --shade-1: rgb(0 0 0 / 35%);
   --shade-2: rgb(0 0 0 / 50%);
 
-  /* 字族两档，全站唯一来源。tailwind 的 fontFamily 只指这两个 var，不重复写第二份栈。
+  /* 字族三档，全站唯一来源。tailwind 的 fontFamily 只指这三个 var，不重复写第二份栈。
      --font-mono 这条在 2026-11-16 之前是「有人写了 var(--font-mono) 但全站没人定义它」，
      DetailPanel 那处声明一直无效；补上之后 font-mono 这个 class 也才真的有用。
      等宽栈只管拉丁，中文交给同一个 SeekX Sans，别让代码块里的中文跳成雅黑。 */
   --font-sans: "SeekX Sans", "Segoe UI", "Microsoft YaHei", sans-serif;
   --font-mono: ui-monospace, "Cascadia Mono", Consolas, "SeekX Sans", monospace;
+  /* 窄体是数据档，不是另一种字重：只给「整行都是数字 / 尺寸 / 时长 / 大小」的读出。
+     落点白名单在 font-vocabulary.test.ts 里钉着；嵌在中文里的孤立数字不许单独换字族。 */
+  --font-condensed: "SeekX Sans Condensed", "SeekX Sans", "Segoe UI", "Microsoft YaHei", sans-serif;
 
   /* 圆角 5 档 + 两种「完全圆角」（2026-11-16 定稿）。
      旧的 4 档方向没错，但它只管住 25 处，站内另有 233 处把数写死，同一个角色在
@@ -485,12 +503,14 @@ html {
 }
 
 /* 页脚第二行 = 所属文件夹徽标 + 元信息。整行不折行：放不下让徽标自己缩（见下），
-   尺寸/时长/时间都是数字，切一半就没法读了。 */
+   尺寸/时长/时间都是数字，切一半就没法读了。这行整段都是数据读出，所以走窄体：
+   中英一起变窄，不是只压数字。图/视/音三类卡共用这条，文本卡没有元信息行。 */
 .media-card-meta {
   display: flex;
   align-items: center;
   gap: var(--sp-1);
   min-width: 0;
+  font-family: var(--font-condensed);
   font-size: var(--fs-xs);
   line-height: var(--lh-label);
   color: var(--thumb-meta);
@@ -1073,10 +1093,11 @@ html {
   text-decoration: none;
 }
 
-/* 倍率读数：等宽数字 + 固定宽度，滚轮连滚时按钮不会左右跳 */
+/* 倍率读数：等宽数字 + 固定宽度 + 窄体，滚轮连滚时按钮不会左右跳 */
 .viewer-zoom-readout {
   min-width: 3.1em;
   text-align: right;
+  font-family: var(--font-condensed);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-xs);
   color: var(--text-3);

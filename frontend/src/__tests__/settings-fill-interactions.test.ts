@@ -29,7 +29,7 @@ describe("设置与反推使用底色交互", () => {
     expect(apiCss).toMatch(/\.model-settings fieldset \{ max-width: none; \}/);
     expect(promptCss).toMatch(/\.model-settings fieldset \{ max-width: none; \}/);
     // 指令框只出现在「反推指令」那一页：文字压灰一档并加行距，白字压黑底太刺眼
-    expect(promptCss).toMatch(/\.model-settings textarea \{ color: #c2c2ca; line-height: 1\.9/);
+    expect(promptCss).toMatch(/\.model-settings textarea \{ color: #c2c2ca; line-height: var\(--lh-prose\)/);
     expect(apiCss).not.toMatch(/textarea \{ color: /);
     expect(source).not.toMatch(/max-w-\[94vw\]|88vh|bg-black\/75/);
   });

@@ -51,7 +51,7 @@ import Icon from "./Icon.svelte";
   .titlebar-drag { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 0 18px; }
   .titlebar-drag img, .titlebar-drag span { pointer-events: none; }
   .titlebar-drag img { object-fit: contain; }
-  .titlebar-drag span { font-size: 14px; font-weight: 500; }
+  .titlebar-drag span { font-size: var(--fs-base); font-weight: 500; }
   /* 启动期让位给启动页：整条透明、品牌隐去（用 opacity 不删节点，无障碍名与文本还在），
      但拖动区与三个窗口按钮照常可点——启动页铺满整窗全靠这一条兜住可操作性。 */
   .is-booting { background: transparent; border-bottom-color: transparent; }
@@ -59,7 +59,7 @@ import Icon from "./Icon.svelte";
 
   .compact .titlebar-drag { gap: 8px; padding-inline: 12px; }
   .compact .titlebar-drag img { width: 16px; height: 16px; }
-  .compact .titlebar-drag span { font-size: 12px; }
+  .compact .titlebar-drag span { font-size: var(--fs-xs); }
   .window-controls { display: flex; flex-shrink: 0; }
   button { display: flex; align-items: center; justify-content: center; width: 48px; height: 100%; border: 0; color: #c8c8c8; background: transparent; }
   button:hover { background: #ffffff12; color: #fff; }

@@ -105,13 +105,35 @@ describe("字号尺度：七档整数，真源在 :root", () => {
     }
   });
 
-  it("行高只有三轨，值定死", () => {
-    expect(tokensWithPrefix("--lh-")).toEqual(["--lh-label", "--lh-read", "--lh-title"]);
+  // 2026-11-16 第二轮：三轨收成五档。三轨落地当天就发现「界面上的多行短文字」和「成段说明」
+  // 被挤在同一档，而长文阅读那一档（Markdown 正文 1.9）无处可放；--lh-title 1.25 则从头到尾
+  // 没有任何一处用上——单行标题走默认轨就够了。留一个没人用的档位，等于给下一轮留一个歧义。
+  it("行高五档，值定死，并且真的按松紧排开", () => {
+    expect(tokensWithPrefix("--lh-")).toEqual(["--lh-label", "--lh-none", "--lh-prose", "--lh-read", "--lh-ui"]);
+    expect(px("--lh-none")).toBe("1");
     expect(px("--lh-label")).toBe("1.35");
+    expect(px("--lh-ui")).toBe("1.5");
     expect(px("--lh-read")).toBe("1.6");
-    expect(px("--lh-title")).toBe("1.25");
-    expect(parseFloat(px("--lh-title"))).toBeLessThan(parseFloat(px("--lh-label")));
-    expect(parseFloat(px("--lh-read"))).toBeGreaterThan(parseFloat(px("--lh-label")));
+    expect(px("--lh-prose")).toBe("1.9");
+    const num = (n: string) => parseFloat(px(n));
+    expect(num("--lh-none")).toBeLessThan(num("--lh-label"));
+    expect(num("--lh-label")).toBeLessThan(num("--lh-ui"));
+    expect(num("--lh-ui")).toBeLessThan(num("--lh-read"));
+    expect(num("--lh-read")).toBeLessThan(num("--lh-prose"));
+  });
+
+  // 字距三档全是正值：随包字体的中宫和标点是按中文排的，负字距只会把中英混排挤成一团。
+  it("字距三档，只有「拉开分词」这一个用途", () => {
+    expect(tokensWithPrefix("--track-")).toEqual(["--track-badge", "--track-display", "--track-label"]);
+    expect(px("--track-label")).toBe("0.04em");
+    expect(px("--track-badge")).toBe("0.06em");
+    expect(px("--track-display")).toBe("0.12em");
+    const em = (n: string) => parseFloat(px(n));
+    expect(em("--track-label")).toBeLessThan(em("--track-badge"));
+    expect(em("--track-badge")).toBeLessThan(em("--track-display"));
+    for (const name of tokensWithPrefix("--track-")) {
+      expect(em(name), name + " 不许是负字距").toBeGreaterThan(0);
+    }
   });
 
   it("七个字号档位各有一个 class，且都挂在 label 行高轨上", () => {
@@ -132,7 +154,7 @@ describe("字号尺度：七档整数，真源在 :root", () => {
       /"?([\w-]+)"?:\s*\[\s*"var\((--[\w-]+)\)"\s*,\s*\{\s*lineHeight:\s*"([^"]+)"\s*\}\s*\]/g,
     )) {
       if (parsed.has(m[1])) throw new Error("档位 " + m[1] + " 写了两遍");
-      expect(m[3], "text-" + m[1] + " 的行高没走三轨，写的是 " + m[3]).toBe("var(--lh-label)");
+      expect(m[3], "text-" + m[1] + " 的行高没走默认轨，写的是 " + m[3]).toBe("var(--lh-label)");
       parsed.set(m[1], m[2]);
     }
     // 档位数量正好 7：多一个是绕过 :root 自己造档，少一个是有人删了档却没迁干净
@@ -142,6 +164,24 @@ describe("字号尺度：七档整数，真源在 :root", () => {
     }
     // 这个块里不许出现裸 px，否则又多一个真源
     expect(block.match(/\b\d+(?:\.\d+)?px\b/g) || [], "fontSize 块里出现了裸 px").toEqual([]);
+  });
+
+  it("行高表、字距表和字号表同一层：都在 theme，不在 extend", () => {
+    // 和 fontSize 占用内置名同一个道理，见上一条的注释。写在 extend 里就得叫
+    // leading-read2 / tracking-label2 这种第二套名字，等于没收口。
+    const theme = objectBlock(tailwindConfig, "theme: {");
+    const extend = objectBlock(tailwindConfig, "extend:");
+    for (const key of ["lineHeight:", "letterSpacing:"]) {
+      expect(theme, "theme 顶层找不到 " + key).toContain(key);
+      expect(extend, key + " 又跑回 extend 了").not.toContain(key);
+    }
+    const lh = objectBlock(tailwindConfig.slice(tailwindConfig.indexOf("lineHeight: {")), "lineHeight: {");
+    expect([...lh.matchAll(/"(?![w-]+":)[^"]*px[^"]*"/g)], "行高表里不许出现裸 px").toEqual([]);
+    expect(lh).toContain('none: "1"');
+    expect(lh).toContain('read: "var(--lh-read)"');
+    const ls = objectBlock(tailwindConfig.slice(tailwindConfig.indexOf("letterSpacing: {")), "letterSpacing: {");
+    expect(ls).toContain('display: "var(--track-display)"');
+    expect(ls.match(/\d+(?:\.\d+)?em/g) || [], "字距表里又抄了一份具体数值").toEqual([]);
   });
 
   it("字号表定义在 theme.fontSize，不是 theme.extend（要占掉 Tailwind 内置的那几个名字）", () => {
@@ -284,7 +324,7 @@ describe("详情栏共用一把尺子（2026-11-13 oil-ui 评审第一刀 T4 + T
     }
 
     expect(declOf(appCss, ".section-title", "font-size")).toBe("var(--fs-sm)");
-    expect(declOf(appCss, ".section-title", "font-weight")).toBe("650");
+    expect(declOf(appCss, ".section-title", "font-weight")).toBe("600");
     expect(declOf(appCss, ".section-title", "color")).toBe("var(--text-1)");
     expect(declOf(appCss, ".section-title.is-card", "font-size")).toBe("var(--fs-xs)");
     expect(declOf(appCss, ".section-subtitle", "font-size")).toBe("var(--fs-2xs)");
@@ -296,15 +336,35 @@ describe("详情栏共用一把尺子（2026-11-13 oil-ui 评审第一刀 T4 + T
     expect(read("components/DetailPanel.svelte"), ".section-icon 又变回私有定义")
       .not.toMatch(/\.section-icon\s*\{/);
   });
-  it("右栏那族微标签全站只剩一套写法（第三刀 T9）", () => {
-    // OnboardingModal 那一处是弹窗里的表单标签，不是详情栏小节，登记在评审总账里没动
-    const hits = collectSourceFiles(srcRoot)
-      .filter((f) => f.endsWith(".svelte"))
-      .filter((f) => /text-\[11px\][^"]*uppercase|uppercase[^"]*text-\[11px\]/.test(readFileSync(f, "utf8")))
-      .map((f) => f.slice(srcRoot.length + 1).replace(/\\/g, "/"));
-    expect(hits, "又长出第二套微标签写法：" + hits.join("、")).toEqual(["components/OnboardingModal.svelte"]);
+  it("大写微标签只剩一套写法：--fs-2xs + tracking-badge（第三刀 T9 的新口径）", () => {
+    // 改之前这族标签有两种长相：app.css 的 .detail-section-title（--fs-xs + 自定字距）和
+    // 组件里各写各的 text-[11px] + tracking-wider。字号和字距都收进档位之后，同一个用途只剩
+    // 一种写法。这里既点名现有站点，也顺手验写法：出现 uppercase 的那一行必须同时挂上
+    // 最小字号档和 badge 字距档——微标签就是「小 + 拉开」，两样都不许自己挑。
+    const hits: { rel: string; line: string }[] = [];
+    for (const f of collectSourceFiles(srcRoot).filter((p) => /\.(svelte|css)$/.test(p))) {
+      const rel = f.slice(srcRoot.length + 1).replace(/\\/g, "/");
+      const src = readFileSync(f, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/<!--[\s\S]*?-->/g, "");
+      for (const line of src.split(/\r?\n/)) {
+        if (/\buppercase\b|text-transform:\s*uppercase/.test(line)) hits.push({ rel, line: line.trim() });
+      }
+    }
+    expect(hits.map((h) => h.rel).sort(), "大写微标签的位置变了，先确认新增那处是不是同一个用途").toEqual([
+      "components/CloneQueuePanel.svelte",
+      "components/OnboardingModal.svelte",
+      "components/VideoPromptPanel.svelte",
+    ]);
+    for (const h of hits) {
+      expect(
+        h.line,
+        h.rel + " 的大写微标签没走最小字号档：" + h.line.slice(0, 80),
+      ).toMatch(/text-2xs|--fs-2xs/);
+      expect(
+        h.line,
+        h.rel + " 的大写微标签没走 badge 字距档：" + h.line.slice(0, 80),
+      ).toMatch(/tracking-badge|--track-badge/);
+    }
   });
-
   it("文本卡三段字号全在七档上（这张卡以前整张自己挑档外值）", () => {
     const feed = read("components/Feed.svelte");
     expect(declOf(feed, ".text-format", "font-size")).toBe("var(--fs-2xs)");

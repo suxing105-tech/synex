@@ -132,7 +132,7 @@
         <button type="button" class="dock-btn hover:bg-surface-3 transition-colors" title="就地编辑" aria-label="就地编辑" onclick={edit}>编辑</button>
         <button type="button" class="dock-btn hover:bg-surface-3 transition-colors" title="更多操作" aria-label="更多操作" aria-haspopup="menu" aria-expanded={menuOpen} onclick={() => (menuOpen = !menuOpen)}>⋯</button>
         {#if menuOpen}
-          <div class="absolute right-4 top-full z-20 mt-1 min-w-[150px] rounded-md border border-border bg-surface-2 shadow-lg py-1 text-[12px]" role="menu" aria-label="文本更多操作">
+          <div class="absolute right-4 top-full z-20 mt-1 min-w-[150px] rounded-md border border-border bg-surface-2 shadow-lg py-1 text-xs" role="menu" aria-label="文本更多操作">
             <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={startRename}>重命名</button>
             <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={() => void copyFile()}>复制文本文件</button>
             <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={() => void copyFull()}>复制全文</button>
@@ -143,21 +143,21 @@
       </div>
     </nav>
     <header class="px-4 py-3 border-b border-border bg-surface-2 flex items-start gap-3">
-      <div class="shrink-0 w-12 h-12 rounded-md bg-surface-3 border border-border flex items-center justify-center text-zinc-400 font-mono text-[11px]" title="文本素材" aria-label="文本徽标">
+      <div class="shrink-0 w-12 h-12 rounded-md bg-surface-3 border border-border flex items-center justify-center text-zinc-400 font-mono text-2xs" title="文本素材" aria-label="文本徽标">
         {textFormatLabel(it.format)}
       </div>
       <div class="min-w-0 flex-1">
         {#if renaming}
           <input
-            class="w-full bg-bg border border-border rounded px-2 py-1 text-[12px]"
+            class="w-full bg-bg border border-border rounded px-2 py-1 text-xs"
             aria-label="文件名"
             bind:value={renameValue}
             onkeydown={(e) => { if (e.key === "Enter") void saveRename(); if (e.key === "Escape") renaming = false; }}
           />
         {:else}
-          <div class="text-[13px] font-mono font-semibold truncate" title={it.filename}>{it.filename}</div>
+          <div class="text-sm font-mono font-semibold truncate" title={it.filename}>{it.filename}</div>
         {/if}
-        <div class="text-[11px] text-muted mt-0.5 flex gap-2 flex-wrap">
+        <div class="text-2xs text-muted mt-0.5 flex gap-2 flex-wrap">
           <span>{textFormatLabel(it.format)}</span>
           <span>{formatDate(it.mtime)}</span>
         </div>
@@ -175,7 +175,7 @@
       {#if confirming}
         <div class="rounded border border-danger/40 bg-surface-2 p-3 space-y-2" role="alertdialog" aria-label="确认移入回收站">
           <p>会把磁盘原文件一起移入系统回收站：</p>
-          <p class="font-mono text-[11px] break-words text-muted">{#each pathSegs as seg, i}{seg}{#if i !== pathSegs.length - 1}<wbr />{/if}{/each}</p>
+          <p class="font-mono text-2xs break-words text-muted">{#each pathSegs as seg, i}{seg}{#if i !== pathSegs.length - 1}<wbr />{/if}{/each}</p>
           <div class="flex gap-2">
             <button type="button" class="dock-btn is-danger hover:bg-surface-3 disabled:opacity-40" disabled={busy} onclick={() => void trash()}>确认移入回收站</button>
             <button type="button" class="dock-btn hover:bg-surface-3" onclick={() => (confirming = false)}>取消</button>
@@ -185,13 +185,13 @@
 
       <section>
         <h3 class="section-title mb-2">摘录</h3>
-        <p class="whitespace-pre-wrap leading-relaxed rounded-md border border-border bg-surface-2 p-3 max-h-72 overflow-auto">{it.excerpt || "（空）"}</p>
+        <p class="whitespace-pre-wrap leading-read rounded-md border border-border bg-surface-2 p-3 max-h-72 overflow-auto">{it.excerpt || "（空）"}</p>
       </section>
 
       <section>
         <h3 class="section-title mb-2">路径</h3>
         <div class="flex items-start gap-2">
-          <code class="flex-1 min-w-0 break-words font-mono text-[11px] rounded-md border border-border bg-surface-2 p-2.5">{#each pathSegs as seg, i}{seg}{#if i !== pathSegs.length - 1}<wbr />{/if}{/each}</code>
+          <code class="flex-1 min-w-0 break-words font-mono text-2xs rounded-md border border-border bg-surface-2 p-2.5">{#each pathSegs as seg, i}{seg}{#if i !== pathSegs.length - 1}<wbr />{/if}{/each}</code>
           <button type="button" class="dock-btn hover:bg-surface-3 shrink-0" aria-label="复制路径" onclick={() => void copyText(it.path).then(ok => pushToast(ok ? "已复制路径" : "复制失败", { kind: ok ? "success" : "error" }))}>复制</button>
         </div>
       </section>
@@ -206,7 +206,7 @@
         </div>
       </section>
 
-      <p class="text-[11px] text-muted leading-relaxed">正文在原文件里，打开后自动保存；改完按 Esc 回缩略图。</p>
+      <p class="text-xs leading-read text-muted">正文在原文件里，打开后自动保存；改完按 Esc 回缩略图。</p>
     </div>
   </div>
 {/if}

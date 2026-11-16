@@ -230,20 +230,20 @@
 
   .splash-caption {
     margin-top: 26px;
-    font-size: 11px;
-    letter-spacing: .12em;
+    font-size: var(--fs-2xs);
+    letter-spacing: var(--track-display);
     color: #8a8e93;
     animation: splash-caption-in 180ms ease-out 140ms both;
   }
 
   .splash-err {
     margin-top: 40px;
-    font-size: 14px;
-    line-height: 1.7;
+    font-size: var(--fs-base);
+    line-height: var(--lh-read);
     color: #fb7185;
     overflow-wrap: anywhere;
   }
-  .splash-hint { margin-top: 10px; font-size: 12px; line-height: 1.8; color: #a1a1aa; max-width: 380px; }
+  .splash-hint { margin-top: 10px; font-size: var(--fs-xs); line-height: var(--lh-read); color: #a1a1aa; max-width: 380px; }
   .splash-retry {
     margin-top: 18px;
     padding: 6px 18px;

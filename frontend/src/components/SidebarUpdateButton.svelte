@@ -84,8 +84,8 @@ import Icon from "./Icon.svelte";
     border: 1px solid #2e2e33;
     background: #0b0b0d;
     color: #fafafa;
-    font-size: 12px;
-    line-height: 1;
+    font-size: var(--fs-xs);
+    line-height: var(--lh-none);
     white-space: nowrap;
     box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
     opacity: 0;
@@ -137,21 +137,20 @@ import Icon from "./Icon.svelte";
   .update-card-kicker {
     margin: 0 0 6px;
     font-size: var(--fs-xs);
-    letter-spacing: .02em;
     color: #7f7f87;
   }
 
   .update-card-title {
     font-size: var(--fs-md);
     font-weight: 600;
-    line-height: 22px;
+    line-height: var(--lh-label);
     color: #fafafa;
   }
 
   .update-card-note {
     margin-top: 2px;
-    font-size: 12px;
-    line-height: 18px;
+    font-size: var(--fs-xs);
+    line-height: var(--lh-ui);
     color: #8a8a8e;
   }
 
@@ -191,8 +190,8 @@ import Icon from "./Icon.svelte";
 
   .update-progress-state {
     flex: 0 0 auto;
-    font-size: 12px;
-    line-height: 1;
+    font-size: var(--fs-xs);
+    line-height: var(--lh-none);
     color: #8a8a8e;
     white-space: nowrap;
   }

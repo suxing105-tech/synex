@@ -46,7 +46,7 @@
   .side-item img { object-fit:contain; }
   .side-item .label { left:12px; right:auto; }
   .compare-overlay { position: absolute; inset: 0; background: #101010; }
-  .label { position: absolute; top: 12px; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 5px 9px; border-radius: 6px; background: #0009; color: #eee; font-size: 11px; }
+  .label { position: absolute; top: 12px; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 5px 9px; border-radius: 6px; background: #0009; color: #eee; font-size: var(--fs-2xs); }
   .left { left: 12px; } .right { right: 12px; }
   .divider { position: absolute; top: 0; bottom: 0; width: 1px; background: #ffffffb0; pointer-events: none; }
   .divider span { position: absolute; top: 50%; transform: translate(-50%, -50%); border-radius: 20px; padding: 6px; white-space: nowrap; background: #222c; border: 1px solid #aaa; color: white; }

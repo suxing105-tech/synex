@@ -108,7 +108,7 @@
     >
       <h3 class="text-sm font-medium mb-1">{title}</h3>
       {#if subtitle}
-        <p class="text-[12px] text-muted mb-3">{subtitle}</p>
+        <p class="text-xs text-muted mb-3">{subtitle}</p>
       {:else}
         <div class="mb-3"></div>
       {/if}
@@ -118,7 +118,7 @@
           type="text"
           bind:value={query}
           placeholder="搜索文件夹…"
-          class="w-full bg-bg border border-border rounded px-2 py-1 text-[12px] outline-none focus:border-accent pl-7"
+          class="w-full bg-bg border border-border rounded px-2 py-1 text-xs outline-none focus:border-accent pl-7"
           aria-label="搜索文件夹"
         />
         <span class="absolute left-2 top-1/2 -translate-y-1/2 text-muted pointer-events-none">
@@ -137,7 +137,7 @@
         </button>
         {/if}
         {#if filtered.length === 0}
-          <p class="text-[12px] text-muted px-2 py-3">没有可选文件夹，请先在左侧新建或导入文件夹</p>
+          <p class="text-xs text-muted px-2 py-3">没有可选文件夹，请先在左侧新建或导入文件夹</p>
         {/if}
         {#each filtered as item, i (item.id)}
           <button
@@ -155,7 +155,7 @@
       <div class="flex justify-end gap-2 mt-3 pt-3 border-t border-border">
         <button
           type="button"
-          class="text-[12px] px-3 py-1 rounded border border-border hover:border-accent"
+          class="text-xs px-3 py-1 rounded border border-border hover:border-accent"
           onclick={onClose}
         >
           取消
@@ -170,7 +170,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 13px;
+    font-size: var(--fs-sm);
     cursor: pointer;
     color: #e4e4e7;
   }

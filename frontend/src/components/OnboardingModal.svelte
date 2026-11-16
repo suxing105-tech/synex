@@ -114,35 +114,35 @@
     <div class="bg-surface-2 border border-border rounded-[12px] p-7 w-[620px] max-w-[92vw] max-h-[90vh] overflow-y-auto">
       <h2 class="text-lg font-semibold mb-1">导入 ComfyUI 输出目录</h2>
       <p class="text-sm text-muted mb-4">选择或输入 ComfyUI 输出文件夹，导入其中的图片和生成信息，包含子文件夹。</p>
-      <label for="import-directory" class="text-[11px] uppercase text-muted tracking-wider">目录路径</label>
+      <label for="import-directory" class="text-2xs uppercase text-muted tracking-badge">目录路径</label>
       <div class="flex flex-wrap gap-2 mt-1">
         <input id="import-directory" type="text" bind:value={path} oninput={changed} title={path} disabled={busy}
           aria-describedby="directory-help directory-feedback" placeholder="例如：D:\ComfyUI\output"
-          class="flex-1 min-w-[200px] bg-bg border border-border rounded px-3 py-2 text-[13px] outline-none focus:border-accent font-mono disabled:opacity-60" />
+          class="flex-1 min-w-[200px] bg-bg border border-border rounded px-3 py-2 text-sm outline-none focus:border-accent font-mono disabled:opacity-60" />
         {#if desktop}
-          <button class="px-3 py-2 rounded border border-border text-[13px] enabled:hover:bg-white/10 enabled:focus-visible:bg-white/10 transition-colors disabled:opacity-50" disabled={busy} onclick={chooseFolder}>
+          <button class="px-3 py-2 rounded border border-border text-sm enabled:hover:bg-white/10 enabled:focus-visible:bg-white/10 transition-colors disabled:opacity-50" disabled={busy} onclick={chooseFolder}>
             {picking ? "选择中…" : checking ? "检查中…" : "选择文件夹"}
           </button>
         {/if}
       </div>
       <p id="directory-help" class="text-xs text-muted mt-2">{desktop ? "建议选择 ComfyUI 的 output 文件夹，无需启动 ComfyUI。" : "请输入图库后台所在电脑上的文件夹路径。桌面版支持直接选择文件夹。"}</p>
       <div class="mt-3">
-        <button class="text-[12px] text-accent hover:underline disabled:opacity-50" disabled={busy} onclick={chooseSample}>试用示例目录</button>
+        <button class="text-xs text-accent hover:underline disabled:opacity-50" disabled={busy} onclick={chooseSample}>试用示例目录</button>
       </div>
       <div id="directory-feedback" class="mt-3 text-xs space-y-2">
         {#if error}<p class="text-danger" role="alert">{error}</p>{/if}
         {#if message}<p class="text-muted" role="status">{message}</p>{/if}
       </div>
       {#if submitting || $scanProgress.running}
-        <div class="mt-4 bg-surface border border-border rounded p-3 text-[12px]">
+        <div class="mt-4 bg-surface border border-border rounded p-3 text-xs">
           <div class="flex justify-between text-muted mb-1"><span>扫描进度</span><span>{$scanProgress.indexed} / {$scanProgress.total}</span></div>
           <progress class="w-full accent-accent" max="100" value={$scanProgress.total ? Math.min(100, $scanProgress.scanned / $scanProgress.total * 100) : undefined}></progress>
           <div class="text-2xs text-muted mt-1 truncate" title={$scanProgress.current_path}>{$scanProgress.current_path}</div>
         </div>
       {/if}
       <div class="flex justify-between gap-2 mt-5">
-        <button class="text-[12px] px-3 py-1.5 rounded border border-border enabled:hover:bg-white/10 enabled:focus-visible:bg-white/10 transition-colors disabled:opacity-50" disabled={submitting} onclick={close}>{completed ? "完成" : "暂不导入"}</button>
-        <button class="text-[13px] px-4 py-1.5 rounded bg-accent text-bg font-medium disabled:opacity-50" disabled={busy || !path.trim()} onclick={startImport}>{submitting ? "导入中…" : "开始导入"}</button>
+        <button class="text-xs px-3 py-1.5 rounded border border-border enabled:hover:bg-white/10 enabled:focus-visible:bg-white/10 transition-colors disabled:opacity-50" disabled={submitting} onclick={close}>{completed ? "完成" : "暂不导入"}</button>
+        <button class="text-sm px-4 py-1.5 rounded bg-accent text-bg font-medium disabled:opacity-50" disabled={busy || !path.trim()} onclick={startImport}>{submitting ? "导入中…" : "开始导入"}</button>
       </div>
     </div>
   </div>

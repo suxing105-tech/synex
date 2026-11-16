@@ -14,7 +14,7 @@
 </script>
 
 {#if $scanProgress.running}
-  <div class="bg-surface border-b border-border py-1.5 px-5 text-[11px] flex items-center gap-3">
+  <div class="bg-surface border-b border-border py-1.5 px-5 text-2xs flex items-center gap-3">
     <span class="live-dot on"></span>
     <span class="text-muted">扫描中</span>
     <span class="font-mono">{$scanProgress.indexed} / {$scanProgress.total}</span>

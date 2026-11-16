@@ -429,7 +429,7 @@
       {#each { length: 3 } as _, i (i)}<span class="ts-row" style="--i: {i};"></span>{/each}
     </div>
   {:else if systemFolders.length === 0 && !addingSource}
-    <div class="text-[12px] text-muted px-3 pb-2 leading-relaxed">还没有来源目录。点这里右边的 + 选一个文件夹，图库只读取并监听它，原文件留在原地。</div>
+    <div class="text-xs text-muted px-3 pb-2 leading-read">还没有来源目录。点这里右边的 + 选一个文件夹，图库只读取并监听它，原文件留在原地。</div>
   {/if}
   {#each systemFolders as f (f.id)}
     {@render systemFolderItem(f, 0)}
@@ -457,7 +457,7 @@
 
   {#if newFolderFor?.parent === null}{@render newFolderInput(0)}{/if}
   {#if !$appBooting && userFolders.length === 0 && !newFolderFor}
-    <div class="text-[12px] text-muted px-3 py-2">还没有文件夹</div>
+    <div class="text-xs text-muted px-3 py-2">还没有文件夹</div>
   {/if}
 
   {#each userFolders as f (f.id)}
@@ -467,7 +467,7 @@
 
 {#if blankMenu}
   <div
-    class="folder-menu fixed bg-surface-2 border border-border rounded-[8px] py-1 min-w-[160px] z-40 text-[13px] shadow-xl"
+    class="folder-menu fixed bg-surface-2 border border-border rounded-[8px] py-1 min-w-[160px] z-40 text-sm shadow-xl"
     style="left: {menuPos.x}px; top: {menuPos.y}px;"
     role="menu" tabindex="-1"
     oncontextmenu={(e) => e.preventDefault()}
@@ -479,7 +479,7 @@
 {:else if menuFor !== null}
   {@const menuNode = findNode($folders, menuFor)}
   <div
-    class="folder-menu fixed bg-surface-2 border border-border rounded-[8px] py-1 min-w-[160px] z-40 text-[13px] shadow-xl"
+    class="folder-menu fixed bg-surface-2 border border-border rounded-[8px] py-1 min-w-[160px] z-40 text-sm shadow-xl"
     style="left: {menuPos.x}px; top: {menuPos.y}px;"
     role="menu" tabindex="-1"
     oncontextmenu={(e) => e.preventDefault()}
@@ -516,7 +516,7 @@
       disabled={!menuNode?.path} title={menuNode?.path || '此文件夹是图库分类，没有对应的磁盘位置'}
       onclick={() => menuFor !== null && revealSystemFolder(menuFor, menuNode?.path)}>所在文件夹位置</button>
     {#if !menuNode?.path}
-      <div class="px-3 pb-1 text-muted text-[11px]">图库分类，无磁盘位置</div>
+      <div class="px-3 pb-1 text-muted text-2xs">图库分类，无磁盘位置</div>
     {/if}
     <div class="border-t border-border my-1"></div>
     <button role="menuitem" class="block w-full text-left px-3 py-1 hover:bg-surface-3"
@@ -622,7 +622,7 @@
 
 <style>
   .external-hover { background: #f24e4e15; }
-  .external-drop-status { position: sticky; top: 0; z-index: 2; padding: 12px 8px; background: #303034; color: #eee; font-size: 12px; border-radius: 6px; }
+  .external-drop-status { position: sticky; top: 0; z-index: 2; padding: 12px 8px; background: #303034; color: #eee; font-size: var(--fs-xs); border-radius: 6px; }
   :global(.folder-item.drop-inside), .root-drop { background: #f24e4e33; outline: 1px solid #f24e4e; }
   :global(.folder-item) {
     display: flex;
@@ -636,7 +636,7 @@
     transition: background 120ms, color 120ms;
     border-radius: 8px;
     cursor: pointer;
-    font-size: 13px;
+    font-size: var(--fs-sm);
     color: #d6d6db;
     position: relative;
     user-select: none;
@@ -664,7 +664,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 13px;
+    font-size: var(--fs-sm);
     color: #a2a2ab;
     flex-shrink: 0;
   }
@@ -703,7 +703,7 @@
     cursor: pointer;
     padding: 1px 6px;
     border-radius: 4px;
-    font-size: 13px;
+    font-size: var(--fs-sm);
     /* 无障碍：命中区 24 高（WCAG 2.5.8）。上面 .folder-item 的上下内边距已经从 6 收到 4，
        所以这 24 把行钉回 32；实测 20 行全部 32，没有因为无障碍把侧栏拉疏 */
     min-height: 24px;
@@ -769,7 +769,6 @@
   .folder-group {
     font-size: var(--fs-sm);
     font-weight: 600;
-    letter-spacing: .01em;
     color: #e2e2e8;
   }
   /* 第二条起的分组加一条极淡分隔线，滚动时也能看出分段 */
@@ -792,9 +791,9 @@
      分组头右半边是空的，视觉上一条无意义的说明；每一行数字 hover 有 title 明细，
      工具栏那一行也已经写明当前口径。 */
   .folder-title {
-    font-size: 12px;
+    font-size: var(--fs-xs);
     font-weight: 500;
-    letter-spacing: .04em;
+    letter-spacing: var(--track-label);
     color: #7f7f88;
   }
   .folder-caret { width: 12px; height: 14px; display: flex; align-items: center; flex-shrink: 0; color: var(--text-3); }
@@ -802,7 +801,7 @@
   :global(.folder-item.dragging) { opacity: .45; cursor: grabbing; }
   :global(.folder-item.drop-before) { box-shadow: 0 -2px #f24e4e; }
   :global(.folder-item.drop-after) { box-shadow: 0 2px #f24e4e; }
-  .drag-hint { position: fixed; bottom: 24px; left: 20px; z-index: 80; pointer-events: none; padding: 10px 14px; border-radius: 8px; background: #333338; color: #eee; font-size: 12px; box-shadow: 0 6px 24px #0005; }
+  .drag-hint { position: fixed; bottom: 24px; left: 20px; z-index: 80; pointer-events: none; padding: 10px 14px; border-radius: 8px; background: #333338; color: #eee; font-size: var(--fs-xs); box-shadow: 0 6px 24px #0005; }
   .collapse-sidebar { border: 0; background: transparent; color: #888; padding: 4px; cursor: pointer; outline: none; box-shadow: none; }
   .collapse-sidebar:hover, .collapse-sidebar:focus-visible { color: #eee; background: transparent; border: 0; outline: none; box-shadow: none; }
   .folder-name-input { flex: 1; min-width: 0; width: 0; padding: 2px 6px; border: 1px solid #4a4a52; border-radius: 6px; background: #151518; color: #eee; font: inherit; outline: none; user-select: text; }

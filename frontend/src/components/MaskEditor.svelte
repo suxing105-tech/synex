@@ -844,7 +844,7 @@
   }
   .me-top { display: flex; flex-direction: column; gap: 4px; flex: none; }
   .me-line { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
-  .me-what { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-base); font-weight: 650; }
+  .me-what { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-base); font-weight: 600; }
   .me-mode {
     padding: 2px 8px; border-radius: var(--r-pill); background: var(--ink-3);
     color: var(--text-1); font-size: var(--fs-xs);

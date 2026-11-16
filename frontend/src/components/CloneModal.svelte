@@ -2810,7 +2810,7 @@
      名字长了截断，全名在悬停提示里。整行上下居中——大字与右边那颗 30px 的关闭键同一条中线。 */
   .cm-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -2px -4px 6px; }
   .cm-heading { min-width: 0; }
-  .cm-title { margin: 0; font-size: var(--fs-md); line-height: 22px; font-weight: 650; color: #fafafa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cm-title { margin: 0; font-size: var(--fs-md); line-height: var(--lh-label); font-weight: 600; color: #fafafa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cm-close { flex: none; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 9px; color: #8a8a8e; background: transparent; }
   .cm-close:hover { color: #fafafa; background: rgb(255 255 255 / 10%); }
 
@@ -2869,12 +2869,12 @@
   .cm-hero { width: auto; max-width: 100%; max-height: var(--cm-hero-h); object-fit: contain; border-radius: 16px; background: #0c0c0e; }
   /* 展示图下面那行文件名（旧图有这一行，2026-11-10 放回来）：从这一格跳回图库、或一次出几份时，
      认的就是它。长名字截断，完整名字在 title 里。 */
-  .cm-hero-name { margin: 2px 0 0; max-width: 100%; font-size: 12px; line-height: 16px; color: #8a8a8e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cm-hero-name { margin: 2px 0 0; max-width: 100%; font-size: var(--fs-xs); line-height: var(--lh-label); color: #8a8a8e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* 文件名与「这一趟出多大」并排一行（2026-11-12 苏醒照图：文件名右边那块空位就是留给它的）。
      被挤的只许是名字——省略号本来就长在它身上；尺寸不许被顶出这一行。 */
   .cm-hero-meta { display: flex; align-items: baseline; gap: 8px; max-width: 100%; min-width: 0; }
   .cm-hero-meta .cm-hero-name { flex: 0 1 auto; min-width: 0; }
-  .cm-hero-dims { flex: none; margin: 2px 0 0; font-size: var(--fs-xs); line-height: 16px; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cm-hero-dims { flex: none; margin: 2px 0 0; font-size: var(--fs-xs); line-height: var(--lh-label); color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
   /* 波形是一张扁的后端 PNG：照搬 cm-hero 的 contain 会把它拉成一大块模糊，这里锁住高度。 */
   .cm-hero-wave { width: min(100%, 560px); height: clamp(88px, 18vh, 148px); object-fit: cover; }
   .cm-hero-audio { width: min(100%, 560px); margin-top: 10px; height: 36px; }
@@ -2933,7 +2933,7 @@
   .cm-stage-bar::after { content: ""; position: absolute; inset: 0; pointer-events: none;
     background-image: linear-gradient(90deg, transparent calc(34% - 1px), #0c0c0e calc(34% - 1px), #0c0c0e calc(34% + 1px), transparent calc(34% + 1px)),
       linear-gradient(90deg, transparent calc(76% - 1px), #0c0c0e calc(76% - 1px), #0c0c0e calc(76% + 1px), transparent calc(76% + 1px)); }
-  .cm-stage-steps { display: flex; gap: 9px; margin: 0; padding: 0; font-size: 11px; color: #6f6f78; }
+  .cm-stage-steps { display: flex; gap: 9px; margin: 0; padding: 0; font-size: var(--fs-2xs); color: #6f6f78; }
   .cm-stage-step { transition: color 220ms ease; }
   .cm-stage-step.is-past { color: #8f8f97; }
   .cm-stage-step.is-now { color: #f8a29a; }
@@ -2964,7 +2964,7 @@
 
   .cm-right { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
   .cm-block { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-  .cm-block-title { margin: 0; font-size: 14px; font-weight: 600; color: #ececef; }
+  .cm-block-title { margin: 0; font-size: var(--fs-base); font-weight: 600; color: #ececef; }
 
   /* 一次输入从上往下排（2026-11-10 苏醒照旧图：「改回类似之前的这种版式」）：参考在上、话在下、
      操作钉在卡底，两块各带一行小标题。11-04 那一版是「素材在左、话在右」，代价是参考那一摞只有
@@ -3023,7 +3023,7 @@
      编号必须一眼对得上是谁，所以这一行不省。 */
   .cm-ref-caption {
     display: block; margin-top: 6px; max-width: 100%;
-    font-size: 11px; line-height: 15px; color: var(--text-3); text-align: center;
+    font-size: var(--fs-2xs); line-height: var(--lh-label); color: var(--text-3); text-align: center;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none;
   }
   /* 绑到位的空格子：小牌上已经写着「图片2」，中间那行「参考」是重复的——只留加号。
@@ -3104,7 +3104,7 @@
 
   /* 高亮遮罩和 textarea 是叠在一起的两层字，盒模型 / 字体 / 折行规则必须一字不差，
      所以两边写进同一条规则：谁要改排版就一起改，拆开改第一次滚动就会看见高亮在飘。 */
-  .cm-prompt-bg, .cm-textarea { display: block; box-sizing: border-box; width: 100%; padding: 11px 12px; border: 1px solid transparent; font-family: inherit; font-size: var(--fs-sm); line-height: 1.6; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; }
+  .cm-prompt-bg, .cm-textarea { display: block; box-sizing: border-box; width: 100%; padding: 11px 12px; border: 1px solid transparent; font-family: inherit; font-size: var(--fs-sm); line-height: var(--lh-read); white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; }
   .cm-prompt-bg { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; border-radius: 12px; color: #e4e4e7; background: rgba(0, 0, 0, 0.35); }
   .cm-textarea { position: relative; z-index: 1; background: transparent; border-color: rgb(255 255 255 / 8%); border-radius: 12px; resize: vertical; }
   /* 提示词框跟着窗口高矮走：窗口矮的时候先让提示词框让出高度，而不是把下面那排按钮挤出弹窗 ——
@@ -3258,7 +3258,7 @@
   .cm-pop-title { margin: 2px 0 0; font-size: var(--fs-sm); color: #a1a1aa; }
   /* 弹层最底那行是上面那几颗的合算结果：只写数字，不套「尺寸：」这类前缀（2026-11-12 定稿）。
      用 --text-2 不用 --text-3：这行压在 #1a1a1e 的弹层底上还要读得出，是结论不是注脚。 */
-  .cm-pop-size { margin: 0; font-size: var(--fs-sm); line-height: 16px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .cm-pop-size { margin: 0; font-size: var(--fs-sm); line-height: var(--lh-label); color: var(--text-2); font-variant-numeric: tabular-nums; }
   /* 弹层锚点跟着胶囊在这一排里的位置走。竖排之后这颗恒在底部那一排的最左边（先挑来源、再定参数），
      所以一律贴它左边缘往右长——贴右长会顶穿面板左边界。横排时代它贴着右栏的右边缘，才有 right:0 那条。
      1478×902 实测：本机屏 352..620、API 屏 352..804，面板内容框 351..1127；820/560 宽同样在框里。 */
@@ -3308,7 +3308,7 @@
      徽章那颗也才真按这条钉在第一行，而不是跟着两行名字上下居中。 */
   .cm-wf.cm-api-model { align-items: flex-start; padding-top: 7px; padding-bottom: 7px; }
   .cm-api-model .cm-wf-kind { margin-top: 1px; }
-  .cm-api-model .cm-wf-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; overflow: hidden; line-height: 1.3; }
+  .cm-api-model .cm-wf-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; overflow: hidden; line-height: var(--lh-label); }
   .cm-api-model .cm-wf-tag { margin-top: 1px; }
   /* 行末三态：中性说的是「当前」，黄的是差一步配置，红的才是「没验过」。
      别把三态刷成同一个红——那等于把「还没验」和「还没配」说成一件事。 */
@@ -3319,7 +3319,7 @@
   .cm-pop-tabs { display: flex; gap: 4px; padding: 2px; margin-bottom: 2px; background: rgb(255 255 255 / 4%); border-radius: 10px; }
   .cm-pop-tab {
     flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
-    padding: 5px 0; font-size: 12px; color: #a1a1aa; background: transparent; border-radius: 8px;
+    padding: 5px 0; font-size: var(--fs-xs); color: #a1a1aa; background: transparent; border-radius: 8px;
     transition: background-color 120ms ease, color 120ms ease;
   }
   .cm-pop-tab[aria-pressed="true"] { color: #fafafa; background: rgb(255 255 255 / 9%); }
@@ -3360,7 +3360,7 @@
   .cm-ratio:hover { background: rgb(255 255 255 / 6%); color: #e4e4e7; }
   .cm-ratio.is-on { background: rgb(255 255 255 / 13%); color: #fafafa; }
   .cm-ratio-box { border: 1.5px solid currentColor; border-radius: 3px; opacity: .85; }
-  .cm-ratio-flat { height: 26px; display: flex; align-items: center; font-size: 14px; }
+  .cm-ratio-flat { height: 26px; display: flex; align-items: center; font-size: var(--fs-base); }
   .cm-ratio-label { font-size: var(--fs-xs); white-space: nowrap; }
   /* 内置音色那一格：40px 圆脸。选中时用品牌色描一圈，和顶上音频模式那三颗同一个色，
      不新造一套选中语言；未选中只留一层极淡的内描边，免得黑底头像看起来像没图。 */
@@ -3421,7 +3421,7 @@
   .cm-slider::-moz-range-track { height: 4px; border-radius: 2px; background: rgb(64 64 70); }
   .cm-slider:focus-visible::-webkit-slider-thumb { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55), 0 0 0 4px rgba(242, 78, 78, 0.35); }
   .cm-slide-num { flex: none; width: 62px; height: 28px; padding: 0 8px; font-size: var(--fs-sm); color: #e4e4e7; background: rgba(0, 0, 0, 0.4); border: 1px solid rgb(255 255 255 / 9%); border-radius: 8px; }
-  .cm-slide-unit { flex: none; font-size: 12px; color: #8a8a8e; }
+  .cm-slide-unit { flex: none; font-size: var(--fs-xs); color: #8a8a8e; }
 
   /* 按钮组画在胶囊之上：哪天再溢出，被压住的也不许是「取消」和「生成」 */
   .cm-actions { position: relative; z-index: 6; display: flex; align-items: center; gap: 8px; margin-left: auto; flex: none; }
@@ -3468,8 +3468,8 @@
     .cm-go.is-busy .cm-go-shine, .cm-go.is-busy .cm-go-dot { animation: none; }
     .cm-go { transition: none; }
   }
-  .cm-error { margin: 0; font-size: 12px; color: #f28b82; }
-  .cm-status { margin: 0; font-size: 12px; color: #9ad1a4; }
+  .cm-error { margin: 0; font-size: var(--fs-xs); color: #f28b82; }
+  .cm-status { margin: 0; font-size: var(--fs-xs); color: #9ad1a4; }
 /* 状态与报错单独占操作行下面一行：生成前后那颗按钮一动不动。 */
 .cm-foot-note { margin: 8px 0 0; }
   /* 卡底那排「本次产出」缩略图连同这几条样式一起撤了：刚出来的那一份现在直接摆在顶上那一格，
@@ -3546,7 +3546,7 @@
   .cm-mask-corner.is-bottom-right { right: 8px; bottom: 8px; }
   .cm-mask-flag {
     position: absolute; left: 3px; bottom: 3px; z-index: 2; padding: 2px 6px;
-    border-radius: var(--r-1); font-size: var(--fs-2xs); line-height: 1.35;
+    border-radius: var(--r-1); font-size: var(--fs-2xs); line-height: var(--lh-label);
     /* 红底配墨底字（token 里 --accent-ink 就是为这个定的）：白字压品牌红只有 3.2:1 */
     color: var(--accent-ink); background: var(--accent); pointer-events: none;
   }

@@ -279,7 +279,7 @@
   }
   .queue-elapsed { font-size: var(--fs-2xs); color: var(--text-3); font-variant-numeric: tabular-nums; }
   .queue-state { font-size: var(--fs-sm); color: var(--text-1); }
-  .queue-msg { font-size: var(--fs-xs); color: var(--text-2); line-height: 1.5; word-break: break-word; }
+  .queue-msg { font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-ui); word-break: break-word; }
   .queue-stages { display: flex; gap: 4px; }
   .queue-stage {
     flex: 1; text-align: center; padding: 3px 0;
@@ -329,7 +329,7 @@
   .queue-cancel:hover, .queue-btn:hover { background: var(--ink-3); color: var(--text-1); }
   .queue-btn:disabled { opacity: 0.5; cursor: default; }
   .queue-block { display: flex; flex-direction: column; gap: 6px; }
-  .queue-label { font-size: var(--fs-2xs); letter-spacing: 0.06em; color: var(--text-3); text-transform: uppercase; }
+  .queue-label { font-size: var(--fs-2xs); letter-spacing: var(--track-badge); color: var(--text-3); text-transform: uppercase; }
   .queue-row {
     display: flex; align-items: center; gap: 8px;
     padding: 6px; border: 1px solid var(--line-soft); border-radius: var(--r-2);
@@ -344,5 +344,5 @@
     border: 1px dashed var(--line); border-radius: var(--r-2);
     font-size: var(--fs-xs);
   }
-  .queue-hint { font-size: var(--fs-2xs); line-height: 1.6; color: var(--text-3); }
+  .queue-hint { font-size: var(--fs-2xs); line-height: var(--lh-read); color: var(--text-3); }
 </style>

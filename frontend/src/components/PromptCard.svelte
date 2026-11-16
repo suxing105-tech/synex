@@ -43,7 +43,7 @@
 </script>
 
 <section class="prompt-card">
-  <header class="flex items-center gap-2 text-[11px]">
+  <header class="flex items-center gap-2 text-2xs">
     <button
       type="button"
       class="flex items-center gap-1 text-muted hover:text-zinc-200"

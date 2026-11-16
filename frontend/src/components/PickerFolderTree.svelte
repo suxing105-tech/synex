@@ -135,5 +135,5 @@
   .pft-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pft-count { flex: none; font-size: var(--fs-2xs); color: var(--text-3); font-variant-numeric: tabular-nums; }
   .pft-count.zero { opacity: .4; }
-  .pft-group { margin: 10px 0 2px; padding: 0 8px; font-size: 11px; color: var(--text-3); letter-spacing: .04em; }
+  .pft-group { margin: 10px 0 2px; padding: 0 8px; font-size: var(--fs-2xs); color: var(--text-3); letter-spacing: var(--track-label); }
 </style>

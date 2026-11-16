@@ -331,7 +331,7 @@
   .mp-tab { flex: none; white-space: nowrap; height: 26px; padding: 0 10px; font-size: var(--fs-sm); color: #a1a1aa; background: transparent; border-radius: 8px; cursor: pointer; transition: background-color 140ms ease, color 140ms ease; }
   .mp-tab:hover { color: #e4e4e7; }
   .mp-tab[aria-pressed="true"] { color: #fafafa; background: #303036; }
-  .mp-search { flex: 1; min-width: 0; height: 32px; padding: 0 10px; font-size: 13px; color: #e4e4e7; background: #101013; border: 1px solid #2b2b30; border-radius: 8px; }
+  .mp-search { flex: 1; min-width: 0; height: 32px; padding: 0 10px; font-size: var(--fs-sm); color: #e4e4e7; background: #101013; border: 1px solid #2b2b30; border-radius: 8px; }
   /* 列数滑块：照抄图库工具栏那条（细轨 + 圆 thumb + 已填段），两处手势一个手感。 */
   .mp-cols { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: #8a8a8e; white-space: nowrap; }
   .mp-cols-num { min-width: 12px; text-align: right; color: #d4d4d8; font-variant-numeric: tabular-nums; }

@@ -145,13 +145,13 @@
   /* 竖排表单铺满卡片：右边缘要和卡片、右下角保存条对齐（固定宽度会在右边留一条空白）。 */
   .model-settings fieldset { max-width: none; }
   /* 指令框里是长段文字：白字压黑底太刺眼，行距也偏挤，所以压灰一档、行距放到 1.9。 */
-  .model-settings textarea { color: #c2c2ca; line-height: 1.9; letter-spacing: .01em; }
+  .model-settings textarea { color: #c2c2ca; line-height: var(--lh-prose); }
   fieldset { margin-top: 18px; }
   fieldset:first-child { margin-top: 0; }
-  label { display: block; font-size: 13px; color: #b8b8c3; }
+  label { display: block; font-size: var(--fs-sm); color: #b8b8c3; }
   input:not([type=checkbox]), textarea, select { display: block; width: 100%; margin-top: 6px; padding: 9px 12px; color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 6px; }
   button:disabled { opacity: .5; }
-  .model-error { margin-top: 14px; font-size: 13px; color: #fb7185; }
-  .model-notice { margin-top: 14px; font-size: 13px; color: #a1a1aa; }
+  .model-error { margin-top: 14px; font-size: var(--fs-sm); color: #fb7185; }
+  .model-notice { margin-top: 14px; font-size: var(--fs-sm); color: #a1a1aa; }
   @media (max-width: 860px) { .settings-model-body { padding: 16px; } }
 </style>

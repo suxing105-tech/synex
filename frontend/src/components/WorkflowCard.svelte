@@ -32,6 +32,6 @@
 </button>
 
 <style>
-  .workflow-download { display:flex; align-items:center; justify-content:center; width:100%; padding:9px 10px; border:1px solid var(--accent); border-radius:6px; background:var(--accent); color:var(--accent-ink); font-size:12px; font-weight:600; text-align:center; cursor:pointer; }
+  .workflow-download { display:flex; align-items:center; justify-content:center; width:100%; padding:9px 10px; border:1px solid var(--accent); border-radius:6px; background:var(--accent); color:var(--accent-ink); font-size: var(--fs-xs); font-weight:600; text-align:center; cursor:pointer; }
   .workflow-download:hover { background:color-mix(in srgb, var(--accent) 86%, white); border-color:color-mix(in srgb, var(--accent) 86%, white); }
 </style>

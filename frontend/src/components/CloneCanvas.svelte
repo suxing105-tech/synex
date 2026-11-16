@@ -278,7 +278,7 @@
     opacity: 0; transition: opacity 0.16s ease;
   }
   .cc-card:hover .cc-open, .cc-open:focus-visible, .cc-card.is-focused .cc-open { opacity: 1; }
-  .cc-count { margin: 0; font-size: 12px; color: #8a8a8e; }
+  .cc-count { margin: 0; font-size: var(--fs-xs); color: #8a8a8e; }
 
   @media (prefers-reduced-motion: reduce) {
     /* 平移与缩放是本组件唯一的动效：要撤就整条撤，别留半条。 */

@@ -314,22 +314,22 @@
     <p class="text-2xs text-muted">需要先在「设置 · 模型API配置」里配置一个支持图片输入的模型。</p>
   {:else}
     <div class="space-y-2">
-      <div class="text-[11px] text-muted">反推模型
+      <div class="text-2xs text-muted">反推模型
         <ModelPicker value={modelId} model={modelName} label="视频反推模型" disabled={running}
           onpick={(configId, picked) => { modelId = configId; modelName = picked; }} />
       </div>
       {#if !modelName}
-        <p class="text-2xs text-amber-400">没认出这家的语言模型：打开上面的下拉能看到原因，或到设置里检查这把 Key。</p>
+        <p class="text-xs leading-ui text-amber-400">没认出这家的语言模型：打开上面的下拉能看到原因，或到设置里检查这把 Key。</p>
       {/if}
       <div class="flex gap-2">
-        <label class="flex-1 text-[11px] text-muted">起始秒（整数）
+        <label class="flex-1 text-2xs text-muted">起始秒（整数）
           <input class="vp-field" aria-label="反推起始秒" type="number" min="0" step="1" placeholder="0" bind:value={startText} disabled={running} />
         </label>
-        <label class="flex-1 text-[11px] text-muted">结束秒（整数）
+        <label class="flex-1 text-2xs text-muted">结束秒（整数）
           <input class="vp-field" aria-label="反推结束秒" type="number" min="0" step="1" placeholder={durationSeconds ? secondText(durationSeconds * 1000) : "结尾"} bind:value={endText} disabled={running} />
         </label>
       </div>
-      <label class="block text-[11px] text-muted">听到的声音 / 台词原文（选填，避免猜错口型与配乐）
+      <label class="block text-xs leading-ui text-muted">听到的声音 / 台词原文（选填，避免猜错口型与配乐）
         <textarea class="vp-field" aria-label="声音与台词" rows="2" placeholder="例：女声普通话说「……」，无背景音乐" bind:value={soundNote} disabled={running}></textarea>
       </label>
       <button class="vp-button vp-primary" disabled={running || !modelId || !modelName}
@@ -371,13 +371,13 @@
       </div>
       <div class="rounded border border-border bg-surface p-2">
         <div class="flex items-center justify-between gap-2">
-          <span class="text-2xs uppercase tracking-wider text-muted">全局锚点</span>
+          <span class="text-2xs uppercase tracking-badge text-muted">全局锚点</span>
           <button class="vp-button" onclick={() => copy(run?.anchors_text ?? "", "锚点已")}>复制锚点</button>
         </div>
         <div class="vp-body mt-1 max-h-40">{run.anchors_text}</div>
       </div>
       {#if run.risk_terms.length}
-        <details class="text-[11px]">
+        <details class="text-2xs">
           <summary class="cursor-pointer text-amber-400">敏感词提示（{run.risk_terms.length}）</summary>
           <ul class="mt-1 space-y-0.5 text-amber-400">
             {#each run.risk_terms as term}<li>{term}</li>{/each}
@@ -450,10 +450,10 @@
             data-running={job?.running ? "true" : undefined}>
             <div class="flex items-start justify-between gap-2">
               <div class="min-w-0">
-                <div class="text-[11px] font-semibold">
+                <div class="text-2xs font-semibold">
                   {tag}｜{secondText(unit.end_ms - unit.start_ms)} 秒｜原片 {secondsRangeText(unit.start_ms, unit.end_ms)}
                 </div>
-                <div class="text-[11px] text-muted">{unit.role || "（未给出职责）"}</div>
+                <div class="text-2xs text-muted">{unit.role || "（未给出职责）"}</div>
                 <div class="flex gap-1 flex-wrap mt-1">
                   {#if unit.warn}<span class="vp-badge vp-warn">{unit.warn}</span>{/if}
                   {#if unit.shots.length > 1}<span class="vp-badge">{unit.shots.length} 个镜头</span>{/if}
@@ -505,7 +505,7 @@
                             {:else}需要自备图片：本工具拿不到这张图，按上面的说明准备后按这个编号上传。{/if}
                           </p>
                         {/if}
-                        {#if ref.warn}<p class="text-2xs text-amber-400">{ref.warn}</p>{/if}
+                        {#if ref.warn}<p class="text-xs leading-ui text-amber-400">{ref.warn}</p>{/if}
                       </li>
                     {/each}
                   </ul>
@@ -537,7 +537,7 @@
                 </span>
               </div>
             {:else if job?.error && !record}
-              <div class="flex items-center gap-2 text-[11px] text-danger">
+              <div class="flex items-center gap-2 text-2xs text-danger">
                 <span>{job.error}</span>
                 <button class="vp-button" disabled={running} onclick={() => generate([unit.index], [tab])}>重试本段</button>
               </div>
@@ -566,7 +566,7 @@
                     {record.status === "format_warning" ? "格式不完整" : "未结构化"}</span>{/if}
                 </div>
                 {#if record.status !== "complete"}
-                  <p class="text-[11px] text-amber-400">
+                  <p class="text-xs leading-ui text-amber-400">
                     {record.status === "format_warning"
                       ? "正文缺了必需的段落或首行不符，可编辑补齐，或复制原文自行整理。"
                       : "模型没按 JSON 返回，下面是原文。"}
@@ -589,7 +589,7 @@
                       时间戳、结构标记与画面文字按原样保留。
                     </p>
                   {:else if trJob(record)?.error}
-                    <p class="text-[11px] text-danger" role="alert">{trJob(record)?.error}</p>
+                    <p class="text-xs leading-ui text-danger" role="alert">{trJob(record)?.error}</p>
                   {/if}
                   <div class="flex gap-1 flex-wrap">
                     <button class="vp-button" onclick={() => copy(original, TARGET_LABELS[tab])}>
@@ -627,7 +627,7 @@
                     </button>
                   </div>
                   {#if record.risk_terms.length}
-                    <details class="text-[11px]">
+                    <details class="text-2xs">
                       <summary class="cursor-pointer text-amber-400">本段敏感词（{record.risk_terms.length}）</summary>
                       <ul class="mt-1 space-y-0.5 text-amber-400">{#each record.risk_terms as term}<li>{term}</li>{/each}</ul>
                     </details>
@@ -661,7 +661,7 @@
                 {/if}
               </div>
             {:else}
-              <p class="text-[11px] text-muted">该段还没有 {TARGET_LABELS[tab]} 正文。</p>
+              <p class="text-xs leading-ui text-muted">该段还没有 {TARGET_LABELS[tab]} 正文。</p>
             {/if}
           </article>
         {/each}
@@ -675,7 +675,7 @@
       {#if runsOpen}
         <div class="mt-2 space-y-1 max-h-48 overflow-auto" aria-label="历史分镜方案">
           {#each runs as item}
-            <button class="block w-full text-left text-[11px]" aria-pressed={run?.id === item.id}
+            <button class="block w-full text-left text-2xs" aria-pressed={run?.id === item.id}
               onclick={() => activeRunId = item.id}>
               {dateTimeLabel(item.created_at)} ·
               {item.status === "planned" ? `${item.units.length} 段` : "失败"} ·
@@ -693,17 +693,17 @@
 
 <style>
   .vp-field {
-    display: block; width: 100%; margin-top: 4px; padding: 6px 8px; font-size: 11px;
+    display: block; width: 100%; margin-top: 4px; padding: 6px 8px; font-size: var(--fs-2xs);
     color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 5px;
   }
   /* 与标签同行时去掉 margin-top 与 100% 宽，否则"H3 模式"会被挤成两行 */
   .vp-field-inline { display: inline-block; width: auto; margin-top: 0; }
-  .vp-label { font-size: 11px; color: #a1a1aa; flex: none; white-space: nowrap; }
+  .vp-label { font-size: var(--fs-2xs); color: #a1a1aa; flex: none; white-space: nowrap; }
   .vp-version { font-size: var(--fs-2xs); padding: 4px 6px; border: 1px solid #3f3f46; border-radius: 5px; background: #18181b; }
   .vp-version[aria-pressed="true"] { border-color: #f24e4e; color: #fda4a4; }
   .vp-danger { color: var(--danger); border-color: rgb(var(--danger-rgb) / 45%); background: rgb(var(--danger-rgb) / 8%); }
   .vp-button {
-    font-size: 11px; padding: 5px 8px; border: 1px solid #3f3f46; border-radius: 5px; background: #202024;
+    font-size: var(--fs-2xs); padding: 5px 8px; border: 1px solid #3f3f46; border-radius: 5px; background: #202024;
   }
   .vp-button:disabled { opacity: .5; cursor: default; }
   /* 正在跑的那颗按钮不变灰，反而亮起来：一眼看出"你点的这一下确实开始了"。 */
@@ -713,7 +713,7 @@
   .vp-primary:enabled:hover, .vp-primary:enabled:focus-visible {
     background-color: #f24e4e; color: #0e0e10; border-color: #f24e4e;
   }
-  .vp-tab { font-size: 11px; padding: 5px 10px; background: #202024; }
+  .vp-tab { font-size: var(--fs-2xs); padding: 5px 10px; background: #202024; }
   .vp-tab[aria-pressed="true"] { background: #f24e4e; color: #0e0e10; }
   .vp-badge {
     font-size: var(--fs-2xs); padding: 1px 6px; border-radius: 999px; border: 1px solid #3f3f46; color: #a1a1aa;
@@ -726,7 +726,7 @@
   .vp-help-button {
     width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center;
     border: 1px solid #3f3f46; border-radius: 999px; background: #202024; color: #a1a1aa;
-    font-size: 11px; font-weight: 600; line-height: 1;
+    font-size: var(--fs-2xs); font-weight: 600; line-height: var(--lh-none);
   }
   .vp-help-button:hover, .vp-help-button:focus-visible { border-color: #f24e4e; color: #fda4a4; }
   .vp-help-card {
@@ -738,9 +738,9 @@
   .vp-help:hover .vp-help-card, .vp-help:focus-within .vp-help-card, .vp-help.open .vp-help-card {
     opacity: 1; visibility: visible; pointer-events: auto;
   }
-  .vp-help-row { display: flex; flex-direction: column; gap: 1px; font-size: var(--fs-2xs); line-height: 1.5; color: #a1a1aa; }
+  .vp-help-row { display: flex; flex-direction: column; gap: 1px; font-size: var(--fs-2xs); line-height: var(--lh-ui); color: #a1a1aa; }
   .vp-help-row b { color: #e4e4e7; }
-  .vp-help-note { font-size: var(--fs-2xs); line-height: 1.5; color: #71717a; }
+  .vp-help-note { font-size: var(--fs-2xs); line-height: var(--lh-ui); color: #71717a; }
   .vp-frames { border: 1px solid #2e2e33; border-radius: 5px; background: #121215; padding: 6px 8px; }
   .vp-frames-summary { font-size: var(--fs-2xs); color: #a1a1aa; cursor: pointer; user-select: none; }
   .vp-ref { display: flex; flex-direction: column; gap: 4px; }
@@ -762,9 +762,9 @@
     border: 1px solid #5d3a1a; background: linear-gradient(180deg, #1c1510, #14110f);
   }
   .vp-progress-top { display: flex; align-items: center; gap: 6px; }
-  .vp-progress-title { font-size: 11px; font-weight: 600; color: #fda4a4; }
+  .vp-progress-title { font-size: var(--fs-2xs); font-weight: 600; color: #fda4a4; }
   .vp-progress-time { margin-left: auto; font-size: var(--fs-2xs); color: #a1a1aa; font-variant-numeric: tabular-nums; }
-  .vp-progress-note { font-size: var(--fs-2xs); line-height: 1.5; color: #a1a1aa; }
+  .vp-progress-note { font-size: var(--fs-2xs); line-height: var(--lh-ui); color: #a1a1aa; }
   .vp-bar { position: relative; display: block; height: 3px; border-radius: 999px; background: #2a2a30; overflow: hidden; }
   .vp-bar i {
     position: absolute; top: 0; bottom: 0; left: 0; width: 34%; border-radius: 999px;
@@ -788,8 +788,8 @@
     .vp-spin, .vp-bar i, .vp-skeleton i, article[data-running="true"] { animation: none; }
   }
   .vp-body {
-    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    font-size: var(--fs-xs); line-height: 1.7; white-space: pre-wrap; word-break: break-word;
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs); line-height: var(--lh-read); white-space: pre-wrap; word-break: break-word;
     color: #e4e4e7; background: #121215; border: 1px solid #2e2e33; border-radius: 5px; padding: 8px;
     overflow-y: auto;
   }

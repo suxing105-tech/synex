@@ -240,7 +240,7 @@
       </button>
       <span class="flex-1 min-w-0 truncate text-xs text-muted" title={current.filename}>{current.filename}</span>
       {#if comparing}
-        <span class="text-[11px] text-muted">对比已选中的两个视频</span>
+        <span class="text-2xs text-muted">对比已选中的两个视频</span>
         <button type="button" class="rounded-lg px-3 py-2 text-xs" aria-pressed="true" onclick={() => { compareOn = false; }}>退出对比</button>
         <!-- 与图片同一处、同一套按钮：顶栏正中间。必须排在本段最后：
              Svelte 5 的事件委托里，组件排在同分支的兄弟元素之前会让后面的按钮点不动。 -->
@@ -303,11 +303,11 @@
       {:else}
         <div class="absolute inset-0 flex flex-col items-center justify-center gap-4 text-white">
           <Icon name="video" size={56} />
-          <div class="text-[14px] text-zinc-300">该格式无法在应用内直接播放</div>
-          <div class="text-[12px] text-zinc-500">({current.filename})</div>
+          <div class="text-base text-zinc-300">该格式无法在应用内直接播放</div>
+          <div class="text-xs text-zinc-500">({current.filename})</div>
           <button
             type="button"
-            class="px-4 py-2 rounded-lg bg-accent text-bg text-[13px] font-medium hover:opacity-90"
+            class="px-4 py-2 rounded-lg bg-accent text-bg text-sm font-medium hover:opacity-90"
             onclick={() => void openInSystem()}
           >
             用系统播放器打开

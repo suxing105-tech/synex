@@ -19,7 +19,7 @@
 
 <style>
   .compare-mode-switch { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); display:flex; gap:3px; padding:3px; border:1px solid #343438; border-radius:9px; background:#111113; }
-  .compare-mode-switch button { padding:5px 12px; border:0; border-radius:6px; color:#a1a1aa; background:transparent; font-size:12px; cursor:pointer; white-space:nowrap; }
+  .compare-mode-switch button { padding:5px 12px; border:0; border-radius:6px; color:#a1a1aa; background:transparent; font-size: var(--fs-xs); cursor:pointer; white-space:nowrap; }
   .compare-mode-switch button:hover { color:#f4f4f5; }
   .compare-mode-switch button.active { color:#fff; background:#3f3f46; }
 </style>

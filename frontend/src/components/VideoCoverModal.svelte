@@ -76,7 +76,7 @@
       <header class="flex items-center justify-between px-4 py-3 border-b border-border">
         <div class="flex items-center gap-2">
           <Icon name="video" size={16} />
-          <span class="text-[13px] font-medium">修改视频封面</span>
+          <span class="text-sm font-medium">修改视频封面</span>
         </div>
         <button
           type="button"
@@ -104,14 +104,14 @@
           </video>
         </div>
 
-        <div class="text-[12px] text-muted">
+        <div class="text-xs text-muted">
           拖动进度到想要作为封面的画面，然后点击「设为封面」；也可以上传一张图片作为封面。
         </div>
 
         <div class="flex flex-wrap gap-2">
           <button
             type="button"
-            class="flex-1 min-w-[160px] px-3 py-2 rounded-md bg-accent text-bg text-[13px] font-medium hover:opacity-90 disabled:opacity-50"
+            class="flex-1 min-w-[160px] px-3 py-2 rounded-md bg-accent text-bg text-sm font-medium hover:opacity-90 disabled:opacity-50"
             disabled={saving}
             onclick={setFrame}
           >
@@ -119,7 +119,7 @@
           </button>
           <button
             type="button"
-            class="px-3 py-2 rounded-md border border-border hover:bg-surface-3 text-[13px] disabled:opacity-50"
+            class="px-3 py-2 rounded-md border border-border hover:bg-surface-3 text-sm disabled:opacity-50"
             disabled={saving}
             onclick={upload}
           >
@@ -127,7 +127,7 @@
           </button>
           <button
             type="button"
-            class="px-3 py-2 rounded-md border border-border hover:bg-surface-3 text-[13px] disabled:opacity-50"
+            class="px-3 py-2 rounded-md border border-border hover:bg-surface-3 text-sm disabled:opacity-50"
             disabled={saving}
             onclick={reset}
           >

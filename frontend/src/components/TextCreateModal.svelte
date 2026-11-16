@@ -97,14 +97,14 @@
 
 <style>
   .text-modal-backdrop { position: fixed; inset: var(--desktop-titlebar-height, 0px) 0 0; background: #0009; z-index: 90; display: flex; align-items: center; justify-content: center; padding: 25px; color: #dddce4; }
-  .text-modal { width: 540px; max-width: 96vw; max-height: 90vh; overflow: auto; border: 1px solid #44404a; border-radius: 12px; background: #18181b; padding: 22px; box-shadow: 0 22px 90px #0008; font-size: 13px; }
+  .text-modal { width: 540px; max-width: 96vw; max-height: 90vh; overflow: auto; border: 1px solid #44404a; border-radius: 12px; background: #18181b; padding: 22px; box-shadow: 0 22px 90px #0008; font-size: var(--fs-sm); }
   .text-modal header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
   .text-modal h2 { font-size: var(--fs-lg); font-weight: 600; }
-  .text-modal p { line-height: 1.8; margin: 12px 0; }
-  .text-modal label { display: flex; flex-direction: column; gap: 7px; margin: 14px 0; font-size: 12px; }
+  .text-modal p { line-height: var(--lh-read); margin: 12px 0; }
+  .text-modal label { display: flex; flex-direction: column; gap: 7px; margin: 14px 0; font-size: var(--fs-xs); }
   .text-modal .row { display: flex; gap: 8px; }
-  .text-modal input, .text-modal select { background: #27272a; color: inherit; border: 1px solid #383941; border-radius: 6px; padding: 7px 9px; font-size: 13px; min-width: 0; flex: 1; }
-  .text-modal button { cursor: pointer; border: 1px solid #49424c; border-radius: 6px; padding: 6px 12px; font-size: 12px; background: transparent; color: inherit; white-space: nowrap; }
+  .text-modal input, .text-modal select { background: #27272a; color: inherit; border: 1px solid #383941; border-radius: 6px; padding: 7px 9px; font-size: var(--fs-sm); min-width: 0; flex: 1; }
+  .text-modal button { cursor: pointer; border: 1px solid #49424c; border-radius: 6px; padding: 6px 12px; font-size: var(--fs-xs); background: transparent; color: inherit; white-space: nowrap; }
   .text-modal button:hover:not(:disabled) { background: #323237; color: #fff; }
   .text-modal button:disabled { opacity: .45; cursor: default; }
   .text-modal .error { color: #f0a8a8; }

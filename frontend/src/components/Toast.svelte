@@ -35,7 +35,7 @@
 >
   {#each cornerToasts as t (t.id)}
     <div
-      class="toast-card pointer-events-auto bg-surface-2 border border-border border-l-4 {accentClass(t)} rounded-md px-3 py-2 text-[12px] shadow-lg min-w-[180px] max-w-[360px] flex items-start gap-2"
+      class="toast-card pointer-events-auto bg-surface-2 border border-border border-l-4 {accentClass(t)} rounded-md px-3 py-2 text-xs shadow-lg min-w-[180px] max-w-[360px] flex items-start gap-2"
       role={t.kind === "error" ? "alert" : "status"}
     >
       {#if t.kind === "progress"}
@@ -144,7 +144,7 @@
     border: 1px solid #4a4a52;
     background: transparent;
     color: #d6d6dc;
-    font-size: 12px;
+    font-size: var(--fs-xs);
     cursor: pointer;
     white-space: nowrap;
   }

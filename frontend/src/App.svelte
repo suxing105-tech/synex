@@ -441,7 +441,7 @@ import Icon from "./components/Icon.svelte";
     color: #0e0e10;
     padding: 8px 14px;
     border-radius: 999px;
-    font-size: 12px;
+    font-size: var(--fs-xs);
     font-weight: 500;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
     transition: transform 0.15s ease-out;

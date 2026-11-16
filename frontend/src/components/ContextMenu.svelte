@@ -68,7 +68,7 @@
   </div>
 {/if}
 <style>
-  .context-menu { position: fixed; z-index: 100; width: 184px; max-width: calc(100vw - 8px); max-height: calc(100vh - 8px); overflow-y: auto; padding: 4px; border: 1px solid #3b3b40; border-radius: 7px; background: #222225; box-shadow: 0 8px 28px #0007; font: 12.5px var(--font-ui, sans-serif); }
+  .context-menu { position: fixed; z-index: 100; width: 184px; max-width: calc(100vw - 8px); max-height: calc(100vh - 8px); overflow-y: auto; padding: 4px; border: 1px solid #3b3b40; border-radius: 7px; background: #222225; box-shadow: 0 8px 28px #0007; font-size: var(--fs-xs); font-family: var(--font-sans); }
   .ctx-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 7px 9px; text-align: left; color: #e4e4e7; border: 0; border-radius: 4px; background: transparent; cursor: pointer; }
   .ctx-item span:first-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .ctx-item:hover, .ctx-item:focus-visible, .ctx-item[aria-expanded="true"] { background: #38383d; outline: none; }

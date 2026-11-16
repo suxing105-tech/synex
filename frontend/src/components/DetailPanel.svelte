@@ -380,7 +380,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
           {/if}
         </button>
         <div class="min-w-0 flex-1">
-          <div class="text-[12px] font-mono font-semibold truncate" title={d.filename}>{d.filename}</div>
+          <div class="text-xs font-mono font-semibold truncate" title={d.filename}>{d.filename}</div>
           <div class="text-2xs text-muted mt-0.5 flex gap-x-2 gap-y-0.5 flex-wrap">
             {#if d.width && d.height}<span>{d.width}×{d.height}</span>{/if}
             {#if (d.kind === "video" || d.kind === "audio") && d.duration_seconds != null}<span>{formatDuration(d.duration_seconds)}</span>{/if}
@@ -551,7 +551,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
   }
   .menu-item {
     width:100%; display:flex; align-items:center; gap:8px;
-    padding:6px 10px; text-align:left; font-size:12px;
+    padding:6px 10px; text-align:left; font-size: var(--fs-xs);
     color:var(--text-2); white-space:nowrap;
   }
   .menu-item:hover,
@@ -570,7 +570,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
   .workbench-disclosure { border-top:1px solid var(--line); margin-top:9px; padding-top:8px; }
   .workbench-disclosure > summary {
     display:flex; align-items:center; gap:8px; min-height:26px;
-    cursor:pointer; list-style:none; color:var(--text-2); font-size:11px;
+    cursor:pointer; list-style:none; color:var(--text-2); font-size: var(--fs-2xs);
   }
   .workbench-disclosure > summary::-webkit-details-marker { display:none; }
   .workbench-disclosure > summary::before {

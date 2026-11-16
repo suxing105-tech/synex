@@ -148,9 +148,9 @@
         </div>
         <div class="reverse-prompt-content">
           {#if outputLanguage === "zh"}
-            <div aria-label="中文反推提示词" class="prompt-copy text-xs leading-6 whitespace-pre-wrap break-words">{current.prompt_zh}</div>
+            <div aria-label="中文反推提示词" class="prompt-copy text-xs leading-prose whitespace-pre-wrap break-words">{current.prompt_zh}</div>
           {:else}
-            <div aria-label="English reverse prompt" class="prompt-copy text-xs leading-6 whitespace-pre-wrap break-words">{current.prompt_en}</div>
+            <div aria-label="English reverse prompt" class="prompt-copy text-xs leading-prose whitespace-pre-wrap break-words">{current.prompt_en}</div>
           {/if}
         </div>
       {:else}
@@ -189,7 +189,7 @@
 </section>
 
 <style>
-  button { font-size: 11px; padding: 5px 8px; border: 1px solid #3f3f46; border-radius: 5px; background: #202024; }
+  button { font-size: var(--fs-2xs); padding: 5px 8px; border: 1px solid #3f3f46; border-radius: 5px; background: #202024; }
   .reverse-panel button.generate-reverse {
     background-color: #f24e4e;
     color: #fff;
@@ -226,5 +226,5 @@
     color: var(--text-1);
   }
   .reverse-panel button.version-item[aria-current="true"] { font-weight: 600; }
-  textarea { display: block; width: 100%; margin-top: 6px; padding: 8px; font-size: 12px; color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 5px; }
+  textarea { display: block; width: 100%; margin-top: 6px; padding: 8px; font-size: var(--fs-xs); color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 5px; }
 </style>

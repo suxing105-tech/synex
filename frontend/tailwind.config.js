@@ -10,7 +10,7 @@ export default {
     // 字号七档定义在 theme.fontSize（不是 theme.extend）：这是故意的，为的是把 Tailwind 内置的
     // text-xs / text-sm / text-base / text-lg / text-xl 一并占掉，全站只剩「text-sm 就是 13px」
     // 一个说法。代价写进 AGENTS.md §3.1：内置的 text-2xl 及以上从这一版起不存在，写了不报错但没样式。
-    // 行高统一挂 --lh-label（三轨的默认轨），要读成段的段落自己换 --lh-read。
+    // 行高默认挂 --lh-label（五档里的默认轨），要多行/成段/长文自己换 leading-ui / -read / -prose。
     fontSize: {
       "2xs": ["var(--fs-2xs)", { lineHeight: "var(--lh-label)" }],
       xs: ["var(--fs-xs)", { lineHeight: "var(--lh-label)" }],
@@ -20,6 +20,22 @@ export default {
       lg: ["var(--fs-lg)", { lineHeight: "var(--lh-label)" }],
       xl: ["var(--fs-xl)", { lineHeight: "var(--lh-label)" }],
     },
+    // 行高、字距和字号同一套做法：放在 theme 顶层占掉 Tailwind 内置的 leading-* / tracking-*，
+    // 全站只剩「leading-read 就是 1.6」一种说法。代价和 fontSize 一样写进 AGENTS.md §3.1：
+    // 内置的 leading-tight/snug/normal/relaxed/loose、tracking-tight…tighter 从这一版起不存在。
+    lineHeight: {
+      none: "1",
+      label: "var(--lh-label)",
+      ui: "var(--lh-ui)",
+      read: "var(--lh-read)",
+      prose: "var(--lh-prose)",
+    },
+    letterSpacing: {
+      label: "var(--track-label)",
+      badge: "var(--track-badge)",
+      display: "var(--track-display)",
+    },
+
     extend: {
       colors: {
         bg: ink(0),

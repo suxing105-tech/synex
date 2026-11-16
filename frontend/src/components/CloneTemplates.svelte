@@ -410,7 +410,7 @@
 </div>
 
 <style>
-  .clone-load { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; color: #a1a1aa; font-size: 13px; }
+  .clone-load { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; color: #a1a1aa; font-size: var(--fs-sm); }
   .clone-tpl-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
   .clone-tpl { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px solid #2c2c31; border-radius: 8px; background: #1d1d21; }
   .clone-tpl.is-active { border-color: rgb(242 78 78 / 60%); }
@@ -419,26 +419,26 @@
   .clone-hidden-title { margin: 14px 0 6px; }
   .clone-tpl-hidden { background: #17171a; }
   .clone-tpl-hidden .clone-tpl-name { font-weight: 500; color: #a1a1aa; }
-  .clone-tpl-tag { padding: 1px 6px; border-radius: 999px; background: rgb(242 78 78 / 18%); color: #ff8f8f; font-size: 11px; }
+  .clone-tpl-tag { padding: 1px 6px; border-radius: 999px; background: rgb(242 78 78 / 18%); color: #ff8f8f; font-size: var(--fs-2xs); }
   .clone-tpl-tag-builtin { background: rgb(59 130 246 / 16%); color: #93c5fd; }
-  .clone-tpl-kind { padding: 1px 6px; border-radius: 999px; background: rgb(59 130 246 / 16%); color: #93c5fd; font-size: 11px; }
+  .clone-tpl-kind { padding: 1px 6px; border-radius: 999px; background: rgb(59 130 246 / 16%); color: #93c5fd; font-size: var(--fs-2xs); }
   .clone-tpl-kind.is-video { background: rgb(245 158 11 / 16%); color: #fbbf24; }
   .clone-tpl-kind.is-audio { background: rgb(139 92 246 / 16%); color: #c4b5fd; }
-  .clone-tpl-kind-set { padding: 2px 6px; font-size: 12px; }
+  .clone-tpl-kind-set { padding: 2px 6px; font-size: var(--fs-xs); }
   .clone-tpl-actions { display: flex; flex-wrap: wrap; gap: 6px; }
   .clone-import-box { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px dashed #3a3a41; border-radius: 8px; background: #1a1a1e; }
   .clone-import-box.is-hover { border-color: #f24e4e; background: rgb(242 78 78 / 8%); }
-  .clone-import-box textarea { width: 100%; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  .clone-import-box textarea { width: 100%; font-family: var(--font-mono); font-size: var(--fs-xs); }
   .clone-group { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
-  .clone-group-label { color: #9a9aa1; font-size: 11px; letter-spacing: .04em; }
+  .clone-group-label { color: #9a9aa1; font-size: var(--fs-2xs); letter-spacing: var(--track-label); }
   .clone-slot { display: flex; align-items: center; gap: 8px; color: #d8d8dc; font-size: var(--fs-sm); }
-  .clone-slot code { color: #8a8a90; font-size: 11px; }
+  .clone-slot code { color: #8a8a90; font-size: var(--fs-2xs); }
   .clone-name-input { min-width: 160px; }
   /* 槽位确认这块不用 SettingsRow：它的 control snippet 和正文里的 {#each} 撞在一起会渲染崩，
      而且这一屏本来就是一张密集的清单表，左右分栏反而放不下。 */
   .clone-confirm { display: flex; flex-direction: column; gap: 10px; padding: 12px 0 0; border-top: 1px solid #2a2a2f; margin-top: 12px; }
   .clone-confirm-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .clone-confirm-head > div { display: flex; flex-direction: column; gap: 2px; margin-right: auto; }
-  .clone-confirm-title { font-size: 13px; font-weight: 500; color: #e6e6ea; }
-  .clone-warnings { margin: 8px 0 0; padding-left: 18px; color: #ffc36b; font-size: 12px; }
+  .clone-confirm-title { font-size: var(--fs-sm); font-weight: 500; color: #e6e6ea; }
+  .clone-warnings { margin: 8px 0 0; padding-left: 18px; color: #ffc36b; font-size: var(--fs-xs); }
 </style>

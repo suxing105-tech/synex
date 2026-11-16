@@ -1165,7 +1165,7 @@ import { hoverPlay } from "../lib/hover-play";
           <span>{selectedLabel}</span>
           <button
             type="button"
-            class="px-1.5 py-0.5 text-[11px] rounded border border-border inline-flex min-h-6 items-center hover:border-accent"
+            class="px-1.5 py-0.5 text-2xs rounded border border-border inline-flex min-h-6 items-center hover:border-accent"
             onclick={() => clearSelection()}
             title="清空选区（Esc）"
           >清空</button>
@@ -1230,20 +1230,20 @@ import { hoverPlay } from "../lib/hover-play";
         {#if importing}
           <div class="text-xl mb-2">⏳</div>
           <div class="text-md font-medium">导入中…</div>
-          <div class="text-[12px] text-muted mt-1 font-mono">
+          <div class="text-xs text-muted mt-1 font-mono">
             {importingProgress.done}/{importingProgress.total}
           </div>
         {:else}
           <div class="text-xl mb-2">📥</div>
           <div class="text-md font-medium">释放以保存到{dropTargetLabel}</div>
-          <div class="text-[12px] text-muted mt-1">
+          <div class="text-xs text-muted mt-1">
             {#if dragFileCount > 0}
               <span class="inline-block px-2 py-0.5 rounded bg-accent/20 text-accent font-mono">
                 {dragFileCount} 个文件
               </span>
             {/if}
           </div>
-          <div class="text-[11px] text-muted/80 mt-2">支持图片 / 视频 / 音频（MP3 · WAV · FLAC · M4A · AAC · OPUS · OGG）；也可以按 Ctrl+V 导入剪贴板内容</div>
+          <div class="text-xs leading-read text-muted/80 mt-2">支持图片 / 视频 / 音频（MP3 · WAV · FLAC · M4A · AAC · OPUS · OGG）；也可以按 Ctrl+V 导入剪贴板内容</div>
         {/if}
       </div>
     </div>
@@ -1548,7 +1548,7 @@ import { hoverPlay } from "../lib/hover-play";
   /* 缩略图的形状语言（圆角 / hover 描边 / 选中外圈环 / 淡入 / 页脚）统一在 app.css 的
      .media-card* 上，Feed 与详情面板、参考帧、素材选择器共用同一套，这里不再各自定义。 */
   .image-rename { min-width: 0; border: 1px solid #888; border-radius: 3px; background: #222; color: #eee; padding: 1px 3px; outline: none; font: inherit; }
-  .import-progress { position: sticky; top: 0; z-index: 25; width: fit-content; margin: 0 auto 8px; padding: 6px 12px; background: #292929; border-radius: 16px; font-size: 12px; color: #ddd; }
+  .import-progress { position: sticky; top: 0; z-index: 25; width: fit-content; margin: 0 auto 8px; padding: 6px 12px; background: #292929; border-radius: 16px; font-size: var(--fs-xs); color: #ddd; }
   /* 「所有素材」里的文本卡：没有画面的一条横幅，徽标 + 文件名 + 摘录，点开进中间栏的阅读层。
      摘录取几行随列宽降级（t2 两行 / t1 一行 / t0 收掉），整卡高度与贪心分列同源于
      lib/media-format.ts 的 textCardHeightFor，所以窄列里不再出现「内容比卡高」。
@@ -1592,19 +1592,19 @@ import { hoverPlay } from "../lib/hover-play";
   .empty-search button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .empty-search small { color: var(--text-3); }
   .empty-text-actions { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 12px; color: #a9a7b3; font-size: var(--fs-sm); }
-  .empty-text-actions button { border: 1px solid rgb(58 58 65); border-radius: 6px; background: #232327; color: #dddce4; padding: 6px 12px; font-size: 12px; cursor: pointer; margin: 0 4px; }
+  .empty-text-actions button { border: 1px solid rgb(58 58 65); border-radius: 6px; background: #232327; color: #dddce4; padding: 6px 12px; font-size: var(--fs-xs); cursor: pointer; margin: 0 4px; }
   .empty-text-actions button.primary { background: #6d4c4c; border-color: #8a5f5f; }
   .empty-text-actions small { color: #74727e; }
   .text-dialog-backdrop { position: fixed; inset: var(--desktop-titlebar-height, 0px) 0 0; background: #000a; z-index: 90; display: flex; align-items: center; justify-content: center; padding: 24px; }
-  .text-dialog { width: 460px; max-width: 96vw; border: 1px solid #44404a; border-radius: 12px; background: #18181b; padding: 20px; color: #dddce4; font-size: 13px; }
+  .text-dialog { width: 460px; max-width: 96vw; border: 1px solid #44404a; border-radius: 12px; background: #18181b; padding: 20px; color: #dddce4; font-size: var(--fs-sm); }
   .text-dialog h2 { font-size: var(--fs-md); font-weight: 600; margin-bottom: 12px; }
   .text-dialog label { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
   .text-dialog input { background: #101012; border: 1px solid #45454d; border-radius: 6px; color: inherit; padding: 7px 9px; }
-  .text-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.7 Consolas, 'Microsoft YaHei', monospace; background: #0e0e10; padding: 12px; border-radius: 6px; }
-  .dialog-muted { color: #8b8997; font-size: 12px; line-height: 1.7; }
-  .dialog-error { color: #f0ce9b; font-size: 12px; margin-bottom: 8px; }
+  .text-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-xs); line-height: var(--lh-read); font-family: var(--font-mono); background: #0e0e10; padding: 12px; border-radius: 6px; }
+  .dialog-muted { color: #8b8997; font-size: var(--fs-xs); line-height: var(--lh-read); }
+  .dialog-error { color: #f0ce9b; font-size: var(--fs-xs); margin-bottom: 8px; }
   .dialog-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 14px; }
-  .dialog-actions button { border: 1px solid #49424c; border-radius: 6px; background: #26262b; color: #dddce4; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+  .dialog-actions button { border: 1px solid #49424c; border-radius: 6px; background: #26262b; color: #dddce4; padding: 6px 12px; font-size: var(--fs-xs); cursor: pointer; }
   .dialog-actions button:disabled { opacity: .45; cursor: default; }
   .dialog-actions .primary { background: #6d4c4c; border-color: #8a5f5f; }
   .dialog-actions .danger { background: var(--danger); border-color: var(--danger); color: var(--accent-ink); }
@@ -1620,7 +1620,7 @@ import { hoverPlay } from "../lib/hover-play";
      圆角走 --r-pill：4px 不在圆角四档里，chip 该是胶囊。 */
   .text-format {
     align-self: flex-start; padding: 1px 5px; border-radius: var(--r-pill); background: var(--raise-2);
-    color: var(--text-2); font-size: var(--fs-2xs); line-height: var(--lh-label); letter-spacing: .04em;
+    color: var(--text-2); font-size: var(--fs-2xs); line-height: var(--lh-label); letter-spacing: var(--track-label);
   }
   .text-name {
     font-size: var(--fs-sm); line-height: var(--lh-label); white-space: nowrap; overflow: hidden;

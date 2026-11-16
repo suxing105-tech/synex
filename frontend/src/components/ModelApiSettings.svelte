@@ -399,36 +399,36 @@
      近黑（那是给红底胶囊用的），它只覆盖背景不覆盖文字，选中那张卡的名字就会糊在深红底上。 */
   .api-card[aria-pressed="true"] { border-color: #ef4444; background: #1d1416; color: #fafafa; }
   .api-card:disabled { opacity: .55; cursor: default; }
-  .api-avatar { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: #26262c; font-size: 11px; font-weight: 600; color: #d4d4d8; flex: none; }
+  .api-avatar { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: #26262c; font-size: var(--fs-2xs); font-weight: 600; color: #d4d4d8; flex: none; }
   .api-card-body { display: grid; gap: 2px; min-width: 0; }
-  .api-card-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .api-card-name { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .api-card-state { font-size: var(--fs-xs); color: #fbbf24; }
   .api-card-set { color: #4ade80; }
   .api-key-section { display: grid; gap: 6px; padding-top: 12px; border-top: 1px solid rgb(255 255 255 / 7%); }
-  .api-key-title { margin: 0; font-size: 13px; font-weight: 600; color: #e4e4e7; }
-  .api-key-desc { margin: 0; font-size: 12px; line-height: 1.6; color: #8b8b94; }
+  .api-key-title { margin: 0; font-size: var(--fs-sm); font-weight: 600; color: #e4e4e7; }
+  .api-key-desc { margin: 0; font-size: var(--fs-xs); line-height: var(--lh-read); color: #8b8b94; }
   .api-legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .api-provider-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
-  .api-provider-name { font-size: 14px; font-weight: 600; color: #fafafa; }
+  .api-provider-name { font-size: var(--fs-base); font-weight: 600; color: #fafafa; }
   .api-provider-badge { padding: 2px 8px; border-radius: 999px; font-size: var(--fs-xs); color: #fbbf24; background: rgb(251 191 36 / 12%); }
   .api-provider-set { color: #4ade80; background: rgb(74 222 128 / 12%); }
   .api-provider-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
-  .api-help { margin-bottom: 4px; font-size: 12px; color: #a1a1aa; }
+  .api-help { margin-bottom: 4px; font-size: var(--fs-xs); color: #a1a1aa; }
   .api-help summary { cursor: pointer; color: #93c5fd; }
-  .api-help ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; line-height: 1.6; }
+  .api-help ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; line-height: var(--lh-read); }
   .api-console { color: #93c5fd; text-decoration: none; }
   fieldset { margin-top: 18px; }
   fieldset:first-child { margin-top: 0; }
-  legend { margin-bottom: 10px; font-size: 14px; font-weight: 500; color: #e6e6ea; }
-  label { display: block; font-size: 13px; color: #b8b8c3; }
+  legend { margin-bottom: 10px; font-size: var(--fs-base); font-weight: 500; color: #e6e6ea; }
+  label { display: block; font-size: var(--fs-sm); color: #b8b8c3; }
   /* 这一页既没有长文本框（指令都在「反推指令」那一页），也没有下拉了（模型不在这里挑），
      所以选择器里不留 textarea 和 select。 */
   input:not([type=checkbox]) { display: block; width: 100%; margin-top: 6px; padding: 9px 12px; color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 6px; }
   button:disabled { opacity: .5; }
   .model-summary { cursor: pointer; }
   .model-confirm { display: flex; align-items: center; gap: 10px; margin-top: 16px; font-size: var(--fs-sm); color: #b8b8c3; flex-wrap: wrap; }
-  .model-error { margin-top: 14px; font-size: 13px; color: #fb7185; }
-  .model-notice { margin-top: 14px; font-size: 13px; color: #a1a1aa; }
+  .model-error { margin-top: 14px; font-size: var(--fs-sm); color: #fb7185; }
+  .model-notice { margin-top: 14px; font-size: var(--fs-sm); color: #a1a1aa; }
   @media (max-width: 860px) { .settings-model-body { padding: 16px; } }
   /* Key 那一格不能是 type=password：Chrome 把它当登录密码，先问你要不要存，下次再自动填一串点进来，
      看着就像「这格里存了一把看不见的 Key」（苏醒就是被这串点骗过一回，键盘删干净以为把 Key 清了）。

@@ -519,7 +519,7 @@
     font-family: inherit; font-size: var(--fs-sm);
   }
   .psk-input:focus, .psk-text:focus { border-color: var(--accent); outline: none; }
-  .psk-text { flex: 1; min-height: 96px; resize: vertical; line-height: 1.6; }
+  .psk-text { flex: 1; min-height: 96px; resize: vertical; line-height: var(--lh-read); }
   .psk-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .psk-select { width: auto; min-height: var(--ctl-sm); }
   .psk-check { display: inline-flex; align-items: center; gap: 4px; color: var(--text-1); font-size: var(--fs-sm); cursor: pointer; }

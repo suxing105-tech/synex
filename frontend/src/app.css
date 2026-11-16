@@ -143,12 +143,22 @@
   --fs-lg: 19px;       /* 区块大标题，往上就该换屏了 */
   --fs-xl: 24px;       /* 展示档：启动页、空态、Markdown h1 */
 
-  /* 行高只有三轨（2026-11-16 定稿）。七个字号别名自带 --lh-label，
-     要换轨就在读得动的地方用 --lh-read、在 --fs-md 及以上的标题用 --lh-title。
-     写第四个值就是又回到「每处自己挑一个」的散装口径。 */
-  --lh-label: 1.35;    /* 默认：标签、按钮、chip、页脚、卡片信息条 */
-  --lh-read: 1.6;      /* 要读成段的：提示词框、Markdown 正文、说明、摘录 */
-  --lh-title: 1.25;    /* --fs-md 及以上的标题 */
+  /* 行高五档（2026-11-16 第二轮定稿，取代同一天早上的「三轨」——三轨落地当天就发现不够用：
+     界面上的多行短文字和成段说明被挤进同一档，长文阅读那一档反而无处安放）。
+     七个字号 class 自带 --lh-label，其余四档要自己点名（class 用 leading-none/label/ui/read/prose，
+     <style> 里写 line-height: var(--lh-*)），除此以外的行高写法一律算脱档。
+     --lh-none 其实不是行高，是「文字不撑行盒」，只给定高徽标和圆钮里的字用。 */
+  --lh-none: 1;          /* 定高控件里的字：不参与撑高 */
+  --lh-label: 1.35;      /* 默认轨：标签、按钮、chip、页脚、卡片信息条、单行标题 */
+  --lh-ui: 1.5;          /* 界面上的多行短文字：表单提示、面板说明、列表描述 */
+  --lh-read: 1.6;        /* 要读成段的：提示词框、设置说明、摘录、弹窗正文 */
+  --lh-prose: 1.9;       /* 长文阅读：Markdown 正文、文本阅读器 */
+
+  /* 字距三档，全是「拉开给眼睛分词」的正值。负字距在中英混排里没有立足点：随包字体的
+     中宫和标点是按中文排的，收紧只会挤。原有的 -.01em / -.02em 这类一律删。 */
+  --track-label: 0.04em;   /* 小号标签、分组头 */
+  --track-badge: 0.06em;   /* 全大写的小 kicker */
+  --track-display: 0.12em; /* 启动页那种一行大字 */
 
   /* 控件高度 3 档：同一排控件必须同高，差 2px 就会看着像没对齐 */
   --ctl-sm: 26px;
@@ -165,6 +175,13 @@ body,
 #app {
   height: 100%;
   overflow: hidden;
+}
+
+/* 字重只有 400 / 500 / 600 三档真字面（随包字体就这三档）。UA 给 <b>/<h1> 默认的 700
+   没有对应字面，浏览器会拿 600 描边合成假粗，看着像糊了一层——所以关掉字重合成，
+   bold 落到真的 600 上。斜体留着：随包字体没有 italic，Markdown 的 *强调* 还要靠合成斜体才分得出来。 */
+html {
+  font-synthesis: style;
 }
 
 ::-webkit-scrollbar {
@@ -458,7 +475,7 @@ body,
   background: var(--raise-2);
   color: var(--text-2);
   font-size: var(--fs-2xs);
-  line-height: 1;
+  line-height: var(--lh-none);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -530,7 +547,7 @@ body,
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px 16px;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   z-index: 90;
   animation: toastIn 0.2s ease-out;
 }
@@ -542,9 +559,9 @@ body,
 .prompt-box {
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 12px;
-  line-height: 1.55;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-ui);
 }
 
 /* Settings and reverse-prompt controls share fill-only interaction states.
@@ -676,7 +693,7 @@ body,
 }
 
 .setting-row-title {
-  font-size: 14px;
+  font-size: var(--fs-base);
   font-weight: 500;
   color: var(--text-1);
 }
@@ -684,7 +701,7 @@ body,
 .setting-row-desc {
   max-width: 88ch; /* 说明文字不跟着卡片无限加宽，宽窗口下仍保持可读行长 */
   font-size: var(--fs-sm);
-  line-height: 1.7;
+  line-height: var(--lh-read);
   color: var(--text-3);
 }
 
@@ -697,7 +714,7 @@ body,
   /* 绝对宽度上限：grid 里给 auto 列写百分比 max-width 会变成循环约束，
      长状态文字会把左边的标题列挤成一个字宽（0.2.23 之后的版式踩过）。 */
   max-width: 320px;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-2);
 }
 
@@ -725,8 +742,8 @@ body,
 }
 
 .setting-row-mono {
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
   color: var(--text-2);
 }
 
@@ -742,8 +759,8 @@ body,
 .settings-subpath {
   flex: 1;
   min-width: 0;
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
   color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -785,16 +802,16 @@ body,
 
 .settings-hint {
   max-width: 88ch;
-  font-size: 12px;
-  line-height: 1.7;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-read);
   color: var(--text-3);
 }
 
 .settings-group-label {
   margin: 26px 0 10px;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--track-label);
   color: var(--text-3);
 }
 
@@ -804,7 +821,7 @@ body,
 
 .settings-empty {
   padding: 40px 0;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
 }
 
@@ -932,7 +949,7 @@ body,
 .setting-button-ghost {
   min-height: 28px;
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-2);
 }
 
@@ -1013,7 +1030,7 @@ body,
   min-width: 3.1em;
   text-align: right;
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-3);
 }
 
@@ -1052,7 +1069,7 @@ body,
    一套语言 = 加粗 + var(--text-1) + 不做大写转换；两级只差字号：小节标题走 --fs-sm，
    卡片里的标题降一档到 --fs-xs（.is-card），副标题与各节说明走 .section-subtitle。
    定稿前三套并存：DetailPanel 私有的 .section-heading（12px / 10px 写在档外）、这里的
-   .detail-section-title（--fs-xs + uppercase + 字距）、卡片里各写各的 text-[11px] / text-[13px]。
+   .detail-section-title（--fs-xs + uppercase + 字距）、卡片里各写各的 任意值字号。
    定义只许这一份，组件里再留一份私有迟早又分叉（对照 .dock-btn 那条）。 */
 .section-heading {
   display: flex;
@@ -1063,8 +1080,8 @@ body,
 
 .section-title {
   font-size: var(--fs-sm);
-  font-weight: 650;
-  line-height: 1.35;
+  font-weight: 600;
+  line-height: var(--lh-label);
   color: var(--text-1);
 }
 
@@ -1075,7 +1092,7 @@ body,
 .section-subtitle {
   margin-top: 2px;
   font-size: var(--fs-2xs);
-  line-height: 1.35;
+  line-height: var(--lh-label);
   color: var(--text-3);
 }
 

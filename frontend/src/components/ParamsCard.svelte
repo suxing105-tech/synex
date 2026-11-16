@@ -68,7 +68,7 @@
       </div>
       {#if g.id === "lora"}
         <!-- LoRA 列表：名称 truncate，强度固定列宽右对齐，避免被挤到换行 -->
-        <ul class="p-2 text-[12px] space-y-0.5">
+        <ul class="p-2 text-xs space-y-0.5">
           {#each g.entries as [k, v]}
             <li class="flex items-center gap-2 min-w-0" title={`${k}: ${v}`}>
               <span class="text-muted truncate min-w-0 flex-1">{k}</span>
@@ -77,7 +77,7 @@
           {/each}
         </ul>
       {:else}
-        <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 p-2 text-[12px]">
+        <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 p-2 text-xs">
           {#each g.entries as [k, v]}
             {#if k === "seed"}
               <dt class="text-muted">seed</dt>
@@ -103,6 +103,6 @@
     </div>
   {/each}
   {#if groups.length === 0}
-    <div class="text-[12px] text-muted italic">没有可识别的参数</div>
+    <div class="text-xs text-muted italic">没有可识别的参数</div>
   {/if}
 </section>

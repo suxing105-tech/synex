@@ -95,38 +95,19 @@ python frontend\scripts\verify-public-release.py --version 0.2.21 --dir outputs\
 丢了私钥就再也签不出能自动更新的版本（已发布客户端只认这把公钥）。
 新增副本时同步更新上面两处路径的记录。
 
-### 2026-11-15 重新生成了一次
+### 更新密钥只用一把，不换（2026-11-16 定稿）
 
-旧公钥（`25446741BFDF8FD0`）是 Tauri 公开的**测试密钥**，不能用来签正式发布；
-对应的私钥也已丢失（仓库内与 `F:\` 备份都是空的）。
-本次重新生成了一对密钥，并把 `tauri.conf.json` 里的 `pubkey` 换成新公钥：
+发布通道与更新密钥就是本仓库这一套：`suxing105-tech/synex` + 公钥 `2544671ABFEF8FD0`，私钥是上面记的
+`outputs\auto-update-v1\private\updater.key`（`F:\SeekX-Backups\auto-update-private\` 有同 mtime 的一份）。
+已装客户端内嵌的就是这把公钥，换钥匙等于让所有老客户端从此验不上我们的更新、只能手动重装，所以不换。
 
-- 新密钥 ID：`8C00E93C8F6C6093`
-- 生成命令：`pnpm tauri signer generate --ci -w outputs/auto-update-v1/private/updater.key`
+fork `virsux/synex` 在 0.2.37 把自己的仓库名和新公钥 `8C00E93C8F6C6093` 写进了脚本与文档，并说
+「旧私钥已丢失、仓库内与 `F:\` 备份都是空的、旧公钥是 Tauri 公开的测试密钥」。**三条都不成立**，
+2026-11-16 复核过：仓库内和 `F:\` 两处都有 `updater.key` 与 `.pub`（同 mtime 2026-09-09 01:33），
+两份 `.pub` 与 `tauri.conf.json` 里的 `pubkey` 逐字相同；公钥原文和 key id 在全网搜不到。
+同一目录里另有一对同日生成的 `test.key` / `test.key.pub`（与 `pubkey` 不同），他们说的「测试密钥」
+应当是认错了这一对。2026-11-15 合并 0.2.35–0.2.37 时没采纳它那笔发布口径（仓库地址与
+`tauri.conf.json` 的 `pubkey` 全部退回本仓库原值），v0.2.38 就是用原来这把钥匙签的。
 
-**影响：旧版客户端内嵌的是旧公钥，验不上新密钥签的更新包。**
-旧版必须手动安装一次含新公钥的版本（本次 v0.2.37 就是），之后才能走自动更新。
-
-仓库名也从 `suxing105-tech/synex` 改到 `virsux/synex`（全部脚本、`tauri.conf.json`、
-`updates.rs`、README 一并改完，`backend/tests/test_update_manifest.py` 也同步改了）。
-
-
-## 2026-11-15 合并 virsux/synex（0.2.35–0.2.37）后，发布通道与密钥的口径
-
-从 `virsux/synex` 合回来的那批改动里，有一笔 `781b1f1`「发布仓库换成 virsux/synex，更新签名私钥
-重新生成」。**本次合并没有采纳这一笔的发布口径**，仓库地址与 `tauri.conf.json` 里的 `pubkey`
-全部退回本仓库原值（`suxing105-tech/synex` + 公钥 `2544671ABFEF8FD0`），涉及：
-`tauri.conf.json`、`updates.rs`、`make-update-manifest.py`、`publish-release.py`、
-`verify-public-release.py`、`backend/tests/test_update_manifest.py`、README。
-
-原因：本机 `outputs\auto-update-v1\private\updater.key`（连同 `.pub`，两者与上面那把公钥对得上）
-是存在的，换密钥不是「本地补个公钥」就能了结的事——采纳他们的公钥，等于让已装客户端从此验不上
-本通道签发的更新，而他们的私钥不在这个仓库里。
-
-两点必须记清楚：
-
-1. 上面「2026-11-15 重新生成了一次」那一节的说法（旧私钥丢失、仓库内与 `F:\` 备份都是空的）
-   与本机实际情况不符：仓库内那把私钥在，`.pub` 也在，路径见「更新签名私钥」。
-   他们说旧公钥是 Tauri 公开的测试密钥——**这条没查实**，留给苏醒判断。
-2. 如果决定改用他们的通道与密钥（`virsux/synex` + `8C00E93C8F6C6093`），那是一次发布口径变更，
-   要连「旧客户端必须手动装一次含新公钥的版本」一起做，不能只换脚本。
+以后遇到 fork 或新机器要动这块，只需要回答一个问题：**私钥在不在**。在就沿用；
+真不在才谈换钥匙，而换钥匙必须连「所有已装客户端手动重装一次含新公钥的版本」一起做完。

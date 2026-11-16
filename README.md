@@ -182,7 +182,7 @@ cd frontend && pnpm test -- --run
 │   └── scripts\            # sidecar / 更新 / 发布 / ffmpeg 取用脚本
 ├── vendor\media-tools\     # 本地 ffmpeg/ffprobe 缓存（gitignore，打包时进安装包）
 ├── docs\images\            # README 配图
-├── outputs\                # 产品 / 技术文档、构建产物
+├── outputs\                # 每轮预览包 / 验证日志 / 一次性脚本（本地目录，不入库）
 └── materials\              # 调研 / 决策记录
 ```
 
@@ -228,4 +228,4 @@ cd frontend && pnpm test -- --run
 - 视频/音频处理依赖的 ffmpeg 由安装包自带；临时换版本或排障可设 `SUXING_FFMPEG_DIR`，或把 `ffmpeg.exe`/`ffprobe.exe` 放进数据目录的 `tools\` 文件夹（查找优先级：`SUXING_FFMPEG_DIR` → 可执行文件同级 → 内嵌目录 → `数据目录\tools` → `vendor\media-tools` → PATH）。
 - 本仓库暂无 `LICENSE`；如需开源授权请补充。
 - 自动更新使用签名安装包，更新清单见 Release 里的 `latest.json`。
-- 详细设计 / 决策记录见 `outputs/`、`materials/`。
+- 设计与决策记录见 `materials/`；每轮交付说明、预览包和验证产物留在本地 `outputs/`，不入公开仓库。

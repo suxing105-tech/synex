@@ -108,3 +108,8 @@ outputs/avatar-voices-v1/candidates/
 outputs/avatar-voices-v1/contact_sheet.png
 outputs/avatar-voices-v1/new_set_roll1.png
 outputs/avatar-voices-v1/compare_roll12.png
+
+# Round-by-round delivery directory: preview packages, verification logs,
+# screenshots and one-off probes. Local only, never part of the published app.
+# The auto-update-v1/private/ rules above stay as a second lock on the key.
+outputs/

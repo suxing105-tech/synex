@@ -458,8 +458,8 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
           <div class="section-heading">
             <span class="section-icon"><Icon name="wand" size={14} /></span>
             <div class="min-w-0">
-              <h3 id="prompt-workspace-title">提示词</h3>
-              <p>工作流原文与 AI 反推结果</p>
+              <h3 id="prompt-workspace-title" class="section-title">提示词</h3>
+              <p class="section-subtitle">工作流原文与 AI 反推结果</p>
             </div>
           </div>
           {#key d.id}
@@ -486,9 +486,9 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
 
       {#if d.kind === "image"}
         <section class="workbench-section" data-workbench-section="parameters" aria-labelledby="parameter-summary-title">
-          <div class="section-heading compact-heading">
+          <div class="section-heading">
             <div>
-              <h3 id="parameter-summary-title">生成参数</h3>
+              <h3 id="parameter-summary-title" class="section-title">生成参数</h3>
             </div>
           </div>
           <details bind:open={paramsOpen} class="workbench-disclosure">
@@ -512,8 +512,8 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
       {/if}
 
       <section class="workbench-section queue-workspace" data-workbench-section="queue" aria-labelledby="queue-title">
-        <div class="section-heading compact-heading">
-          <div><h3 id="queue-title">队列</h3><p>当前任务与最近产出</p></div>
+        <div class="section-heading">
+          <div><h3 id="queue-title" class="section-title">队列</h3><p class="section-subtitle">当前任务与最近产出</p></div>
           {#if $cloneJob.running}<span class="queue-live-dot" aria-label="有任务正在运行"></span>{/if}
         </div>
         <CloneQueuePanel active={active} />
@@ -564,15 +564,6 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
     border-radius:0;
     background:transparent;
   }
-  .section-heading { display:flex; align-items:center; gap:9px; margin-bottom:10px; }
-  .section-heading h3 { font-size:12px; font-weight:650; color:var(--text-1); }
-  .section-heading p { margin-top:2px; font-size:10px; color:var(--text-3); }
-  .section-icon {
-    display:flex; align-items:center; justify-content:center;
-    width:26px; height:26px; flex:none; border-radius:8px;
-    color:var(--accent); background:color-mix(in srgb, var(--accent) 13%, transparent);
-  }
-  .compact-heading { margin-bottom:8px; }
   .prompt-stack { display:flex; flex-direction:column; gap:10px; }
   .prompt-stack :global(.reverse-panel),
   .prompt-stack :global(.rounded-lg.border) { margin-top:0; }

@@ -52,7 +52,7 @@
       title={expanded ? "收起全文" : "展开全文"}
     >
       <Icon name={expanded ? "chevron-down" : "chevron-right"} size={12} />
-      <span class="tracking-wider uppercase">{title}</span>
+      <span class="section-title is-card">{title}</span>
     </button>
     <span class="ml-auto flex items-center gap-1">
       <button

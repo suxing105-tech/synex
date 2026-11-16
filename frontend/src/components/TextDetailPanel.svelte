@@ -184,12 +184,12 @@
       {/if}
 
       <section>
-        <h4 class="detail-section-title mb-2">摘录</h4>
+        <h3 class="section-title mb-2">摘录</h3>
         <p class="whitespace-pre-wrap leading-relaxed rounded-md border border-border bg-surface-2 p-3 max-h-72 overflow-auto">{it.excerpt || "（空）"}</p>
       </section>
 
       <section>
-        <h4 class="detail-section-title mb-2">路径</h4>
+        <h3 class="section-title mb-2">路径</h3>
         <div class="flex items-start gap-2">
           <code class="flex-1 min-w-0 break-words font-mono text-[11px] rounded-md border border-border bg-surface-2 p-2.5">{#each pathSegs as seg, i}{seg}{#if i !== pathSegs.length - 1}<wbr />{/if}{/each}</code>
           <button type="button" class="dock-btn hover:bg-surface-3 shrink-0" aria-label="复制路径" onclick={() => void copyText(it.path).then(ok => pushToast(ok ? "已复制路径" : "复制失败", { kind: ok ? "success" : "error" }))}>复制</button>
@@ -197,7 +197,7 @@
       </section>
 
       <section>
-        <h4 class="detail-section-title mb-2">标签</h4>
+        <h3 class="section-title mb-2">标签</h3>
         <div class="flex flex-wrap gap-1.5">
           {#each it.tags as tag}
             <button type="button" class="px-2 py-0.5 rounded-full border border-border hover:bg-surface-3" onclick={() => searchTag(tag)}>{tag}</button>

@@ -172,7 +172,9 @@ describe("脱档字号棘轮：只许降，不许升", () => {
   // 小节标题从 text-[11px] 换成共用类里的 var(--fs-xs)，280 → 270。
   // 2026-11-13 oil-ui 评审第三刀：右栏那族微标签六处 text-[11px] 收进 .detail-section-title
 // （App / WorkflowCard / VideoPromptPanel / MetadataCard×2 / ParamsCard），270 → 264。
-const BASELINE = 264;
+  // 2026-11-16 右栏标题统一成一套语言：DetailPanel 私有的 12px / 10px、ReversePromptPanel
+  // 的 text-[13px]、PromptCard 的 text-[11px] 全并进 .section-title，264 → 248。
+  const BASELINE = 248;
 
   it("全站写在六档之外的字号不超过基线", () => {
     const { total, offenders } = countOffScale();
@@ -214,38 +216,48 @@ describe("详情栏共用一把尺子（2026-11-13 oil-ui 评审第一刀 T4 + T
     expect(textPanel.match(/class="dock-btn/g) || []).toHaveLength(8);
   });
 
-  it("小节标题只有一套：h4 + --fs-xs + 同一字距，四类素材共用一个类", () => {
-    // 定稿前是两套：媒体 h4 + tracking-wider（0.05em）、文本 h3 + tracking-wide（0.025em），
-    // 字号还都写在六档之外（text-[11px]）。
-    // 2026-11-15 合 virsux/synex（0.2.35 工作台重构）之后，名单按「这一档还留不留微标签」收窄：
-    //  · DetailPanel / WorkflowCard —— 页签取消，小节改成 .section-heading 那套卡片标题（图标 + 标题 + 副标题），
-    //    与微标签不是同一角色，所以不逼它套共用类；四类右栏因此和文本栏分成两种标题长相，要不要收敛是整体视觉决策，等苏醒点头；
-    //  · App.svelte —— 右栏头部随重构撤掉、收起入口挪进顶栏，这一栏不再有标题；
-    //  · MetadataCard.svelte —— 组件已下线删除（fork 那一侧删的，这边没有引用）。
-    const microLabel = [
-        "components/TextDetailPanel.svelte",
-        // 第三刀 T9：右栏里同一族微标签还有四处各写各的，一并收进共用类
-        "components/VideoPromptPanel.svelte",
+  it("右栏标题只有一套语言：加粗 + --text-1，两级只差字号（2026-11-16 定稿）", () => {
+    // 苏醒的口径：右栏统一一种标题长相，以 0.2.35 工作台那一套为准。定稿前三套并存——
+    // DetailPanel 私有的 .section-heading（12px / 10px 档外）、app.css 的 .detail-section-title
+    // （--fs-xs + uppercase + 字距）、卡片里各写各的 text-[11px] / text-[13px]。现在只剩一套：
+    // 标题一律 .section-title（小节 --fs-sm，卡片 .is-card 降一档到 --fs-xs），副标题 .section-subtitle。
+    const sectionTitle = ["components/DetailPanel.svelte", "components/TextDetailPanel.svelte"];
+    const cardTitle = [
         "components/ParamsCard.svelte",
+        "components/PromptCard.svelte",
+        "components/ReversePromptPanel.svelte",
+        "components/VideoPromptPanel.svelte",
       ];
-    const droppedLabel = [
-        "components/DetailPanel.svelte",
-        "components/WorkflowCard.svelte",
-        "App.svelte",
-      ];
-    for (const rel of [...microLabel, ...droppedLabel]) {
+    const noTitle = ["components/WorkflowCard.svelte", "App.svelte"];
+    for (const rel of [...sectionTitle, ...cardTitle, ...noTitle]) {
       const src = read(rel);
-      expect(src, rel + " 的小节标题没走共用类").not.toMatch(/<h[34] class="text-\[11px\]/);
-      expect(src, rel + " 还在用 h3 当小节标题").not.toMatch(/<h3 class="text-\[/);
+      expect(src, rel + " 还在用旧的 uppercase 微标签").not.toContain("detail-section-title");
+      expect(src, rel + " 的小节标题还自己挑档外字号").not.toMatch(/<h[34] class="text-\[/);
+      expect(src, rel + " 又拿 uppercase 当标题").not.toMatch(/<h[34][^>]*uppercase|tracking-wider uppercase/);
     }
-    for (const rel of microLabel) {
-      expect(read(rel), rel + " 的小节标题缺共用类").toContain("detail-section-title");
+    for (const rel of sectionTitle) {
+      expect(read(rel), rel + " 的小节标题缺共用类").toContain("class=\"section-title");
     }
-    expect(declOf(appCss, ".detail-section-title", "font-size")).toBe("var(--fs-xs)");
-    expect(declOf(appCss, ".detail-section-title", "letter-spacing")).toBe("0.05em");
-    expect(declOf(appCss, ".detail-section-title", "color")).toBe("var(--text-3)");
-  });
+    for (const rel of cardTitle) {
+      expect(read(rel), rel + " 的卡片标题缺共用类").toContain("section-title is-card");
+    }
+    for (const rel of noTitle) {
+      expect(read(rel), rel + " 不该有右栏小节标题").not.toContain("section-title");
+    }
 
+    expect(declOf(appCss, ".section-title", "font-size")).toBe("var(--fs-sm)");
+    expect(declOf(appCss, ".section-title", "font-weight")).toBe("650");
+    expect(declOf(appCss, ".section-title", "color")).toBe("var(--text-1)");
+    expect(declOf(appCss, ".section-title.is-card", "font-size")).toBe("var(--fs-xs)");
+    expect(declOf(appCss, ".section-subtitle", "font-size")).toBe("var(--fs-2xs)");
+    expect(declOf(appCss, ".section-heading", "gap")).toBe("8px");
+    // 旧的那套不许复活，也不许有人再在组件里留一份私有定义（对照 .dock-btn 那条）
+    expect(appCss, ".detail-section-title 又回来了").not.toContain(".detail-section-title {");
+    expect(read("components/DetailPanel.svelte"), ".section-heading 又变回 DetailPanel 私有定义")
+      .not.toMatch(/\.section-heading\s*\{/);
+    expect(read("components/DetailPanel.svelte"), ".section-icon 又变回私有定义")
+      .not.toMatch(/\.section-icon\s*\{/);
+  });
   it("右栏那族微标签全站只剩一套写法（第三刀 T9）", () => {
     // OnboardingModal 那一处是弹窗里的表单标签，不是详情栏小节，登记在评审总账里没动
     const hits = collectSourceFiles(srcRoot)

@@ -63,8 +63,8 @@
 <section class="params-card space-y-3">
   {#each groups as g (g.id)}
     <div class="border border-border rounded-md">
-      <div class="detail-section-title px-2 py-1 bg-surface-2 border-b border-border rounded-t-md">
-        {g.label}
+      <div class="px-2 py-1 bg-surface-2 border-b border-border rounded-t-md">
+        <h4 class="section-title is-card">{g.label}</h4>
       </div>
       {#if g.id === "lora"}
         <!-- LoRA 列表：名称 truncate，强度固定列宽右对齐，避免被挤到换行 -->

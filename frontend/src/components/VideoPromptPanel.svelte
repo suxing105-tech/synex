@@ -293,7 +293,7 @@
 
 <section class="rounded-md border border-border bg-surface-2 p-3 space-y-3" aria-label="AI 反推视频提示词">
   <div class="flex items-baseline justify-between gap-2">
-    <h4 class="detail-section-title">AI 反推视频提示词</h4>
+    <h4 class="section-title is-card">AI 反推视频提示词</h4>
     <span class="text-[10px] text-muted">{secondsText}</span>
   </div>
 

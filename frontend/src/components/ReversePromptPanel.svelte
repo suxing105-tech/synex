@@ -100,7 +100,7 @@
 </script>
 
 <section class="fill-interactions reverse-panel rounded-lg border border-border bg-surface-2 p-3 space-y-3" aria-label="AI 反推提示词">
-  <div class="flex justify-between items-center"><h4 class="text-[13px] font-semibold">AI 反推提示词</h4><span class="text-[10px] text-muted">中英双语</span></div>
+  <div class="flex justify-between items-center"><h4 class="section-title is-card">AI 反推提示词</h4><span class="text-[10px] text-muted">中英双语</span></div>
   {#if !textConfigs.length}
     <button onclick={() => window.dispatchEvent(new CustomEvent("open-model-settings"))}>配置模型</button>
   {:else}

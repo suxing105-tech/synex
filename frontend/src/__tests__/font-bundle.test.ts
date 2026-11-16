@@ -39,9 +39,13 @@ const manifest = JSON.parse(
   files: { file: string; subfamily: string; weight: number; bytes: number; sha256: string }[];
 };
 
-/** 三档 UI 字重。加字重得先在这里加，逼着人想清楚体积代价（一档约 1.7 MB）。 */
-const WEIGHTS = [400, 500, 600];
-/** 三档合计 5.1 MB，预算留一倍余量；超了就是安装包变胖，得先讨论。 */
+/**
+ * 四档 UI 字重。加字重得先在这里加，逼着人想清楚体积代价：子集化之后一档约 1.2 MB。
+ * 700 是 2026-11-16 补的展示档（主标题 + 关键操作）。html 上关了字重合，所以在它进来之前，
+ * 「要 700」只能拿 600 顶着，弹窗标题和加粗的按钮文字其实是同一个重量——这一档买的是真层级。
+ */
+const WEIGHTS = [400, 500, 600, 700];
+/** 四档合计 4.6 MB，预算 12 MB；超了就是安装包变胖，得先讨论。 */
 const BUDGET_BYTES = 12 * 1024 * 1024;
 
 const tokenBlock = (() => {
@@ -58,7 +62,7 @@ const tokenOf = (name: string) => {
 };
 
 describe("随包字体：来源可追", () => {
-  it("manifest 记全了上游身份，字重三档、按序、不重复", () => {
+  it("manifest 记全了上游身份，字重四档、按序、不重复", () => {
     expect(manifest.family).toBe("SeekX Sans");
     expect(manifest.upstream.version).toMatch(/^v\d+\.\d+$/);
     expect(manifest.upstream.archiveSha256).toMatch(/^[0-9a-f]{64}$/);
@@ -165,7 +169,7 @@ describe("字族只有一个入口", () => {
       "fontFamily 里又写了一份具体字体栈").toEqual([]);
   });
 
-  it("三档 @font-face 与 manifest 一一对应", () => {
+  it("四档 @font-face 与 manifest 一一对应", () => {
     const faces = [...appCss.matchAll(
       /@font-face\s*\{([^}]+)\}/g,
     )].map((m) => {

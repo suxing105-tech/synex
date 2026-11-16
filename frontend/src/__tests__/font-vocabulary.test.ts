@@ -94,10 +94,42 @@ describe("行高、字距只能写在档位上", () => {
   });
 });
 
-describe("字重只有三档真字面", () => {
-  it("font-weight 只出现 400 / 500 / 600", () => {
-    const hits = find(/(?<![-\w])font-weight:\s*(?!\s*(?:400|500|600)\b)(?!\s*(?:normal|bold|inherit|var\())[^;}\n]+/g);
-    expect(hits, "出现了第四档字重。随包字体只有 400/500/600，写 650 只会拿到 600 还多一个歧义：\n" + hits.join("\n")).toEqual([]);
+describe("字重只有四档真字面", () => {
+  it("font-weight 只出现 400 / 500 / 600 / 700", () => {
+    const hits = find(/(?<![-\w])font-weight:\s*(?!\s*(?:400|500|600|700)\b)(?!\s*(?:normal|bold|inherit|var\())[^;}\n]+/g);
+    expect(hits, "出现了第五档字重。随包字体只有 400/500/600/700 四个真字面，而 html 上关了字重合成，"+
+      "写 650 只会就近拿到 600，还多一个歧义：\n" + hits.join("\n")).toEqual([]);
+  });
+
+  /**
+   * 有档位不等于能随便用。700 是这套字体里最重的一档，散到 12/13px 的正文和小控件上，
+   * 整屏会变成「哪儿都粗」，层级反而没了。所以落点逐条登记：想加一处，先在这里说明它
+   * 到底是主标题还是关键操作，说不出用途就不该加。
+   */
+  const BOLD_ALLOWED = [
+    { file: "app.css", sel: "font-face", why: "声明 700 字面本身" },
+    { file: "app.css", sel: ".fill-interactions button.bg-accent", why: "关键操作：品牌色实心按钮" },
+    { file: "components/CloneModal.svelte", sel: ".cm-title", why: "弹窗主标题" },
+    { file: "components/Feed.svelte", sel: ".text-dialog h2", why: "文本弹窗主标题" },
+    { file: "components/SettingsModal.svelte", sel: ".settings-section h3", why: "设置页区块大标题" },
+    { file: "components/TextAssociateModal.svelte", sel: ".text-modal h2", why: "弹窗主标题" },
+    { file: "components/TextCreateModal.svelte", sel: ".text-modal h2", why: "弹窗主标题" },
+    { file: "components/TextReader.svelte", sel: ".text-modal h2", why: "阅读器标题" },
+    { file: "components/TextEditor.svelte", sel: ":global(h1)", why: "Markdown 文档大标题" },
+  ];
+
+  it("700 只落在登记过的主标题与关键操作上", () => {
+    const offenders: string[] = [];
+    for (const f of SOURCES) {
+      f.lines.forEach((line, i) => {
+        if (!/(?<![-\w])font-weight:\s*700\b/.test(line)) return;
+        // app.css 里一条规则占多行，规则名可能在上面，往前看五行再认
+        const ctx = f.lines.slice(Math.max(0, i - 5), i + 1).join("\n");
+        const ok = BOLD_ALLOWED.some((a) => a.file === f.rel && ctx.includes(a.sel));
+        if (!ok) offenders.push(f.rel + ":" + (i + 1) + "  " + line.trim().slice(0, 70));
+      });
+    }
+    expect(offenders, "700 又散到正文和小控件上了。它是展示档，落在小字上只会让整屏发糊：\n" + offenders.join("\n")).toEqual([]);
   });
 
   it("class 侧也只许 font-normal / font-medium / font-semibold", () => {
@@ -107,7 +139,8 @@ describe("字重只有三档真字面", () => {
 
   it("关掉了字重合成，并说明为什么留着斜体合成", () => {
     const css = readFileSync(join(srcRoot, "app.css"), "utf8");
-    expect(css, "html 上的 font-synthesis 没了：UA 的 bold(700) 会拿 600 合成假粗").toMatch(/html\s*\{[^}]*font-synthesis:\s*style;/);
+    // 现在有了真的 700 字面，这条开关管的是「写了没配字面的字重也不许合成」，别再放开
+    expect(css, "html 上的 font-synthesis 没了：没有字面的字重会被浏览器描边合成假粗").toMatch(/html\s*\{[^}]*font-synthesis:\s*style;/);
   });
 });
 

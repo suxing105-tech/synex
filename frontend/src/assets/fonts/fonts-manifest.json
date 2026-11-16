@@ -15,31 +15,38 @@
   "charsetGroups": {
     "latin+punct": 2898,
     "gb2312": 6763,
-    "source": 1586
+    "source": 1590
   },
-  "totalBytes": 3577220,
+  "totalBytes": 4787936,
   "licenseFile": "frontend/src-tauri/resources/OFL-SeekX-Sans.txt",
   "files": [
     {
       "file": "seekx-sans-regular.woff2",
       "subfamily": "Regular",
       "weight": 400,
-      "bytes": 1168936,
-      "sha256": "3c2d0bf7fe3aea21932167ed5a5d0e88cb8fb59f0a2355b6fa8637ad931fd6af"
+      "bytes": 1169868,
+      "sha256": "68734005c5de9cbc489927f2af24858bc50a24be802757247850fa70be8bd5b8"
     },
     {
       "file": "seekx-sans-medium.woff2",
       "subfamily": "Medium",
       "weight": 500,
-      "bytes": 1199124,
-      "sha256": "bc2377fec4de4ada187c4d1b354a7fad08b546e57ba6f51df66466bcbd0c4378"
+      "bytes": 1199136,
+      "sha256": "813f025f306dd47b753ddf0216662d0b14960bf5a0e6897ba7b7a5409aa2fe0b"
     },
     {
       "file": "seekx-sans-semibold.woff2",
       "subfamily": "SemiBold",
       "weight": 600,
-      "bytes": 1209160,
-      "sha256": "a741ffd229843808056c5774a2cce09d8ff032cc14db3f2b0d61b0d107204e6b"
+      "bytes": 1209808,
+      "sha256": "c05cee05542a009f6a3d7ebb381bc36ca6b8983845732483a4337fc7b1845a92"
+    },
+    {
+      "file": "seekx-sans-bold.woff2",
+      "subfamily": "Bold",
+      "weight": 700,
+      "bytes": 1209124,
+      "sha256": "2093200a2a7f5e1131aa15698edd23d0bb10f371e5c814e92d752f27f7a8c7b7"
     }
   ]
 }

@@ -1597,7 +1597,7 @@ import { hoverPlay } from "../lib/hover-play";
   .empty-text-actions small { color: #74727e; }
   .text-dialog-backdrop { position: fixed; inset: var(--desktop-titlebar-height, 0px) 0 0; background: #000a; z-index: 90; display: flex; align-items: center; justify-content: center; padding: var(--sp-6); }
   .text-dialog { width: 460px; max-width: 96vw; border: 1px solid #44404a; border-radius: var(--r-3); background: #18181b; padding: var(--sp-5); color: #dddce4; font-size: var(--fs-sm); }
-  .text-dialog h2 { font-size: var(--fs-md); font-weight: 600; margin-bottom: var(--sp-3); }
+  .text-dialog h2 { font-size: var(--fs-md); font-weight: 700; margin-bottom: var(--sp-3); }
   .text-dialog label { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-3) 0; }
   .text-dialog input { background: #101012; border: 1px solid #45454d; border-radius: var(--r-1); color: inherit; padding: var(--sp-2) var(--sp-2); }
   .text-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-xs); line-height: var(--lh-read); font-family: var(--font-mono); background: #0e0e10; padding: var(--sp-3); border-radius: var(--r-1); }

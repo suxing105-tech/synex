@@ -681,7 +681,7 @@ import Icon from "./Icon.svelte";
   .settings-page { width: min(100%, 1440px); padding: 40px clamp(var(--sp-6), 4.4vw, 84px) 120px; margin: 0 auto; }
   .settings-section { padding-bottom: var(--sp-8); margin-bottom: var(--sp-8); border-bottom: 1px solid #232327; scroll-margin-top: 28px; }
   .settings-section:last-child { padding-bottom: 0; margin-bottom: 0; border-bottom: 0; }
-  .settings-section h3 { margin-bottom: var(--sp-2); font-size: var(--fs-lg); font-weight: 600; }
+  .settings-section h3 { margin-bottom: var(--sp-2); font-size: var(--fs-lg); font-weight: 700; }
   .section-description { margin-bottom: var(--sp-6); max-width: 88ch; font-size: var(--fs-sm); line-height: var(--lh-read); color: #85858f; }
   .settings-load-state { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-5) var(--sp-5); font-size: var(--fs-sm); color: #a1a1aa; flex-wrap: wrap; }
   .about-contacts { display: flex; align-items: flex-start; flex-wrap: wrap; gap: var(--sp-4); }

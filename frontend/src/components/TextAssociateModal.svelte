@@ -102,7 +102,7 @@
   .text-modal-backdrop { position: fixed; inset: var(--desktop-titlebar-height, 0px) 0 0; background: #0009; z-index: 90; display: flex; align-items: center; justify-content: center; padding: var(--sp-6); color: #dddce4; }
   .text-modal { width: 620px; max-width: 96vw; max-height: 90vh; overflow: auto; border: 1px solid #44404a; border-radius: var(--r-3); background: #18181b; padding: var(--sp-6); box-shadow: 0 22px 90px #0008; font-size: var(--fs-sm); }
   .text-modal header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-5); }
-  .text-modal h2 { font-size: var(--fs-lg); font-weight: 600; }
+  .text-modal h2 { font-size: var(--fs-lg); font-weight: 700; }
   .text-modal p { line-height: var(--lh-read); margin: var(--sp-3) 0; color: #b6b3bf; }
   .text-modal textarea { width: 100%; background: #27272a; color: inherit; border: 1px solid #383941; border-radius: var(--r-1); padding: var(--sp-2); font-size: var(--fs-sm); margin: var(--sp-3) 0; }
   .text-modal button { cursor: pointer; border: 1px solid #49424c; border-radius: var(--r-1); padding: var(--sp-2) var(--sp-3); font-size: var(--fs-xs); background: transparent; color: inherit; }

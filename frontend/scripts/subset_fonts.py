@@ -171,6 +171,11 @@ def rename(font: TTFont, family: str, subfamily: str, weight: int) -> None:
     os2.usWeightClass = weight
     # fsSelection 的 REGULAR/BOLD 位要跟 CSS 口径一致，不然合成粗体会找错面
     os2.fsSelection = (os2.fsSelection & ~0x60) | (0x20 if weight >= 700 else 0x40)
+    # head.macStyle 的 bold 位必须跟 OS/2.fsSelection 一致，否则 fontTools 直接警告「两位不匹配」。
+    # 上游 Bold 自己就是矛盾的（usWeightClass 700，但 fsSelection 和 macStyle 都没标 bold），
+    # 我们既然按 weight 重写了 fsSelection，就得连 macStyle 一起补平，别把警告留给下一轮。
+    head = font["head"]
+    head.macStyle = (head.macStyle & ~1) | (1 if weight >= 700 else 0)
 
 
 def subset_one(src: Path, out: Path, codes: set[int], family: str, subfamily: str, weight: int) -> None:

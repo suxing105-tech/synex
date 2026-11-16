@@ -40,10 +40,13 @@ $ArchiveUrl = 'https://github.com/Warren2060/ChillDIN-ChillDINGothic/releases/do
 $ArchiveSha = '2bea24f6eb4bb3ccce516d1704f2225a504bb5fffad6cee28269cc9964ba0b84'
 $OflUrl = 'https://openfontlicense.org/documents/OFL.txt'
 $OflSha = '1d361a8f8e8ce6e68457dcd93fb56e162e6baa3bbb7e7573a290d44399f6b57e'
-# The three static weights the app maps onto CSS font-weight 400 / 500 / 600. Upstream ships a
-# variable font too; the statics are used because their OS/2.usWeightClass already is 400/500/600.
-$SourceFiles = @('ChillDINGothic_Regular.otf', 'ChillDINGothic_Medium.otf', 'ChillDINGothic_SemiBold.otf')
-$Faces = @('Regular=ChillDINGothic_Regular.otf:400', 'Medium=ChillDINGothic_Medium.otf:500', 'SemiBold=ChillDINGothic_SemiBold.otf:600')
+# The four static weights the app maps onto CSS font-weight 400 / 500 / 600 / 700. Upstream ships
+# a variable font too; the statics are used because their OS/2.usWeightClass already matches.
+# Bold(700) is the display/key-action tier: with font-synthesis off on <html>, a 700 request with no
+# 700 face silently renders SemiBold(600), so modal titles and the primary button could never get
+# the weight the type spec asks for. One extra face costs about 1.2 MB in the installer.
+$SourceFiles = @('ChillDINGothic_Regular.otf', 'ChillDINGothic_Medium.otf', 'ChillDINGothic_SemiBold.otf', 'ChillDINGothic_Bold.otf')
+$Faces = @('Regular=ChillDINGothic_Regular.otf:400', 'Medium=ChillDINGothic_Medium.otf:500', 'SemiBold=ChillDINGothic_SemiBold.otf:600', 'Bold=ChillDINGothic_Bold.otf:700')
 
 Write-Host '=== fetch-fonts ===' -ForegroundColor Cyan
 
@@ -100,7 +103,7 @@ foreach ($f in $SourceFiles) {
     if (-not (Test-Path -LiteralPath (Join-Path $Extracted $f) -PathType Leaf)) { $needExtract = $true }
 }
 if ($needExtract) {
-    Write-Host '==> extract the three weights' -ForegroundColor Yellow
+    Write-Host '==> extract the staged weights' -ForegroundColor Yellow
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [System.IO.Compression.ZipFile]::OpenRead($archive)
     try {

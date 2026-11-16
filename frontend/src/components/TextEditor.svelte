@@ -129,7 +129,7 @@
   .markdown-block { min-height:15px; cursor:text; outline:none; border-radius:var(--r-1); }
   .markdown-block:focus-visible { box-shadow:0 0 0 1px #777; }
   .empty-reading { color:#8a8a8e; }
-  .markdown-page :global(h1) { font-size:var(--fs-xl); font-weight:600; margin:var(--sp-3) 0 var(--sp-6); }
+  .markdown-page :global(h1) { font-size:var(--fs-xl); font-weight:700; margin:var(--sp-3) 0 var(--sp-6); }
   .markdown-page :global(h2) { font-size:var(--fs-lg); font-weight:600; margin:var(--sp-5) 0 var(--sp-3); }
   .markdown-page :global(h3) { font-size:var(--fs-md); font-weight:600; margin:var(--sp-4) 0 var(--sp-2); }
   .markdown-page :global(p) { margin:var(--sp-2) 0; white-space:pre-wrap; }

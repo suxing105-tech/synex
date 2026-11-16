@@ -583,7 +583,7 @@ import { basenameOnly } from '../lib/media-format';
   .text-modal { width: 540px; max-width: 96%; max-height: 92%; overflow: auto; border: 1px solid #44404a; border-radius: var(--r-3); background: #18181b; padding: var(--sp-6); box-shadow: 0 22px 90px #0008; font-size: var(--fs-sm); }
   .text-modal.wide { width: 920px; }
   .text-modal header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-5); }
-  .text-modal h2 { font-size: var(--fs-lg); font-weight: 600; }
+  .text-modal h2 { font-size: var(--fs-lg); font-weight: 700; }
   .text-modal header button { border: 0; background: transparent; color: inherit; font-size: var(--fs-lg); cursor: pointer; }
   .text-modal label { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-4) 0; }
   .text-modal p { line-height: var(--lh-read); margin: var(--sp-3) 0; }

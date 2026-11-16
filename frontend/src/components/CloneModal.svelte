@@ -2810,7 +2810,7 @@
      名字长了截断，全名在悬停提示里。整行上下居中——大字与右边那颗 30px 的关闭键同一条中线。 */
   .cm-top { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin: calc(var(--sp-05) * -1) calc(var(--sp-1) * -1) var(--sp-2); }
   .cm-heading { min-width: 0; }
-  .cm-title { margin: 0; font-size: var(--fs-md); line-height: var(--lh-label); font-weight: 600; color: #fafafa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cm-title { margin: 0; font-size: var(--fs-md); line-height: var(--lh-label); font-weight: 700; color: #fafafa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cm-close { flex: none; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: var(--r-1); color: #8a8a8e; background: transparent; }
   .cm-close:hover { color: #fafafa; background: rgb(255 255 255 / 10%); }
 

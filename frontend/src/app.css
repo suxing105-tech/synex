@@ -11,7 +11,7 @@
 
    现在换成随包分发的 SeekX Sans：寒蝉德黑体 ChillDINGothic v1.300 的子集化改名版。
    三件事在仓库里看不见，先记在这儿：
-   1. 这三只 woff2 不许手改，也不许从上游 zip 里捞出来直接放进来。它们由
+   1. 这几只 woff2 不许手改，也不许从上游 zip 里捞出来直接放进来。它们由
       frontend/scripts/fetch-fonts.ps1 生成（下载 → 校验 sha256 → 切子集 → 改名 → 写 manifest）。
       上游 zip 与原件在 vendor/fonts/（不入库），来源和码位口径一律以 fonts-manifest.json 为准。
    2. 改名是授权要求，不是审美选择。字体自己的版权声明写着 with Reserved Font Name
@@ -42,6 +42,17 @@
   font-family: "SeekX Sans";
   src: url("./assets/fonts/seekx-sans-semibold.woff2") format("woff2");
   font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* 700 是给主标题和关键操作的那一档（参考资料口径：正文 400 / 强调 500、600 / 主标题与
+   关键操作 700）。在它进来之前，弹窗标题和 h1 要 700 只能拿 600 的假粗或者干脆落到 600，
+   「加粗的标题」和「加粗的按钮文字」其实是同一个重量，层级是假的。 */
+@font-face {
+  font-family: "SeekX Sans";
+  src: url("./assets/fonts/seekx-sans-bold.woff2") format("woff2");
+  font-weight: 700;
   font-style: normal;
   font-display: swap;
 }
@@ -206,9 +217,11 @@ body,
   overflow: hidden;
 }
 
-/* 字重只有 400 / 500 / 600 三档真字面（随包字体就这三档）。UA 给 <b>/<h1> 默认的 700
-   没有对应字面，浏览器会拿 600 描边合成假粗，看着像糊了一层——所以关掉字重合成，
-   bold 落到真的 600 上。斜体留着：随包字体没有 italic，Markdown 的 *强调* 还要靠合成斜体才分得出来。 */
+/* 字重四档真字面：400 / 500 / 600 / 700（随包字体就这四档，700 是 2026-11-16 补的展示档）。
+   字重合成本来是关掉的：UA 给 <b>/<h1> 的 700 在没有 700 字面时会被浏览器描边合成假粗，
+   看着像糊了一层。补上真的 700 之后这条开关的作用变成「只认字面」——写了没配字面的字重
+   （比如 650）不会给你合成，只会就近拿一档，所以字重一律写这四档整值。
+   斜体继续留着合成：随包字体没有 italic，Markdown 的 *强调* 要靠合成斜体才分得出来。 */
 html {
   font-synthesis: style;
 }
@@ -612,6 +625,12 @@ html {
 .fill-interactions button.bg-accent {
   background-color: var(--accent);
   color: var(--ink-0);
+}
+
+/* 关键操作：品牌色实心按钮走 700。只给实心按钮，不给 aria-pressed 的选中态——那是状态
+   不是动作，选中一下就变粗会让按钮宽度跳一下。 */
+.fill-interactions button.bg-accent {
+  font-weight: 700;
 }
 
 .fill-interactions button[aria-pressed="true"]:enabled:hover,

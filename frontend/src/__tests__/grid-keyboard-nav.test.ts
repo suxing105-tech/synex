@@ -246,13 +246,22 @@ describe("选中描边是内描边（2026-11-15 苏醒）", () => {
   const appCss = readFileSync("src/app.css", "utf8");
   const feedSrc = readFileSync("src/components/Feed.svelte", "utf8");
 
-  it("图片 / 视频 / 音频卡的选中环画在画面内侧", () => {
-    const rule = appCss.slice(appCss.indexOf(".media-card.is-selected"));
-    expect(rule.slice(0, rule.indexOf("}"))).toContain("box-shadow: inset 0 0 0 1px var(--thumb-ring)");
+  it("图片 / 视频 / 音频卡的环是内描边，且画在最上层的覆盖层上", () => {
+    const at = appCss.indexOf(".media-card.is-selected::after");
+    expect(at, "选中环的 ::after 覆盖层规则没了").toBeGreaterThan(-1);
+    const body = appCss.slice(at, appCss.indexOf("}", at));
+    expect(body).toContain("box-shadow: inset 0 0 0 1px var(--thumb-ring)");
+    // 卡片本体只许留投影：inset 阴影 / outline 都在图区那一层之下，画了等于没画
+    const own = appCss.slice(appCss.indexOf(".media-card.is-selected {"));
+    const ownBody = own.slice(0, own.indexOf("}"));
+    expect(ownBody).not.toMatch(/outline/);
+    expect(ownBody).not.toMatch(/box-shadow:[^;]*inset/);
   });
 
   it("文本卡同一条口径，四类卡不分家", () => {
-    const rule = feedSrc.slice(feedSrc.indexOf(".text-card.is-selected"));
-    expect(rule.slice(0, rule.indexOf("}"))).toContain("box-shadow: inset 0 0 0 1px var(--thumb-ring)");
+    const at = feedSrc.indexOf(".text-card.is-selected::after");
+    expect(at, "文本卡的 ::after 环没了").toBeGreaterThan(-1);
+    const body = feedSrc.slice(at, feedSrc.indexOf("}", at));
+    expect(body).toContain("box-shadow: inset 0 0 0 1px var(--thumb-ring)");
   });
 });

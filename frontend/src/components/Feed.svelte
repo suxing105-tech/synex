@@ -1570,9 +1570,18 @@ import { hoverPlay } from "../lib/hover-play";
   .text-card:hover {
     background: var(--ink-3);
   }
-  /* 选中的文本卡与图片卡同一套 1px 内描边，右侧栏随之切换成文本详情 */
+  /* 选中的文本卡与图片卡同一套 1px 内描边：环画在整卡 ::after 覆盖层上（为什么不能用 inset 阴影、
+     outline 也不行，见 app.css 那段）。文本卡眼下没有定位子层，outline 也画得出来，但四类卡共用
+     一套画法，才不会换一类卡就看不见。右侧栏随之切换成文本详情 */
   .text-card.is-selected {
-    box-shadow: inset 0 0 0 1px var(--thumb-ring), 0 4px 14px rgba(0, 0, 0, 0.45);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  }
+  .text-card::after {
+    content: ""; position: absolute; inset: 0; z-index: 3; border-radius: inherit;
+    pointer-events: none; box-shadow: none; transition: box-shadow 160ms ease;
+  }
+  .text-card.is-selected::after {
+    box-shadow: inset 0 0 0 1px var(--thumb-ring);
   }
   .text-tool { border: 1px solid rgb(58 58 65); background: #232327; color: #d9d8e0; margin-left: 6px; }
   /* 搜索没结果 / 文件夹本来就空的空态。颜色一律走 token（这几条是 2026-11-11 无障碍那轮加的，
@@ -1599,7 +1608,7 @@ import { hoverPlay } from "../lib/hover-play";
   .dialog-actions button:disabled { opacity: .45; cursor: default; }
   .dialog-actions .primary { background: #6d4c4c; border-color: #8a5f5f; }
   .dialog-actions .danger { background: var(--danger); border-color: var(--danger); color: var(--accent-ink); }
-  .text-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .text-card:focus-visible::after { box-shadow: inset 0 0 0 2px var(--accent); }
   /* 格式徽标：TXT / MD / SRT 这种技术标识留着等宽小字，但朱红撤了 —— 项目定的是
      「朱红只用于选中 · 进行中 · 主动作」，一张常驻徽标不算任何一样。
      底色走 --raise-2（海拔那一族本来就是给「比所在面亮一点」准备的）：常驻时压在 ink-2 上

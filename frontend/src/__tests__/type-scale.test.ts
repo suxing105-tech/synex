@@ -174,7 +174,8 @@ describe("脱档字号棘轮：只许降，不许升", () => {
 // （App / WorkflowCard / VideoPromptPanel / MetadataCard×2 / ParamsCard），270 → 264。
   // 2026-11-15 右栏标题统一成一套语言：DetailPanel 私有的 12px / 10px、ReversePromptPanel
   // 的 text-[13px]、PromptCard 的 text-[11px] 全并进 .section-title，264 → 248。
-  const BASELINE = 248;
+  // 2026-11-15 同日第二轮：语种那颗 chip 的 font-size:10px 换 var(--fs-2xs)，248 → 247。
+  const BASELINE = 247;
 
   it("全站写在六档之外的字号不超过基线", () => {
     const { total, offenders } = countOffScale();

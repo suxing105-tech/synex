@@ -198,15 +198,22 @@
   }
   .reverse-panel button.generate-reverse:enabled:hover,
   .reverse-panel button.generate-reverse:enabled:focus-visible { background-color: #ff6262; border-color: #ff6262; color:#09090b; }
-  .language-label { color:var(--text-2); font-size:10px; padding:4px 6px; min-width:34px; text-align:center; border-color:transparent; background:transparent; }
-  .language-label.language-active { color:var(--text-1); background:#303036; }
+  /* 两颗语种：未选中的压一档控件底（--ink-3，与面板底差一级），选中的整颗品牌红 + 墨字。
+     先前未选中是 transparent，两颗一样灰，看不出「现在读的是哪一版」。
+     对比度：--text-2 压在 --ink-3 上 5.3:1，--accent-ink 压在 --accent 上 5.5:1，都在正文地板之上。 */
+  .language-label { color:var(--text-2); font-size:var(--fs-2xs); padding:4px 6px; min-width:34px; text-align:center; border-color:transparent; background:var(--ink-3); }
+  .language-label:enabled:hover { background:var(--ink-4); color:var(--text-1); }
+  .language-label.language-active { color:var(--accent-ink); background:var(--accent); }
+  .language-label.language-active:enabled:hover,
+  .language-label.language-active:enabled:focus-visible { background:var(--accent-strong); color:var(--accent-ink); }
   .icon-button { display:inline-flex; align-items:center; gap:4px; }
   .icon-button span { font-size:10px; }
   .reverse-prompt-content { min-width:0; }
   /* 350px 起手 + 纵向可拖高是 2026-11-14 定的（长提示词要一眼读完），留着。
-     这一轮去掉的是底色和边框：整块正文就这段的主角，不该再套一层「框中框」，
-     padding 也撤掉，正文左边缘和标题齐平（2026-11-15：不用底色区分，内容要对齐）。 */
-  .prompt-copy { height:350px; min-height:56px; max-height:40vh; overflow:auto; resize:vertical; color:var(--text-1); text-align:justify; text-justify:inter-ideograph; }
+     去掉的是底色，描边要回来（2026-11-15 苏醒：这个提示词框还是需要描边的）——
+     这是一块能滚动、能拖高、能双击复制的正文区，不给边界人就不知道它是一块区域。
+     分区靠描边，不靠第二层底色。 */
+  .prompt-copy { height:350px; min-height:56px; max-height:40vh; overflow:auto; resize:vertical; padding:8px; border:1px solid var(--line); border-radius:var(--r-1); color:var(--text-1); text-align:justify; text-justify:inter-ideograph; }
   button:disabled { opacity: .5; cursor: default; }
   /* 删除是不可逆的，按钮与二次确认都要压成红色，别和"选择版本"混在一起 */
   button.danger { color: var(--danger); border-color: rgb(var(--danger-rgb) / 45%); background: rgb(var(--danger-rgb) / 8%); }

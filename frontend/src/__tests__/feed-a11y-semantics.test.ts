@@ -106,12 +106,12 @@ it('F2 在卡片上直接改名，不用先摸到文件名', async () => {
 it('键盘焦点和选中态不是一回事：焦点环单独用品牌红 2px 内描边', () => {
   const css = postcss.parse(readFileSync('src/app.css', 'utf8'));
   const decls: Record<string, string> = {};
-  css.walkRules('.thumb.media-card:focus-visible', (rule) => {
+  css.walkRules('.thumb.media-card:focus-visible::after', (rule) => {
     rule.walkDecls((d) => { decls[d.prop] = d.value; });
   });
-  expect(decls.outline).toBe('2px solid var(--accent)');
-  // 内描边：不占布局，也不会被 scroller 那 2px 余量裁掉
-  expect(decls['outline-offset']).toBe('-2px');
+  // 焦点环和选中环共用那颗 ::after 覆盖层：outline / inset 阴影都绘在图区（position:relative）
+  // 之下，键盘焦点落在照片上就等于看不见（2026-11-15 苏醒：内描边不在最上层）
+  expect(decls['box-shadow']).toBe('inset 0 0 0 2px var(--accent)');
   // 选中环保持中性灰白，没被焦点环带跑
   expect(rootToken('--thumb-ring')).toBe('var(--text-1)');
   // 焦点环用的是品牌红，和选中环不是同一个颜色

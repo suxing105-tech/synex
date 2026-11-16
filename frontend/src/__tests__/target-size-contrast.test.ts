@@ -259,11 +259,11 @@ it("文本卡的底色落在墨阶上，摘录压在常态底和 hover 底上都
 it("格式徽标不再借朱红当常驻装饰，焦点环仍旧走 --accent", () => {
   // 项目定的是「朱红只用于选中 · 进行中 · 主动作」。原先这颗徽标是 #f2a0a0 压在
   // rgba(242,78,78,.12) 上：一张常驻的技术标识，上面三样它一样都不占。
-  // 焦点环是另一回事——那是键盘可见性，app.css 的 .thumb.media-card:focus-visible 同一条口径。
+  // 焦点环是另一回事——那是键盘可见性，app.css 的 .thumb.media-card:focus-visible::after 同一条口径。
   const feed = readFileSync("src/components/Feed.svelte", "utf8");
   const at = feed.indexOf(".text-format {");
   if (at < 0) throw new Error("Feed.svelte 里找不到 .text-format");
   const badge = feed.slice(at, feed.indexOf("}", at));
   expect(badge, "徽标又用回朱红了：" + badge).not.toMatch(/accent|#f24e4e|#f2a0a0|242,? ?78,? ?78/i);
-  expect(feed).toMatch(/\.text-card:focus-visible \{ outline: 2px solid var\(--accent\)/);
+  expect(feed).toMatch(/\.text-card:focus-visible::after \{ box-shadow: inset 0 0 0 2px var\(--accent\)/);
 });

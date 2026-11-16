@@ -93,6 +93,13 @@ describe("右侧工作台纵向信息层级", () => {
     expect(versionRule).not.toContain("var(--accent)");
     // 语种切换：中文 / EN 两颗等宽（34px）且不再写全 English
     expect(reversePrompt).toContain("min-width:34px");
+    // 同日第二轮批注：两颗都得看得出「现在读的是哪一版」——选中那颗品牌底，未选中那颗压一档控件底
+    expect(reversePrompt).toMatch(/\.language-label\.language-active \{[^}]*background:var\(--accent\)/);
+    expect(reversePrompt).toMatch(/\.language-label \{[^}]*background:var\(--ink-3\)/);
+    // 正文框：底色不铺，但描边要有——不给人边界，看不出那是一块能滚能拖的正文区
+    expect(reversePrompt).toMatch(/\.prompt-copy \{[^}]*border:1px solid var\(--line\)/);
+    expect(reversePrompt).toMatch(/\.prompt-copy \{[^}]*height:350px/);
+    expect(promptCard).toMatch(/class="prompt-box[^"]*border border-border/);
     expect(reversePrompt).toContain(">EN</button>");
     expect(reversePrompt).not.toContain(">English</button>");
     // 右栏头部与左侧工具栏同高：16 + 40 = 56 的内容带 + py-4

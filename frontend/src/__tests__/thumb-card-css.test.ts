@@ -49,6 +49,8 @@ it("hover 什么都不加：描边只留给选中态，反馈全在画面放大"
   const hover = decls(".media-card:hover");
   expect(hover["box-shadow"]).toBeUndefined();
   expect(hover.outline).toBeUndefined();
+  // 环挪到 ::after 之后，hover 也不许在那颗覆盖层上加戏：选中仍是唯一的描边状态
+  expect(ruleOf(".media-card:hover::after")).toBeNull();
   // hover 描边这个概念整体废掉了，token 也不该留下尸体
   expect(source).not.toContain("--thumb-hover-ring");
 });
@@ -58,13 +60,24 @@ it("唯一的 hover 反馈是画面推近，图片与 hover 播放的视频同�
   expect(decls(".media-card:hover .media-card-video").transform).toContain("scale(1.09)");
 });
 
-it("选中态是 1px 内描边 + 外阴影，不用 outline 免得显粗", () => {
+it("选中态是 1px 内描边，画在整卡 ::after 覆盖层上", () => {
   const selected = decls(".media-card.is-selected");
+  // 卡片本体只留投影。inset 阴影算卡片自己背景层的一环，outline 也排在子层之前绘制，
+  // 而图区 .media-card-media 是 position:relative 的独立绘制层，两样都被它整个盖住——
+  // 描边写了、只有页脚那截看得见（2026-11-15 苏醒：内描边不在最上层）。都不许换回去。
+  expect(selected["box-shadow"]).toBe("0 4px 14px rgba(0, 0, 0, 0.45)");
+  expect(selected["box-shadow"]).not.toMatch(/inset/);
   expect(selected.outline).toBeUndefined();
-  expect(selected["outline-offset"]).toBeUndefined();
-  // inset + 1px：圈画在画面内侧，不占布局、不啃卡片间距、也不会被 scroller 裁边
-  expect(selected["box-shadow"]).toMatch(/^inset 0 0 0 1px var\(--thumb-ring\)/);
-  expect(selected["box-shadow"]).toContain("rgba(0, 0, 0, 0.45)");
+  // 环的载体：铺满整卡、不吃鼠标、圆角跟卡片、压在「再次创作」角标（z-index:2）之上
+  const layer = decls(".media-card::after");
+  expect(layer.content).toBe('""');
+  expect(layer.position).toBe("absolute");
+  expect(layer.inset).toBe("0");
+  expect(layer["z-index"]).toBe("3");
+  expect(layer["pointer-events"]).toBe("none");
+  expect(layer["border-radius"]).toBe("inherit");
+  expect(layer["box-shadow"]).toBe("none");
+  expect(decls(".media-card.is-selected::after")["box-shadow"]).toBe("inset 0 0 0 1px var(--thumb-ring)");
 });
 
 it("图区独立裁剪，放大不会溢到页脚上", () => {

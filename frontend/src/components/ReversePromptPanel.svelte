@@ -189,7 +189,7 @@
 </section>
 
 <style>
-  button { font-size: var(--fs-2xs); padding: var(--sp-1) var(--sp-2); border: 1px solid #3f3f46; border-radius: 5px; background: #202024; }
+  button { font-size: var(--fs-2xs); padding: var(--sp-1) var(--sp-2); border: 1px solid #3f3f46; border-radius: var(--r-1); background: #202024; }
   .reverse-panel button.generate-reverse {
     background-color: #f24e4e;
     color: #fff;
@@ -226,5 +226,5 @@
     color: var(--text-1);
   }
   .reverse-panel button.version-item[aria-current="true"] { font-weight: 600; }
-  textarea { display: block; width: 100%; margin-top: var(--sp-2); padding: var(--sp-2); font-size: var(--fs-xs); color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 5px; }
+  textarea { display: block; width: 100%; margin-top: var(--sp-2); padding: var(--sp-2); font-size: var(--fs-xs); color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: var(--r-1); }
 </style>

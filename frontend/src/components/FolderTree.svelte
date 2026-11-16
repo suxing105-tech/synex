@@ -467,7 +467,7 @@
 
 {#if blankMenu}
   <div
-    class="folder-menu fixed bg-surface-2 border border-border rounded-[8px] py-1 min-w-[160px] z-40 text-sm shadow-xl"
+    class="folder-menu fixed bg-surface-2 border border-border rounded-card py-1 min-w-[160px] z-40 text-sm shadow-xl"
     style="left: {menuPos.x}px; top: {menuPos.y}px;"
     role="menu" tabindex="-1"
     oncontextmenu={(e) => e.preventDefault()}
@@ -479,7 +479,7 @@
 {:else if menuFor !== null}
   {@const menuNode = findNode($folders, menuFor)}
   <div
-    class="folder-menu fixed bg-surface-2 border border-border rounded-[8px] py-1 min-w-[160px] z-40 text-sm shadow-xl"
+    class="folder-menu fixed bg-surface-2 border border-border rounded-card py-1 min-w-[160px] z-40 text-sm shadow-xl"
     style="left: {menuPos.x}px; top: {menuPos.y}px;"
     role="menu" tabindex="-1"
     oncontextmenu={(e) => e.preventDefault()}
@@ -622,7 +622,7 @@
 
 <style>
   .external-hover { background: #f24e4e15; }
-  .external-drop-status { position: sticky; top: 0; z-index: 2; padding: var(--sp-3) var(--sp-2); background: #303034; color: #eee; font-size: var(--fs-xs); border-radius: 6px; }
+  .external-drop-status { position: sticky; top: 0; z-index: 2; padding: var(--sp-3) var(--sp-2); background: #303034; color: #eee; font-size: var(--fs-xs); border-radius: var(--r-1); }
   :global(.folder-item.drop-inside), .root-drop { background: #f24e4e33; outline: 1px solid #f24e4e; }
   :global(.folder-item) {
     display: flex;
@@ -634,7 +634,7 @@
     margin-bottom: var(--sp-05);
     min-height: 32px;
     transition: background 120ms, color 120ms;
-    border-radius: 8px;
+    border-radius: var(--r-1);
     cursor: pointer;
     font-size: var(--fs-sm);
     color: #d6d6db;
@@ -656,7 +656,7 @@
     bottom: 4px;
     width: 2px;
     background: #f24e4e;
-    border-radius: 1px;
+    border-radius: var(--r-0);
   }
   :global(.folder-item .icon) {
     width: 16px;
@@ -684,7 +684,7 @@
     font-variant-numeric: tabular-nums;
     font-size: var(--fs-2xs);
     padding: 1px var(--sp-2);
-    border-radius: 7px;
+    border-radius: var(--r-1);
     background: #ffffff0a;
     color: var(--text-3);
   }
@@ -702,7 +702,7 @@
     color: var(--text-3);
     cursor: pointer;
     padding: 1px var(--sp-2);
-    border-radius: 4px;
+    border-radius: var(--r-0);
     font-size: var(--fs-sm);
     /* 无障碍：命中区 24 高（WCAG 2.5.8）。上面 .folder-item 的上下内边距已经从 6 收到 4，
        所以这 24 把行钉回 32；实测 20 行全部 32，没有因为无障碍把侧栏拉疏 */
@@ -742,7 +742,7 @@
   /* 启动期骨架：三条错开的等待条 + 计数等待态 */
   .tree-skeleton { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-1) var(--sp-3) var(--sp-3); }
   .ts-row {
-    display: block; height: 12px; border-radius: 4px; background: #1f1f23;
+    display: block; height: 12px; border-radius: var(--r-0); background: #1f1f23;
     animation: ts-in 260ms ease-out both;
     animation-delay: calc(var(--i) * 45ms);
   }
@@ -751,7 +751,7 @@
   @keyframes ts-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
   /* 计数还没回来时不要显示一个假的 0：压成等待条，位置和尺寸都不动 */
   .count.pending {
-    color: transparent; background: #27272a; border-radius: 3px;
+    color: transparent; background: #27272a; border-radius: var(--r-0);
     box-shadow: 2px 0 0 #27272a, -2px 0 0 #27272a;
   }
   @media (prefers-reduced-motion: reduce) {
@@ -764,7 +764,7 @@
     justify-content: space-between;
     gap: var(--sp-2);
     padding: var(--sp-4) var(--sp-3) var(--sp-2);
-    border-radius: 8px;
+    border-radius: var(--r-1);
   }
   .folder-group {
     font-size: var(--fs-sm);
@@ -780,7 +780,7 @@
     width: 24px;
     height: 24px;
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--r-1);
     background: transparent;
     color: #85858e;
     cursor: pointer;
@@ -801,9 +801,9 @@
   :global(.folder-item.dragging) { opacity: .45; cursor: grabbing; }
   :global(.folder-item.drop-before) { box-shadow: 0 -2px #f24e4e; }
   :global(.folder-item.drop-after) { box-shadow: 0 2px #f24e4e; }
-  .drag-hint { position: fixed; bottom: 24px; left: 20px; z-index: 80; pointer-events: none; padding: var(--sp-3) var(--sp-4); border-radius: 8px; background: #333338; color: #eee; font-size: var(--fs-xs); box-shadow: 0 6px 24px #0005; }
+  .drag-hint { position: fixed; bottom: 24px; left: 20px; z-index: 80; pointer-events: none; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-2); background: #333338; color: #eee; font-size: var(--fs-xs); box-shadow: 0 6px 24px #0005; }
   .collapse-sidebar { border: 0; background: transparent; color: #888; padding: var(--sp-1); cursor: pointer; outline: none; box-shadow: none; }
   .collapse-sidebar:hover, .collapse-sidebar:focus-visible { color: #eee; background: transparent; border: 0; outline: none; box-shadow: none; }
-  .folder-name-input { flex: 1; min-width: 0; width: 0; padding: var(--sp-05) var(--sp-2); border: 1px solid #4a4a52; border-radius: 6px; background: #151518; color: #eee; font: inherit; outline: none; user-select: text; }
+  .folder-name-input { flex: 1; min-width: 0; width: 0; padding: var(--sp-05) var(--sp-2); border: 1px solid #4a4a52; border-radius: var(--r-1); background: #151518; color: #eee; font: inherit; outline: none; user-select: text; }
   .folder-name-input:focus { border-color: #f24e4e; }
 </style>

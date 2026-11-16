@@ -33,7 +33,7 @@
 <style>
   .list-splitter { width:6px; flex:0 0 6px; position:relative; cursor:col-resize; touch-action:none; outline:none; background:#18181b; }
   .list-splitter::before { content:''; position:absolute; top:0; bottom:0; width:1px; left:2px; background:#2e2e33; transition:background 120ms; }
-  .list-splitter::after { content:''; position:absolute; top:calc(50% - 18px); height:36px; width:2px; left:2px; border-radius:2px; background:#55555d; opacity:0; transition:opacity 120ms; }
+  .list-splitter::after { content:''; position:absolute; top:calc(50% - 18px); height:36px; width:2px; left:2px; border-radius:var(--r-0); background:#55555d; opacity:0; transition:opacity 120ms; }
   .list-splitter:hover::after,.list-splitter:focus-visible::after,.list-splitter.dragging::after { opacity:1; }
   .list-splitter:hover::before,.list-splitter:focus-visible::before,.list-splitter.dragging::before { background:#8a8a8e; }
 </style>

@@ -379,9 +379,9 @@
      焦点不主动收进来的话，打开预览后 activeElement 还是 <body>，键盘用户等于站在门外。 -->
 <section class="inline-viewer absolute inset-0 z-20 flex flex-col bg-bg overflow-hidden fill-interactions" aria-label="图片细节预览" tabindex="-1" use:modalFocus>
     <header class="lightbox-header flex items-center gap-2 px-4 py-3 shrink-0 border-b border-border bg-surface">
-      <button class="rounded-lg px-3 py-2 text-xs" onclick={close} title="返回缩略图（Esc）">← 返回</button>
+      <button class="rounded-ctl px-3 py-2 text-xs" onclick={close} title="返回缩略图（Esc）">← 返回</button>
       <span class="flex-1 min-w-0 truncate text-xs text-muted" title={it.filename}>{it.filename}</span>
-      {#if compareImages.length === 2}<button class="rounded-lg px-3 py-2 text-xs" aria-pressed={comparing} onclick={toggleCompare}>{comparing ? "查看单图" : "对比图片"}</button>{/if}
+      {#if compareImages.length === 2}<button class="rounded-ctl px-3 py-2 text-xs" aria-pressed={comparing} onclick={toggleCompare}>{comparing ? "查看单图" : "对比图片"}</button>{/if}
       {#if comparing}
         <!-- 顶栏正中间的开关，排在本段最后：Svelte 5 的事件委托里，组件排在
              同分支兄弟元素之前会让后面的按钮点不动。 -->
@@ -442,9 +442,9 @@
     </div>
     <footer class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 shrink-0 border-t border-border bg-surface text-xs">
       {#if !comparing}<div class="flex items-center gap-2">
-        <button class="rounded-lg px-3 py-2" onclick={prev} title="上一张">‹</button>
+        <button class="rounded-ctl px-3 py-2" onclick={prev} title="上一张">‹</button>
         <span class="text-muted">{index + 1} / {$mediaItems.length}</span>
-        <button class="rounded-lg px-3 py-2" onclick={next} title="下一张">›</button>
+        <button class="rounded-ctl px-3 py-2" onclick={next} title="下一张">›</button>
       </div>
       <span class="text-muted">{#if it.width && it.height}{it.width} × {it.height} · {/if}{formatSize(it.size_bytes)}</span>
       {/if}

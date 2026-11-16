@@ -124,10 +124,10 @@
 <style>
   .pft { display: flex; flex-direction: column; gap: 1px; }
   .pft-row { display: flex; align-items: center; gap: 1px; }
-  .pft-toggle { flex: none; width: 17px; height: 24px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: var(--text-3); cursor: pointer; }
+  .pft-toggle { flex: none; width: 17px; height: 24px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: var(--r-1); background: transparent; color: var(--text-3); cursor: pointer; }
   .pft-toggle:hover { background: var(--raise-2); color: var(--text-1); }
   .pft-toggle-spacer { flex: none; width: 17px; }
-  .pft-item { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--sp-2); height: 28px; padding: 0 var(--sp-2) 0 var(--sp-05); border: 0; border-radius: 7px; background: transparent; color: var(--text-2); font-size: var(--fs-sm); font-family: inherit; text-align: left; cursor: pointer; transition: background-color 140ms ease, color 140ms ease; }
+  .pft-item { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--sp-2); height: 28px; padding: 0 var(--sp-2) 0 var(--sp-05); border: 0; border-radius: var(--r-1); background: transparent; color: var(--text-2); font-size: var(--fs-sm); font-family: inherit; text-align: left; cursor: pointer; transition: background-color 140ms ease, color 140ms ease; }
   .pft-item:hover { background: var(--raise-1); color: var(--text-1); }
   .pft-item.active { background: var(--ink-3); color: var(--text-1); }
   .pft-icon { flex: none; display: flex; color: var(--text-3); }

@@ -657,18 +657,18 @@ import Icon from "./Icon.svelte";
   .settings-rail { display: flex; flex-direction: column; min-height: 0; padding: var(--sp-5) var(--sp-3) var(--sp-4); background: #16161a; border-right: 1px solid #232327; }
   .settings-rail-head { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-05) var(--sp-1) var(--sp-4); }
   .settings-rail-head h2 { font-size: var(--fs-md); font-weight: 600; }
-  .settings-return { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; color: #a1a1aa; }
+  .settings-return { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: var(--r-1); color: #a1a1aa; }
   .settings-search { position: relative; display: flex; align-items: center; margin: 0 var(--sp-1) var(--sp-3); }
   .settings-search > :global(svg) { position: absolute; left: 11px; color: var(--text-3); pointer-events: none; }
-  .settings-search input { width: 100%; height: 34px; padding: 0 var(--sp-8) 0 var(--sp-8); font-size: var(--fs-sm); color: #e4e4e7; background: #101013; border: 1px solid #2b2b30; border-radius: 8px; }
+  .settings-search input { width: 100%; height: 34px; padding: 0 var(--sp-8) 0 var(--sp-8); font-size: var(--fs-sm); color: #e4e4e7; background: #101013; border: 1px solid #2b2b30; border-radius: var(--r-1); }
   .settings-search input::placeholder { color: var(--text-3); }
   .settings-search input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
   .settings-search input:focus { border-color: #3f3f46; background: #191920; outline: none; }
-  .settings-search-clear { position: absolute; right: 5px; display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 6px; color: #8a8a8e; }
+  .settings-search-clear { position: absolute; right: 5px; display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: var(--r-1); color: #8a8a8e; }
   .settings-nav { display: flex; flex-direction: column; gap: var(--sp-05); min-height: 0; overflow-y: auto; }
   .settings-nav-group { margin: var(--sp-4) 0 var(--sp-1); padding: 0 var(--sp-3); font-size: var(--fs-2xs); letter-spacing: var(--track-badge); color: var(--text-3); }
   .settings-nav-group:first-child { margin-top: var(--sp-05); }
-  .settings-nav-item { display: flex; align-items: center; gap: var(--sp-3); width: 100%; padding: var(--sp-2) var(--sp-3); border-radius: 8px; text-align: left; font-size: var(--fs-sm); line-height: var(--lh-label); color: #a1a1aa; }
+  .settings-nav-item { display: flex; align-items: center; gap: var(--sp-3); width: 100%; padding: var(--sp-2) var(--sp-3); border-radius: var(--r-1); text-align: left; font-size: var(--fs-sm); line-height: var(--lh-label); color: #a1a1aa; }
   .settings-nav-item :global(svg) { flex-shrink: 0; opacity: .7; }
   .settings-nav-item:hover { color: #e4e4e7; }
   .settings-nav-item[aria-current="location"] { color: #fafafa; background: #27272a; }
@@ -686,15 +686,15 @@ import Icon from "./Icon.svelte";
   .settings-load-state { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-5) var(--sp-5); font-size: var(--fs-sm); color: #a1a1aa; flex-wrap: wrap; }
   .about-contacts { display: flex; align-items: flex-start; flex-wrap: wrap; gap: var(--sp-4); }
   /* 缩略图也要能直接扫出来，所以给到 168px；点开还有大图。 */
-  .about-qr { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); width: 190px; padding: var(--sp-3); border-radius: 10px; background: #101013; font-size: var(--fs-xs); line-height: var(--lh-ui); color: #a1a1aa; }
-  .about-qr img { width: 168px; height: auto; border-radius: 6px; background: #fafafa; }
+  .about-qr { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); width: 190px; padding: var(--sp-3); border-radius: var(--r-2); background: #101013; font-size: var(--fs-xs); line-height: var(--lh-ui); color: #a1a1aa; }
+  .about-qr img { width: 168px; height: auto; border-radius: var(--r-1); background: #fafafa; }
   .about-contacts .settings-hint { flex: 1 1 220px; }
   .about-zoom { position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-4); padding: var(--sp-8); background: rgba(8, 8, 10, .88); }
   .about-zoom-figure { display: flex; flex-direction: column; align-items: center; gap: var(--sp-4); margin: 0; }
-  .about-zoom img { max-width: min(90vw, 440px); max-height: 62%; border-radius: 10px; background: #fafafa; }
+  .about-zoom img { max-width: min(90vw, 440px); max-height: 62%; border-radius: var(--r-2); background: #fafafa; }
   .about-zoom figcaption { font-size: var(--fs-sm); color: #a1a1aa; }
   .comfyui-found { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-3) 0 0; padding: 0; list-style: none; }
-  .comfyui-found li { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: 10px; background: #101013; font-size: var(--fs-sm); }
+  .comfyui-found li { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-2); background: #101013; font-size: var(--fs-sm); }
   .comfyui-found-url { flex: 1 1 auto; font-family: var(--font-mono); color: #e4e4e7; }
   .comfyui-found-version { font-size: var(--fs-xs); color: #85858f; }
   .comfyui-notice { margin: var(--sp-3) 0 0; font-size: var(--fs-xs); line-height: var(--lh-read); color: #a1a1aa; }

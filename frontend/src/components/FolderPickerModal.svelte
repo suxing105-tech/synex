@@ -102,7 +102,7 @@
     }}
   >
     <div
-      class="bg-surface-2 border border-border rounded-[10px] p-4 w-[420px] max-h-[80vh] flex flex-col"
+      class="bg-surface-2 border border-border rounded-panel p-4 w-[420px] max-h-[80vh] flex flex-col"
       role="dialog"
       aria-modal="true"
     >
@@ -129,7 +129,7 @@
       <div bind:this={listEl} class="flex-1 overflow-y-auto -mx-1 px-1">
         {#if allowNone}<button
           type="button"
-          class="fp-item w-full text-left px-3 py-2 rounded-md {selectedIdx === 0 ? 'active' : ''}"
+          class="fp-item w-full text-left px-3 py-2 rounded-ctl {selectedIdx === 0 ? 'active' : ''}"
           onclick={pickNone}
         >
           <span class="fp-icon"><Icon name="circle-slash" size={14} /></span>
@@ -142,7 +142,7 @@
         {#each filtered as item, i (item.id)}
           <button
             type="button"
-            class="fp-item w-full text-left px-3 py-2 rounded-md {selectedIdx === i + (allowNone ? 1 : 0) ? 'active' : ''}"
+            class="fp-item w-full text-left px-3 py-2 rounded-ctl {selectedIdx === i + (allowNone ? 1 : 0) ? 'active' : ''}"
             onclick={() => pickItem(i)}
           >
             <span class="fp-spacer" style="width: {item.depth * 14}px"></span>

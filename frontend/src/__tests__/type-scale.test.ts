@@ -204,12 +204,15 @@ describe("控件与圆角尺度", () => {
     expect(parseFloat(px("--ctl-sm"))).toBeGreaterThanOrEqual(24);
   });
 
-  it("圆角四档，pill 是唯一的「完全圆」", () => {
-    expect(tokensWithPrefix("--r-")).toEqual(["--r-1", "--r-2", "--r-3", "--r-pill"]);
+  // 档位清单以 radius-scale.test.ts 为口径，这里只保证 :root 里就这六档、没有第七档
+  it("圆角五档 + 两种完全圆角", () => {
+    expect(tokensWithPrefix("--r-")).toEqual(["--r-0", "--r-1", "--r-2", "--r-3", "--r-circle", "--r-pill"]);
+    expect(px("--r-0")).toBe("3px");
     expect(px("--r-1")).toBe("6px");
     expect(px("--r-2")).toBe("10px");
     expect(px("--r-3")).toBe("14px");
     expect(px("--r-pill")).toBe("999px");
+    expect(px("--r-circle")).toBe("50%");
   });
 
   it("间距沿用 tailwind 默认 4px 网格，没在 theme 里另造一套", () => {

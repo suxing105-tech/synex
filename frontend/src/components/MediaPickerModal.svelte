@@ -322,26 +322,26 @@
 
 <style>
   .mp-backdrop { position: fixed; inset: 0; z-index: 70; background: rgba(0, 0, 0, 0.5); -webkit-backdrop-filter: blur(20px) saturate(110%); backdrop-filter: blur(20px) saturate(110%); display: flex; align-items: center; justify-content: center; padding: var(--sp-4); }
-  .mp-panel { width: min(1160px, 100%); max-height: 84vh; overflow: auto; display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-5); border: 1px solid rgb(255 255 255 / 8%); border-radius: 16px; background: rgba(20 20 23 / 88%); -webkit-backdrop-filter: blur(34px); backdrop-filter: blur(34px); box-shadow: 0 30px 90px rgba(0, 0, 0, 0.6); color: #e4e4e7; }
+  .mp-panel { width: min(1160px, 100%); max-height: 84vh; overflow: auto; display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-5); border: 1px solid rgb(255 255 255 / 8%); border-radius: var(--r-3); background: rgba(20 20 23 / 88%); -webkit-backdrop-filter: blur(34px); backdrop-filter: blur(34px); box-shadow: 0 30px 90px rgba(0, 0, 0, 0.6); color: #e4e4e7; }
   /* 标题 + 三族 tab + 搜索 + 列数滑块挤在一行：窄窗口里宁可整块换行，也别把「图片」掰成竖排两个字。 */
   .mp-head { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
   .mp-head h3 { margin: 0; font-size: var(--fs-md); font-weight: 600; }
   /* 族 tab 只在能挑几族时出现：图片再次创作仍是原来那颗干净的标题行。 */
-  .mp-tabs { display: flex; align-items: center; gap: var(--sp-05); padding: var(--sp-05); border: 1px solid #26262b; border-radius: 10px; background: #101013; }
-  .mp-tab { flex: none; white-space: nowrap; height: 26px; padding: 0 var(--sp-3); font-size: var(--fs-sm); color: #a1a1aa; background: transparent; border-radius: 8px; cursor: pointer; transition: background-color 140ms ease, color 140ms ease; }
+  .mp-tabs { display: flex; align-items: center; gap: var(--sp-05); padding: var(--sp-05); border: 1px solid #26262b; border-radius: var(--r-2); background: #101013; }
+  .mp-tab { flex: none; white-space: nowrap; height: 26px; padding: 0 var(--sp-3); font-size: var(--fs-sm); color: #a1a1aa; background: transparent; border-radius: var(--r-1); cursor: pointer; transition: background-color 140ms ease, color 140ms ease; }
   .mp-tab:hover { color: #e4e4e7; }
   .mp-tab[aria-pressed="true"] { color: #fafafa; background: #303036; }
-  .mp-search { flex: 1; min-width: 0; height: 32px; padding: 0 var(--sp-3); font-size: var(--fs-sm); color: #e4e4e7; background: #101013; border: 1px solid #2b2b30; border-radius: 8px; }
+  .mp-search { flex: 1; min-width: 0; height: 32px; padding: 0 var(--sp-3); font-size: var(--fs-sm); color: #e4e4e7; background: #101013; border: 1px solid #2b2b30; border-radius: var(--r-1); }
   /* 列数滑块：照抄图库工具栏那条（细轨 + 圆 thumb + 已填段），两处手势一个手感。 */
   .mp-cols { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: #8a8a8e; white-space: nowrap; }
   .mp-cols-num { min-width: 12px; text-align: right; color: #d4d4d8; font-variant-numeric: tabular-nums; }
-  .mp-slider { -webkit-appearance: none; appearance: none; width: 72px; height: 4px; border-radius: 2px; outline: none; cursor: pointer;
+  .mp-slider { -webkit-appearance: none; appearance: none; width: 72px; height: 4px; border-radius: var(--r-0); outline: none; cursor: pointer;
     background: linear-gradient(to right,
       rgb(242 78 78) 0%, rgb(242 78 78) calc((var(--value) - 2) * 100% / 6),
       rgb(50 50 55) calc((var(--value) - 2) * 100% / 6), rgb(50 50 55) 100%); }
-  .mp-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%; background: rgb(242 78 78); border: 2px solid rgb(24 24 27); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(242, 78, 78, 0.4); cursor: grab; }
-  .mp-slider::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: rgb(242 78 78); border: 2px solid rgb(24 24 27); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(242, 78, 78, 0.4); cursor: grab; }
-  .mp-slider::-moz-range-track { height: 4px; border-radius: 2px; background: rgb(50 50 55); }
+  .mp-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: var(--r-circle); background: rgb(242 78 78); border: 2px solid rgb(24 24 27); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(242, 78, 78, 0.4); cursor: grab; }
+  .mp-slider::-moz-range-thumb { width: 14px; height: 14px; border-radius: var(--r-circle); background: rgb(242 78 78); border: 2px solid rgb(24 24 27); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(242, 78, 78, 0.4); cursor: grab; }
+  .mp-slider::-moz-range-track { height: 4px; border-radius: var(--r-0); background: rgb(50 50 55); }
   .mp-search:focus { border-color: #3f3f46; outline: none; }
   /* 音频卡的页脚排成一行：文件名占满余下宽度（该省略号还是省略号），角标钉在最右，
      两者共用这条 26px 行的中线。全局 .media-card-footer 是 column，这里换成 row。 */
@@ -351,7 +351,7 @@
   .mp-audio-btn { flex: none; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
   .mp-audio-icon { width: 100%; height: 100%; opacity: 0.92; transition: transform 140ms ease, opacity 140ms ease; }
   .mp-audio-btn:hover .mp-audio-icon, .mp-audio-btn:focus-visible .mp-audio-icon { opacity: 1; transform: scale(1.06); }
-  .mp-btn { height: 32px; padding: 0 var(--sp-3); font-size: var(--fs-sm); color: #e4e4e7; background: #27272a; border: 1px solid #303036; border-radius: 8px; cursor: pointer; }
+  .mp-btn { height: 32px; padding: 0 var(--sp-3); font-size: var(--fs-sm); color: #e4e4e7; background: #27272a; border: 1px solid #303036; border-radius: var(--r-1); cursor: pointer; }
   .mp-btn:hover:not(:disabled) { border-color: #4b4b52; }
   .mp-btn:disabled { opacity: .55; cursor: default; }
   .mp-more { align-self: center; }

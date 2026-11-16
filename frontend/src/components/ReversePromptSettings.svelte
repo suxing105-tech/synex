@@ -149,7 +149,7 @@
   fieldset { margin-top: var(--sp-5); }
   fieldset:first-child { margin-top: 0; }
   label { display: block; font-size: var(--fs-sm); color: #b8b8c3; }
-  input:not([type=checkbox]), textarea, select { display: block; width: 100%; margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3); color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 6px; }
+  input:not([type=checkbox]), textarea, select { display: block; width: 100%; margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3); color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: var(--r-1); }
   button:disabled { opacity: .5; }
   .model-error { margin-top: var(--sp-4); font-size: var(--fs-sm); color: #fb7185; }
   .model-notice { margin-top: var(--sp-4); font-size: var(--fs-sm); color: #a1a1aa; }

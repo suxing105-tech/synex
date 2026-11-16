@@ -393,13 +393,13 @@
      整行都是命中区，所以把整行抬到 24 高，方框本身的大小不动。 */
   .api-filter-builtin { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 24px; font-size: var(--fs-sm); color: #a1a1aa; }
   .api-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: var(--sp-2); max-height: 272px; overflow: auto; }
-  .api-card { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-3); text-align: left; border: 1px solid #2a2a30; border-radius: 10px; background: #17171b; color: #e6e6ea; cursor: pointer; }
+  .api-card { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-3); text-align: left; border: 1px solid #2a2a30; border-radius: var(--r-2); background: #17171b; color: #e6e6ea; cursor: pointer; }
   .api-card:hover:not(:disabled) { border-color: #3f3f46; }
   /* 必须自己写 color：全局 .fill-interactions button[aria-pressed="true"] 会把选中按钮的字涂成
      近黑（那是给红底胶囊用的），它只覆盖背景不覆盖文字，选中那张卡的名字就会糊在深红底上。 */
   .api-card[aria-pressed="true"] { border-color: #ef4444; background: #1d1416; color: #fafafa; }
   .api-card:disabled { opacity: .55; cursor: default; }
-  .api-avatar { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: #26262c; font-size: var(--fs-2xs); font-weight: 600; color: #d4d4d8; flex: none; }
+  .api-avatar { display: grid; place-items: center; width: 26px; height: 26px; border-radius: var(--r-1); background: #26262c; font-size: var(--fs-2xs); font-weight: 600; color: #d4d4d8; flex: none; }
   .api-card-body { display: grid; gap: var(--sp-05); min-width: 0; }
   .api-card-name { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .api-card-state { font-size: var(--fs-xs); color: #fbbf24; }
@@ -410,7 +410,7 @@
   .api-legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .api-provider-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-3); margin-bottom: var(--sp-3); }
   .api-provider-name { font-size: var(--fs-base); font-weight: 600; color: #fafafa; }
-  .api-provider-badge { padding: var(--sp-05) var(--sp-2); border-radius: 999px; font-size: var(--fs-xs); color: #fbbf24; background: rgb(251 191 36 / 12%); }
+  .api-provider-badge { padding: var(--sp-05) var(--sp-2); border-radius: var(--r-pill); font-size: var(--fs-xs); color: #fbbf24; background: rgb(251 191 36 / 12%); }
   .api-provider-set { color: #4ade80; background: rgb(74 222 128 / 12%); }
   .api-provider-actions { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; flex-wrap: wrap; }
   .api-help { margin-bottom: var(--sp-1); font-size: var(--fs-xs); color: #a1a1aa; }
@@ -423,7 +423,7 @@
   label { display: block; font-size: var(--fs-sm); color: #b8b8c3; }
   /* 这一页既没有长文本框（指令都在「反推指令」那一页），也没有下拉了（模型不在这里挑），
      所以选择器里不留 textarea 和 select。 */
-  input:not([type=checkbox]) { display: block; width: 100%; margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3); color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 6px; }
+  input:not([type=checkbox]) { display: block; width: 100%; margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3); color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: var(--r-1); }
   button:disabled { opacity: .5; }
   .model-summary { cursor: pointer; }
   .model-confirm { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-4); font-size: var(--fs-sm); color: #b8b8c3; flex-wrap: wrap; }

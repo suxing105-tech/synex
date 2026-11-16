@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import postcss from "postcss";
+import { tokenValue } from "./fixtures/css-tokens";
 import {
   FOOTER_HEIGHT_ONE_LINE,
   FOOTER_HEIGHT_TWO_LINES,
@@ -67,9 +68,10 @@ describe("页脚常量与实际 CSS 一致", () => {
     expect(declsOf(".media-pick-grid").gap).toBe("var(--thumb-gap)");
   });
 
-  it("圆角走 token：整网 10px，窄卡降到 8px", () => {
-    expect(declsOf(":root")["--thumb-radius"]).toBe("10px");
+  it("圆角走 token：整卡用卡片档，窄卡按「收一档」降到控件档", () => {
+    expect(declsOf(":root")["--thumb-radius"]).toBe("var(--r-2)");
+    expect(tokenValue("--thumb-radius")).toBe("10px");
     expect(declsOf(".media-card")["border-radius"]).toBe("var(--thumb-radius)");
-    expect(declsOf(".media-card--compact")["--thumb-radius"]).toBe("8px");
+    expect(declsOf(".media-card--compact")["--thumb-radius"]).toBe("var(--r-1)");
   });
 });

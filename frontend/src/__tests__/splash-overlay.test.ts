@@ -57,7 +57,7 @@ describe("启动引导页（画廊成形 · 品牌段）", () => {
     expect(track![0]).toContain("#323237");
     // 用 \s+ 而不是 \n：Windows 上检出的是 CRLF，钉死 \n 会让这台机器永远红、
     // Linux 上永远绿——断言的是排版关系，不该跟换行符走。
-    expect(src).toMatch(/height:\s*4px;\s+border-radius:\s*2px;/);
+    expect(src).toMatch(/height:\s*4px;\s+border-radius:\s*var\(--r-0\);/);
     const thumb = src.match(/\.rule-thumb \{[\s\S]*?\}/);
     expect(thumb![0]).toContain("width: 14px");
     expect(thumb![0]).toContain("border: 2px solid #18181b");

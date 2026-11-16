@@ -185,7 +185,7 @@ import Icon from "./Icon.svelte";
   .mp { position: relative; min-width: 0; flex: 1; }
   .mp-trigger {
     display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-width: 0;
-    font-size: var(--fs-2xs); padding: var(--sp-1) var(--sp-2); border: 1px solid #3f3f46; border-radius: 5px;
+    font-size: var(--fs-2xs); padding: var(--sp-1) var(--sp-2); border: 1px solid #3f3f46; border-radius: var(--r-1);
     background: #202024; color: inherit; text-align: left;
   }
   .mp-trigger:disabled { opacity: .5; cursor: default; }
@@ -193,7 +193,7 @@ import Icon from "./Icon.svelte";
   .mp-arrow { display: inline-flex; flex: none; }
   /* fixed + 由 JS 定坐标：外层面板是 overflow 滚动容器，absolute 的浮层会被裁掉半截。 */
   .mp-pop {
-    position: fixed; z-index: 60; background: #18181b; border: 1px solid #3f3f46; border-radius: 8px;
+    position: fixed; z-index: 60; background: #18181b; border: 1px solid #3f3f46; border-radius: var(--r-2);
     box-shadow: 0 12px 28px rgba(0, 0, 0, .55); overflow: hidden;
   }
   .mp-cols { display: flex; align-items: stretch; }
@@ -201,19 +201,19 @@ import Icon from "./Icon.svelte";
   .mp-models { flex: 1; min-width: 0; max-height: 272px; overflow: auto; padding: var(--sp-1); }
   .mp-provider, .mp-model {
     display: flex; align-items: center; gap: var(--sp-2); width: 100%; text-align: left;
-    font-size: var(--fs-2xs); padding: var(--sp-1) var(--sp-2); border: 0; border-radius: 5px; background: transparent; color: #e4e4e7;
+    font-size: var(--fs-2xs); padding: var(--sp-1) var(--sp-2); border: 0; border-radius: var(--r-1); background: transparent; color: #e4e4e7;
   }
   .mp-provider:hover, .mp-model:hover { background: #26262b; }
   .mp-on { background: #2f2f35; }
   .mp-avatar {
-    width: 18px; height: 18px; flex: none; border-radius: 4px; background: #3f3f46;
+    width: 18px; height: 18px; flex: none; border-radius: var(--r-0); background: #3f3f46;
     font-size: var(--fs-2xs); display: flex; align-items: center; justify-content: center; color: #a1a1aa;
   }
   .mp-pname, .mp-mname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mp-tag { flex: none; font-size: var(--fs-2xs); padding: 1px var(--sp-1); border-radius: 4px; background: #27272a; color: #a1a1aa; }
+  .mp-tag { flex: none; font-size: var(--fs-2xs); padding: 1px var(--sp-1); border-radius: var(--r-0); background: #27272a; color: #a1a1aa; }
   .mp-rec { color: #4ade80; border: 1px solid #14532d; }
   .mp-warn { color: #fbbf24; border: 1px solid #78350f; }
   .mp-empty { font-size: var(--fs-2xs); line-height: var(--lh-ui); color: #a1a1aa; padding: var(--sp-2); margin: 0; }
-  .mp-goto { display: block; width: calc(100% - 8px); margin: var(--sp-1); padding: var(--sp-1) var(--sp-2); font-size: var(--fs-2xs); color: #fbbf24; border: 1px solid #3f3f46; border-radius: 5px; background: #202024; }
+  .mp-goto { display: block; width: calc(100% - 8px); margin: var(--sp-1); padding: var(--sp-1) var(--sp-2); font-size: var(--fs-2xs); color: #fbbf24; border: 1px solid #3f3f46; border-radius: var(--r-1); background: #202024; }
   .mp-error { font-size: var(--fs-2xs); color: #f87171; padding: var(--sp-1) var(--sp-2); margin: 0; }
 </style>

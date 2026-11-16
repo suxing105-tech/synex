@@ -52,7 +52,7 @@
   .sk-tile {
     display: block;
     width: 100%;
-    border-radius: var(--thumb-radius, 10px);
+    border-radius: var(--thumb-radius, var(--r-2));
     /* 底色仍然共用卡片那份变量，但骨架得读得出来：叠一层 4%/2% 白 + 1px 内描边。
        只提亮度不改色相，中性底不会变成「像一张图」；#1a1a1d 贴在 #0e0e10 上几乎隐形，
        而「格子会落在这里」正是这套成形动画要说的事。 */

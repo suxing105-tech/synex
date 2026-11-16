@@ -36,6 +36,19 @@ export default {
       display: "var(--track-display)",
     },
 
+    // 圆角和字号/行高/字距同一套做法：放在 theme 顶层占掉 Tailwind 内置的 rounded-*，
+    // 于是 rounded 就是 var(--r-1)、rounded-full 就是 var(--r-pill)，第二个数写不进来。
+    // 代价和 fontSize 那条一起记进 AGENTS.md §3.1：内置 rounded-sm/md/lg/xl/2xl/3xl 从这一版
+    // 起不存在，写了不报错但没样式——所以 radius-scale.test.ts 要连着扫这些类名。
+    borderRadius: {
+      none: "0",
+      tight: "var(--r-0)",
+      DEFAULT: "var(--r-1)",
+      ctl: "var(--r-1)",
+      card: "var(--r-2)",
+      panel: "var(--r-3)",
+      full: "var(--r-pill)",
+    },
     extend: {
       colors: {
         bg: ink(0),
@@ -50,11 +63,6 @@ export default {
         success: chan("success"),
         warn: chan("warn"),
         info: chan("info"),
-      },
-      borderRadius: {
-        ctl: "var(--r-1)",
-        card: "var(--r-2)",
-        panel: "var(--r-3)",
       },
       // 字族只指回 src/app.css 的 :root token，和 theme.colors 同一套做法：这里出现第二份
       // 字体栈，preflight 塞给 html 的就和 @font-face 声明的不再是同一件事（改之前正是这样，

@@ -29,7 +29,7 @@ import Icon from "./Icon.svelte";
 
 {#if visible}
   <span class="sidebar-update-wrap relative inline-flex shrink-0">
-    <button class="sidebar-update w-10 h-10 flex items-center justify-center rounded-lg text-muted shrink-0 disabled:opacity-50"
+    <button class="sidebar-update w-10 h-10 flex items-center justify-center rounded-ctl text-muted shrink-0 disabled:opacity-50"
       class:is-active={highlighted}
       aria-label={entryLabel} aria-busy={busy}
       disabled={busy || unsupported || !status?.configured} onclick={update}>
@@ -80,7 +80,7 @@ import Icon from "./Icon.svelte";
     bottom: 6px;
     z-index: 70;
     padding: var(--sp-2) var(--sp-3);
-    border-radius: 8px;
+    border-radius: var(--r-2);
     border: 1px solid #2e2e33;
     background: #0b0b0d;
     color: #fafafa;
@@ -126,7 +126,7 @@ import Icon from "./Icon.svelte";
   .update-modal {
     width: min(420px, 100%);
     padding: var(--sp-5) var(--sp-6) var(--sp-6);
-    border-radius: 20px;
+    border-radius: var(--r-3);
     border: 1px solid rgb(255 255 255 / 8%);
     background: rgba(19, 19, 22, 0.88);
     -webkit-backdrop-filter: blur(36px);
@@ -165,7 +165,7 @@ import Icon from "./Icon.svelte";
     position: relative;
     flex: 1 1 auto;
     height: 6px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: #323237;
     overflow: hidden;
   }
@@ -173,7 +173,7 @@ import Icon from "./Icon.svelte";
   .update-progress-fill {
     height: 100%;
     min-width: 6%;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: #f24e4e;
     transition: width 0.2s ease;
   }

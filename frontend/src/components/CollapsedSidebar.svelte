@@ -40,7 +40,7 @@
 <style>
   .collapsed-nav { display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); padding-top: var(--sp-2); }
   /* 底框只认 --rail-btn：和同一列底部的「设置 / 更新」同尺寸（App.svelte 那侧引同一个变量）。 */
-  button { width: var(--rail-btn); height: var(--rail-btn); display: flex; align-items: center; justify-content: center; border: 0; border-radius: 7px; background: transparent; color: #888; cursor: pointer; }
+  button { width: var(--rail-btn); height: var(--rail-btn); display: flex; align-items: center; justify-content: center; border: 0; border-radius: var(--r-1); background: transparent; color: #888; cursor: pointer; }
   button:hover, button:focus-visible { color: #eee; background: #29292d; }
   button.active { color: #f24e4e; background: #302326; }
   button:focus-visible { outline: 1px solid #f24e4e; outline-offset: -2px; }

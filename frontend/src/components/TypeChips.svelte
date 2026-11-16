@@ -73,7 +73,7 @@
   }
   .chip {
     display: inline-flex; align-items: center; gap: var(--sp-1); height: 24px; padding: 0 var(--sp-2);
-    border: 0; border-radius: 4px; background: transparent; color: var(--text-2);
+    border: 0; border-radius: var(--r-0); background: transparent; color: var(--text-2);
     font-size: var(--fs-2xs); cursor: pointer; white-space: nowrap;
     transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
   }

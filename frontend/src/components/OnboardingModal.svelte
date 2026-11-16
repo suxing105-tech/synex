@@ -111,7 +111,7 @@
 
 {#if open}
   <div class="fixed inset-0 z-[60] bg-black/75 flex items-center justify-center" role="dialog" aria-label="导入 ComfyUI 输出目录" aria-modal="true">
-    <div class="bg-surface-2 border border-border rounded-[12px] p-7 w-[620px] max-w-[92vw] max-h-[90vh] overflow-y-auto">
+    <div class="bg-surface-2 border border-border rounded-panel p-7 w-[620px] max-w-[92vw] max-h-[90vh] overflow-y-auto">
       <h2 class="text-lg font-semibold mb-1">导入 ComfyUI 输出目录</h2>
       <p class="text-sm text-muted mb-4">选择或输入 ComfyUI 输出文件夹，导入其中的图片和生成信息，包含子文件夹。</p>
       <label for="import-directory" class="text-2xs uppercase text-muted tracking-badge">目录路径</label>

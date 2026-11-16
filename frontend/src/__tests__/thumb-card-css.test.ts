@@ -107,7 +107,7 @@ it("图未到达时有扫光占位，页脚不依赖它", () => {
 
 it("NEW 从呼吸角标退成名字前的红点，动画已删干净", () => {
   const dot = decls(".media-card-name.has-new::before");
-  expect(dot["border-radius"]).toBe("50%");
+  expect(dot["border-radius"]).toBe("var(--r-circle)");
   expect(dot.background).toBe("var(--thumb-accent)");
   expect(source).not.toContain("newGlow");
   expect(source).not.toContain(".new-badge");

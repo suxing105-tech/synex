@@ -123,11 +123,24 @@
   --font-sans: "SeekX Sans", "Segoe UI", "Microsoft YaHei", sans-serif;
   --font-mono: ui-monospace, "Cascadia Mono", Consolas, "SeekX Sans", monospace;
 
-  /* 圆角 4 档 */
+  /* 圆角 5 档 + 两种「完全圆角」（2026-11-16 定稿）。
+     旧的 4 档方向没错，但它只管住 25 处，站内另有 233 处把数写死，同一个角色在
+     4/5/6/7/8/9px 之间来回跳：卡片自己的圆角 8px、选中那一圈描边 6px，角上就明显脱开。
+     所以把实际成簇的 4 和 8 收进来，再补一条正圆。
+     --r-0     细条与非交互小块：进度条、滑块轨、骨架条、行内 code/mark、徽标、小记号
+     --r-1     控件与面板内的小盒：按钮、输入、下拉、菜单项、列表行、chip、信息盒
+     --r-2     浮层与媒体：弹出菜单、tooltip、toast、拖拽框、图片/视频画面
+     --r-3     面板与模态外壳
+     --r-pill  胶囊：宽度不定的完全圆角
+     --r-circle 正圆：等宽高的点、头像、圆形按钮。和 pill 分开写是因为 50% 压到长条上会
+               切成透镜形，两者不能互相顶替。
+     内嵌件按「外档减内缩」写 calc(var(--r-N) - 内缩)，别另挑一个数。 */
+  --r-0: 3px;
   --r-1: 6px;
   --r-2: 10px;
   --r-3: 14px;
   --r-pill: 999px;
+  --r-circle: 50%;
 
   /* 字号 7 档，整数（2026-11-16 定稿）。旧的 10.5/11.5/12.5/13.5 那套半像素档作废：
      它在屏幕上只是「小半号」，却让人每次都要判断选哪档，档与档之间也没有真的层级差。
@@ -206,7 +219,7 @@ html {
 }
 ::-webkit-scrollbar-thumb {
   background: var(--ink-2);
-  border-radius: 4px;
+  border-radius: var(--r-pill);
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--ink-3);
@@ -220,7 +233,7 @@ html {
 .live-dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: var(--r-circle);
   background: var(--accent);
 }
 .live-dot.on {
@@ -234,7 +247,7 @@ html {
    Feed 的贪心分列按 lib/media-format.ts 的 footerHeightFor 预计算卡片高度，
    所以下面两个页脚高度一旦改动，那边的常量必须同步改。 */
 :root {
-  --thumb-radius: 10px;
+  --thumb-radius: var(--r-2);
   --thumb-gap: 12px;
   /* 页脚（也就是卡片露出来的那一点底色）要比画面明显暗，文字才像是压在
      图下面的信息条上，而不是画面自己的暗部。原来的 #27272a 太接近卡面高亮。 */
@@ -296,7 +309,7 @@ html {
 
 /* 卡片窄到放不下页脚时收一档圆角，不然 90px 的卡顶着一个 10px 圆角会很肿 */
 .media-card--compact {
-  --thumb-radius: 8px;
+  --thumb-radius: var(--r-1);
 }
 
 .media-card-media {
@@ -504,7 +517,7 @@ html {
   width: 6px;
   height: 6px;
   margin-right: var(--sp-1);
-  border-radius: 50%;
+  border-radius: var(--r-circle);
   background: var(--thumb-accent);
   vertical-align: 1px;
 }
@@ -561,7 +574,7 @@ html {
   transform: translateX(-50%);
   background: var(--ink-2);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--r-2);
   padding: var(--sp-3) var(--sp-4);
   font-size: var(--fs-sm);
   z-index: 90;
@@ -625,7 +638,7 @@ html {
 }
 
 .fill-interactions label:has(input[type="checkbox"]) {
-  border-radius: 6px;
+  border-radius: var(--r-1);
   padding: var(--sp-2);
   transition: background-color 140ms ease;
 }
@@ -666,7 +679,7 @@ html {
 .settings-card {
   overflow: hidden;
   border: 1px solid var(--line-soft);
-  border-radius: 12px;
+  border-radius: var(--r-2);
   background: var(--ink-1);
 }
 
@@ -743,7 +756,7 @@ html {
   color: var(--text-1);
   background: var(--ink-1);
   border: 1px solid var(--ink-5);
-  border-radius: 7px;
+  border-radius: var(--r-1);
 }
 /* 地址、路径这类输入框要有可读宽度，否则值会被截成一个词。 */
 .setting-row-side input {
@@ -803,7 +816,7 @@ html {
   color: var(--text-1);
   background: var(--ink-1);
   border: 1px solid var(--ink-5);
-  border-radius: 7px;
+  border-radius: var(--r-1);
 }
 
 .settings-card-footer {
@@ -885,7 +898,7 @@ html {
   position: relative;
   width: 40px;
   height: 23px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--ink-5);
   transition: background-color 140ms ease;
 }
@@ -897,7 +910,7 @@ html {
   left: 3px;
   width: 17px;
   height: 17px;
-  border-radius: 50%;
+  border-radius: var(--r-circle);
   background: var(--text-1);
   transition: transform 140ms ease;
 }
@@ -953,7 +966,7 @@ html {
   min-height: 34px;
   padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--ink-5);
-  border-radius: 7px;
+  border-radius: var(--r-1);
   font-size: var(--fs-sm);
   white-space: nowrap;
 }
@@ -972,7 +985,7 @@ html {
 .status-dot {
   width: 7px;
   height: 7px;
-  border-radius: 50%;
+  border-radius: var(--r-circle);
   flex-shrink: 0;
 }
 
@@ -1005,7 +1018,7 @@ html {
   justify-content: center;
   width: 30px;
   height: 30px;
-  border-radius: 8px;
+  border-radius: var(--r-1);
   color: var(--text-2);
   cursor: pointer;
   transition: background-color 140ms ease, color 140ms ease;

@@ -126,7 +126,7 @@
     width: 620px;
     height: 620px;
     margin: -310px 0 0 -310px;
-    border-radius: 50%;
+    border-radius: var(--r-circle);
     pointer-events: none;
     background: radial-gradient(circle, #f24e4e26 0%, #f24e4e0d 45%, transparent 70%);
     animation: splash-glow 8s ease-in-out infinite alternate;
@@ -183,7 +183,7 @@
     top: 5px; /* (14 - 4) / 2：细轨在 14px 的控制框里垂直居中 */
     width: 100%;
     height: 4px;
-    border-radius: 2px;
+    border-radius: var(--r-0);
     background: #323237;
   }
   /* 扫描头的光：只有 4px 高，被轨道框裁住，所以永远只在轨上走。
@@ -194,7 +194,7 @@
     top: 5px;
     width: 100%;
     height: 4px;
-    border-radius: 2px;
+    border-radius: var(--r-0);
     overflow: hidden;
   }
   .rule-glow {
@@ -222,7 +222,7 @@
     height: 14px;
     box-sizing: border-box;
     border: 2px solid #18181b;
-    border-radius: 50%;
+    border-radius: var(--r-circle);
     background: #f24e4e;
     box-shadow: 0 1px 3px rgba(0, 0, 0, .5), 0 0 0 1px rgba(242, 78, 78, .4);
     animation: splash-thumb-in 220ms cubic-bezier(.34, 1.4, .64, 1) 60ms both;
@@ -248,7 +248,7 @@
     margin-top: var(--sp-5);
     padding: var(--sp-2) var(--sp-5);
     border: 1px solid #3a3a41;
-    border-radius: 6px;
+    border-radius: var(--r-1);
     background: #1c1c20;
     color: #dcdce0;
     font: inherit;

@@ -231,7 +231,7 @@
     <header class="video-header relative flex items-center gap-2 px-4 py-3 shrink-0 border-b border-border bg-surface">
       <button
         type="button"
-        class="rounded-lg px-3 py-2 text-xs"
+        class="rounded-ctl px-3 py-2 text-xs"
         title="返回缩略图（Esc）"
         aria-label="返回缩略图"
         onclick={close}
@@ -241,12 +241,12 @@
       <span class="flex-1 min-w-0 truncate text-xs text-muted" title={current.filename}>{current.filename}</span>
       {#if comparing}
         <span class="text-2xs text-muted">对比已选中的两个视频</span>
-        <button type="button" class="rounded-lg px-3 py-2 text-xs" aria-pressed="true" onclick={() => { compareOn = false; }}>退出对比</button>
+        <button type="button" class="rounded-ctl px-3 py-2 text-xs" aria-pressed="true" onclick={() => { compareOn = false; }}>退出对比</button>
         <!-- 与图片同一处、同一套按钮：顶栏正中间。必须排在本段最后：
              Svelte 5 的事件委托里，组件排在同分支的兄弟元素之前会让后面的按钮点不动。 -->
         <CompareModeSwitch label="视频对比方式" />
       {:else if compareReady}
-        <button type="button" class="rounded-lg px-3 py-2 text-xs" title="对比选中的两个视频" aria-label="对比视频" onclick={() => { compareOn = true; }}>对比</button>
+        <button type="button" class="rounded-ctl px-3 py-2 text-xs" title="对比选中的两个视频" aria-label="对比视频" onclick={() => { compareOn = true; }}>对比</button>
       {/if}
       <button type="button" class="viewer-icon-btn" aria-label="用系统播放器打开" title="用系统播放器打开" onclick={() => void openInSystem()}>
         <Icon name="external-link" size={14} />
@@ -307,7 +307,7 @@
           <div class="text-xs text-zinc-500">({current.filename})</div>
           <button
             type="button"
-            class="px-4 py-2 rounded-lg bg-accent text-bg text-sm font-medium hover:opacity-90"
+            class="px-4 py-2 rounded-ctl bg-accent text-bg text-sm font-medium hover:opacity-90"
             onclick={() => void openInSystem()}
           >
             用系统播放器打开
@@ -339,9 +339,9 @@
 
     <footer class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 shrink-0 border-t border-border bg-surface text-xs">
       <div class="flex items-center gap-2">
-        <button type="button" class="rounded-lg px-3 py-2" title="上一个视频" aria-label="上一个视频页码" onclick={() => go(-1)}>‹</button>
+        <button type="button" class="rounded-ctl px-3 py-2" title="上一个视频" aria-label="上一个视频页码" onclick={() => go(-1)}>‹</button>
         <span class="text-muted">{currentIndex + 1} / {videos.length}</span>
-        <button type="button" class="rounded-lg px-3 py-2" title="下一个视频" aria-label="下一个视频页码" onclick={() => go(1)}>›</button>
+        <button type="button" class="rounded-ctl px-3 py-2" title="下一个视频" aria-label="下一个视频页码" onclick={() => go(1)}>›</button>
       </div>
       <span class="text-muted font-mono truncate max-w-[60%]">
         {#if current.duration_seconds != null}{formatDuration(current.duration_seconds)}{/if}

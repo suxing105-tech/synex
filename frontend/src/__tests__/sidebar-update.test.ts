@@ -59,7 +59,7 @@ it('styles the entry icon like the settings button and shows the 有可用更新
   expect(settings).toContain('text-muted');
   const button = render(SidebarUpdateButton).getByRole('button', { name: '有可用更新 v0.2.11' });
   for (const cls of settings.split(/\s+/)) {
-    if (['w-10', 'h-10', 'flex', 'items-center', 'justify-center', 'rounded-lg', 'text-muted'].includes(cls)) {
+    if (['w-10', 'h-10', 'flex', 'items-center', 'justify-center', 'rounded-ctl', 'text-muted'].includes(cls)) {
       expect(button.className).toContain(cls);
     }
   }

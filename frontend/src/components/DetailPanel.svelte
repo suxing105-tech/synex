@@ -412,7 +412,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
             <Icon name="more-vertical" size={14} />
           </button>
           {#if menuOpen}
-            <div class="dock-menu bg-surface-2 border border-border rounded-md py-1 min-w-[190px] shadow-lg" role="menu">
+            <div class="dock-menu bg-surface-2 border border-border rounded-card py-1 min-w-[190px] shadow-lg" role="menu">
               {#if d.kind === "image"}
                 <button type="button" class="menu-item" role="menuitem" aria-label="复制全部参数" onclick={() => { copy(allParamsText(d), "全部参数"); closeMenu(); }}>
                   复制全部参数
@@ -566,7 +566,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
   }
   .prompt-stack { display:flex; flex-direction:column; gap:var(--sp-3); }
   .prompt-stack :global(.reverse-panel),
-  .prompt-stack :global(.rounded-lg.border) { margin-top:0; }
+  .prompt-stack > :global(*) { margin-top:0; }
   .workbench-disclosure { border-top:1px solid var(--line); margin-top:var(--sp-2); padding-top:var(--sp-2); }
   .workbench-disclosure > summary {
     display:flex; align-items:center; gap:var(--sp-2); min-height:26px;
@@ -582,7 +582,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
   .workbench-disclosure summary span { color:var(--text-3); font-family:var(--font-mono); }
   .disclosure-content { padding-top:var(--sp-2); }
   .workflow-download-slot { margin-top:var(--sp-3); }
-  .queue-live-dot { width:7px; height:7px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px color-mix(in srgb, var(--accent) 70%, transparent); }
+  .queue-live-dot { width:7px; height:7px; border-radius:var(--r-circle); background:var(--accent); box-shadow:0 0 10px color-mix(in srgb, var(--accent) 70%, transparent); }
   @media (max-width: 390px) {
     .detail-header { padding-inline:var(--sp-2); }
     .detail-body { padding-inline:var(--sp-2); }

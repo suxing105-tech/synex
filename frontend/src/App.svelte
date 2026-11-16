@@ -310,7 +310,7 @@ import Icon from "./components/Icon.svelte";
       <FolderTree oncollapse={() => sidebarCollapsed = true} />
       {/if}
       <div class="sidebar-actions fill-interactions flex items-center mt-auto pt-4 pb-2 shrink-0" class:justify-center={sidebarCollapsed} class:px-4={!sidebarCollapsed} class:collapsed-actions={sidebarCollapsed}>
-        <button class="w-10 h-10 flex items-center justify-center rounded-lg text-muted" aria-label="设置" title="设置" onclick={() => settingsOpen = true}>
+        <button class="w-10 h-10 flex items-center justify-center rounded-ctl text-muted" aria-label="设置" title="设置" onclick={() => settingsOpen = true}>
           <Icon name="brand" size={20} />
         </button>
         <SidebarUpdateButton />
@@ -440,7 +440,7 @@ import Icon from "./components/Icon.svelte";
     background: #f24e4e;
     color: #0e0e10;
     padding: var(--sp-2) var(--sp-4);
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     font-size: var(--fs-xs);
     font-weight: 500;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);

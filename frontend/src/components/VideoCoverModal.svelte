@@ -72,7 +72,7 @@
 
 {#if open && video}
   <div class="fixed inset-0 z-[110] bg-black/85 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="修改视频封面">
-    <div class="w-full max-w-[640px] bg-surface-2 border border-border rounded-lg shadow-2xl overflow-hidden">
+    <div class="w-full max-w-[640px] bg-surface-2 border border-border rounded-panel shadow-2xl overflow-hidden">
       <header class="flex items-center justify-between px-4 py-3 border-b border-border">
         <div class="flex items-center gap-2">
           <Icon name="video" size={16} />
@@ -80,7 +80,7 @@
         </div>
         <button
           type="button"
-          class="p-2 rounded-md hover:bg-surface-3 focus:outline-none focus:border-accent transition-colors"
+          class="p-2 rounded-ctl hover:bg-surface-3 focus:outline-none focus:border-accent transition-colors"
           title="关闭 (Esc)"
           aria-label="关闭"
           onclick={close}
@@ -90,7 +90,7 @@
       </header>
 
       <div class="p-4 space-y-4">
-        <div class="bg-black rounded-md overflow-hidden">
+        <div class="bg-black rounded-card overflow-hidden">
           <!-- svelte-ignore a11y_media_has_caption -->
           <video
             bind:this={videoEl}
@@ -111,7 +111,7 @@
         <div class="flex flex-wrap gap-2">
           <button
             type="button"
-            class="flex-1 min-w-[160px] px-3 py-2 rounded-md bg-accent text-bg text-sm font-medium hover:opacity-90 disabled:opacity-50"
+            class="flex-1 min-w-[160px] px-3 py-2 rounded-ctl bg-accent text-bg text-sm font-medium hover:opacity-90 disabled:opacity-50"
             disabled={saving}
             onclick={setFrame}
           >
@@ -119,7 +119,7 @@
           </button>
           <button
             type="button"
-            class="px-3 py-2 rounded-md border border-border hover:bg-surface-3 text-sm disabled:opacity-50"
+            class="px-3 py-2 rounded-ctl border border-border hover:bg-surface-3 text-sm disabled:opacity-50"
             disabled={saving}
             onclick={upload}
           >
@@ -127,7 +127,7 @@
           </button>
           <button
             type="button"
-            class="px-3 py-2 rounded-md border border-border hover:bg-surface-3 text-sm disabled:opacity-50"
+            class="px-3 py-2 rounded-ctl border border-border hover:bg-surface-3 text-sm disabled:opacity-50"
             disabled={saving}
             onclick={reset}
           >

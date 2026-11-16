@@ -81,6 +81,6 @@
   .vt-danger { color: var(--danger); }
   .vt-actions { display: flex; gap: var(--sp-1); flex-wrap: wrap; }
   .vt-button {
-    font-size: var(--fs-2xs); padding: 3px var(--sp-2); border: 1px solid #3f3f46; border-radius: 5px; background: #202024;
+    font-size: var(--fs-2xs); padding: 3px var(--sp-2); border: 1px solid #3f3f46; border-radius: var(--r-1); background: #202024;
   }
 </style>

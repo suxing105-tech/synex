@@ -636,7 +636,7 @@ it('这一层收进缩略图那一列：纯色底 + 一整块模块底，不再�
   // 模块底。整个弹窗只许它带面——输入区那层的画撤干净，否则卡中卡，左右照样读成两截。
   expect(panel).toMatch(/background:\s*#131316/);
   expect(panel).toMatch(/border:\s*1px solid/);
-  expect(panel).toMatch(/border-radius:\s*20px/);
+  expect(panel).toMatch(/border-radius:\s*var\(--r-3\)/);
   // 纯色底上没有东西可糊，虚化留着只是白交一层合成
   expect(panel).not.toMatch(/backdrop-filter/);
   const composer = blk('.cm-composer {');
@@ -832,8 +832,8 @@ it('左右两栏：展示图归左栏、输入卡归右栏、弹窗放宽，卡�
   expect(dock).not.toMatch(/margin:[^;]*-22px/);
   // 卡自己的下内边距必须是 0：留着的这几 px 会留在钉住的条下面，字从缝里露出来。
   expect(rule(".cm-composer {")).toMatch(/padding:\s*var\(--sp-3\) var\(--sp-3\) 0/);
-  // 卡不能 overflow:hidden（工作流弹层要往卡外冒），下圆角只能这条自己带：模块圆角 20px 减 1px 边框。
-  expect(dock).toMatch(/border-radius:\s*0 0 19px 19px/);
+  // 卡不能 overflow:hidden（工作流弹层要往卡外冒），下圆角只能这条自己带：模块圆角 --r-3 减 1px 边框。
+  expect(dock).toMatch(/border-radius:\s*0 0 calc\(var\(--r-3\) - 1px\) calc\(var\(--r-3\) - 1px\)/);
   // 这条不再自己画框：上面加一条分隔线就把「一次输入」劈成两块（苏醒要的是一个圆角矩形）。
   expect(dock).not.toMatch(/border-top/);
   // 不透明底：滚动时提示词从这条底下过去，不许透出字来
@@ -1185,9 +1185,9 @@ it('跑完之后状态行才回来：已取消要有交代，不能一声不吭'
 it('生成是一颗圆形品牌钮（苏醒点名的形状），取消那颗仍是胶囊', () => {
   const source = readFileSync('src/components/CloneModal.svelte', 'utf8');
   const rule = (sel: string) => source.slice(source.indexOf(sel), source.indexOf('}', source.indexOf(sel)));
-  expect(rule('.cm-btn {')).toContain('border-radius: 999px');
+  expect(rule('.cm-btn {')).toContain('border-radius: var(--r-pill)');
   const go = rule('.cm-go {');
-  expect(go).toMatch(/border-radius:\s*50%/);
+  expect(go).toMatch(/border-radius:\s*var\(--r-circle\)/);
   expect(go).toMatch(/width:\s*40px;\s*height:\s*40px/);
   // 圆里没有文字，就不许再留着撑宽度的 min-width / 左右内边距——那颗必须是个正圆
   expect(go).not.toMatch(/min-width/);
@@ -2751,7 +2751,7 @@ it('音色格不许拿底色当指示：悬停、选中、试听三态都 transp
   expect(eq).not.toMatch(/border-radius:\s*50%|width:\s*\d+px|background:\s*#1|box-shadow/);
   const bar = /\.cm-voice-eq i \{[^}]*\}/.exec(css)?.[0] ?? "";
   expect(bar).toMatch(/background:\s*#f24e4e/);
-  expect(bar).toMatch(/border-radius:\s*999px/);
+  expect(bar).toMatch(/border-radius:\s*var\(--r-pill\)/);
   expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.cm-voice-eq i \{ animation: none;/);
 });
 

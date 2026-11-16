@@ -694,16 +694,16 @@
 <style>
   .vp-field {
     display: block; width: 100%; margin-top: var(--sp-1); padding: var(--sp-2) var(--sp-2); font-size: var(--fs-2xs);
-    color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 5px;
+    color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: var(--r-1);
   }
   /* 与标签同行时去掉 margin-top 与 100% 宽，否则"H3 模式"会被挤成两行 */
   .vp-field-inline { display: inline-block; width: auto; margin-top: 0; }
   .vp-label { font-size: var(--fs-2xs); color: #a1a1aa; flex: none; white-space: nowrap; }
-  .vp-version { font-size: var(--fs-2xs); padding: var(--sp-1) var(--sp-2); border: 1px solid #3f3f46; border-radius: 5px; background: #18181b; }
+  .vp-version { font-size: var(--fs-2xs); padding: var(--sp-1) var(--sp-2); border: 1px solid #3f3f46; border-radius: var(--r-1); background: #18181b; }
   .vp-version[aria-pressed="true"] { border-color: #f24e4e; color: #fda4a4; }
   .vp-danger { color: var(--danger); border-color: rgb(var(--danger-rgb) / 45%); background: rgb(var(--danger-rgb) / 8%); }
   .vp-button {
-    font-size: var(--fs-2xs); padding: var(--sp-1) var(--sp-2); border: 1px solid #3f3f46; border-radius: 5px; background: #202024;
+    font-size: var(--fs-2xs); padding: var(--sp-1) var(--sp-2); border: 1px solid #3f3f46; border-radius: var(--r-1); background: #202024;
   }
   .vp-button:disabled { opacity: .5; cursor: default; }
   /* 正在跑的那颗按钮不变灰，反而亮起来：一眼看出"你点的这一下确实开始了"。 */
@@ -716,7 +716,7 @@
   .vp-tab { font-size: var(--fs-2xs); padding: var(--sp-1) var(--sp-3); background: #202024; }
   .vp-tab[aria-pressed="true"] { background: #f24e4e; color: #0e0e10; }
   .vp-badge {
-    font-size: var(--fs-2xs); padding: 1px var(--sp-2); border-radius: 999px; border: 1px solid #3f3f46; color: #a1a1aa;
+    font-size: var(--fs-2xs); padding: 1px var(--sp-2); border-radius: var(--r-pill); border: 1px solid #3f3f46; color: #a1a1aa;
   }
   .vp-translate { display: inline-flex; align-items: center; gap: var(--sp-1); }
   .vp-icon { width: 15px; height: 15px; flex: none; }
@@ -725,14 +725,14 @@
   .vp-help { position: relative; display: inline-flex; flex: none; }
   .vp-help-button {
     width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center;
-    border: 1px solid #3f3f46; border-radius: 999px; background: #202024; color: #a1a1aa;
+    border: 1px solid #3f3f46; border-radius: var(--r-pill); background: #202024; color: #a1a1aa;
     font-size: var(--fs-2xs); font-weight: 600; line-height: var(--lh-none);
   }
   .vp-help-button:hover, .vp-help-button:focus-visible { border-color: #f24e4e; color: #fda4a4; }
   .vp-help-card {
     position: absolute; top: calc(100% + 6px); right: 0; z-index: 40; width: 268px;
     display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2); background: #0e0e10;
-    border: 1px solid #3f3f46; border-radius: 6px; box-shadow: 0 10px 28px rgba(0, 0, 0, .55);
+    border: 1px solid #3f3f46; border-radius: var(--r-1); box-shadow: 0 10px 28px rgba(0, 0, 0, .55);
     opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .12s ease;
   }
   .vp-help:hover .vp-help-card, .vp-help:focus-within .vp-help-card, .vp-help.open .vp-help-card {
@@ -741,46 +741,46 @@
   .vp-help-row { display: flex; flex-direction: column; gap: 1px; font-size: var(--fs-2xs); line-height: var(--lh-ui); color: #a1a1aa; }
   .vp-help-row b { color: #e4e4e7; }
   .vp-help-note { font-size: var(--fs-2xs); line-height: var(--lh-ui); color: #71717a; }
-  .vp-frames { border: 1px solid #2e2e33; border-radius: 5px; background: #121215; padding: var(--sp-2) var(--sp-2); }
+  .vp-frames { border: 1px solid #2e2e33; border-radius: var(--r-1); background: #121215; padding: var(--sp-2) var(--sp-2); }
   .vp-frames-summary { font-size: var(--fs-2xs); color: #a1a1aa; cursor: pointer; user-select: none; }
   .vp-ref { display: flex; flex-direction: column; gap: var(--sp-1); }
   .vp-ref-label {
-    font-size: var(--fs-2xs); padding: 1px var(--sp-2); border-radius: 4px; color: #fbbf24;
+    font-size: var(--fs-2xs); padding: 1px var(--sp-2); border-radius: var(--r-0); color: #fbbf24;
     background: #1f1a10; border: 1px solid #4a3a12; width: fit-content;
   }
   /* 生成中的反馈：转圈 + 走秒 + 进度条 + 骨架线。一次模型调用没有可上报的百分比，
      所以"仍在推进"的证据靠动画与计时，队列进度条才是真百分比。 */
   .vp-spin {
-    width: 12px; height: 12px; flex: none; display: inline-block; border-radius: 999px;
+    width: 12px; height: 12px; flex: none; display: inline-block; border-radius: var(--r-pill);
     border: 2px solid rgba(242, 78, 78, .22); border-top-color: #f24e4e;
     animation: vp-spin .7s linear infinite; vertical-align: -2px;
   }
   .vp-spin-sm { width: 10px; height: 10px; border-width: 1.5px; }
   @keyframes vp-spin { to { transform: rotate(360deg); } }
   .vp-progress {
-    display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2); border-radius: 6px;
+    display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2); border-radius: var(--r-1);
     border: 1px solid #5d3a1a; background: linear-gradient(180deg, #1c1510, #14110f);
   }
   .vp-progress-top { display: flex; align-items: center; gap: var(--sp-2); }
   .vp-progress-title { font-size: var(--fs-2xs); font-weight: 600; color: #fda4a4; }
   .vp-progress-time { margin-left: auto; font-size: var(--fs-2xs); color: #a1a1aa; font-variant-numeric: tabular-nums; }
   .vp-progress-note { font-size: var(--fs-2xs); line-height: var(--lh-ui); color: #a1a1aa; }
-  .vp-bar { position: relative; display: block; height: 3px; border-radius: 999px; background: #2a2a30; overflow: hidden; }
+  .vp-bar { position: relative; display: block; height: 3px; border-radius: var(--r-pill); background: #2a2a30; overflow: hidden; }
   .vp-bar i {
-    position: absolute; top: 0; bottom: 0; left: 0; width: 34%; border-radius: 999px;
+    position: absolute; top: 0; bottom: 0; left: 0; width: 34%; border-radius: var(--r-pill);
     background: linear-gradient(90deg, transparent, #f24e4e, transparent);
     animation: vp-sweep 1.2s ease-in-out infinite;
   }
   @keyframes vp-sweep { 0% { transform: translateX(-110%); } 100% { transform: translateX(320%); } }
   .vp-skeleton { display: flex; flex-direction: column; gap: var(--sp-1); }
   .vp-skeleton i {
-    height: 8px; border-radius: 3px; background: linear-gradient(90deg, #1d1d21 0%, #2e2e36 50%, #1d1d21 100%);
+    height: 8px; border-radius: var(--r-0); background: linear-gradient(90deg, #1d1d21 0%, #2e2e36 50%, #1d1d21 100%);
     background-size: 200% 100%; animation: vp-shimmer 1.4s linear infinite;
   }
   @keyframes vp-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
   .vp-queue { display: flex; align-items: center; gap: var(--sp-2); flex: 1 1 160px; min-width: 150px; }
   .vp-queue-text { font-size: var(--fs-2xs); color: #fda4a4; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .vp-queue-bar { flex: 1; height: 3px; border-radius: 999px; background: #2a2a30; overflow: hidden; }
+  .vp-queue-bar { flex: 1; height: 3px; border-radius: var(--r-pill); background: #2a2a30; overflow: hidden; }
   .vp-queue-bar i { display: block; height: 100%; background: #f24e4e; transition: width .25s ease; }
   article[data-running="true"] { border-color: #f24e4e; animation: vp-breathe 1.7s ease-in-out infinite; }
   @keyframes vp-breathe { 0%, 100% { box-shadow: 0 0 0 0 rgba(242, 78, 78, .22); } 50% { box-shadow: 0 0 0 3px rgba(242, 78, 78, .1); } }
@@ -790,7 +790,7 @@
   .vp-body {
     font-family: var(--font-mono);
     font-size: var(--fs-xs); line-height: var(--lh-read); white-space: pre-wrap; word-break: break-word;
-    color: #e4e4e7; background: #121215; border: 1px solid #2e2e33; border-radius: 5px; padding: var(--sp-2);
+    color: #e4e4e7; background: #121215; border: 1px solid #2e2e33; border-radius: var(--r-1); padding: var(--sp-2);
     overflow-y: auto;
   }
 </style>

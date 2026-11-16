@@ -243,7 +243,7 @@
   .cc-viewport {
     position: relative; width: 100%; height: var(--cm-hero-h, min(46vh, 480px));
     display: flex; align-items: center; justify-content: center;
-    overflow: hidden; border-radius: 16px; outline: none;
+    overflow: hidden; border-radius: var(--r-3); outline: none;
     /* 手势归画布：滚轮是缩放、拖动是平移，所以这块区域不再跟着面板竖向滚。 */
     touch-action: none; user-select: none;
   }
@@ -254,7 +254,7 @@
   /* transform 只准出现在这两层里。它创建 containing block——往外画一个 fixed 就错位。 */
   .cc-content { position: relative; transform-origin: 0 0; transition: transform 0.28s ease; }
   .cc-stage.is-dragging .cc-content { transition: none; }
-  .cc-card { position: absolute; border-radius: 14px; overflow: hidden; background: #0c0c0e; }
+  .cc-card { position: absolute; border-radius: var(--r-3); overflow: hidden; background: #0c0c0e; }
   /* 旧批变淡，最新那批才是这一轮的结果；聚焦哪张再补一圈环，放大态下也认得出在看谁。 */
   .cc-card.is-faded { opacity: 0.55; }
   .cc-card.is-focused { box-shadow: 0 0 0 2px rgb(255 255 255 / 26%); }
@@ -267,13 +267,13 @@
   .cc-play {
     position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
     display: flex; align-items: center; justify-content: center;
-    width: 44px; height: 44px; border-radius: 50%;
+    width: 44px; height: 44px; border-radius: var(--r-circle);
     color: #fafafa; background: rgb(0 0 0 / 55%); pointer-events: none;
   }
   .cc-open {
     position: absolute; right: 8px; bottom: 8px; z-index: 2;
     display: inline-flex; align-items: center; gap: var(--sp-1);
-    padding: var(--sp-1) var(--sp-2); border: 0; border-radius: 999px;
+    padding: var(--sp-1) var(--sp-2); border: 0; border-radius: var(--r-pill);
     font-size: var(--fs-xs); color: #fafafa; background: rgb(0 0 0 / 62%);
     opacity: 0; transition: opacity 0.16s ease;
   }

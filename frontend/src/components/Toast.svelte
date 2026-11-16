@@ -35,7 +35,7 @@
 >
   {#each cornerToasts as t (t.id)}
     <div
-      class="toast-card pointer-events-auto bg-surface-2 border border-border border-l-4 {accentClass(t)} rounded-md px-3 py-2 text-xs shadow-lg min-w-[180px] max-w-[360px] flex items-start gap-2"
+      class="toast-card pointer-events-auto bg-surface-2 border border-border border-l-4 {accentClass(t)} rounded-card px-3 py-2 text-xs shadow-lg min-w-[180px] max-w-[360px] flex items-start gap-2"
       role={t.kind === "error" ? "alert" : "status"}
     >
       {#if t.kind === "progress"}
@@ -127,7 +127,7 @@
     gap: var(--sp-3);
     max-width: min(92vw, 620px);
     padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: #232326;
     border: 1px solid #3a3a40;
     box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
@@ -140,7 +140,7 @@
     flex: none;
     height: 26px;
     padding: 0 var(--sp-3);
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     border: 1px solid #4a4a52;
     background: transparent;
     color: #d6d6dc;
@@ -166,7 +166,7 @@
     width: 22px;
     height: 22px;
     border: 0;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: transparent;
     color: #8a8a8e;
     cursor: pointer;

@@ -125,8 +125,8 @@
   .markdown-page { max-width:880px; margin:auto; font-size:var(--fs-md); line-height: var(--lh-prose); overflow-wrap:anywhere; }
   .plain-page { max-width:880px; margin:auto; font-size:var(--fs-md); line-height: var(--lh-prose); overflow-wrap:anywhere; }
   .plain-block { margin:0 0 1.1em; white-space:pre-wrap; font:inherit; }
-  .plain-page :global(mark.text-hit), .markdown-page :global(mark.text-hit) { background:#5b4413; color:#ffe9a8; border-radius:3px; padding:0 var(--sp-05); }
-  .markdown-block { min-height:15px; cursor:text; outline:none; border-radius:5px; }
+  .plain-page :global(mark.text-hit), .markdown-page :global(mark.text-hit) { background:#5b4413; color:#ffe9a8; border-radius:var(--r-0); padding:0 var(--sp-05); }
+  .markdown-block { min-height:15px; cursor:text; outline:none; border-radius:var(--r-1); }
   .markdown-block:focus-visible { box-shadow:0 0 0 1px #777; }
   .empty-reading { color:#8a8a8e; }
   .markdown-page :global(h1) { font-size:var(--fs-xl); font-weight:600; margin:var(--sp-3) 0 var(--sp-6); }
@@ -135,12 +135,12 @@
   .markdown-page :global(p) { margin:var(--sp-2) 0; white-space:pre-wrap; }
   .markdown-page :global(ul), .markdown-page :global(ol) { padding-left:var(--sp-7); list-style:revert; }
   .markdown-page :global(blockquote) { border-left:3px solid #ac6666; color:#b6b3bf; padding-left:var(--sp-5); margin:var(--sp-4) 0; }
-  .markdown-page :global(pre) { background:#18181b; padding:var(--sp-4); border-radius:8px; overflow:auto; }
-  .markdown-page :global(code) { font-family:var(--font-mono); background:#27272a; padding:var(--sp-05) var(--sp-1); border-radius:3px; }
+  .markdown-page :global(pre) { background:#18181b; padding:var(--sp-4); border-radius:var(--r-1); overflow:auto; }
+  .markdown-page :global(code) { font-family:var(--font-mono); background:#27272a; padding:var(--sp-05) var(--sp-1); border-radius:var(--r-0); }
   .markdown-page :global(pre code) { background:transparent; padding:0; }
   .markdown-page :global(table) { width:100%; border-collapse:collapse; margin:var(--sp-4) 0; }
   .markdown-page :global(th),.markdown-page :global(td) { border:1px solid #454550; padding:var(--sp-2) var(--sp-3); text-align:left; }
-  .markdown-page :global(img) { max-width:100%; max-height:520px; object-fit:contain; border-radius:8px; display:block; }
+  .markdown-page :global(img) { max-width:100%; max-height:520px; object-fit:contain; border-radius:var(--r-2); display:block; }
   .markdown-page :global(button) { color:#dfa2a2; cursor:pointer; font-size: var(--fs-sm); padding:var(--sp-1); }
   .markdown-page :global(a) { color:#dfa2a2; text-decoration:underline; }
   .markdown-page :global(.text-asset) { display:block; margin:var(--sp-4) 0; }

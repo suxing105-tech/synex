@@ -398,14 +398,14 @@ import { basenameOnly } from '../lib/media-format';
      焦点不主动收进来的话，打开预览后 activeElement 还是 <body>，键盘用户等于站在门外。 -->
 <section class="inline-viewer absolute inset-0 z-20 flex flex-col bg-bg overflow-hidden fill-interactions" aria-label="文本阅读" tabindex="-1" use:modalFocus>
   <header class="reader-header flex items-center gap-2 px-4 py-3 shrink-0 border-b border-border bg-surface">
-    <button class="rounded-lg px-3 py-2 text-xs" onclick={() => void close()} title="返回缩略图（Esc）">← 返回</button>
+    <button class="rounded-ctl px-3 py-2 text-xs" onclick={() => void close()} title="返回缩略图（Esc）">← 返回</button>
     <span class="flex-1 min-w-0 truncate text-xs text-muted" title={current?.detail.path || item?.path || ''}>{current?.detail.filename || item?.filename || ''}</span>
     <span class="format-badge">{textFormatLabel(current?.detail.format || item?.format || '')}</span>
     {#if canEdit}
-      <button class="rounded-lg px-3 py-2 text-xs" aria-pressed={editing} onclick={() => void toggleEditing()}>{editing ? '完成编辑' : '编辑'}</button>
+      <button class="rounded-ctl px-3 py-2 text-xs" aria-pressed={editing} onclick={() => void toggleEditing()}>{editing ? '完成编辑' : '编辑'}</button>
     {/if}
-    <button class="rounded-lg px-3 py-2 text-xs" onclick={() => void copyAll()}>复制全文</button>
-    <button class="rounded-lg px-3 py-2 text-xs" aria-label="更多操作" aria-haspopup="menu" aria-expanded={menuOpen} onclick={(e) => { e.stopPropagation(); openMenu(e); }}>⋯</button>
+    <button class="rounded-ctl px-3 py-2 text-xs" onclick={() => void copyAll()}>复制全文</button>
+    <button class="rounded-ctl px-3 py-2 text-xs" aria-label="更多操作" aria-haspopup="menu" aria-expanded={menuOpen} onclick={(e) => { e.stopPropagation(); openMenu(e); }}>⋯</button>
   </header>  {#if loadError || current?.error || notice}
     <div class="notice" role="status">
       {loadError || current?.error || notice}
@@ -457,21 +457,21 @@ import { basenameOnly } from '../lib/media-format';
 
   <footer class="reader-footer flex flex-wrap items-center gap-2 px-4 py-3 shrink-0 border-t border-border bg-surface text-xs">
     <div class="flex items-center gap-1">
-      <button class="rounded-lg px-3 py-2" title="上一篇" aria-label="上一篇文本" onclick={() => void openAdjacent(-1)}>‹</button>
+      <button class="rounded-ctl px-3 py-2" title="上一篇" aria-label="上一篇文本" onclick={() => void openAdjacent(-1)}>‹</button>
       <span class="text-muted">{readerPosition(position, sequence.length)}</span>
-      <button class="rounded-lg px-3 py-2" title="下一篇" aria-label="下一篇文本" onclick={() => void openAdjacent(1)}>›</button>
+      <button class="rounded-ctl px-3 py-2" title="下一篇" aria-label="下一篇文本" onclick={() => void openAdjacent(1)}>›</button>
     </div>
     <span class="reader-state" class:problem={current ? ['conflict', 'error'].includes(current.state) : false}>{current ? SAVE_STATE_LABEL[current.state] : ''}</span>
     <span class="text-muted">{current ? `${current.body.length} 字` : ''}{#if current} · {textFormatLabel(current.detail.format)}{/if}{#if current} · {current.detail.encoding || '自动'} · {current.detail.newline}{/if}</span>
     {#if hits.length}
-      <button class="rounded-lg px-3 py-2" onclick={() => gotoHit(1)}>下一个命中（{Math.min(hitAt + 1, hits.length)}/{hits.length}）</button>
+      <button class="rounded-ctl px-3 py-2" onclick={() => gotoHit(1)}>下一个命中（{Math.min(hitAt + 1, hits.length)}/{hits.length}）</button>
     {/if}
     <span class="flex-1"></span>
     <div class="flex items-center gap-1" role="group" aria-label="阅读版式">
-      <button class="rounded-lg px-3 py-2" aria-pressed={prefs.width === 'narrow'} onclick={() => setWidth('narrow')}>窄栏</button>
-      <button class="rounded-lg px-3 py-2" aria-pressed={prefs.width === 'wide'} onclick={() => setWidth('wide')}>页宽</button>
-      <button class="rounded-lg px-3 py-2" aria-label="小一号字" onclick={() => zoom(-1)}>A-</button>
-      <button class="rounded-lg px-3 py-2" aria-label="大一号字" onclick={() => zoom(1)}>A+</button>
+      <button class="rounded-ctl px-3 py-2" aria-pressed={prefs.width === 'narrow'} onclick={() => setWidth('narrow')}>窄栏</button>
+      <button class="rounded-ctl px-3 py-2" aria-pressed={prefs.width === 'wide'} onclick={() => setWidth('wide')}>页宽</button>
+      <button class="rounded-ctl px-3 py-2" aria-label="小一号字" onclick={() => zoom(-1)}>A-</button>
+      <button class="rounded-ctl px-3 py-2" aria-label="大一号字" onclick={() => zoom(1)}>A+</button>
     </div>
     <span class="text-muted hidden xl:inline">Esc 返回缩略图 · ← / → 翻文本 · Ctrl+S 立即保存</span>
   </footer>
@@ -568,11 +568,11 @@ import { basenameOnly } from '../lib/media-format';
 <style>
   /* 阅读层自己就是一层内嵌视图：顶栏 / 正文 / 底栏三段，弹层只盖中间栏，不铺满屏幕。 */
   .reader-header button, .reader-footer button, .text-toolbar button { cursor: pointer; border: 1px solid #3a3a41; background: #232327; color: #d9d8e0; }
-  .format-badge { flex: none; font-size: var(--fs-2xs); letter-spacing: var(--track-label); color: #b9b7c4; border: 1px solid #3f3f47; border-radius: 4px; padding: 1px var(--sp-1); }
+  .format-badge { flex: none; font-size: var(--fs-2xs); letter-spacing: var(--track-label); color: #b9b7c4; border: 1px solid #3f3f47; border-radius: var(--r-0); padding: 1px var(--sp-1); }
   .notice { background: #433325; color: #f0ce9b; padding: var(--sp-2) var(--sp-4); font-size: var(--fs-xs); white-space: pre-wrap; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); flex: none; }
-  .notice button { cursor: pointer; border: 0; border-radius: 5px; padding: 3px var(--sp-2); font-size: var(--fs-xs); background: #594434; color: #ffe6bf; }
+  .notice button { cursor: pointer; border: 0; border-radius: var(--r-1); padding: 3px var(--sp-2); font-size: var(--fs-xs); background: #594434; color: #ffe6bf; }
   .text-toolbar { display: flex; flex-wrap: wrap; gap: var(--sp-1); padding: var(--sp-2) var(--sp-4); flex: none; border-bottom: 1px solid var(--color-border, #26262b); background: #141416; }
-  .text-toolbar button { cursor: pointer; border: 1px solid #3a3a41; border-radius: 5px; background: #232327; color: #d9d8e0; padding: 3px var(--sp-2); font-size: var(--fs-xs); }
+  .text-toolbar button { cursor: pointer; border: 1px solid #3a3a41; border-radius: var(--r-1); background: #232327; color: #d9d8e0; padding: 3px var(--sp-2); font-size: var(--fs-xs); }
   .reader-body { background: var(--color-bg, #0e0e10); }
   .state-line { padding: 40px var(--sp-5); text-align: center; color: #8b8997; font-size: var(--fs-sm); }
   .reader-state { color: #8b8997; }
@@ -580,19 +580,19 @@ import { basenameOnly } from '../lib/media-format';
   .muted { color: #8b8997; font-size: var(--fs-xs); }
 
   .text-modal-backdrop { position: absolute; inset: 0; background: #000a; z-index: 30; display: flex; align-items: center; justify-content: center; padding: var(--sp-6); color: #dddce4; }
-  .text-modal { width: 540px; max-width: 96%; max-height: 92%; overflow: auto; border: 1px solid #44404a; border-radius: 12px; background: #18181b; padding: var(--sp-6); box-shadow: 0 22px 90px #0008; font-size: var(--fs-sm); }
+  .text-modal { width: 540px; max-width: 96%; max-height: 92%; overflow: auto; border: 1px solid #44404a; border-radius: var(--r-3); background: #18181b; padding: var(--sp-6); box-shadow: 0 22px 90px #0008; font-size: var(--fs-sm); }
   .text-modal.wide { width: 920px; }
   .text-modal header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-5); }
   .text-modal h2 { font-size: var(--fs-lg); font-weight: 600; }
   .text-modal header button { border: 0; background: transparent; color: inherit; font-size: var(--fs-lg); cursor: pointer; }
   .text-modal label { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-4) 0; }
   .text-modal p { line-height: var(--lh-read); margin: var(--sp-3) 0; }
-  .text-modal input, .text-modal select { background: #101012; border: 1px solid #45454d; border-radius: 6px; color: inherit; padding: var(--sp-2) var(--sp-2); }
-  .text-modal button { border: 1px solid #49424c; border-radius: 6px; background: #26262b; color: #dddce4; padding: var(--sp-2) var(--sp-3); margin: 3px; cursor: pointer; font-size: var(--fs-xs); }
+  .text-modal input, .text-modal select { background: #101012; border: 1px solid #45454d; border-radius: var(--r-1); color: inherit; padding: var(--sp-2) var(--sp-2); }
+  .text-modal button { border: 1px solid #49424c; border-radius: var(--r-1); background: #26262b; color: #dddce4; padding: var(--sp-2) var(--sp-3); margin: 3px; cursor: pointer; font-size: var(--fs-xs); }
   .text-modal button:disabled { opacity: .45; cursor: default; }
   .text-modal .primary { background: #6d4c4c; border-color: #8a5f5f; }
   .text-modal .danger { background: var(--danger); border-color: var(--danger); color: var(--accent-ink); }
-  .text-modal pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-sm); line-height: var(--lh-read); font-family: var(--font-mono); background: #0e0e10; padding: var(--sp-4); border-radius: 6px; }
+  .text-modal pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-sm); line-height: var(--lh-read); font-family: var(--font-mono); background: #0e0e10; padding: var(--sp-4); border-radius: var(--r-1); }
   .history-layout { display: grid; grid-template-columns: 190px 1fr; height: 340px; gap: var(--sp-4); }
   .history-layout aside, .history-layout pre { overflow: auto; }
   .history-layout aside button { display: block; width: 95%; text-align: left; }

@@ -57,7 +57,7 @@
 <style>
   .shortcut-settings { display: flex; flex-direction: column; gap: var(--sp-3); }
   .shortcut-settings > .settings-hint { padding: 0 var(--sp-05); }
-  .shortcut-key { min-width: 118px; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-xs); background: #101013; border: 1px solid #3f3f46; border-radius: 7px; color: #e4e4e7; }
+  .shortcut-key { min-width: 118px; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-xs); background: #101013; border: 1px solid #3f3f46; border-radius: var(--r-1); color: #e4e4e7; }
   /* 无障碍：命中区 24 高起（WCAG 2.5.8），字色收进 --text-3（同值，不再写 hex） */
   .shortcut-clear { min-height: 24px; display: inline-flex; align-items: center; font-size: var(--fs-xs); color: var(--text-3); }
   .shortcut-clear:hover { color: #e4e4e7; }

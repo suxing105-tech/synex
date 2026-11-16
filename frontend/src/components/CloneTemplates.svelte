@@ -412,21 +412,21 @@
 <style>
   .clone-load { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; color: #a1a1aa; font-size: var(--fs-sm); }
   .clone-tpl-list { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
-  .clone-tpl { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px solid #2c2c31; border-radius: 8px; background: #1d1d21; }
+  .clone-tpl { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px solid #2c2c31; border-radius: var(--r-1); background: #1d1d21; }
   .clone-tpl.is-active { border-color: rgb(242 78 78 / 60%); }
   .clone-tpl-main { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-2); min-width: 0; }
   .clone-tpl-name { font-weight: 600; color: #ececed; }
   .clone-hidden-title { margin: var(--sp-4) 0 var(--sp-2); }
   .clone-tpl-hidden { background: #17171a; }
   .clone-tpl-hidden .clone-tpl-name { font-weight: 500; color: #a1a1aa; }
-  .clone-tpl-tag { padding: 1px var(--sp-2); border-radius: 999px; background: rgb(242 78 78 / 18%); color: #ff8f8f; font-size: var(--fs-2xs); }
+  .clone-tpl-tag { padding: 1px var(--sp-2); border-radius: var(--r-pill); background: rgb(242 78 78 / 18%); color: #ff8f8f; font-size: var(--fs-2xs); }
   .clone-tpl-tag-builtin { background: rgb(59 130 246 / 16%); color: #93c5fd; }
-  .clone-tpl-kind { padding: 1px var(--sp-2); border-radius: 999px; background: rgb(59 130 246 / 16%); color: #93c5fd; font-size: var(--fs-2xs); }
+  .clone-tpl-kind { padding: 1px var(--sp-2); border-radius: var(--r-pill); background: rgb(59 130 246 / 16%); color: #93c5fd; font-size: var(--fs-2xs); }
   .clone-tpl-kind.is-video { background: rgb(245 158 11 / 16%); color: #fbbf24; }
   .clone-tpl-kind.is-audio { background: rgb(139 92 246 / 16%); color: #c4b5fd; }
   .clone-tpl-kind-set { padding: var(--sp-05) var(--sp-2); font-size: var(--fs-xs); }
   .clone-tpl-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
-  .clone-import-box { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: 1px dashed #3a3a41; border-radius: 8px; background: #1a1a1e; }
+  .clone-import-box { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: 1px dashed #3a3a41; border-radius: var(--r-1); background: #1a1a1e; }
   .clone-import-box.is-hover { border-color: #f24e4e; background: rgb(242 78 78 / 8%); }
   .clone-import-box textarea { width: 100%; font-family: var(--font-mono); font-size: var(--fs-xs); }
   .clone-group { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: var(--sp-3); }

@@ -1177,8 +1177,8 @@ import { hoverPlay } from "../lib/hover-play";
   <GallerySearch label={$scope === 'all' ? '搜索图片、视频、音频、文本' : $scope === 'video' ? '搜索视频' : $scope === 'audio' ? '搜索音频' : $scope === 'text' ? '搜索文本' : '搜索图片'} />
   <div class="toolbar-actions flex flex-wrap items-center text-sm text-muted">
     {#if isTextScope}
-      <button type="button" class="text-tool shrink-0 rounded-lg px-3 py-2 text-xs" onclick={() => { textCreateOpen = true; }}>新建文本</button>
-      <button type="button" class="text-tool shrink-0 rounded-lg px-3 py-2 text-xs" onclick={() => associateTextPaths.set([])} title="把本地 TXT / MD / SRT / VTT 关联进图库，编辑直接写原文件">关联本地文本</button>
+      <button type="button" class="text-tool shrink-0 rounded-ctl px-3 py-2 text-xs" onclick={() => { textCreateOpen = true; }}>新建文本</button>
+      <button type="button" class="text-tool shrink-0 rounded-ctl px-3 py-2 text-xs" onclick={() => associateTextPaths.set([])} title="把本地 TXT / MD / SRT / VTT 关联进图库，编辑直接写原文件">关联本地文本</button>
     {/if}
     <TypeChips />
     <input
@@ -1223,10 +1223,10 @@ import { hoverPlay } from "../lib/hover-play";
 >
   {#if dragHover}
     <div
-      class="absolute inset-2 rounded-lg border-2 border-dashed border-accent bg-accent/10 backdrop-blur-sm flex items-center justify-center pointer-events-none z-20"
+      class="absolute inset-2 rounded-tight border-2 border-dashed border-accent bg-accent/10 backdrop-blur-sm flex items-center justify-center pointer-events-none z-20"
       role="presentation"
     >
-      <div class="text-center px-6 py-4 rounded-md bg-surface-2/80 border border-accent shadow-2xl">
+      <div class="text-center px-6 py-4 rounded bg-surface-2/80 border border-accent shadow-2xl">
         {#if importing}
           <div class="text-xl mb-2">⏳</div>
           <div class="text-md font-medium">导入中…</div>
@@ -1415,7 +1415,7 @@ import { hoverPlay } from "../lib/hover-play";
                     <div
                       role="button"
                       tabindex="-1"
-                      class="comfyui-open-btn absolute top-3 right-3 w-7 h-7 rounded-[6px] flex items-center justify-center bg-black/70 hover:bg-accent text-white backdrop-blur-sm transition-colors cursor-pointer"
+                      class="comfyui-open-btn absolute top-3 right-3 w-7 h-7 rounded-ctl flex items-center justify-center bg-black/70 hover:bg-accent text-white backdrop-blur-sm transition-colors cursor-pointer"
                       title="在 ComfyUI 中打开工作流"
                       aria-label="在 ComfyUI 中打开工作流"
                       onclick={(e) => { e.stopPropagation(); e.preventDefault(); openInComfyui(it); }}
@@ -1547,8 +1547,8 @@ import { hoverPlay } from "../lib/hover-play";
 <style>
   /* 缩略图的形状语言（圆角 / hover 描边 / 选中外圈环 / 淡入 / 页脚）统一在 app.css 的
      .media-card* 上，Feed 与详情面板、参考帧、素材选择器共用同一套，这里不再各自定义。 */
-  .image-rename { min-width: 0; border: 1px solid #888; border-radius: 3px; background: #222; color: #eee; padding: 1px 3px; outline: none; font: inherit; }
-  .import-progress { position: sticky; top: 0; z-index: 25; width: fit-content; margin: 0 auto var(--sp-2); padding: var(--sp-2) var(--sp-3); background: #292929; border-radius: 16px; font-size: var(--fs-xs); color: #ddd; }
+  .image-rename { min-width: 0; border: 1px solid #888; border-radius: var(--r-0); background: #222; color: #eee; padding: 1px 3px; outline: none; font: inherit; }
+  .import-progress { position: sticky; top: 0; z-index: 25; width: fit-content; margin: 0 auto var(--sp-2); padding: var(--sp-2) var(--sp-3); background: #292929; border-radius: var(--r-3); font-size: var(--fs-xs); color: #ddd; }
   /* 「所有素材」里的文本卡：没有画面的一条横幅，徽标 + 文件名 + 摘录，点开进中间栏的阅读层。
      摘录取几行随列宽降级（t2 两行 / t1 一行 / t0 收掉），整卡高度与贪心分列同源于
      lib/media-format.ts 的 textCardHeightFor，所以窄列里不再出现「内容比卡高」。
@@ -1592,19 +1592,19 @@ import { hoverPlay } from "../lib/hover-play";
   .empty-search button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .empty-search small { color: var(--text-3); }
   .empty-text-actions { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); padding: var(--sp-7) var(--sp-3); color: #a9a7b3; font-size: var(--fs-sm); }
-  .empty-text-actions button { border: 1px solid rgb(58 58 65); border-radius: 6px; background: #232327; color: #dddce4; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-xs); cursor: pointer; margin: 0 var(--sp-1); }
+  .empty-text-actions button { border: 1px solid rgb(58 58 65); border-radius: var(--r-1); background: #232327; color: #dddce4; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-xs); cursor: pointer; margin: 0 var(--sp-1); }
   .empty-text-actions button.primary { background: #6d4c4c; border-color: #8a5f5f; }
   .empty-text-actions small { color: #74727e; }
   .text-dialog-backdrop { position: fixed; inset: var(--desktop-titlebar-height, 0px) 0 0; background: #000a; z-index: 90; display: flex; align-items: center; justify-content: center; padding: var(--sp-6); }
-  .text-dialog { width: 460px; max-width: 96vw; border: 1px solid #44404a; border-radius: 12px; background: #18181b; padding: var(--sp-5); color: #dddce4; font-size: var(--fs-sm); }
+  .text-dialog { width: 460px; max-width: 96vw; border: 1px solid #44404a; border-radius: var(--r-3); background: #18181b; padding: var(--sp-5); color: #dddce4; font-size: var(--fs-sm); }
   .text-dialog h2 { font-size: var(--fs-md); font-weight: 600; margin-bottom: var(--sp-3); }
   .text-dialog label { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-3) 0; }
-  .text-dialog input { background: #101012; border: 1px solid #45454d; border-radius: 6px; color: inherit; padding: var(--sp-2) var(--sp-2); }
-  .text-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-xs); line-height: var(--lh-read); font-family: var(--font-mono); background: #0e0e10; padding: var(--sp-3); border-radius: 6px; }
+  .text-dialog input { background: #101012; border: 1px solid #45454d; border-radius: var(--r-1); color: inherit; padding: var(--sp-2) var(--sp-2); }
+  .text-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-xs); line-height: var(--lh-read); font-family: var(--font-mono); background: #0e0e10; padding: var(--sp-3); border-radius: var(--r-1); }
   .dialog-muted { color: #8b8997; font-size: var(--fs-xs); line-height: var(--lh-read); }
   .dialog-error { color: #f0ce9b; font-size: var(--fs-xs); margin-bottom: var(--sp-2); }
   .dialog-actions { display: flex; justify-content: flex-end; gap: var(--sp-2); margin-top: var(--sp-4); }
-  .dialog-actions button { border: 1px solid #49424c; border-radius: 6px; background: #26262b; color: #dddce4; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-xs); cursor: pointer; }
+  .dialog-actions button { border: 1px solid #49424c; border-radius: var(--r-1); background: #26262b; color: #dddce4; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-xs); cursor: pointer; }
   .dialog-actions button:disabled { opacity: .45; cursor: default; }
   .dialog-actions .primary { background: #6d4c4c; border-color: #8a5f5f; }
   .dialog-actions .danger { background: var(--danger); border-color: var(--danger); color: var(--accent-ink); }
@@ -1722,18 +1722,18 @@ import { hoverPlay } from "../lib/hover-play";
     right: 10px;
     bottom: 8px;
     height: 2px;
-    border-radius: 2px;
+    border-radius: var(--r-0);
     background: rgba(255, 255, 255, .14);
     pointer-events: none;
   }
-  .audio-progress { position: absolute; top: 0; left: 0; height: 2px; border-radius: 2px; background: linear-gradient(90deg, #2dd4bf, #a78bfa); opacity: .95; pointer-events: none; transition: width .12s linear; }
+  .audio-progress { position: absolute; top: 0; left: 0; height: 2px; border-radius: var(--r-0); background: linear-gradient(90deg, #2dd4bf, #a78bfa); opacity: .95; pointer-events: none; transition: width .12s linear; }
   .audio-progress-knob {
     position: absolute;
     right: -3px;
     top: -2px;
     width: 6px;
     height: 6px;
-    border-radius: 50%;
+    border-radius: var(--r-circle);
     background: #ffe9d6;
     box-shadow: 0 0 8px 1px rgba(255, 214, 170, .75);
   }
@@ -1823,7 +1823,7 @@ import { hoverPlay } from "../lib/hover-play";
   }
   .columns-slider::-webkit-slider-runnable-track {
     height: 4px;
-    border-radius: 2px;
+    border-radius: var(--r-0);
     background: linear-gradient(
       to right,
       rgb(var(--accent-rgb)) 0%,
@@ -1840,7 +1840,7 @@ import { hoverPlay } from "../lib/hover-play";
     height: 14px;
     /* 轨道 4px、thumb 14px：Chrome 把 thumb 顶边贴在轨道顶边上，(4-14)/2 才居中 */
     margin-top: calc(var(--sp-1) * -1);
-    border-radius: 50%;
+    border-radius: var(--r-circle);
     background: rgb(var(--accent-rgb));
     border: 2px solid rgb(24 24 27);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(242, 78, 78, 0.4);
@@ -1858,7 +1858,7 @@ import { hoverPlay } from "../lib/hover-play";
   .columns-slider::-moz-range-thumb {
     width: 14px;
     height: 14px;
-    border-radius: 50%;
+    border-radius: var(--r-circle);
     background: rgb(var(--accent-rgb));
     border: 2px solid rgb(24 24 27);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(242, 78, 78, 0.4);
@@ -1866,13 +1866,13 @@ import { hoverPlay } from "../lib/hover-play";
   }
   .columns-slider::-moz-range-track {
     height: 4px;
-    border-radius: 2px;
+    border-radius: var(--r-0);
     background: rgb(50 50 55);
   }
   /* Firefox 不跑那条 calc 渐变，已走的部分交给它自己的 progress 伪元素 */
   .columns-slider::-moz-range-progress {
     height: 4px;
-    border-radius: 2px;
+    border-radius: var(--r-0);
     background: rgb(var(--accent-rgb));
   }
   .columns-slider:focus-visible::-webkit-slider-thumb {

@@ -131,6 +131,6 @@ it("进度条在波形下面，带一个走带光点", () => {
   expect(bar.background).toContain("linear-gradient");
   expect(bar.background).not.toBe("#f24e4e");
   const knob = decls(".audio-progress-knob");
-  expect(knob["border-radius"]).toBe("50%");
+  expect(knob["border-radius"]).toBe("var(--r-circle)");
   expect(knob["box-shadow"]).toContain("rgba(255, 214, 170");
 });

@@ -125,7 +125,7 @@ def with_model(config, model: str | None):
     if len(chosen) > 200:
         raise HTTPException(422, "模型 ID 太长了，请核对一下")
     if not chosen:
-        raise HTTPException(400, "这一家还没选模型：先在模型下拉里挑一个，或直接输入模型 ID")
+        raise HTTPException(400, "这一家还没选模型：打开模型下拉能看到原因，或换一家已配好的")
     return {**config, "model": chosen}
 
 
@@ -280,6 +280,11 @@ _MODEL_CACHE: dict[str, tuple[float, dict]] = {}
 MODEL_CACHE_SECONDS = 600.0
 # 只有这几个字样能猜出「这个模型看得懂图」。仅用来决定默认选中哪一个，不影响能选哪些。
 _VISION_HINT = re.compile(r"vl|vision|image|4v|omni|multimodal", re.I)
+# 这几个字样摆明了不是「能对话的大语言模型」：把嵌入、语音、生图那几类塞进反推，只会换回一句 400。
+# 认不准的一律放行——宁可多列两个，也不替服务商编一个它没有的模型，也不把能用掉的视觉模型筛没。
+_NON_CHAT_MODEL = re.compile(
+    r"embedding|embed|rerank|moderation|whisper|transcrib|tts|audio|speech|sound|music|"
+    r"dall|flux|sora|imagen|diffusion|suno|video|image[-_.]?(?:gen|generation|edit)|ocr", re.I)
 
 
 async def fetch_models(base_url: str, key: str, cache_key: str | None = None) -> dict:
@@ -287,7 +292,7 @@ async def fetch_models(base_url: str, key: str, cache_key: str | None = None) ->
 
     为什么值得多这一步：能反推的模型只有那么几个，而账号开着哪些是会变的。
     抄一份进代码，过期后的表现是「我要那个在下拉里选不到」，比手填难查得多。
-    所以：拉到什么列什么；拉不到就回一句原因，界面上留一条直接输入模型 ID 的路——不编。
+    所以：拉到什么列什么，只把明显不是对话模型的那几类筛掉；拉不到就回一句原因，界面上说清为什么认不出来——不编。
     cache_key 留空＝不写缓存（「检查这把 Key」要的是一次真话，不是十分钟前的旧清单）。
     """
     url = normalize_url(base_url) + "/models"
@@ -295,20 +300,22 @@ async def fetch_models(base_url: str, key: str, cache_key: str | None = None) ->
         async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
             response = await client.get(url, headers={"Authorization": f"Bearer {key}"} if key else {})
         if response.status_code >= 300:
-            raise HTTPException(502, f"模型清单没拿到（HTTP {response.status_code}），可以直接输入模型 ID")
+            raise HTTPException(502, f"模型清单没拿到（HTTP {response.status_code}），认不出可用的语言模型")
         ids = [str(item.get("id")) for item in (response.json().get("data") or [])
                if isinstance(item, dict) and item.get("id")]
     except HTTPException:
         raise
     except httpx.RequestError:
-        raise HTTPException(502, "连不上这家服务商的模型清单，可以直接输入模型 ID") from None
+        raise HTTPException(502, "连不上这家服务商的模型清单，请检查这把 Key 与 Base URL") from None
     except (ValueError, TypeError, AttributeError):
-        raise HTTPException(502, "这家服务商报回来的模型清单读不懂，可以直接输入模型 ID") from None
+        raise HTTPException(502, "这家服务商报回来的模型清单读不懂，认不出可用的语言模型") from None
     if not ids:
-        return {"models": [], "source": "empty",
-                "reason": "这家服务商没给出模型清单，可以直接输入模型 ID"}
-    recommended = next((mid for mid in ids if _VISION_HINT.search(mid)), "")
-    result = {"models": [{"id": mid, "label": mid, "recommended": mid == recommended} for mid in ids],
+        return {"models": [], "source": "empty", "reason": "这家服务商没报回模型清单，认不出可用的语言模型"}
+    chat = [mid for mid in ids if not _NON_CHAT_MODEL.search(mid)]
+    # 一家只开了非对话模型时别把清单清空：宁可原样列出来，让人看见它到底有什么
+    usable = chat or ids
+    recommended = next((mid for mid in usable if _VISION_HINT.search(mid)), usable[0])
+    result = {"models": [{"id": mid, "label": mid, "recommended": mid == recommended} for mid in usable],
               "source": "live", "reason": ""}
     if cache_key:
         _MODEL_CACHE[cache_key] = (time.monotonic(), result)

@@ -102,6 +102,23 @@ export function errorMessage(error: unknown) {
   return (error as { detail?: string })?.detail || "请求失败，请检查服务连接后重试";
 }
 // Lives outside the detail component: navigating away never abandons or misattributes a result.
+/** 「这一家自动认出的模型」记在这儿：两个面板 + 每次重挂载都去问一遍清单没有意义。 */
+const autoModels = new Map<number, string>();
+export function clearAutoModelCache() { autoModels.clear(); }
+/**
+ * 自动认出这一家的语言模型：清单里推荐的那个优先，没有推荐就取第一个。
+ * 认出来顺手记回配置，之后两个面板读的是同一份，人不用伸手；认不出来回空串，由界面说清原因。
+ */
+export async function autoPickModel(configId: number): Promise<string> {
+  const cached = autoModels.get(configId);
+  if (cached) return cached;
+  const list = await reverseApi.configModels(configId);
+  const picked = (list.models.find(item => item.recommended) ?? list.models[0])?.id?.trim() ?? "";
+  if (!picked) return "";
+  await rememberConfigModel(configId, picked);
+  autoModels.set(configId, picked);
+  return picked;
+}
 /** 挑完模型顺手记在这条配置上：下次打开、以及视频反推那一侧都从同一处读，不用各记一份。 */
 export async function rememberConfigModel(configId: number, model: string) {
   const saved = await reverseApi.setModel(configId, model);

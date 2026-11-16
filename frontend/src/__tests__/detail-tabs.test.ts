@@ -7,6 +7,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const raw = readFileSync(resolve(here, "..", "components", "DetailPanel.svelte"), "utf8");
 const promptCard = readFileSync(resolve(here, "..", "components", "PromptCard.svelte"), "utf8");
 const reversePrompt = readFileSync(resolve(here, "..", "components", "ReversePromptPanel.svelte"), "utf8");
+const videoPrompt = readFileSync(resolve(here, "..", "components", "VideoPromptPanel.svelte"), "utf8");
+const modelPicker = readFileSync(resolve(here, "..", "components", "ModelPicker.svelte"), "utf8");
 
 describe("右侧工作台纵向信息层级", () => {
   it("取消页签，按提示词、参数、队列顺序展示且移除详情区", () => {
@@ -37,7 +39,7 @@ describe("右侧工作台纵向信息层级", () => {
     expect(promptCard).not.toContain("{lines} 行");
     // 反推正文：固定 350px 起手、可纵向拖高、不做「展开全文」折叠
     expect(raw).toContain("<ReversePromptPanel");
-    expect(reversePrompt).toContain('aria-label="AI 反推提示词"');
+    expect(reversePrompt).toContain('aria-label="反推提示词"');
     expect(reversePrompt).toContain("height:350px");
     expect(reversePrompt).toContain("resize:vertical");
     expect(reversePrompt).not.toContain("展开全文");
@@ -64,6 +66,44 @@ describe("右侧工作台纵向信息层级", () => {
     expect(raw).toContain("<ReversePromptPanel");
     expect(raw).toContain("<VideoPromptPanel");
     expect(raw).toContain("<CloneQueuePanel active={active} />");
+  });
+
+  /**
+   * 2026-11-15 苏醒七条批注里落在右栏的四条：面板别套描边、标题去掉「AI」前缀、
+   * 历史版本项不要描边只要白字、两颗语种 chip 等宽且写 EN。
+   * happy-dom 量不了布局，所以照本文件的老规矩钉源文本。
+   */
+  it("右栏反推面板按 2026-11-15 批注收干净：无描边、标题无前缀、chip 等宽、头部与左栏同高", () => {
+    // 整圈边框去掉，只靠底色分区（只看最外面那个 section，里面的小格子该有边框的还有）
+    const sectionTag = (src: string) => src.slice(src.indexOf("<section"), src.indexOf(">", src.indexOf("<section")));
+    expect(sectionTag(reversePrompt)).toContain('class="fill-interactions reverse-panel rounded-lg');
+    expect(sectionTag(reversePrompt)).not.toContain("border");
+    expect(sectionTag(videoPrompt)).not.toContain("border border-border");
+    // 标题就叫「反推提示词」，两级标题的口径（§3.1）之外不留第二套措辞
+    expect(reversePrompt).toContain('aria-label="反推提示词"');
+    expect(reversePrompt).not.toContain("AI 反推提示词");
+    expect(videoPrompt).toContain('aria-label="反推视频提示词"');
+    // 历史版本项：不描边、白字，选中只加字重，不再拿品牌红描边喊
+    const versionRule = reversePrompt.slice(reversePrompt.indexOf("button.version-item,"));
+    expect(versionRule).toContain("border-color: transparent;");
+    expect(versionRule).toContain("color: var(--text-1);");
+    expect(versionRule).not.toContain("var(--accent)");
+    // 语种切换：中文 / EN 两颗等宽（34px）且不再写全 English
+    expect(reversePrompt).toContain("min-width:34px");
+    expect(reversePrompt).toContain(">EN</button>");
+    expect(reversePrompt).not.toContain(">English</button>");
+    // 右栏头部与左侧工具栏同高：16 + 40 = 56 的内容带 + py-4
+    expect(raw).toMatch(/class="detail-header[^"]*py-4/);
+  });
+
+  /**
+   * 模型不用手输：清单由后端认（只报能对话的那几个），面板进来先认一次。
+   * 下拉里那行手输框已经拆掉，所以这里钉的是「它不该存在」。
+   */
+  it("模型下拉不给手输模型 ID 的口子，只留服务商与清单", () => {
+    expect(modelPicker).not.toContain("mp-manual");
+    expect(modelPicker).not.toContain("直接输入模型 ID");
+    expect(modelPicker).toContain("自动识别");
   });
 
   it("音频不展示提示词或参数区，文本仍走独立详情面板", () => {

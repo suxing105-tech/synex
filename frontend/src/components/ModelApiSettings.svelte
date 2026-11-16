@@ -127,7 +127,7 @@
       const out = await reverseApi.checkKey({ ...payload(), config_id: editingId });
       notice = out.count
         ? `这把 Key 能用：读到 ${out.count} 个模型。去反推面板那两列里挑一个就行。`
-        : "这把 Key 连上了，但那家没报回模型清单——在反推面板里直接输入模型 ID 也能用。";
+        : "这把 Key 连上了，但那家没报回能用的语言模型，反推面板会说明认不出来的原因。";
     });
   }
   // 落点自己挑（已经配好 Key 的那一家）：再次创作那屏不再有跳过来的那颗按钮，
@@ -299,7 +299,7 @@
         {/if}
         <!-- 这一页不再摆「识别模型」那一格：Key 是这家的入场券，用哪个模型是用的时候挑。
              挑模型的入口在图片/视频反推面板那两列（先点服务商、再点它报回的模型），
-             那儿还留了一条直接输入模型 ID 的路，所以清单拉不到也不堵。 -->
+             面板会报出认不出来的原因，不会让人以为模型在转圈。 -->
         {#if draft.provider === "minimax"}
           <p class="settings-hint">再次创作可用 MiniMax-H3-Image 图片、MiniMax-H3 视频与 Speech 2.8 HD 音频 API。保存 API Key 后，对应项目会出现在再次创作的云端 API 列表。</p>
         {:else}

@@ -6,7 +6,7 @@
    * 「这一家能连上」，用哪个模型是发请求那一刻的选择。两列摆在一起，一眼就能看出
    * 「哪家还没配 Key」「这家有哪些模型」，不用在两个页面之间来回跳。
    *
-   * 清单是服务商自己报的，随时可能拉不到，所以右列底下永远留一条直接输入模型 ID 的路。
+   * 模型也不用手输：清单里能对话的那几个由后端认出来，面板进来就先认一次，这一列只用来换一家/换一个。
    */
   import { reverseApi, errorMessage, modelConfigs, promptModelConfigs, rememberConfigModel } from "../lib/reverse-prompts";
 import Icon from "./Icon.svelte";
@@ -31,7 +31,6 @@ import Icon from "./Icon.svelte";
   let open = $state(false);
   let preview = $state<number | null>(null);   // 左列当前停在哪一家
   let lists: Record<number, List> = $state({});
-  let manual = $state("");
   let busy = $state(false);
   let writeError = $state("");
   let root = $state<HTMLDivElement | null>(null);
@@ -43,8 +42,8 @@ import Icon from "./Icon.svelte";
   const previewConfig = $derived(configs.find(item => item.id === preview) ?? null);
   const previewList = $derived(preview !== null ? lists[preview] : undefined);
   /** 挑好了只显模型名（跟参考里那个下拉一样）；没挑就报「哪家 + 还差一步」。 */
-  const text = $derived(model || (chosen ? chosen.name + " · 挑一个模型" : "选择模型"));
-  const title = $derived(chosen ? (model ? chosen.name + " · " + model : chosen.name) : "先挑服务商，再挑模型");
+  const text = $derived(model || (chosen ? chosen.name + " · 自动识别" : "选择模型"));
+  const title = $derived(chosen ? (model ? chosen.name + " · " + model : chosen.name + " · 正在自动识别语言模型") : "自动识别这家的语言模型，点这儿可以换一家");
   const popStyle = $derived("left:" + pos.left + "px; top:" + pos.top + "px; width:" + pos.width + "px;"
     + (pos.up ? " transform: translateY(-100%);" : ""));
 
@@ -77,7 +76,6 @@ import Icon from "./Icon.svelte";
 
   async function enter(id: number | null) {
     preview = id;
-    manual = "";
     if (id !== null) await load(id);
   }
 
@@ -171,14 +169,7 @@ import Icon from "./Icon.svelte";
           {:else if previewList?.reason}
             <p class="mp-empty">{previewList.reason}</p>
           {:else if previewConfig}
-            <p class="mp-empty">这家没报回模型清单，直接在下面输入模型 ID 也行。</p>
-          {/if}
-          {#if previewConfig}
-            <div class="mp-manual">
-              <input class="mp-input" aria-label="直接输入模型 ID" placeholder="或直接输入模型 ID" bind:value={manual}
-                     onkeydown={(event) => { if (event.key === "Enter") void pick(manual); }} />
-              <button class="mp-use" type="button" disabled={busy || !manual.trim()} onclick={() => void pick(manual)}>用</button>
-            </div>
+            <p class="mp-empty">这家没报回能用的语言模型，到设置里检查这把 Key，或换一家。</p>
           {/if}
           {#if previewConfig && !previewConfig.has_api_key}
             <button class="mp-goto" type="button" onclick={gotoSettings}>这把 Key 还没配，去设置</button>
@@ -223,13 +214,6 @@ import Icon from "./Icon.svelte";
   .mp-rec { color: #4ade80; border: 1px solid #14532d; }
   .mp-warn { color: #fbbf24; border: 1px solid #78350f; }
   .mp-empty { font-size: 10px; line-height: 1.5; color: #a1a1aa; padding: 6px; margin: 0; }
-  .mp-manual { display: flex; gap: 4px; padding: 4px; border-top: 1px solid #27272a; margin-top: 4px; }
-  .mp-input {
-    flex: 1; min-width: 0; font-size: 11px; padding: 4px 6px; color: #e4e4e7;
-    background: #202024; border: 1px solid #3f3f46; border-radius: 5px;
-  }
-  .mp-use, .mp-goto { font-size: 11px; padding: 4px 8px; border: 1px solid #3f3f46; border-radius: 5px; background: #202024; color: #e4e4e7; }
-  .mp-use:disabled { opacity: .5; cursor: default; }
-  .mp-goto { display: block; width: calc(100% - 8px); margin: 4px; color: #fbbf24; }
+  .mp-goto { display: block; width: calc(100% - 8px); margin: 4px; padding: 4px 8px; font-size: 11px; color: #fbbf24; border: 1px solid #3f3f46; border-radius: 5px; background: #202024; }
   .mp-error { font-size: 10px; color: #f87171; padding: 4px 6px; margin: 0; }
 </style>

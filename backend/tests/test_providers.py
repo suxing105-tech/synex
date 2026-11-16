@@ -301,7 +301,51 @@ def test_dynamic_model_list_failure_tells_how_to_proceed(client, monkeypatch):
                         lambda **kwargs: actual(transport=httpx.MockTransport(handler), **kwargs))
     resp = client.get("/api/model-providers/runninghub/models")
     assert resp.status_code == 502
-    assert "直接输入模型 ID" in resp.json()["detail"]
+    # 2026-11-15 苏醒：下拉里不再放手输模型 ID，所以这句也不许再承诺那条不存在的路
+    detail = resp.json()["detail"]
+    assert "直接输入模型 ID" not in detail
+    assert "认不出可用的语言模型" in detail
+    service._MODEL_CACHE.clear()
+
+
+def fake_models(monkeypatch, ids):
+    """把 /models 换成一份写死的清单，返回 handler 见过的请求。"""
+    import httpx
+
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        return httpx.Response(200, json={"data": [{"id": one} for one in ids]})
+
+    actual = httpx.AsyncClient
+    monkeypatch.setattr(service.httpx, "AsyncClient",
+                        lambda **kwargs: actual(transport=httpx.MockTransport(handler), **kwargs))
+    return seen
+
+
+def test_model_list_drops_the_ones_that_cannot_chat(client, monkeypatch):
+    """反推是发对话请求的：嵌入、语音、生图那几类列进来，选中只会换回一句 400。"""
+    service._MODEL_CACHE.clear()
+    client.post("/api/model-providers")
+    client.post("/api/model-configs", json=runninghub_draft(api_key="RH-FILTER"))
+    fake_models(monkeypatch, ["x/vision-chat-vl", "text-embedding-3-small", "whisper-1",
+                              "MiniMax-TTS-2.6", "dall-e-3", "sora-video"])
+    out = client.get("/api/model-providers/runninghub/models").json()
+    assert [m["id"] for m in out["models"]] == ["x/vision-chat-vl"]
+    assert [m["id"] for m in out["models"] if m["recommended"]] == ["x/vision-chat-vl"]
+    service._MODEL_CACHE.clear()
+
+
+def test_model_list_never_returns_empty_when_the_account_only_has_those(client, monkeypatch):
+    """一家全是非对话模型时也别交白卷：原样列出来，至少看得见它到底有什么，推荐位仍要给一个。"""
+    service._MODEL_CACHE.clear()
+    client.post("/api/model-providers")
+    client.post("/api/model-configs", json=runninghub_draft(api_key="RH-ODD"))
+    fake_models(monkeypatch, ["text-embedding-3-small", "whisper-1"])
+    out = client.get("/api/model-providers/runninghub/models").json()
+    assert [m["id"] for m in out["models"]] == ["text-embedding-3-small", "whisper-1"]
+    assert [m["id"] for m in out["models"] if m["recommended"]] == ["text-embedding-3-small"]
     service._MODEL_CACHE.clear()
 
 

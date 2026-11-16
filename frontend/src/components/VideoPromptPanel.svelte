@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { modelConfigs, promptModelConfigs, refreshReverseConfig } from "../lib/reverse-prompts";
+  import { autoPickModel, modelConfigs, promptModelConfigs, refreshReverseConfig } from "../lib/reverse-prompts";
   import {
     MODES_BY_TARGET, MODE_LABELS, MODE_HINTS, MODE_BADGES, TARGETS, TARGET_LABELS, TRANSLATION_LABELS,
     cjkCount, elapsedText, SEEDANCE_CHAR_GUIDE, slotLimitText,
@@ -78,6 +78,17 @@
   // 模型跟着这条配置走：它记住哪个就用哪个，图片反推那边换了模型这边也一起跟上。
   $effect(() => {
     modelName = textConfigs.find(m => m.id === modelId)?.model ?? "";
+  });
+  // 一家配置从没挑过模型时，先拿它自己报回来的清单认一个，两边面板都不用伸手（认的规则在后端）。
+  let autoTried = $state<number | null>(null);
+  $effect(() => {
+    const id = modelId;
+    if (id === null || modelName || autoTried === id) return;
+    if (!textConfigs.some(m => m.id === id)) return;
+    autoTried = id;
+    void autoPickModel(id)
+      .then((picked) => { if (picked && modelId === id) modelName = picked; })
+      .catch((e) => { if (modelId === id) error = errorMessage(e); });
   });
   $effect(() => {
     if (prefs) mode = { seedance2: prefs.default_mode_seedance, h3: prefs.default_mode_h3 };
@@ -291,9 +302,9 @@
 
 </script>
 
-<section class="rounded-md border border-border bg-surface-2 p-3 space-y-3" aria-label="AI 反推视频提示词">
+<section class="rounded-md bg-surface-2 p-3 space-y-3" aria-label="反推视频提示词">
   <div class="flex items-baseline justify-between gap-2">
-    <h4 class="section-title is-card">AI 反推视频提示词</h4>
+    <h4 class="section-title is-card">反推视频提示词</h4>
     <span class="text-[10px] text-muted">{secondsText}</span>
   </div>
 
@@ -307,7 +318,7 @@
           onpick={(configId, picked) => { modelId = configId; modelName = picked; }} />
       </div>
       {#if !modelName}
-        <p class="text-[10px] text-amber-400">还没挑模型：点上面那个下拉，先选服务商、再点它家的模型。</p>
+        <p class="text-[10px] text-amber-400">没认出这家的语言模型：打开上面的下拉能看到原因，或到设置里检查这把 Key。</p>
       {/if}
       <div class="flex gap-2">
         <label class="flex-1 text-[11px] text-muted">起始秒（整数）

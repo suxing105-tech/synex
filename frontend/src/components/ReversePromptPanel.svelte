@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { modelConfigs, promptModelConfigs, reverseSettings, reverseJobs, refreshReverseConfig, reverseApi, generateReverse, errorMessage } from "../lib/reverse-prompts";
+  import { autoPickModel, modelConfigs, promptModelConfigs, reverseSettings, reverseJobs, refreshReverseConfig, reverseApi, generateReverse, errorMessage } from "../lib/reverse-prompts";
   import type { ReverseRecord } from "../lib/reverse-prompts";
   import { copyText, dateTimeLabel } from "../lib/ws";
   import { pushToast } from "../lib/toast";
@@ -40,6 +40,18 @@
   // 模型跟着这条配置走：它记住哪个就用哪个；没记住就空着，让人先挑，绝不拿空串去发请求。
   $effect(() => {
     modelName = textConfigs.find(m => m.id === modelId)?.model ?? "";
+  });
+  // 模型不用人挑：这一家没记住模型，就拿它自己报回来的清单认一个（认的规则在后端 fetch_models）。
+  // 认完顺手记回配置，视频那一侧读同一份；每家只试一次，清单拉不到就留提示，不反复敲它。
+  let autoTried = $state<number | null>(null);
+  $effect(() => {
+    const id = modelId;
+    if (!id || modelName || autoTried === id) return;
+    if (!textConfigs.some(m => m.id === id)) return;
+    autoTried = id;
+    void autoPickModel(id)
+      .then((picked) => { if (picked && modelId === id) modelName = picked; })
+      .catch((e) => { if (modelId === id) error = errorMessage(e); });
   });
   $effect(() => {
     const id = imageId;
@@ -99,8 +111,8 @@
   }
 </script>
 
-<section class="fill-interactions reverse-panel rounded-lg border border-border bg-surface-2 p-3 space-y-3" aria-label="AI 反推提示词">
-  <div class="flex justify-between items-center"><h4 class="section-title is-card">AI 反推提示词</h4><span class="text-[10px] text-muted">中英双语</span></div>
+<section class="fill-interactions reverse-panel rounded-lg bg-surface-2 p-3 space-y-3" aria-label="反推提示词">
+  <div class="flex justify-between items-center"><h4 class="section-title is-card">反推提示词</h4><span class="text-[10px] text-muted">中英双语</span></div>
   {#if !textConfigs.length}
     <button onclick={() => window.dispatchEvent(new CustomEvent("open-model-settings"))}>配置模型</button>
   {:else}
@@ -109,11 +121,11 @@
         onpick={(configId, picked) => { modelId = configId; modelName = picked; }} />
       <button class="generate-reverse" disabled={running || !modelId || !modelName || editing}
         onclick={() => { error = ""; selectedVersion = null; if (modelId && modelName) void generateReverse(imageId, modelId, modelName); }}>
-        {running ? "正在反推…" : current ? "重新反推" : "反推提示词"}
+        {running ? "正在反推…" : current ? "重新反推" : "开始反推"}
       </button>
     </div>
     {#if !modelName}
-      <p class="text-[10px] text-amber-400">还没挑模型：点上面那个下拉，先选服务商、再点它家的模型。</p>
+      <p class="text-[10px] text-amber-400">没认出这家的语言模型：打开上面的下拉能看到原因，或到设置里检查这把 Key。</p>
     {/if}
   {/if}
   {#if error || job?.error}<p class="text-xs text-danger" role="alert">{error || job?.error}</p>{/if}
@@ -128,7 +140,7 @@
       {#if current.status === "complete"}
         <div class="flex items-center gap-1.5 flex-wrap">
           <button class="language-label" class:language-active={outputLanguage === "zh"} aria-pressed={outputLanguage === "zh"} onclick={() => outputLanguage = "zh"}>中文</button>
-          <button class="language-label" class:language-active={outputLanguage === "en"} aria-pressed={outputLanguage === "en"} onclick={() => outputLanguage = "en"}>English</button>
+          <button class="language-label" class:language-active={outputLanguage === "en"} aria-pressed={outputLanguage === "en"} onclick={() => outputLanguage = "en"}>EN</button>
           <button class="icon-button ml-auto" aria-label={shownCopyLabel} title={shownCopyLabel} onclick={() => copy(shownPrompt)}><Icon name="copy" size={12} /></button>
           <button class="icon-button" aria-label="复制双语提示词" title="复制双语提示词" onclick={() => copy(`中文\n${current.prompt_zh}\n\nEnglish\n${current.prompt_en}`)}><Icon name="copy" size={12} /><span>双语</span></button>
         </div>
@@ -184,7 +196,7 @@
   }
   .reverse-panel button.generate-reverse:enabled:hover,
   .reverse-panel button.generate-reverse:enabled:focus-visible { background-color: #ff6262; border-color: #ff6262; color:#09090b; }
-  .language-label { color:var(--text-2); font-size:10px; padding:3px 6px; border-color:transparent; background:transparent; }
+  .language-label { color:var(--text-2); font-size:10px; padding:4px 6px; min-width:34px; text-align:center; border-color:transparent; background:transparent; }
   .language-label.language-active { color:var(--text-1); background:#303036; }
   .icon-button { display:inline-flex; align-items:center; gap:4px; }
   .icon-button span { font-size:10px; }
@@ -195,10 +207,12 @@
   button.danger { color: var(--danger); border-color: rgb(var(--danger-rgb) / 45%); background: rgb(var(--danger-rgb) / 8%); }
   /* 历史版本这一列只是"当前在看哪一版"，不该靠底色喊：全局 .fill-interactions button[aria-pressed="true"]
      会把选中项整颗刷成品牌红底黑字，所以选中态改走 aria-current，底色保持普通按钮底，
-     只用描边和字色区分——颜色一律引 :root token，别再新造裸 hex。 */
+     只用字重区分、不描边不铺色（2026-11-15 苏醒：统一不要描边，白字即可）。 */
+  .reverse-panel button.version-item,
   .reverse-panel button.version-item[aria-current="true"] {
-    border-color: var(--accent);
-    color: var(--accent-strong);
+    border-color: transparent;
+    color: var(--text-1);
   }
+  .reverse-panel button.version-item[aria-current="true"] { font-weight: 600; }
   textarea { display: block; width: 100%; margin-top: 6px; padding: 8px; font-size: 12px; color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 5px; }
 </style>

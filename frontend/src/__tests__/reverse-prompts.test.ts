@@ -4,7 +4,7 @@ import { get } from "svelte/store";
 import { render, fireEvent, waitFor, cleanup } from "@testing-library/svelte";
 import ReversePromptPanel from "../components/ReversePromptPanel.svelte";
 import ModelApiSettings from "../components/ModelApiSettings.svelte";
-import { reverseApi, reverseJobs, modelConfigs, reverseSettings, generateReverse } from "../lib/reverse-prompts";
+import { autoPickModel, clearAutoModelCache, reverseApi, reverseJobs, modelConfigs, reverseSettings, generateReverse } from "../lib/reverse-prompts";
 import { copyText } from "../lib/ws";
 import { cloudApi } from "../lib/clone";
 // 面板还要用 dateTimeLabel（第三刀 T4 之后日期只有一支笔）：整模块 mock 会把它抹成 undefined，
@@ -41,7 +41,7 @@ const waitForReady = async (panel: { container: HTMLElement }) => {
 const record = { id: 10, image_id: 1, prompt_zh: "红色花朵", prompt_en: "red flower", raw_text: "", status: "complete" as const, source: "generated" as const, parent_id: null, model_name: "测试视觉", model: "vision", instruction: "", fingerprint: "abc", created_at: "2026-09-17T01:00:00Z" };
 
 beforeEach(() => {
-  reverseJobs.set({}); modelConfigs.set([model]); reverseSettings.set(settings);
+  reverseJobs.set({}); modelConfigs.set([model]); reverseSettings.set(settings); clearAutoModelCache();
   vi.spyOn(reverseApi, "models").mockResolvedValue([model]);
   vi.spyOn(reverseApi, "settings").mockResolvedValue(settings);
   vi.spyOn(reverseApi, "providers").mockResolvedValue([preset]);
@@ -142,7 +142,7 @@ describe("reverse prompts", () => {
     expect(copyText).toHaveBeenLastCalledWith("红色花朵");
     expect(panel.getByLabelText("中文反推提示词").textContent).toBe("红色花朵");
     expect(panel.queryByLabelText("English reverse prompt")).toBeNull();
-    await fireEvent.click(panel.getByRole("button", { name: "English" }));
+    await fireEvent.click(panel.getByRole("button", { name: "EN" }));
     expect(panel.getByLabelText("English reverse prompt").textContent).toBe("red flower");
     expect(panel.container.querySelector(".reverse-prompt-columns")).toBeNull();
     await fireEvent.click(panel.getByLabelText("复制双语提示词"));
@@ -525,10 +525,31 @@ describe("reverse prompts", () => {
     expect(await panel.findByText(/读到 2 个模型/)).toBeTruthy();
     expect(generate).not.toHaveBeenCalled();
   });
-  it("模型下拉：先点服务商、再点它家的模型，选中就把这一家当前用的模型记回配置", async () => {
-    // 面板挂载会重新拉一次配置，所以「这一家还没选模型」要在 store 与接口那一层同时成立
+  it("自动认出语言模型：一家没记住模型时面板自己挑，认完直接能按，不用再手动选", async () => {
     modelConfigs.set([{ ...model, model: "" }]);
     vi.mocked(reverseApi.models).mockResolvedValue([{ ...model, model: "" }]);
+    vi.spyOn(reverseApi, "configModels").mockResolvedValue({
+      models: [{ id: "x/deepseek-v4.1-flash", label: "x/deepseek-v4.1-flash", recommended: false },
+               { id: "b/qwen2.5-vl", label: "b/qwen2.5-vl", recommended: true }],
+      source: "live", reason: "",
+    });
+    const setModel = vi.spyOn(reverseApi, "setModel").mockImplementation(async (id, value) => ({ ...model, id, model: value }));
+    const generate = vi.spyOn(reverseApi, "generate").mockResolvedValue(record);
+    const panel = render(ReversePromptPanel, { imageId: 1 });
+    // 推荐项优先：认出来顺手记回这一家，两个面板读同一份
+    await waitFor(() => expect(setModel).toHaveBeenCalledWith(1, "b/qwen2.5-vl"));
+    await waitFor(() => expect(panel.queryByText(/没认出这家的语言模型/)).toBeNull());
+    await waitFor(() => expect((panel.getByText("开始反推") as HTMLButtonElement).hasAttribute("disabled")).toBe(false));
+    await fireEvent.click(panel.getByText("开始反推"));
+    await waitFor(() => expect(generate).toHaveBeenCalledWith(1, 1, "b/qwen2.5-vl"));
+    // 认过一家就只问一次清单，重挂载不该再敲它一遍
+    const listed = vi.mocked(reverseApi.configModels);
+    const before = listed.mock.calls.length;
+    render(ReversePromptPanel, { imageId: 2 });
+    await waitFor(() => expect(listed.mock.calls.length).toBe(before));
+  });
+  it("模型下拉还能手动换：点服务商、点它家的模型，选中就把这一家当前用的模型记回配置", async () => {
+    // 清单是点开下拉那一刻才拉的；模型这一家已经记住了，面板自己不会再挑
     vi.spyOn(reverseApi, "configModels").mockResolvedValue({
       models: [{ id: "a/deepseek-v4.1-flash", label: "a/deepseek-v4.1-flash", recommended: false },
                { id: "b/qwen2.5-vl", label: "b/qwen2.5-vl", recommended: true }],
@@ -536,18 +557,20 @@ describe("reverse prompts", () => {
     });
     const setModel = vi.spyOn(reverseApi, "setModel").mockImplementation(async (id, value) => ({ ...model, id, model: value }));
     const generate = vi.spyOn(reverseApi, "generate").mockResolvedValue(record);
+    // 这一家已经记住了模型：面板不再去问清单，手动换才开下拉
+    modelConfigs.set([{ ...model, model: "a/deepseek-v4.1-flash" }]);
+    vi.mocked(reverseApi.models).mockResolvedValue([{ ...model, model: "a/deepseek-v4.1-flash" }]);
     const panel = render(ReversePromptPanel, { imageId: 1 });
-    // 只有 Key 还不够：没挑模型之前那颗按钮不许按
-    await waitFor(() => expect((panel.getByText("反推提示词") as HTMLButtonElement).hasAttribute("disabled")).toBe(true));
-    expect(panel.getByText(/还没挑模型/)).toBeTruthy();
+    await waitFor(() => expect(panel.getByText("反推提示词")).toBeTruthy());
     await fireEvent.click(panel.getByLabelText("反推模型"));
     const rows = () => Array.from(panel.container.querySelectorAll(".mp-mname")).map(n => n.textContent?.trim());
     await waitFor(() => expect(rows()).toEqual(["a/deepseek-v4.1-flash", "b/qwen2.5-vl"]));
     expect(panel.container.querySelector(".mp-rec")?.textContent).toBe("推荐");
     await fireEvent.click(panel.container.querySelectorAll(".mp-model")[1]);
     await waitFor(() => expect(setModel).toHaveBeenCalledWith(1, "b/qwen2.5-vl"));
-    await waitFor(() => expect((panel.getByText("反推提示词") as HTMLButtonElement).hasAttribute("disabled")).toBe(false));
-    await fireEvent.click(panel.getByText("反推提示词"));
+    // 这家一张历史都没有，按钮此刻还是「开始反推」
+    await waitFor(() => expect((panel.getByText("开始反推") as HTMLButtonElement).hasAttribute("disabled")).toBe(false));
+    await fireEvent.click(panel.getByText("开始反推"));
     await waitFor(() => expect(generate).toHaveBeenCalledWith(1, 1, "b/qwen2.5-vl"));
   });
   it("图片提示词反推的模型列表不显示 MiniMax 生图、视频和音频 API", async () => {
@@ -563,25 +586,41 @@ describe("reverse prompts", () => {
     expect(panel.container.querySelector(".mp-providers")?.textContent).not.toContain("MiniMax");
     expect(panel.container.querySelector(".mp-providers")?.textContent).toContain("测试视觉");
   });
-  it("清单拉不到时不拦人：右列报原因，底下照样能手输模型 ID", async () => {
-    // 苏醒真机就撞上一次 APIKEY_USER_NOT_FOUND——清单这条路随时可能断，手填不能被下拉堵死
+  it("清单拉不到就说清原因：下拉里报那句原话，不再留手输模型 ID 的口子", async () => {
+    // 苏醒真机就撞上一次 APIKEY_USER_NOT_FOUND——清单这条路随时可能断，断的时候要看得见原因
     modelConfigs.set([{ ...model, model: "" }]);
     vi.mocked(reverseApi.models).mockResolvedValue([{ ...model, model: "" }]);
     vi.spyOn(reverseApi, "configModels").mockRejectedValue({ detail: "模型清单没拿到（HTTP 502）：APIKEY_USER_NOT_FOUND" });
     const setModel = vi.spyOn(reverseApi, "setModel").mockImplementation(async (id, value) => ({ ...model, id, model: value }));
     const panel = render(ReversePromptPanel, { imageId: 1 });
+    await waitFor(() => expect(panel.getByText(/没认出这家的语言模型/)).toBeTruthy());
     await fireEvent.click(panel.getByLabelText("反推模型"));
-    expect(await panel.findByText(/APIKEY_USER_NOT_FOUND/)).toBeTruthy();
-    await fireEvent.input(panel.getByLabelText("直接输入模型 ID"), { target: { value: "y/pasted-by-hand" } });
-    await fireEvent.click(panel.getByRole("button", { name: "用" }));
-    await waitFor(() => expect(setModel).toHaveBeenCalledWith(1, "y/pasted-by-hand"));
-    expect((panel.getByText("反推提示词") as HTMLButtonElement).hasAttribute("disabled")).toBe(false);
+    // 原因在两个地方都要看得见：面板那条红字 + 下拉里那条
+    await waitFor(() => expect(panel.container.querySelector(".mp-pop")?.textContent).toContain("APIKEY_USER_NOT_FOUND"));
+    expect(panel.container.querySelector('[role="alert"]')?.textContent).toContain("APIKEY_USER_NOT_FOUND");
+    expect(panel.queryByLabelText("直接输入模型 ID")).toBeNull();
+    expect(panel.queryByText("用")).toBeNull();
+    expect(setModel).not.toHaveBeenCalled();
+    expect((panel.getByText("开始反推") as HTMLButtonElement).hasAttribute("disabled")).toBe(true);
+  });
+  it("自动识别只认一次：认出来之后换面板也不再去问清单", async () => {
+    const picked = await autoPickModel(7);
+    expect(picked).toBe("");           // 默认那份假清单是空的，什么都不该记
+    const again = vi.spyOn(reverseApi, "configModels").mockResolvedValue({
+      models: [{ id: "only-one", label: "only-one", recommended: true }], source: "live", reason: "",
+    });
+    expect(await autoPickModel(8)).toBe("only-one");
+    expect(await autoPickModel(8)).toBe("only-one");
+    expect(again).toHaveBeenCalledTimes(1);
+    clearAutoModelCache();
+    expect(await autoPickModel(8)).toBe("only-one");
+    expect(again).toHaveBeenCalledTimes(2);
   });
   it("没配 Key 的服务商在模型下拉里标「需配置」，并给一条去设置的路", async () => {
     modelConfigs.set([{ ...model, has_api_key: false, model: "" }]);
     vi.mocked(reverseApi.models).mockResolvedValue([{ ...model, has_api_key: false, model: "" }]);
     const panel = render(ReversePromptPanel, { imageId: 1 });
-    await waitFor(() => expect((panel.getByText("反推提示词") as HTMLButtonElement).hasAttribute("disabled")).toBe(true));
+    await waitFor(() => expect((panel.getByText("开始反推") as HTMLButtonElement).hasAttribute("disabled")).toBe(true));
     await fireEvent.click(panel.getByLabelText("反推模型"));
     expect(await panel.findByText("需配置")).toBeTruthy();
     const listener = vi.fn(); window.addEventListener("open-model-settings", listener);

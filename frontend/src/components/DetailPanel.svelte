@@ -362,7 +362,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
 {:else}
   {@const d = $selectedDetail}
   <div class="h-full flex flex-col overflow-hidden">
-    <header class="detail-header sticky top-0 z-20 shrink-0 border-b border-border bg-surface-2 px-3 py-2.5">
+    <header class="detail-header sticky top-0 z-20 shrink-0 border-b border-border bg-surface-2 px-3 py-4">
       <div class="flex items-center gap-2.5 min-w-0" data-menu-root>
         <button
           type="button"

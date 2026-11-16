@@ -25,6 +25,12 @@ dev = [
   "pytest-asyncio>=0.24",
   "httpx>=0.27",
   "ruff>=0.6",
+  # 下面两个不是后端运行时需要，是 frontend/scripts/fetch-fonts.ps1 生成随包字体时用的：
+  # fonttools 切子集 + 改 name 表（OFL 的保留字族名要求改名），brotli 是它写 woff2 的编码器。
+  # 缺 brotli 时 fontTools 会把 font.flavor 静默落回普通 CFF/OTF，产物名字照样叫 .woff2，
+  # 所以这两条要留在 dev extras 里，由 font-bundle.test.ts 的 wOF2 签名断言兜住。
+  "fonttools>=4.53",
+  "brotli>=1.1",
 ]
 
 [tool.setuptools.packages.find]

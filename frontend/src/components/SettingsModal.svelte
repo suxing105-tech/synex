@@ -45,7 +45,7 @@ import Icon from "./Icon.svelte";
     { label: "应用", items: [
       { id: "media", label: "媒体组件", keywords: "ffmpeg ffprobe 封面 波形 内置 检测 版本" },
       { id: "update", label: "软件更新", keywords: "版本 升级 检查 下载 安装 自动更新 便携 安装包" },
-      { id: "about", label: "关于", keywords: "闪寻空间 seek-x 版本 引导 新手 反馈" },
+      { id: "about", label: "关于", keywords: "闪寻空间 seek-x 版本 引导 新手 反馈 字体 内置字体 字形 寒蝉德黑体 seekx sans 授权 许可 ofl 开源" },
     ] },
   ];
   const navItems: NavItem[] = navGroups.flatMap((group) => group.items);
@@ -600,6 +600,11 @@ import Icon from "./Icon.svelte";
                 <SettingsRow title="闪寻空间" description="本地素材图库：图片、视频、音频、文本在同一套目录与标签里翻看、搜索、对比。">
                   {#snippet control()}
                     <span class="setting-row-mono">{$updateStatus ? `v${$updateStatus.current_version}` : "网页版"}</span>
+                  {/snippet}
+                </SettingsRow>
+                <SettingsRow title="内置字体" description="界面与正文用字是寒蝉德黑体（ChillDINGothic，ChillType 出品）的子集化改名版，只保留界面与常用中文需要的字形。原字体按 SIL OFL 1.1 授权分发，授权原文随安装包一起分发在安装目录的 resources/OFL-SeekX-Sans.txt。" top>
+                  {#snippet control()}
+                    <span class="setting-row-mono">SeekX Sans · OFL 1.1</span>
                   {/snippet}
                 </SettingsRow>
                 <SettingsRow title="开发者" description="苏醒。有问题、想要新功能，或者只是想说一句好用，都可以直接找我。" top>

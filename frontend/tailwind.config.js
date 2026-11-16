@@ -35,23 +35,12 @@ export default {
         md2: ["var(--fs-md)", { lineHeight: "1.4" }],
         lg2: ["var(--fs-lg)", { lineHeight: "1.35" }],
       },
+      // 字族只指回 src/app.css 的 :root token，和 theme.colors 同一套做法：这里出现第二份
+      // 字体栈，preflight 塞给 html 的就和 @font-face 声明的不再是同一件事（改之前正是这样，
+      // 全站没有 --font-mono，却已经有地方在写 var(--font-mono)）。
       fontFamily: {
-        sans: [
-          "-apple-system",
-          "BlinkMacSystemFont",
-          '"Segoe UI"',
-          '"PingFang SC"',
-          '"Microsoft YaHei"',
-          "system-ui",
-          "sans-serif",
-        ],
-        mono: [
-          "ui-monospace",
-          '"SF Mono"',
-          "Menlo",
-          "Consolas",
-          "monospace",
-        ],
+        sans: ["var(--font-sans)"],
+        mono: ["var(--font-mono)"],
       },
     },
   },

@@ -2,6 +2,50 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   字体 —— 全站唯一一个字体入口（2026-11-16 · 字体规范第一批）
+   ------------------------------------------------------------
+   改之前 html 上的字族是 tailwind preflight 从 theme.fontFamily.sans 塞进去的系统栈
+   （Segoe UI / 微软雅黑），意思是：本程序的界面在每台电脑上长得不一样，中文的字宽、
+   行高、标点位置全跟着系统走。既没有视觉身份，字号和行距也无从规范——所以这一步先落地。
+
+   现在换成随包分发的 SeekX Sans：寒蝉德黑体 ChillDINGothic v1.300 的子集化改名版。
+   三件事在仓库里看不见，先记在这儿：
+   1. 这三只 woff2 不许手改，也不许从上游 zip 里捞出来直接放进来。它们由
+      frontend/scripts/fetch-fonts.ps1 生成（下载 → 校验 sha256 → 切子集 → 改名 → 写 manifest）。
+      上游 zip 与原件在 vendor/fonts/（不入库），来源和码位口径一律以 fonts-manifest.json 为准。
+   2. 改名是授权要求，不是审美选择。字体自己的版权声明写着 with Reserved Font Name
+      'ChillDINGothic'，SIL OFL 1.1 不许子集沿用保留字族名，所以内部只叫 SeekX Sans。
+      授权原文随包在 resources/OFL-SeekX-Sans.txt，设置·关于里有看得见的入口。
+   3. 子集只覆盖拉丁标点 + GB2312 常用汉字 + 本程序源码里出现过的字。用户素材里没进子集的字
+      （全角字母数字、生僻人名用字）会掉给栈里的下一档，所以下一档必须还是中文字体，
+      不许在这里把 Microsoft YaHei 摘掉。
+   ============================================================ */
+
+@font-face {
+  font-family: "SeekX Sans";
+  src: url("./assets/fonts/seekx-sans-regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "SeekX Sans";
+  src: url("./assets/fonts/seekx-sans-medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "SeekX Sans";
+  src: url("./assets/fonts/seekx-sans-semibold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   color-scheme: dark;
 
@@ -71,6 +115,13 @@
   --raise-4: rgb(255 255 255 / 18%);
   --shade-1: rgb(0 0 0 / 35%);
   --shade-2: rgb(0 0 0 / 50%);
+
+  /* 字族两档，全站唯一来源。tailwind 的 fontFamily 只指这两个 var，不重复写第二份栈。
+     --font-mono 这条在 2026-11-16 之前是「有人写了 var(--font-mono) 但全站没人定义它」，
+     DetailPanel 那处声明一直无效；补上之后 font-mono 这个 class 也才真的有用。
+     等宽栈只管拉丁，中文交给同一个 SeekX Sans，别让代码块里的中文跳成雅黑。 */
+  --font-sans: "SeekX Sans", "Segoe UI", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "SeekX Sans", monospace;
 
   /* 圆角 4 档 */
   --r-1: 6px;

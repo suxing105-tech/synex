@@ -1,0 +1,45 @@
+{
+  "family": "SeekX Sans",
+  "upstream": {
+    "name": "ChillDINGothic",
+    "familyNames": [
+      "ChillDINGothic",
+      "寒蝉德黑体"
+    ],
+    "version": "v1.300",
+    "url": "https://github.com/Warren2060/ChillDIN-ChillDINGothic/releases/tag/ChillDINGothic_v1.300",
+    "archiveSha256": "2bea24f6eb4bb3ccce516d1704f2225a504bb5fffad6cee28269cc9964ba0b84"
+  },
+  "renamedBecause": "SIL OFL 1.1 Reserved Font Name：子集不得沿用原字族名",
+  "codepoints": 9674,
+  "charsetGroups": {
+    "latin+punct": 2898,
+    "gb2312": 6763,
+    "source": 1586
+  },
+  "totalBytes": 3577220,
+  "licenseFile": "frontend/src-tauri/resources/OFL-SeekX-Sans.txt",
+  "files": [
+    {
+      "file": "seekx-sans-regular.woff2",
+      "subfamily": "Regular",
+      "weight": 400,
+      "bytes": 1168936,
+      "sha256": "3c2d0bf7fe3aea21932167ed5a5d0e88cb8fb59f0a2355b6fa8637ad931fd6af"
+    },
+    {
+      "file": "seekx-sans-medium.woff2",
+      "subfamily": "Medium",
+      "weight": 500,
+      "bytes": 1199124,
+      "sha256": "bc2377fec4de4ada187c4d1b354a7fad08b546e57ba6f51df66466bcbd0c4378"
+    },
+    {
+      "file": "seekx-sans-semibold.woff2",
+      "subfamily": "SemiBold",
+      "weight": 600,
+      "bytes": 1209160,
+      "sha256": "a741ffd229843808056c5774a2cce09d8ff032cc14db3f2b0d61b0d107204e6b"
+    }
+  ]
+}

@@ -50,7 +50,8 @@
       "binaries/ffprobe"
     ],
     "resources": [
-      "resources/ffmpeg-LICENSE.txt"
+      "resources/ffmpeg-LICENSE.txt",
+      "resources/OFL-SeekX-Sans.txt"
     ],
     "category": "Productivity",
     "copyright": "© 2026 Seek-X",

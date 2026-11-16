@@ -129,13 +129,26 @@
   --r-3: 14px;
   --r-pill: 999px;
 
-  /* 字号 6 档 */
-  --fs-2xs: 10.5px;
-  --fs-xs: 11.5px;
-  --fs-sm: 12.5px;
-  --fs-base: 13.5px;
-  --fs-md: 15px;
-  --fs-lg: 18px;
+  /* 字号 7 档，整数（2026-11-16 定稿）。旧的 10.5/11.5/12.5/13.5 那套半像素档作废：
+     它在屏幕上只是「小半号」，却让人每次都要判断选哪档，档与档之间也没有真的层级差。
+     整数 + 一档一跳才是能执行的尺度；基准从 13.5 抬到 14（整站大一档）。
+     --fs-xl 不给界面用，只给启动页字标、空态、Markdown h1 这类展示大字。
+     抬字号是全站性的，卡片那些按 px 算出来的常量必须跟着重算（lib/media-format.ts），
+     否则瀑布流的预留高度和真实高度对不上，摘录取最后一行会被切一半。 */
+  --fs-2xs: 11px;      /* 徽标、chip、页脚第二行这类「不用细读」的标签 */
+  --fs-xs: 12px;       /* 卡片元信息、次要说明 */
+  --fs-sm: 13px;       /* 界面正文默认：列表行、输入框、按钮、小节标题 */
+  --fs-base: 14px;     /* 需要读长一点的正文、弹窗标题下那段说明 */
+  --fs-md: 16px;       /* 弹窗标题、面板主标题 */
+  --fs-lg: 19px;       /* 区块大标题，往上就该换屏了 */
+  --fs-xl: 24px;       /* 展示档：启动页、空态、Markdown h1 */
+
+  /* 行高只有三轨（2026-11-16 定稿）。七个字号别名自带 --lh-label，
+     要换轨就在读得动的地方用 --lh-read、在 --fs-md 及以上的标题用 --lh-title。
+     写第四个值就是又回到「每处自己挑一个」的散装口径。 */
+  --lh-label: 1.35;    /* 默认：标签、按钮、chip、页脚、卡片信息条 */
+  --lh-read: 1.6;      /* 要读成段的：提示词框、Markdown 正文、说明、摘录 */
+  --lh-title: 1.25;    /* --fs-md 及以上的标题 */
 
   /* 控件高度 3 档：同一排控件必须同高，差 2px 就会看着像没对齐 */
   --ctl-sm: 26px;
@@ -341,18 +354,20 @@ body,
 }
 
 .media-card-footer--2l {
-  height: 44px;
+  /* = 文件名 13×1.35 + 行距 2 + 元信息 12×1.35（三轨里的 label 轨）再留点余量，
+     与 FOOTER_HEIGHT_TWO_LINES 同一颗数，改动只改一处必错位 */
+  height: 48px;
 }
 
 .media-card-footer--1l {
-  height: 26px;
+  height: 28px;
 }
 
 .media-card-name {
   display: block;
   min-width: 0;
-  font-size: 13px;
-  line-height: 1.25;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-label);
   color: var(--thumb-name);
   white-space: nowrap;
   overflow: hidden;
@@ -417,8 +432,8 @@ body,
   align-items: center;
   gap: 5px;
   min-width: 0;
-  font-size: 11px;
-  line-height: 1.2;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-label);
   color: var(--thumb-meta);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -668,7 +683,7 @@ body,
 
 .setting-row-desc {
   max-width: 88ch; /* 说明文字不跟着卡片无限加宽，宽窗口下仍保持可读行长 */
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   line-height: 1.7;
   color: var(--text-3);
 }
@@ -691,7 +706,7 @@ body,
   min-width: 170px;
   min-height: 34px;
   padding: 6px 10px;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   color: var(--text-1);
   background: var(--ink-1);
   border: 1px solid var(--ink-5);
@@ -736,7 +751,7 @@ body,
 }
 
 .settings-subempty {
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   color: var(--text-3);
 }
 
@@ -751,7 +766,7 @@ body,
   min-width: 0;
   min-height: 36px;
   padding: 6px 12px;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   color: var(--text-1);
   background: var(--ink-1);
   border: 1px solid var(--ink-5);
@@ -906,7 +921,7 @@ body,
   padding: 7px 13px;
   border: 1px solid var(--ink-5);
   border-radius: 7px;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   white-space: nowrap;
 }
 

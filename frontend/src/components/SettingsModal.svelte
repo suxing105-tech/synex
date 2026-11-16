@@ -656,7 +656,7 @@ import Icon from "./Icon.svelte";
   .settings-shell { display: grid; grid-template-columns: 264px minmax(0, 1fr); overflow: hidden; color: #e4e4e7; background: #0e0e10; }
   .settings-rail { display: flex; flex-direction: column; min-height: 0; padding: 18px 12px 16px; background: #16161a; border-right: 1px solid #232327; }
   .settings-rail-head { display: flex; align-items: center; gap: 10px; padding: 2px 4px 14px; }
-  .settings-rail-head h2 { font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+  .settings-rail-head h2 { font-size: var(--fs-md); font-weight: 600; letter-spacing: -.01em; }
   .settings-return { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; color: #a1a1aa; }
   .settings-search { position: relative; display: flex; align-items: center; margin: 0 4px 10px; }
   .settings-search > :global(svg) { position: absolute; left: 11px; color: var(--text-3); pointer-events: none; }
@@ -673,7 +673,7 @@ import Icon from "./Icon.svelte";
   .settings-nav-item:hover { color: #e4e4e7; }
   .settings-nav-item[aria-current="location"] { color: #fafafa; background: #27272a; }
   .settings-nav-item[aria-current="location"] :global(svg) { color: var(--accent); opacity: 1; }
-  .settings-nav-empty { padding: 10px; font-size: 12.5px; color: #71717a; }
+  .settings-nav-empty { padding: 10px; font-size: var(--fs-sm); color: #71717a; }
   .settings-nav-item:focus-visible { outline: none; background: #323237; text-decoration: underline; text-underline-offset: 4px; }
   .settings-content { min-height: 0; background: #0e0e10; overscroll-behavior: contain; scrollbar-gutter: stable; }
   /* 内容宽度跟着窗口长：窄时贴满，宽时最多加到 1440px 再居中留白，左右内边距按视口同步缩放。
@@ -681,7 +681,7 @@ import Icon from "./Icon.svelte";
   .settings-page { width: min(100%, 1440px); padding: 40px clamp(22px, 4.4vw, 84px) 120px; margin: 0 auto; }
   .settings-section { padding-bottom: 34px; margin-bottom: 30px; border-bottom: 1px solid #232327; scroll-margin-top: 28px; }
   .settings-section:last-child { padding-bottom: 0; margin-bottom: 0; border-bottom: 0; }
-  .settings-section h3 { margin-bottom: 6px; font-size: 21px; font-weight: 600; letter-spacing: -.02em; }
+  .settings-section h3 { margin-bottom: 6px; font-size: var(--fs-lg); font-weight: 600; letter-spacing: -.02em; }
   .section-description { margin-bottom: 22px; max-width: 88ch; font-size: 13px; line-height: 1.7; color: #85858f; }
   .settings-load-state { display: flex; align-items: center; gap: 12px; padding: 18px 20px; font-size: 13px; color: #a1a1aa; flex-wrap: wrap; }
   .about-contacts { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 16px; }

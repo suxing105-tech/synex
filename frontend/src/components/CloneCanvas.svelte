@@ -274,7 +274,7 @@
     position: absolute; right: 8px; bottom: 8px; z-index: 2;
     display: inline-flex; align-items: center; gap: 4px;
     padding: 4px 8px; border: 0; border-radius: 999px;
-    font-size: 11.5px; color: #fafafa; background: rgb(0 0 0 / 62%);
+    font-size: var(--fs-xs); color: #fafafa; background: rgb(0 0 0 / 62%);
     opacity: 0; transition: opacity 0.16s ease;
   }
   .cc-card:hover .cc-open, .cc-open:focus-visible, .cc-card.is-focused .cc-open { opacity: 1; }

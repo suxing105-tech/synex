@@ -1157,7 +1157,7 @@ import { hoverPlay } from "../lib/hover-play";
   <div class="toolbar-info flex items-center gap-3 min-w-0">
   <div>
     <!-- 全站原来一个标题都没有：读屏按 H 找内容是空的。当前口径名就是这一页的标题。 -->
-    <h1 class="text-base font-medium">{$activeFolderName}</h1>
+    <h1 class="text-md font-medium">{$activeFolderName}</h1>
     <div class="text-xs text-muted mt-0">
       {totalLabel}
       {#if selectedCount > 0}
@@ -1175,7 +1175,7 @@ import { hoverPlay } from "../lib/hover-play";
   </div>
   </div>
   <GallerySearch label={$scope === 'all' ? '搜索图片、视频、音频、文本' : $scope === 'video' ? '搜索视频' : $scope === 'audio' ? '搜索音频' : $scope === 'text' ? '搜索文本' : '搜索图片'} />
-  <div class="toolbar-actions flex flex-wrap items-center text-[12.5px] text-muted">
+  <div class="toolbar-actions flex flex-wrap items-center text-sm text-muted">
     {#if isTextScope}
       <button type="button" class="text-tool shrink-0 rounded-lg px-2.5 py-2 text-xs" onclick={() => { textCreateOpen = true; }}>新建文本</button>
       <button type="button" class="text-tool shrink-0 rounded-lg px-2.5 py-2 text-xs" onclick={() => associateTextPaths.set([])} title="把本地 TXT / MD / SRT / VTT 关联进图库，编辑直接写原文件">关联本地文本</button>
@@ -1228,14 +1228,14 @@ import { hoverPlay } from "../lib/hover-play";
     >
       <div class="text-center px-6 py-4 rounded-md bg-surface-2/80 border border-accent shadow-2xl">
         {#if importing}
-          <div class="text-3xl mb-2">⏳</div>
-          <div class="text-[15px] font-medium">导入中…</div>
+          <div class="text-xl mb-2">⏳</div>
+          <div class="text-md font-medium">导入中…</div>
           <div class="text-[12px] text-muted mt-1 font-mono">
             {importingProgress.done}/{importingProgress.total}
           </div>
         {:else}
-          <div class="text-3xl mb-2">📥</div>
-          <div class="text-[15px] font-medium">释放以保存到{dropTargetLabel}</div>
+          <div class="text-xl mb-2">📥</div>
+          <div class="text-md font-medium">释放以保存到{dropTargetLabel}</div>
           <div class="text-[12px] text-muted mt-1">
             {#if dragFileCount > 0}
               <span class="inline-block px-2 py-0.5 rounded bg-accent/20 text-accent font-mono">
@@ -1591,13 +1591,13 @@ import { hoverPlay } from "../lib/hover-play";
   .empty-search button:hover { background: var(--ink-4); }
   .empty-search button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .empty-search small { color: var(--text-3); }
-  .empty-text-actions { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 12px; color: #a9a7b3; font-size: 12.5px; }
+  .empty-text-actions { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 12px; color: #a9a7b3; font-size: var(--fs-sm); }
   .empty-text-actions button { border: 1px solid rgb(58 58 65); border-radius: 6px; background: #232327; color: #dddce4; padding: 6px 12px; font-size: 12px; cursor: pointer; margin: 0 4px; }
   .empty-text-actions button.primary { background: #6d4c4c; border-color: #8a5f5f; }
   .empty-text-actions small { color: #74727e; }
   .text-dialog-backdrop { position: fixed; inset: var(--desktop-titlebar-height, 0px) 0 0; background: #000a; z-index: 90; display: flex; align-items: center; justify-content: center; padding: 24px; }
   .text-dialog { width: 460px; max-width: 96vw; border: 1px solid #44404a; border-radius: 12px; background: #18181b; padding: 20px; color: #dddce4; font-size: 13px; }
-  .text-dialog h2 { font-size: 17px; font-weight: 600; margin-bottom: 12px; }
+  .text-dialog h2 { font-size: var(--fs-md); font-weight: 600; margin-bottom: 12px; }
   .text-dialog label { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
   .text-dialog input { background: #101012; border: 1px solid #45454d; border-radius: 6px; color: inherit; padding: 7px 9px; }
   .text-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.7 Consolas, 'Microsoft YaHei', monospace; background: #0e0e10; padding: 12px; border-radius: 6px; }
@@ -1620,15 +1620,17 @@ import { hoverPlay } from "../lib/hover-play";
      圆角走 --r-pill：4px 不在圆角四档里，chip 该是胶囊。 */
   .text-format {
     align-self: flex-start; padding: 1px 5px; border-radius: var(--r-pill); background: var(--raise-2);
-    color: var(--text-2); font-size: var(--fs-2xs); letter-spacing: .04em;
+    color: var(--text-2); font-size: var(--fs-2xs); line-height: var(--lh-label); letter-spacing: .04em;
   }
   .text-name {
-    font-size: var(--fs-sm); line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-size: var(--fs-sm); line-height: var(--lh-label); white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis;
   }
   /* 摘录是正文不是元数据条，而且 hover 时压在 ink-3 上：--text-3 在那一档只剩 4.3:1，
-     所以按 §3.1 的口径用 --text-2（ink-2 上 6.6:1、ink-3 上 5.7:1）。 */
+     所以按 §3.1 的口径用 --text-2（ink-2 上 6.6:1、ink-3 上 5.7:1）。
+     行高走 --lh-read：摘录是要读成句的，不是标签；文本卡那三档卡高按同一颗数算。 */
   .text-excerpt {
-    margin: 0; flex: 1; font-size: var(--fs-xs); line-height: 1.4; color: var(--text-2);
+    margin: 0; flex: 1; font-size: var(--fs-xs); line-height: var(--lh-read); color: var(--text-2);
     display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden;
   }
   /* 档位降级（2026-11-13 评审第二刀 T1 + T6）。行数与卡高同源于 lib/media-format.ts：
@@ -1735,7 +1737,7 @@ import { hoverPlay } from "../lib/hover-play";
     background: #ffe9d6;
     box-shadow: 0 0 8px 1px rgba(255, 214, 170, .75);
   }
-  .feed-more { text-align: center; padding: 14px 0 6px; font-size: 11.5px; color: #8a8a8e; }
+  .feed-more { text-align: center; padding: 14px 0 6px; font-size: var(--fs-xs); color: #8a8a8e; }
   .feed-more-hint { color: #5c5c62; }
   /* 工具栏两段式布局。
      宽列（≥1280px）：三段网格，左右两条轨道都是 minmax(0,1fr) —— 两侧严格等宽，

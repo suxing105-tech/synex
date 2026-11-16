@@ -356,7 +356,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
   <div class="h-full flex items-center justify-center text-center text-muted p-8">
     <div>
       <div class="mb-3 opacity-50"><Icon name="arrow-left" size={36} /></div>
-      <div class="text-[12.5px]">在中间选一张图片或文本<br />查看详情和操作</div>
+      <div class="text-sm">在中间选一张图片或文本<br />查看详情和操作</div>
     </div>
   </div>
 {:else}
@@ -381,7 +381,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
         </button>
         <div class="min-w-0 flex-1">
           <div class="text-[12px] font-mono font-semibold truncate" title={d.filename}>{d.filename}</div>
-          <div class="text-[10px] text-muted mt-0.5 flex gap-x-2 gap-y-0.5 flex-wrap">
+          <div class="text-2xs text-muted mt-0.5 flex gap-x-2 gap-y-0.5 flex-wrap">
             {#if d.width && d.height}<span>{d.width}×{d.height}</span>{/if}
             {#if (d.kind === "video" || d.kind === "audio") && d.duration_seconds != null}<span>{formatDuration(d.duration_seconds)}</span>{/if}
             {#if d.kind === "video" && d.fps != null}<span>{d.fps} fps</span>{/if}

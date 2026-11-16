@@ -26,6 +26,13 @@ const detailPanel = readFileSync("src/components/DetailPanel.svelte", "utf8");
 const textPanel = readFileSync("src/components/TextDetailPanel.svelte", "utf8");
 const appCss = readFileSync("src/app.css", "utf8");
 
+/** 从 :root 里现取一颗数值 token，卡高的账不许靠手抄数字。 */
+function tokenNum(name: string): number {
+  const m = new RegExp("(^|\\s)" + name + ":\\s*([\\d.]+)", "m").exec(appCss);
+  if (!m) throw new Error("app.css 里找不到 " + name);
+  return Number.parseFloat(m[2]);
+}
+
 /** 抠出某条规则的声明块：选择器整串匹配，不许误配它的派生类或伪类。 */
 function ruleBody(src: string, selector: string): string | null {
   const esc = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -35,14 +42,23 @@ function ruleBody(src: string, selector: string): string | null {
 
 describe("文本卡的高度与降级：一个真源、三档形态", () => {
   it("卡高就是 3.1 尺度的加和，不是又挑的一个数", () => {
-    // 上下 padding 8+8 + 徽标 18（--fs-2xs 行高 15.75 + 上下 1px） + 一条 2px 行距 + 文件名 17（--fs-sm 行高 16.875）
-    const base = 8 + 8 + 18 + 2 + 17;
+       // 上下 padding 8+8 + 徽标（--fs-2xs 走 label 轨 + 上下各 1px） + 一条 2px 行距 + 文件名（--fs-sm × label 轨）
+    // 数值全从 :root 现取：换了字号档位，这里跟着动，不许再手抄一份
+    const lhLabel = tokenNum("--lh-label");
+    const badge = Math.ceil(tokenNum("--fs-2xs") * lhLabel) + 2;
+    const name = Math.ceil(tokenNum("--fs-sm") * lhLabel);
+    const excerptLine = tokenNum("--fs-xs") * tokenNum("--lh-read");
+    const base = 8 + 8 + badge + 2 + name;
     for (let tier = 0; tier <= 2; tier++) {
       const lines = TEXT_CARD_LINES_BY_TIER[tier];
-      // 有摘录时还要再加一条 2px 行距 + 每行 16.1（--fs-xs 行高 16.1）
-      const want = Math.ceil(base + (lines > 0 ? 2 + 16.1 * lines : 0));
+      // 有摘录时还要再加一条 2px 行距 + 每行走 read 轨
+      const want = Math.ceil(base + (lines > 0 ? 2 + excerptLine * lines : 0));
       expect(TEXT_CARD_HEIGHTS_BY_TIER[tier], "档位 " + tier + " 的卡高").toBe(want);
     }
+    // 上面那笔账成立的前提：三段真的各挂在自己那一轨上，换了轨就得先在这儿红
+    expect(ruleBody(feed, ".text-format")).toContain("line-height: var(--lh-label)");
+    expect(ruleBody(feed, ".text-name")).toContain("line-height: var(--lh-label)");
+    expect(ruleBody(feed, ".text-excerpt")).toContain("line-height: var(--lh-read)");
   });
 
   it("降级复用页脚那同一套档位，不给文本卡另立门槛", () => {
@@ -61,6 +77,7 @@ describe("文本卡的高度与降级：一个真源、三档形态", () => {
 
   it("摘录行数不再写死在 CSS 里；卡高行内来自同源（T1）", () => {
     const base = ruleBody(feed, ".text-excerpt") || "";
+
     expect(base).toContain("font-size: var(--fs-xs)");
     expect(base).not.toContain("-webkit-line-clamp");
     expect(ruleBody(feed, ".text-card--t2 .text-excerpt")).toContain("-webkit-line-clamp: 2");

@@ -306,12 +306,12 @@
 <section class="space-y-3" aria-label="反推视频提示词">
   <div class="flex items-baseline justify-between gap-2">
     <h4 class="section-title is-card">反推视频提示词</h4>
-    <span class="text-[10px] text-muted">{secondsText}</span>
+    <span class="text-2xs text-muted">{secondsText}</span>
   </div>
 
   {#if !textConfigs.length}
     <button class="vp-button" onclick={() => window.dispatchEvent(new CustomEvent("open-model-settings"))}>配置模型</button>
-    <p class="text-[10px] text-muted">需要先在「设置 · 模型API配置」里配置一个支持图片输入的模型。</p>
+    <p class="text-2xs text-muted">需要先在「设置 · 模型API配置」里配置一个支持图片输入的模型。</p>
   {:else}
     <div class="space-y-2">
       <div class="text-[11px] text-muted">反推模型
@@ -319,7 +319,7 @@
           onpick={(configId, picked) => { modelId = configId; modelName = picked; }} />
       </div>
       {#if !modelName}
-        <p class="text-[10px] text-amber-400">没认出这家的语言模型：打开上面的下拉能看到原因，或到设置里检查这把 Key。</p>
+        <p class="text-2xs text-amber-400">没认出这家的语言模型：打开上面的下拉能看到原因，或到设置里检查这把 Key。</p>
       {/if}
       <div class="flex gap-2">
         <label class="flex-1 text-[11px] text-muted">起始秒（整数）
@@ -349,7 +349,7 @@
           <span class="vp-skeleton" aria-hidden="true"><i style="width:86%"></i><i style="width:64%"></i></span>
         </div>
       {/if}
-      <p class="text-[10px] text-muted">
+      <p class="text-2xs text-muted">
         方案与格式无关：1 次调用；之后每段正文每种格式各 1 次调用。画面按镜头切点自动分段，每段不超 {prefs?.max_unit_seconds ?? 15} 秒。
       </p>
     </div>
@@ -362,7 +362,7 @@
   {#if run && run.status === "planned"}
     <div class="space-y-2 border-t border-border pt-3">
       <div class="flex items-center gap-2 flex-wrap">
-        <span class="text-[10px] text-muted">
+        <span class="text-2xs text-muted">
           {dateTimeLabel(run.created_at)} · {run.model_name} · {units.length} 段
         </span>
         {#if run.video_changed}<span class="vp-badge vp-warn">视频文件已变化</span>{/if}
@@ -371,7 +371,7 @@
       </div>
       <div class="rounded border border-border bg-surface p-2">
         <div class="flex items-center justify-between gap-2">
-          <span class="text-[10px] uppercase tracking-wider text-muted">全局锚点</span>
+          <span class="text-2xs uppercase tracking-wider text-muted">全局锚点</span>
           <button class="vp-button" onclick={() => copy(run?.anchors_text ?? "", "锚点已")}>复制锚点</button>
         </div>
         <div class="vp-body mt-1 max-h-40">{run.anchors_text}</div>
@@ -491,7 +491,7 @@
                         <div class="flex items-baseline gap-2 flex-wrap">
                           <code class="vp-ref-label">{ref.label}</code>
                           <!-- 说明一律中文；正文里的英文原文收进悬停提示，不让英文占据清单 -->
-                          <span class="text-[10px] text-muted {ref.what_en ? "cursor-help" : ""}"
+                          <span class="text-2xs text-muted {ref.what_en ? "cursor-help" : ""}"
                             title={ref.what_en || undefined}>{ref.what}</span>
                         </div>
                         {#if ref.frame}
@@ -499,18 +499,18 @@
                             at={unitFrameAt(unit, ref.frame.edge)} fileBase={baseName + "-" + refFileTag(ref.label)}
                             usage={refFileTag(ref.label)} />
                         {:else}
-                          <p class="text-[10px] text-muted">
+                          <p class="text-2xs text-muted">
                             {#if ref.slot === "video"}需要自备视频：本工具不生成视频，按上面的说明导出成品后按这个编号上传。
                             {:else if ref.slot === "audio"}需要自备音频：按上面的说明准备音频文件后按这个编号上传。
                             {:else}需要自备图片：本工具拿不到这张图，按上面的说明准备后按这个编号上传。{/if}
                           </p>
                         {/if}
-                        {#if ref.warn}<p class="text-[10px] text-amber-400">{ref.warn}</p>{/if}
+                        {#if ref.warn}<p class="text-2xs text-amber-400">{ref.warn}</p>{/if}
                       </li>
                     {/each}
                   </ul>
                   {#if tooMany(refs).length}
-                    <p class="mt-1 text-[10px] text-danger" role="alert">
+                    <p class="mt-1 text-2xs text-danger" role="alert">
                       {tooMany(refs, tab).map((slot) => `${SLOT_LABELS[slot]} ${slotCounts(refs)[slot]} 个`).join("、")}
                       超过{slotLimitText(tab)}，请合并素材后编辑正文。
                     </p>
@@ -544,7 +544,7 @@
             {:else if record}
               <div class="space-y-1.5">
                 {#if viewing}
-                  <div class="flex items-center gap-2 flex-wrap text-[10px] text-amber-400">
+                  <div class="flex items-center gap-2 flex-wrap text-2xs text-amber-400">
                     <span>
                       正在看历史版本 #{viewing.id}（{dateTimeLabel(viewing.created_at)}），
                       当前版本 #{recordFor(unit.index, tab)?.id}。复制与编辑都针对这一版；编辑会存成新版本。
@@ -552,7 +552,7 @@
                     <button class="vp-button" onclick={() => backToCurrent(unit.index, tab)}>回到当前版本</button>
                   </div>
                 {/if}
-                <div class="flex items-center gap-2 flex-wrap text-[10px] text-muted">
+                <div class="flex items-center gap-2 flex-wrap text-2xs text-muted">
                   <span>{record.model_name} · {record.model}</span>
                   <span>{record.source === "edited" ? "手动编辑" : "模型生成"}</span>
                   {#if record.mode}<span class="vp-badge">{MODE_BADGES[record.mode]}</span>{/if}
@@ -584,7 +584,7 @@
                   {@const showing = showingTranslation(record)}
                   <div class="vp-body max-h-72">{showing ? translation?.text : original}</div>
                   {#if showing}
-                    <p class="text-[10px] text-muted">
+                    <p class="text-2xs text-muted">
                       译文（{TRANSLATION_LABELS[translation?.language ?? "zh"]}）由 {translation?.model_name} 机器翻译，只用于阅读；
                       时间戳、结构标记与画面文字按原样保留。
                     </p>
@@ -608,7 +608,7 @@
                     </button>
                     <button class="vp-button" disabled={running} onclick={() => generate([unit.index], [tab])}>重跑本段</button>
                     {#if viewing}
-                      <span class="text-[10px] text-muted self-center">译文只针对当前版本</span>
+                      <span class="text-2xs text-muted self-center">译文只针对当前版本</span>
                     {/if}
                     <button class="vp-button vp-translate" aria-pressed={showing}
                       aria-label={`${showing ? "显示原文" : "翻译"} ${tag} ${TARGET_LABELS[tab]}`}
@@ -635,7 +635,7 @@
                 {/if}
                 {#if versionsKey === segmentKey(run.id, unit.index, tab)}
                   <div class="space-y-1 max-h-48 overflow-auto" aria-label={`${tag} 历史版本`}>
-                    <p class="text-[10px] text-muted">点某一版就地查看它的正文；不需要的可以直接删除，删掉最新版会自动退回次新一版。</p>
+                    <p class="text-2xs text-muted">点某一版就地查看它的正文；不需要的可以直接删除，删掉最新版会自动退回次新一版。</p>
                     {#each versions as version}
                       {@const armed = `${segmentKey(run.id, unit.index, tab)}:${version.id}`}
                       <div class="flex items-center gap-1">
@@ -646,7 +646,7 @@
                           {#if version.id === recordFor(unit.index, tab)?.id}<span class="vp-badge">当前</span>{/if}
                         </button>
                         {#if confirmKey === armed}
-                          <span class="text-[10px] text-amber-400 whitespace-nowrap">删除这版？</span>
+                          <span class="text-2xs text-amber-400 whitespace-nowrap">删除这版？</span>
                           <button class="vp-button vp-danger" aria-label="确认删除这一版"
                             disabled={deletingId !== null} onclick={() => removeVersion(version)}>确认删除</button>
                           <button class="vp-button" onclick={() => confirmKey = null}>取消</button>
@@ -699,7 +699,7 @@
   /* 与标签同行时去掉 margin-top 与 100% 宽，否则"H3 模式"会被挤成两行 */
   .vp-field-inline { display: inline-block; width: auto; margin-top: 0; }
   .vp-label { font-size: 11px; color: #a1a1aa; flex: none; white-space: nowrap; }
-  .vp-version { font-size: 10px; padding: 4px 6px; border: 1px solid #3f3f46; border-radius: 5px; background: #18181b; }
+  .vp-version { font-size: var(--fs-2xs); padding: 4px 6px; border: 1px solid #3f3f46; border-radius: 5px; background: #18181b; }
   .vp-version[aria-pressed="true"] { border-color: #f24e4e; color: #fda4a4; }
   .vp-danger { color: var(--danger); border-color: rgb(var(--danger-rgb) / 45%); background: rgb(var(--danger-rgb) / 8%); }
   .vp-button {
@@ -716,7 +716,7 @@
   .vp-tab { font-size: 11px; padding: 5px 10px; background: #202024; }
   .vp-tab[aria-pressed="true"] { background: #f24e4e; color: #0e0e10; }
   .vp-badge {
-    font-size: 10px; padding: 1px 6px; border-radius: 999px; border: 1px solid #3f3f46; color: #a1a1aa;
+    font-size: var(--fs-2xs); padding: 1px 6px; border-radius: 999px; border: 1px solid #3f3f46; color: #a1a1aa;
   }
   .vp-translate { display: inline-flex; align-items: center; gap: 4px; }
   .vp-icon { width: 15px; height: 15px; flex: none; }
@@ -738,14 +738,14 @@
   .vp-help:hover .vp-help-card, .vp-help:focus-within .vp-help-card, .vp-help.open .vp-help-card {
     opacity: 1; visibility: visible; pointer-events: auto;
   }
-  .vp-help-row { display: flex; flex-direction: column; gap: 1px; font-size: 10px; line-height: 1.5; color: #a1a1aa; }
+  .vp-help-row { display: flex; flex-direction: column; gap: 1px; font-size: var(--fs-2xs); line-height: 1.5; color: #a1a1aa; }
   .vp-help-row b { color: #e4e4e7; }
-  .vp-help-note { font-size: 10px; line-height: 1.5; color: #71717a; }
+  .vp-help-note { font-size: var(--fs-2xs); line-height: 1.5; color: #71717a; }
   .vp-frames { border: 1px solid #2e2e33; border-radius: 5px; background: #121215; padding: 6px 8px; }
-  .vp-frames-summary { font-size: 10px; color: #a1a1aa; cursor: pointer; user-select: none; }
+  .vp-frames-summary { font-size: var(--fs-2xs); color: #a1a1aa; cursor: pointer; user-select: none; }
   .vp-ref { display: flex; flex-direction: column; gap: 4px; }
   .vp-ref-label {
-    font-size: 10px; padding: 1px 6px; border-radius: 4px; color: #fbbf24;
+    font-size: var(--fs-2xs); padding: 1px 6px; border-radius: 4px; color: #fbbf24;
     background: #1f1a10; border: 1px solid #4a3a12; width: fit-content;
   }
   /* 生成中的反馈：转圈 + 走秒 + 进度条 + 骨架线。一次模型调用没有可上报的百分比，
@@ -763,8 +763,8 @@
   }
   .vp-progress-top { display: flex; align-items: center; gap: 6px; }
   .vp-progress-title { font-size: 11px; font-weight: 600; color: #fda4a4; }
-  .vp-progress-time { margin-left: auto; font-size: 10px; color: #a1a1aa; font-variant-numeric: tabular-nums; }
-  .vp-progress-note { font-size: 10px; line-height: 1.5; color: #a1a1aa; }
+  .vp-progress-time { margin-left: auto; font-size: var(--fs-2xs); color: #a1a1aa; font-variant-numeric: tabular-nums; }
+  .vp-progress-note { font-size: var(--fs-2xs); line-height: 1.5; color: #a1a1aa; }
   .vp-bar { position: relative; display: block; height: 3px; border-radius: 999px; background: #2a2a30; overflow: hidden; }
   .vp-bar i {
     position: absolute; top: 0; bottom: 0; left: 0; width: 34%; border-radius: 999px;
@@ -779,7 +779,7 @@
   }
   @keyframes vp-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
   .vp-queue { display: flex; align-items: center; gap: 6px; flex: 1 1 160px; min-width: 150px; }
-  .vp-queue-text { font-size: 10px; color: #fda4a4; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .vp-queue-text { font-size: var(--fs-2xs); color: #fda4a4; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .vp-queue-bar { flex: 1; height: 3px; border-radius: 999px; background: #2a2a30; overflow: hidden; }
   .vp-queue-bar i { display: block; height: 100%; background: #f24e4e; transition: width .25s ease; }
   article[data-running="true"] { border-color: #f24e4e; animation: vp-breathe 1.7s ease-in-out infinite; }
@@ -789,7 +789,7 @@
   }
   .vp-body {
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    font-size: 11.5px; line-height: 1.7; white-space: pre-wrap; word-break: break-word;
+    font-size: var(--fs-xs); line-height: 1.7; white-space: pre-wrap; word-break: break-word;
     color: #e4e4e7; background: #121215; border: 1px solid #2e2e33; border-radius: 5px; padding: 8px;
     overflow-y: auto;
   }

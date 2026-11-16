@@ -104,7 +104,7 @@
   .update-settings { display: block; }
   .release-notes { max-height: 148px; overflow: auto; font-family: inherit; font-size: 12px; line-height: 1.7; color: #a1a1aa; white-space: pre-wrap; }
   .download-bar { width: 100%; height: 6px; accent-color: #f24e4e; }
-  .update-error { padding: 12px 20px; font-size: 12.5px; color: #fb7185; border-top: 1px solid #26262b; }
-  .update-confirm { display: flex; flex-direction: column; gap: 12px; padding: 16px 20px; font-size: 12.5px; line-height: 1.7; color: #b8b8c3; border-top: 1px solid #26262b; }
+  .update-error { padding: 12px 20px; font-size: var(--fs-sm); color: #fb7185; border-top: 1px solid #26262b; }
+  .update-confirm { display: flex; flex-direction: column; gap: 12px; padding: 16px 20px; font-size: var(--fs-sm); line-height: 1.7; color: #b8b8c3; border-top: 1px solid #26262b; }
   .update-confirm-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 </style>

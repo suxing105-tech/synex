@@ -431,7 +431,7 @@
   .clone-import-box textarea { width: 100%; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
   .clone-group { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
   .clone-group-label { color: #9a9aa1; font-size: 11px; letter-spacing: .04em; }
-  .clone-slot { display: flex; align-items: center; gap: 8px; color: #d8d8dc; font-size: 12.5px; }
+  .clone-slot { display: flex; align-items: center; gap: 8px; color: #d8d8dc; font-size: var(--fs-sm); }
   .clone-slot code { color: #8a8a90; font-size: 11px; }
   .clone-name-input { min-width: 160px; }
   /* 槽位确认这块不用 SettingsRow：它的 control snippet 和正文里的 {#each} 撞在一起会渲染崩，

@@ -164,14 +164,14 @@
       </div>
     </header>
 
-    <div class="flex-1 overflow-y-auto p-4 space-y-4 detail-body text-[12.5px]">
+    <div class="flex-1 overflow-y-auto p-4 space-y-4 detail-body text-sm">
       {#if renaming}
         <div class="flex gap-2">
           <button type="button" class="dock-btn hover:bg-surface-3 disabled:opacity-40" disabled={busy} onclick={() => void saveRename()}>保存</button>
           <button type="button" class="dock-btn hover:bg-surface-3" onclick={() => (renaming = false)}>取消</button>
         </div>
       {/if}
-      {#if notice}<div class="rounded border border-border bg-surface-2 p-2 text-[11.5px] text-amber-200" role="status">{notice}</div>{/if}
+      {#if notice}<div class="rounded border border-border bg-surface-2 p-2 text-xs text-amber-200" role="status">{notice}</div>{/if}
       {#if confirming}
         <div class="rounded border border-danger/40 bg-surface-2 p-3 space-y-2" role="alertdialog" aria-label="确认移入回收站">
           <p>会把磁盘原文件一起移入系统回收站：</p>

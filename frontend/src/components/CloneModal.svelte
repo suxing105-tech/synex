@@ -2810,11 +2810,11 @@
      名字长了截断，全名在悬停提示里。整行上下居中——大字与右边那颗 30px 的关闭键同一条中线。 */
   .cm-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -2px -4px 6px; }
   .cm-heading { min-width: 0; }
-  .cm-title { margin: 0; font-size: 17px; line-height: 22px; font-weight: 650; color: #fafafa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cm-title { margin: 0; font-size: var(--fs-md); line-height: 22px; font-weight: 650; color: #fafafa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cm-close { flex: none; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 9px; color: #8a8a8e; background: transparent; }
   .cm-close:hover { color: #fafafa; background: rgb(255 255 255 / 10%); }
 
-  .cm-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; padding: 9px 12px; font-size: 12.5px; color: #f7d9a8; background: #2a2318; border: 1px solid #4a3c22; border-radius: 10px; }
+  .cm-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; padding: 9px 12px; font-size: var(--fs-sm); color: #f7d9a8; background: #2a2318; border: 1px solid #4a3c22; border-radius: 10px; }
 
   /* 左右两栏（2026-11-10 苏醒照旧图：「改回类似之前的这种版式」）：展示图在左、输入卡在右，
      两栏都从顶上开始（align-items: start）。旧图的读法是左图顶到弹窗上沿一路长到底、右列从上往下排；
@@ -2878,7 +2878,7 @@
   /* 波形是一张扁的后端 PNG：照搬 cm-hero 的 contain 会把它拉成一大块模糊，这里锁住高度。 */
   .cm-hero-wave { width: min(100%, 560px); height: clamp(88px, 18vh, 148px); object-fit: cover; }
   .cm-hero-audio { width: min(100%, 560px); margin-top: 10px; height: 36px; }
-  .cm-hero-empty { display: flex; align-items: center; justify-content: center; min-height: 140px; font-size: 12.5px; color: #71717a; }
+  .cm-hero-empty { display: flex; align-items: center; justify-content: center; min-height: 140px; font-size: var(--fs-sm); color: #71717a; }
 
   /* ── 生成中这一格：等待台。三层叠——底图慢慢呼吸、一条光带斜着扫过去、中间那张卡报状态。
      2026-11-04 苏醒：「做一个友好的交互动效，减少用户的等待焦虑」。两条规矩：
@@ -2924,8 +2924,8 @@
   .cm-stage-orb i { width: 4px; height: 8px; border-radius: 3px; background: linear-gradient(180deg, #ff8a70, #f24e4e); animation: cm-pulse 1.15s ease-in-out infinite; }
   .cm-stage-orb i:nth-child(2) { animation-delay: .16s; }
   .cm-stage-orb i:nth-child(3) { animation-delay: .32s; }
-  .cm-stage-line { margin: 0; font-size: 13.5px; font-weight: 600; color: #f4f4f5; }
-  .cm-stage-clock { margin: 0; font-size: 11.5px; color: #9d9da4; font-variant-numeric: tabular-nums; }
+  .cm-stage-line { margin: 0; font-size: var(--fs-base); font-weight: 600; color: #f4f4f5; }
+  .cm-stage-clock { margin: 0; font-size: var(--fs-xs); color: #9d9da4; font-variant-numeric: tabular-nums; }
   /* 台阶条：只在换档时走一段（900ms 缓动），中间不许自己爬——后端不给整条工作流的剩余时间，
      编一条会自己往前蹭的假百分比比诚实的台阶更坏。两条缝钉在 34% 与 76%：跑最久那一段一眼认得出。 */
   .cm-stage-bar { position: relative; width: 212px; height: 3px; border-radius: 999px; overflow: hidden; background: rgb(255 255 255 / 10%); }
@@ -2947,12 +2947,12 @@
   .cm-hero-new { animation: cm-hero-in 320ms cubic-bezier(.22, .61, .36, 1); }
   .cm-hero-out:hover .cm-hero-new, .cm-hero-out:focus-visible .cm-hero-new { outline: 1px solid rgb(255 255 255 / 24%); outline-offset: 3px; }
   .cm-hero-out-play { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 50%; color: #fafafa; background: rgb(12 12 14 / 62%); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
-  .cm-hero-out-hint { position: absolute; right: 12px; bottom: 12px; display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; font-size: 11.5px; color: #f4f4f5; border-radius: 999px; background: rgb(12 12 14 / 74%); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); opacity: 0; transition: opacity 140ms ease; }
+  .cm-hero-out-hint { position: absolute; right: 12px; bottom: 12px; display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; font-size: var(--fs-xs); color: #f4f4f5; border-radius: 999px; background: rgb(12 12 14 / 74%); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); opacity: 0; transition: opacity 140ms ease; }
   .cm-hero-out:hover .cm-hero-out-hint, .cm-hero-out:focus-visible .cm-hero-out-hint { opacity: 1; }
   .cm-hero-pager { display: flex; align-items: center; gap: 6px; }
   .cm-hero-nav { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; color: #c9c9cf; background: rgb(255 255 255 / 7%); border: 1px solid rgb(255 255 255 / 8%); cursor: pointer; transition: background-color 140ms ease, color 140ms ease; }
   .cm-hero-nav:hover { color: #fafafa; background: rgb(255 255 255 / 14%); }
-  .cm-hero-count { font-size: 11.5px; color: #8a8a8e; font-variant-numeric: tabular-nums; }
+  .cm-hero-count { font-size: var(--fs-xs); color: #8a8a8e; font-variant-numeric: tabular-nums; }
   @keyframes cm-hero-in { from { opacity: 0; transform: scale(.985) translateY(6px); } to { opacity: 1; transform: none; } }
   /* 不想看动效的人：等待台照样报状态、照样换档，只是不呼吸不扫光不跳——信息一条不少。 */
   @media (prefers-reduced-motion: reduce) {
@@ -2998,7 +2998,7 @@
   }
   .cm-tile { position: relative; width: 84px; height: 84px; overflow: hidden; border-radius: 14px; background: #141417; border: 1px solid rgb(255 255 255 / 7%); }
   .cm-tile-img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; }
-  .cm-tile-add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 0; font-size: 12.5px; color: #d4d4d8; background: #1a1a1e; cursor: pointer; transition: background-color 140ms ease, border-color 140ms ease; }
+  .cm-tile-add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 0; font-size: var(--fs-sm); color: #d4d4d8; background: #1a1a1e; cursor: pointer; transition: background-color 140ms ease, border-color 140ms ease; }
   /* 音频格子里那是波形图（840×360 的透明 PNG）：cover 会把波形切成一条中线，contain 才看得出起伏。
      背景压深一档，透明的波形才不会和卡片糊成一片。 */
   .cm-tile-audio { background: #101013; }
@@ -3095,7 +3095,7 @@
   .cm-ref-zoom-cap {
     position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: baseline;
     justify-content: space-between; gap: 8px; margin: 0; padding: 20px 10px 8px;
-    font-size: 11.5px; color: #e8e8ec; background: linear-gradient(180deg, transparent, rgba(8, 8, 10, 0.88));
+    font-size: var(--fs-xs); color: #e8e8ec; background: linear-gradient(180deg, transparent, rgba(8, 8, 10, 0.88));
   }
   .cm-ref-zoom-file { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #9a9aa2; }
 
@@ -3104,7 +3104,7 @@
 
   /* 高亮遮罩和 textarea 是叠在一起的两层字，盒模型 / 字体 / 折行规则必须一字不差，
      所以两边写进同一条规则：谁要改排版就一起改，拆开改第一次滚动就会看见高亮在飘。 */
-  .cm-prompt-bg, .cm-textarea { display: block; box-sizing: border-box; width: 100%; padding: 11px 12px; border: 1px solid transparent; font-family: inherit; font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; }
+  .cm-prompt-bg, .cm-textarea { display: block; box-sizing: border-box; width: 100%; padding: 11px 12px; border: 1px solid transparent; font-family: inherit; font-size: var(--fs-sm); line-height: 1.6; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; }
   .cm-prompt-bg { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; border-radius: 12px; color: #e4e4e7; background: rgba(0, 0, 0, 0.35); }
   .cm-textarea { position: relative; z-index: 1; background: transparent; border-color: rgb(255 255 255 / 8%); border-radius: 12px; resize: vertical; }
   /* 提示词框跟着窗口高矮走：窗口矮的时候先让提示词框让出高度，而不是把下面那排按钮挤出弹窗 ——
@@ -3177,8 +3177,8 @@
   @media (prefers-reduced-motion: reduce) {
     .cm-skill.is-busy { animation: none; }
   }
-  .cm-note { margin: 0; font-size: 11.5px; color: #71717a; }
-  .cm-empty { display: flex; flex-direction: column; gap: 10px; padding: 16px; font-size: 12.5px; color: #a1a1aa; background: #1b1b1f; border: 1px dashed #33333a; border-radius: 12px; }
+  .cm-note { margin: 0; font-size: var(--fs-xs); color: #71717a; }
+  .cm-empty { display: flex; flex-direction: column; gap: 10px; padding: 16px; font-size: var(--fs-sm); color: #a1a1aa; background: #1b1b1f; border: 1px dashed #33333a; border-radius: 12px; }
 
   /* 让位顺序写死在这一行：右边按钮组不参与压缩（「取消」那一格连静止时都提前占好，按下生成的一瞬间
      右边宽度不变），左边每一格 min-width:0 可以被压缩；容器真装不下就整排换行，让位的永远是左边
@@ -3232,7 +3232,7 @@
      图标 + 名字 + 下拉箭头已经把「这是一颗能点的当前值」说完了，外面再套一圈框是重复表达。
      静止态完全透明，只在悬浮和展开时给一层极淡的底当反馈——radius 留着，那是反馈的形状不是框。
      左右内边距从 13 收到 10：没有框之后，间隔由 padding + gap 给，读起来还是三件事。 */
-  .cm-pill { position: relative; z-index: 5; flex: 0 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 10px; font-size: 12.5px; color: #d4d4d8; background: transparent; border: 0; border-radius: 999px; cursor: pointer; transition: background 140ms ease, color 140ms ease; }
+  .cm-pill { position: relative; z-index: 5; flex: 0 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 10px; font-size: var(--fs-sm); color: #d4d4d8; background: transparent; border: 0; border-radius: 999px; cursor: pointer; transition: background 140ms ease, color 140ms ease; }
   .cm-pill:hover:not(:disabled) { color: #fafafa; background: rgb(255 255 255 / 7%); }
   .cm-pill-text { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* 箭头不参与压缩，被挤的只许是中间那段名字（svg 自带尺寸，压不动） */
@@ -3255,7 +3255,7 @@
      贴右长就回到右栏之内：那颗的右边缘本来就在栏内，328 < 右栏净宽 498。
      写两条类名是为了压过窄窗口那条 .cm-pop { width: min(328px, 78vw) }：锚点换了，封顶得跟着换来源。 */
   .cm-pop.cm-pop-params { left: auto; right: 0; width: min(328px, var(--cm-pop-left, 328px)); }
-  .cm-pop-title { margin: 2px 0 0; font-size: 12.5px; color: #a1a1aa; }
+  .cm-pop-title { margin: 2px 0 0; font-size: var(--fs-sm); color: #a1a1aa; }
   /* 弹层最底那行是上面那几颗的合算结果：只写数字，不套「尺寸：」这类前缀（2026-11-12 定稿）。
      用 --text-2 不用 --text-3：这行压在 #1a1a1e 的弹层底上还要读得出，是结论不是注脚。 */
   .cm-pop-size { margin: 0; font-size: var(--fs-sm); line-height: 16px; color: var(--text-2); font-variant-numeric: tabular-nums; }
@@ -3289,7 +3289,7 @@
   .cm-api { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 3px 10px; min-height: 0; }
   .cm-api-side { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding-right: 10px; border-right: 1px solid rgb(255 255 255 / 8%); }
   /* 左内边距 8 与服务商行那颗图标的左内边距同一个数（原来 6：实测标签墨迹左沿 731、图标左沿 733，差 2px）。 */
-  .cm-api-cap { margin: 2px 0 0; padding: 0 8px; font-size: 10.5px; color: #7f7f87; }
+  .cm-api-cap { margin: 2px 0 0; padding: 0 8px; font-size: var(--fs-2xs); color: #7f7f87; }
   /* 服务商那一行：图标方块 + 名字 + 右箭头（小字两行 2026-11-11 撤，见模板那条注释）。
      选中态走 aria-current，不走 aria-pressed——全局 .fill-interactions 会把 pressed 的按钮整颗刷成品牌红底黑字（0.2.34 那轮在设置页栽过一次）。 */
   /* 行高走 --ctl-md 32：26 的图标方块 + 上下各 3 = 32，右边那一行模型也是 32 那一档（见下面 .cm-wf.cm-api-model），
@@ -3297,7 +3297,7 @@
   .cm-api-vendor { display: flex; align-items: center; gap: 8px; width: 100%; min-height: var(--ctl-md); padding: 3px 8px; text-align: left; color: #d4d4d8; background: transparent; border-radius: 10px; cursor: pointer; }
   .cm-api-vendor:hover, .cm-api-vendor[aria-current="true"] { color: #fafafa; background: rgb(255 255 255 / 7%); }
   .cm-api-vendor-mark { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; color: #93c5fd; background: rgb(59 130 246 / 14%); }
-  .cm-api-vendor-name { flex: 1; min-width: 0; font-size: 12.5px; }
+  .cm-api-vendor-name { flex: 1; min-width: 0; font-size: var(--fs-sm); }
   .cm-api-vendor-arrow { flex: none; display: inline-flex; color: #7f7f87; }
   /* 左下角那一格：族徽 + 当前那条的名字 + 挂在哪一家。顶边一条线把它和上面的清单分开。 */
   .cm-api-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; overflow: auto; }
@@ -3323,17 +3323,17 @@
     transition: background-color 120ms ease, color 120ms ease;
   }
   .cm-pop-tab[aria-pressed="true"] { color: #fafafa; background: rgb(255 255 255 / 9%); }
-  .cm-pop-tab-count { font-size: 10.5px; color: #f87171; background: rgb(242 78 78 / 16%); border-radius: 999px; padding: 0 6px; }
-  .cm-pop-empty { margin: 2px 0; padding: 0 4px; font-size: 11.5px; color: #a1a1aa; }
+  .cm-pop-tab-count { font-size: var(--fs-2xs); color: #f87171; background: rgb(242 78 78 / 16%); border-radius: 999px; padding: 0 6px; }
+  .cm-pop-empty { margin: 2px 0; padding: 0 4px; font-size: var(--fs-xs); color: #a1a1aa; }
   .cm-pop-sep { height: 1px; margin: 5px 0; background: rgb(255 255 255 / 8%); }
-  .cm-wf { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; font-size: 12.5px; color: #d4d4d8; text-align: left; background: transparent; border-radius: 10px; cursor: pointer; }
+  .cm-wf { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; font-size: var(--fs-sm); color: #d4d4d8; text-align: left; background: transparent; border-radius: 10px; cursor: pointer; }
   .cm-wf:hover:not(:disabled) { background: rgb(255 255 255 / 7%); color: #fafafa; }
   .cm-wf:disabled { opacity: .5; cursor: default; }
   .cm-wf-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .cm-wf-tag { flex: none; padding: 1px 7px; font-size: 10.5px; color: #f87171; background: rgb(242 78 78 / 16%); border-radius: 999px; }
+  .cm-wf-tag { flex: none; padding: 1px 7px; font-size: var(--fs-2xs); color: #f87171; background: rgb(242 78 78 / 16%); border-radius: 999px; }
   /* 图片和视频的工作流排在同一份清单里，出片还是出图得一眼分得开（颜色之外还有字，不靠颜色独担信息）。 */
   /* 族徽定宽并钉在名字前面：宽度一致 + 位置固定，两行工作流的名称才在同一条竖线上。 */
-  .cm-wf-kind { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 34px; padding: 1px 0; font-size: 10.5px; color: #93c5fd; background: rgb(59 130 246 / 14%); border-radius: 999px; }
+  .cm-wf-kind { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 34px; padding: 1px 0; font-size: var(--fs-2xs); color: #93c5fd; background: rgb(59 130 246 / 14%); border-radius: 999px; }
   .cm-wf-lead { flex: none; display: flex; align-items: center; justify-content: center; width: 34px; }
   .cm-wf-kind-video { color: #fbbf24; background: rgb(245 158 11 / 16%); }
   .cm-wf-kind-audio { color: #c4b5fd; background: rgb(139 92 246 / 16%); }
@@ -3361,7 +3361,7 @@
   .cm-ratio.is-on { background: rgb(255 255 255 / 13%); color: #fafafa; }
   .cm-ratio-box { border: 1.5px solid currentColor; border-radius: 3px; opacity: .85; }
   .cm-ratio-flat { height: 26px; display: flex; align-items: center; font-size: 14px; }
-  .cm-ratio-label { font-size: 11.5px; white-space: nowrap; }
+  .cm-ratio-label { font-size: var(--fs-xs); white-space: nowrap; }
   /* 内置音色那一格：40px 圆脸。选中时用品牌色描一圈，和顶上音频模式那三颗同一个色，
      不新造一套选中语言；未选中只留一层极淡的内描边，免得黑底头像看起来像没图。 */
   .cm-ratio-face { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; background: #2a2a2e; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 12%); }
@@ -3398,7 +3398,7 @@
 
   .cm-pill-face { flex: none; width: 20px; height: 20px; border-radius: 50%; object-fit: cover; background: #2a2a2e; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 14%); }
   .cm-seg { display: flex; flex-wrap: wrap; gap: 6px; }
-  .cm-seg-item { min-width: 46px; height: 30px; padding: 0 10px; font-size: 12.5px; color: #b8b8bf; background: rgb(255 255 255 / 5%); border-radius: 8px; cursor: pointer; }
+  .cm-seg-item { min-width: 46px; height: 30px; padding: 0 10px; font-size: var(--fs-sm); color: #b8b8bf; background: rgb(255 255 255 / 5%); border-radius: 8px; cursor: pointer; }
   .cm-seg-item:hover { background: rgb(255 255 255 / 9%); }
   .cm-seg-item.is-on { background: rgb(255 255 255 / 15%); color: #fafafa; font-weight: 600; }
   /* 音频模式那一排：三颗字都短，只加粗读不出选中。品牌色描一圈 + 压深底，与生成按钮同一套色。 */
@@ -3407,8 +3407,8 @@
   .cm-seg-item:disabled { opacity: .55; cursor: default; }
   .cm-seg-item:hover:disabled { background: rgb(255 255 255 / 5%); }
   .cm-seg-item.is-on:hover:disabled { background: rgb(255 255 255 / 15%); }
-  .cm-custom { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 11.5px; color: #7c7c84; }
-  .cm-custom input { width: 92px; height: 28px; padding: 0 8px; font-size: 12.5px; color: #e4e4e7; background: rgba(0, 0, 0, 0.4); border: 1px solid rgb(255 255 255 / 9%); border-radius: 8px; }
+  .cm-custom { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: var(--fs-xs); color: #7c7c84; }
+  .cm-custom input { width: 92px; height: 28px; padding: 0 8px; font-size: var(--fs-sm); color: #e4e4e7; background: rgba(0, 0, 0, 0.4); border: 1px solid rgb(255 255 255 / 9%); border-radius: 8px; }
   /* 时长滑块：细轨 + 圆 thumb + 已填段，跟图库工具栏那条列数滑块一个手感。 */
   .cm-slide { display: flex; align-items: center; gap: 10px; }
   .cm-slider { -webkit-appearance: none; appearance: none; flex: 1; min-width: 0; height: 4px; border-radius: 2px; outline: none; cursor: pointer;
@@ -3420,12 +3420,12 @@
   .cm-slider::-moz-range-thumb { width: 15px; height: 15px; border-radius: 50%; background: #f4f4f5; border: 2px solid rgb(24 24 27); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(242, 78, 78, 0.45); cursor: grab; }
   .cm-slider::-moz-range-track { height: 4px; border-radius: 2px; background: rgb(64 64 70); }
   .cm-slider:focus-visible::-webkit-slider-thumb { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55), 0 0 0 4px rgba(242, 78, 78, 0.35); }
-  .cm-slide-num { flex: none; width: 62px; height: 28px; padding: 0 8px; font-size: 12.5px; color: #e4e4e7; background: rgba(0, 0, 0, 0.4); border: 1px solid rgb(255 255 255 / 9%); border-radius: 8px; }
+  .cm-slide-num { flex: none; width: 62px; height: 28px; padding: 0 8px; font-size: var(--fs-sm); color: #e4e4e7; background: rgba(0, 0, 0, 0.4); border: 1px solid rgb(255 255 255 / 9%); border-radius: 8px; }
   .cm-slide-unit { flex: none; font-size: 12px; color: #8a8a8e; }
 
   /* 按钮组画在胶囊之上：哪天再溢出，被压住的也不许是「取消」和「生成」 */
   .cm-actions { position: relative; z-index: 6; display: flex; align-items: center; gap: 8px; margin-left: auto; flex: none; }
-  .cm-btn { height: 34px; padding: 0 14px; font-size: 12.5px; color: #e4e4e7; background: #27272a; border: 1px solid #303036; border-radius: 999px; cursor: pointer; }
+  .cm-btn { height: 34px; padding: 0 14px; font-size: var(--fs-sm); color: #e4e4e7; background: #27272a; border: 1px solid #303036; border-radius: 999px; cursor: pointer; }
 /* 生成中只留一颗会动的按钮：取消退成一句安静的话，不再和参数胶囊抢位置。 */
 .cm-btn-quiet { color: #9a9aa2; background: transparent; border-color: transparent; padding: 0 12px; }
 .cm-btn-quiet:hover:not(:disabled) { color: #e4e4e7; background: rgb(255 255 255 / 6%); border-color: transparent; }
@@ -3515,14 +3515,14 @@
     border: 1px solid rgb(255 255 255 / 10%); border-radius: 14px; background: #1c1c20;
     box-shadow: 0 18px 46px rgba(0, 0, 0, 0.55);
   }
-  .cm-mention-title { margin: 2px 6px 6px; font-size: 11.5px; color: #7f7f87; }
-  .cm-mention-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; font-size: 12.5px; color: #d4d4d8; text-align: left; background: transparent; border: 0; border-radius: 9px; cursor: pointer; }
+  .cm-mention-title { margin: 2px 6px 6px; font-size: var(--fs-xs); color: #7f7f87; }
+  .cm-mention-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; font-size: var(--fs-sm); color: #d4d4d8; text-align: left; background: transparent; border: 0; border-radius: 9px; cursor: pointer; }
   .cm-mention-item:hover, .cm-mention-item.is-on { background: rgb(255 255 255 / 8%); color: #fafafa; }
   .cm-mention-icon { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; overflow: hidden; border-radius: 7px; color: #a1a1aa; background: rgb(255 255 255 / 6%); }
   .cm-mention-thumb { width: 100%; height: 100%; object-fit: cover; background: #0c0c0e; }
   .cm-mention-label { flex: none; font-weight: 600; color: #ececee; }
   .cm-mention-add .cm-mention-icon { color: #f8a29a; background: rgb(242 78 78 / 12%); }
-  .cm-mention-file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: #71717a; }
+  .cm-mention-file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: #71717a; }
   .cm-mention-add .cm-mention-label { font-weight: 500; color: #f8a29a; }
 
   /* ── 遮罩：大图上的入口与红色范围、参考格角标 ───────────────────────────

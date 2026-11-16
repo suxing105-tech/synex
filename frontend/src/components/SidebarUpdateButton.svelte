@@ -136,13 +136,13 @@ import Icon from "./Icon.svelte";
 
   .update-card-kicker {
     margin: 0 0 6px;
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     letter-spacing: .02em;
     color: #7f7f87;
   }
 
   .update-card-title {
-    font-size: 15px;
+    font-size: var(--fs-md);
     font-weight: 600;
     line-height: 22px;
     color: #fafafa;

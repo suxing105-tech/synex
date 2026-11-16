@@ -207,13 +207,13 @@ import Icon from "./Icon.svelte";
   .mp-on { background: #2f2f35; }
   .mp-avatar {
     width: 18px; height: 18px; flex: none; border-radius: 4px; background: #3f3f46;
-    font-size: 9px; display: flex; align-items: center; justify-content: center; color: #a1a1aa;
+    font-size: var(--fs-2xs); display: flex; align-items: center; justify-content: center; color: #a1a1aa;
   }
   .mp-pname, .mp-mname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mp-tag { flex: none; font-size: 9px; padding: 1px 4px; border-radius: 4px; background: #27272a; color: #a1a1aa; }
+  .mp-tag { flex: none; font-size: var(--fs-2xs); padding: 1px 4px; border-radius: 4px; background: #27272a; color: #a1a1aa; }
   .mp-rec { color: #4ade80; border: 1px solid #14532d; }
   .mp-warn { color: #fbbf24; border: 1px solid #78350f; }
-  .mp-empty { font-size: 10px; line-height: 1.5; color: #a1a1aa; padding: 6px; margin: 0; }
+  .mp-empty { font-size: var(--fs-2xs); line-height: 1.5; color: #a1a1aa; padding: 6px; margin: 0; }
   .mp-goto { display: block; width: calc(100% - 8px); margin: 4px; padding: 4px 8px; font-size: 11px; color: #fbbf24; border: 1px solid #3f3f46; border-radius: 5px; background: #202024; }
-  .mp-error { font-size: 10px; color: #f87171; padding: 4px 6px; margin: 0; }
+  .mp-error { font-size: var(--fs-2xs); color: #f87171; padding: 4px 6px; margin: 0; }
 </style>

@@ -47,11 +47,11 @@ describe("页脚档位边界", () => {
     expect(footerTierFor(-50)).toBe(0);
   });
 
-  it("档位对应的高度：0 / 26 / 44", () => {
+  it("档位对应的高度：0 / 28 / 48（2026-11-16 字号整数七档后重算）", () => {
     expect(footerHeightFor(119)).toBe(0);
     expect(footerHeightFor(120)).toBe(FOOTER_HEIGHT_ONE_LINE);
     expect(footerHeightFor(170)).toBe(FOOTER_HEIGHT_TWO_LINES);
-    expect([FOOTER_HEIGHT_ONE_LINE, FOOTER_HEIGHT_TWO_LINES]).toEqual([26, 44]);
+    expect([FOOTER_HEIGHT_ONE_LINE, FOOTER_HEIGHT_TWO_LINES]).toEqual([28, 48]);
   });
 });
 

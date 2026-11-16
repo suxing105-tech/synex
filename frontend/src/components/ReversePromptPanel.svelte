@@ -207,7 +207,7 @@
   .language-label.language-active:enabled:hover,
   .language-label.language-active:enabled:focus-visible { background:var(--accent-strong); color:var(--accent-ink); }
   .icon-button { display:inline-flex; align-items:center; gap:4px; }
-  .icon-button span { font-size:10px; }
+  .icon-button span { font-size:var(--fs-2xs); }
   .reverse-prompt-content { min-width:0; }
   /* 350px 起手 + 纵向可拖高是 2026-11-14 定的（长提示词要一眼读完），留着。
      去掉的是底色，描边要回来（2026-11-15 苏醒：这个提示词框还是需要描边的）——

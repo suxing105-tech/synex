@@ -132,7 +132,7 @@
     border: 1px solid #3a3a40;
     box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
     color: #e8e8ec;
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
     animation: toastPillIn 0.18s ease-out;
   }
   .toast-pill-text { min-width: 0; }

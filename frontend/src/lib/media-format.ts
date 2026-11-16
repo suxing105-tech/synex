@@ -72,9 +72,9 @@ export const FOOTER_TIER_TWO_LINE_MIN_WIDTH = 170;
 /** 单行页脚（只有第一行标题）所需的最小卡片宽 */
 export const FOOTER_TIER_ONE_LINE_MIN_WIDTH = 120;
 /** `--2l` 页脚的实测高度（px），与 app.css 的 .media-card-footer--2l 对齐 */
-export const FOOTER_HEIGHT_TWO_LINES = 44;
+export const FOOTER_HEIGHT_TWO_LINES = 48;
 /** `--1l` 页脚的实测高度（px），与 app.css 的 .media-card-footer--1l 对齐 */
-export const FOOTER_HEIGHT_ONE_LINE = 26;
+export const FOOTER_HEIGHT_ONE_LINE = 28;
 
 /** 卡片间距（px）。app.css 的 --thumb-gap 与 Feed 的贪心分列共用这一个值。 */
 export const THUMB_GAP = 10;
@@ -107,10 +107,12 @@ export function footerHeightFor(columnWidth: number): number {
  *
  * 数值不是新挑的，全是 3.1 尺度的加和：上下 padding 8+8，徽标 18（--fs-2xs 行高 15.75 + 上下 1px 内边距），
  * 行间距 2+2（3.1 的半步档），文件名 17（--fs-sm 行高 16.875），摘录每行 16.1（--fs-xs 行高 16.1），向上取整：
- *   档位 0 = 16+18+2+17 = 53；档位 1 再加一行 = 72；档位 2 再加两行 = 88。
+ *   档位 0 = 16+17+2+18 = 53；档位 1 再加一行 = 75；档位 2 再加两行 = 94。
+ * 2026-11-16 字号换成整数七档后重算：徽标 11×1.35+2 = 16.85→17、
+ * 文件名 13×1.35 = 17.55→18、摘录一行 12×1.6 = 19.2。
  */
 export const TEXT_CARD_LINES_BY_TIER = [0, 1, 2] as const;
-export const TEXT_CARD_HEIGHTS_BY_TIER = [53, 72, 88] as const;
+export const TEXT_CARD_HEIGHTS_BY_TIER = [53, 75, 94] as const;
 
 /** 该列宽下文本卡摘录取几行；0 表示不显示摘录，只留「徽标 + 文件名」。 */
 export function textCardLinesFor(columnWidth: number): number {

@@ -682,7 +682,7 @@
     min-width: 2.5em;
     text-align: right;
     font-variant-numeric: tabular-nums;
-    font-size: 10.5px;
+    font-size: var(--fs-2xs);
     padding: 1px 6px;
     border-radius: 7px;
     background: #ffffff0a;
@@ -767,7 +767,7 @@
     border-radius: 8px;
   }
   .folder-group {
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
     font-weight: 600;
     letter-spacing: .01em;
     color: #e2e2e8;

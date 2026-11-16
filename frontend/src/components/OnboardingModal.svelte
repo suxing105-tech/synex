@@ -113,7 +113,7 @@
   <div class="fixed inset-0 z-[60] bg-black/75 flex items-center justify-center" role="dialog" aria-label="导入 ComfyUI 输出目录" aria-modal="true">
     <div class="bg-surface-2 border border-border rounded-[12px] p-7 w-[620px] max-w-[92vw] max-h-[90vh] overflow-y-auto">
       <h2 class="text-lg font-semibold mb-1">导入 ComfyUI 输出目录</h2>
-      <p class="text-[12.5px] text-muted mb-4">选择或输入 ComfyUI 输出文件夹，导入其中的图片和生成信息，包含子文件夹。</p>
+      <p class="text-sm text-muted mb-4">选择或输入 ComfyUI 输出文件夹，导入其中的图片和生成信息，包含子文件夹。</p>
       <label for="import-directory" class="text-[11px] uppercase text-muted tracking-wider">目录路径</label>
       <div class="flex flex-wrap gap-2 mt-1">
         <input id="import-directory" type="text" bind:value={path} oninput={changed} title={path} disabled={busy}
@@ -137,7 +137,7 @@
         <div class="mt-4 bg-surface border border-border rounded p-3 text-[12px]">
           <div class="flex justify-between text-muted mb-1"><span>扫描进度</span><span>{$scanProgress.indexed} / {$scanProgress.total}</span></div>
           <progress class="w-full accent-accent" max="100" value={$scanProgress.total ? Math.min(100, $scanProgress.scanned / $scanProgress.total * 100) : undefined}></progress>
-          <div class="text-[10.5px] text-muted mt-1 truncate" title={$scanProgress.current_path}>{$scanProgress.current_path}</div>
+          <div class="text-2xs text-muted mt-1 truncate" title={$scanProgress.current_path}>{$scanProgress.current_path}</div>
         </div>
       {/if}
       <div class="flex justify-between gap-2 mt-5">

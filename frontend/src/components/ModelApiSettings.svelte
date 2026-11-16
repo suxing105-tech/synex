@@ -391,7 +391,7 @@
   .api-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
   /* 无障碍：那颗方框只有 13×13，够不着 24（WCAG 2.5.8）。label 包着方框和文字，
      整行都是命中区，所以把整行抬到 24 高，方框本身的大小不动。 */
-  .api-filter-builtin { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; font-size: 12.5px; color: #a1a1aa; }
+  .api-filter-builtin { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; font-size: var(--fs-sm); color: #a1a1aa; }
   .api-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 8px; max-height: 272px; overflow: auto; }
   .api-card { display: flex; align-items: center; gap: 10px; padding: 10px 12px; text-align: left; border: 1px solid #2a2a30; border-radius: 10px; background: #17171b; color: #e6e6ea; cursor: pointer; }
   .api-card:hover:not(:disabled) { border-color: #3f3f46; }
@@ -402,7 +402,7 @@
   .api-avatar { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: #26262c; font-size: 11px; font-weight: 600; color: #d4d4d8; flex: none; }
   .api-card-body { display: grid; gap: 2px; min-width: 0; }
   .api-card-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .api-card-state { font-size: 11.5px; color: #fbbf24; }
+  .api-card-state { font-size: var(--fs-xs); color: #fbbf24; }
   .api-card-set { color: #4ade80; }
   .api-key-section { display: grid; gap: 6px; padding-top: 12px; border-top: 1px solid rgb(255 255 255 / 7%); }
   .api-key-title { margin: 0; font-size: 13px; font-weight: 600; color: #e4e4e7; }
@@ -410,7 +410,7 @@
   .api-legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .api-provider-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
   .api-provider-name { font-size: 14px; font-weight: 600; color: #fafafa; }
-  .api-provider-badge { padding: 2px 8px; border-radius: 999px; font-size: 11.5px; color: #fbbf24; background: rgb(251 191 36 / 12%); }
+  .api-provider-badge { padding: 2px 8px; border-radius: 999px; font-size: var(--fs-xs); color: #fbbf24; background: rgb(251 191 36 / 12%); }
   .api-provider-set { color: #4ade80; background: rgb(74 222 128 / 12%); }
   .api-provider-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
   .api-help { margin-bottom: 4px; font-size: 12px; color: #a1a1aa; }
@@ -426,7 +426,7 @@
   input:not([type=checkbox]) { display: block; width: 100%; margin-top: 6px; padding: 9px 12px; color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 6px; }
   button:disabled { opacity: .5; }
   .model-summary { cursor: pointer; }
-  .model-confirm { display: flex; align-items: center; gap: 10px; margin-top: 16px; font-size: 12.5px; color: #b8b8c3; flex-wrap: wrap; }
+  .model-confirm { display: flex; align-items: center; gap: 10px; margin-top: 16px; font-size: var(--fs-sm); color: #b8b8c3; flex-wrap: wrap; }
   .model-error { margin-top: 14px; font-size: 13px; color: #fb7185; }
   .model-notice { margin-top: 14px; font-size: 13px; color: #a1a1aa; }
   @media (max-width: 860px) { .settings-model-body { padding: 16px; } }

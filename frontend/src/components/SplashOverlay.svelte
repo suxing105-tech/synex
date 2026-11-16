@@ -252,7 +252,7 @@
     background: #1c1c20;
     color: #dcdce0;
     font: inherit;
-    font-size: 12.5px;
+    font-size: var(--fs-sm);
     cursor: pointer;
     transition: background-color 140ms ease, border-color 140ms ease;
   }

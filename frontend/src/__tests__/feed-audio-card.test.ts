@@ -41,7 +41,11 @@ const AUDIO = {
   duration_seconds: 42,
   width: null,
   height: null,
-  mtime: 1700000000,
+  // 2023-11-15 本地正午。原来这里写死 1700000000（= UTC 2023-11-14T22:13），而页脚那个日期是按
+  // 本地日历读的，于是下面三条断言只在东八区的机器上成立：换到别的时区整体差一天（这台是
+  // America/Los_Angeles，量出来是 23/11/14）。取本地正午，任何时区都落在 11-15 那天，
+  // 断言里的字面量一个字没动——要钉的是「页脚摆的是这条素材的日期」，不是作者那台机器的钟。
+  mtime: Math.floor(new Date(2023, 10, 15, 12, 0, 0).getTime() / 1000),
 };
 
 function audioItem(): MediaFeedItem {

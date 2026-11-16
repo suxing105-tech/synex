@@ -374,7 +374,7 @@
   onpointercancel={cancelDrag} onblur={cancelDrag}
   onkeydown={(e) => { if (e.key === 'Escape') { renameFor = null; newFolderFor = null; cancelDrag(); closeAll(); } }} />
 
-<div class="px-[14px] pt-[14px] pb-[8px] flex items-center justify-between">
+<div class="px-3 pt-3 pb-2 flex items-center justify-between">
   <h3 class="folder-title">文件夹</h3>
   <button class="collapse-sidebar" onclick={oncollapse} title="收起左侧栏" aria-label="收起左侧栏">
     <Icon name="panel-left-collapse" size={20} />
@@ -552,7 +552,7 @@
     class:drop-before={drop?.id === folder.id && drop.position === 'before'}
     class:drop-after={drop?.id === folder.id && drop.position === 'after'}
     data-folder-id={folder.id}
-    style="margin-left: {depth * 14}px"
+    style="margin-left: {depth * 12}px"
     role="button" tabindex="0"
     aria-label={folder.name}
     aria-expanded={folder.children.length ? !collapsed.has(folder.id) : undefined}
@@ -604,7 +604,7 @@
 {/snippet}
 
 {#snippet newFolderInput(depth: number)}
-  <div class="folder-item" style="margin-left: {depth * 14}px" onclick={(e) => e.stopPropagation()} role="presentation">
+  <div class="folder-item" style="margin-left: {depth * 12}px" onclick={(e) => e.stopPropagation()} role="presentation">
     <span class="folder-caret"></span><Icon name="folder-solid" size={14} />
     <input class="folder-name-input" aria-label="新建文件夹名称" bind:value={newFolderName}
       maxlength={64} readonly={saving} use:focusRename onblur={submitNewFolder}
@@ -622,16 +622,16 @@
 
 <style>
   .external-hover { background: #f24e4e15; }
-  .external-drop-status { position: sticky; top: 0; z-index: 2; padding: 12px 8px; background: #303034; color: #eee; font-size: var(--fs-xs); border-radius: 6px; }
+  .external-drop-status { position: sticky; top: 0; z-index: 2; padding: var(--sp-3) var(--sp-2); background: #303034; color: #eee; font-size: var(--fs-xs); border-radius: 6px; }
   :global(.folder-item.drop-inside), .root-drop { background: #f24e4e33; outline: 1px solid #f24e4e; }
   :global(.folder-item) {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: var(--sp-2);
     /* 上下内边距 6→4：那一行里最高的子元素是 .menu-btn 24 高的命中区（WCAG 2.5.8），
        24 + 4×2 = 32，行高正好还是原来那把尺子上的 --ctl-md 32；不改这里会被撑成 36 */
-    padding: 4px 10px;
-    margin-bottom: 2px;
+    padding: var(--sp-1) var(--sp-3);
+    margin-bottom: var(--sp-05);
     min-height: 32px;
     transition: background 120ms, color 120ms;
     border-radius: 8px;
@@ -683,7 +683,7 @@
     text-align: right;
     font-variant-numeric: tabular-nums;
     font-size: var(--fs-2xs);
-    padding: 1px 6px;
+    padding: 1px var(--sp-2);
     border-radius: 7px;
     background: #ffffff0a;
     color: var(--text-3);
@@ -701,7 +701,7 @@
     border: none;
     color: var(--text-3);
     cursor: pointer;
-    padding: 1px 6px;
+    padding: 1px var(--sp-2);
     border-radius: 4px;
     font-size: var(--fs-sm);
     /* 无障碍：命中区 24 高（WCAG 2.5.8）。上面 .folder-item 的上下内边距已经从 6 收到 4，
@@ -740,7 +740,7 @@
   }
   /* 三个分组标题（系统 / 来源目录 / 我的文件夹）= 侧栏骨架，比素材行更抢眼 */
   /* 启动期骨架：三条错开的等待条 + 计数等待态 */
-  .tree-skeleton { display: flex; flex-direction: column; gap: 7px; padding: 5px 12px 10px; }
+  .tree-skeleton { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-1) var(--sp-3) var(--sp-3); }
   .ts-row {
     display: block; height: 12px; border-radius: 4px; background: #1f1f23;
     animation: ts-in 260ms ease-out both;
@@ -762,8 +762,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    padding: 15px 10px 6px;
+    gap: var(--sp-2);
+    padding: var(--sp-4) var(--sp-3) var(--sp-2);
     border-radius: 8px;
   }
   .folder-group {
@@ -772,7 +772,7 @@
     color: #e2e2e8;
   }
   /* 第二条起的分组加一条极淡分隔线，滚动时也能看出分段 */
-  .folder-group-rule { margin-top: 8px; border-top: 1px solid #ffffff0d; }
+  .folder-group-rule { margin-top: var(--sp-2); border-top: 1px solid #ffffff0d; }
   .group-add {
     display: inline-flex;
     align-items: center;
@@ -801,9 +801,9 @@
   :global(.folder-item.dragging) { opacity: .45; cursor: grabbing; }
   :global(.folder-item.drop-before) { box-shadow: 0 -2px #f24e4e; }
   :global(.folder-item.drop-after) { box-shadow: 0 2px #f24e4e; }
-  .drag-hint { position: fixed; bottom: 24px; left: 20px; z-index: 80; pointer-events: none; padding: 10px 14px; border-radius: 8px; background: #333338; color: #eee; font-size: var(--fs-xs); box-shadow: 0 6px 24px #0005; }
-  .collapse-sidebar { border: 0; background: transparent; color: #888; padding: 4px; cursor: pointer; outline: none; box-shadow: none; }
+  .drag-hint { position: fixed; bottom: 24px; left: 20px; z-index: 80; pointer-events: none; padding: var(--sp-3) var(--sp-4); border-radius: 8px; background: #333338; color: #eee; font-size: var(--fs-xs); box-shadow: 0 6px 24px #0005; }
+  .collapse-sidebar { border: 0; background: transparent; color: #888; padding: var(--sp-1); cursor: pointer; outline: none; box-shadow: none; }
   .collapse-sidebar:hover, .collapse-sidebar:focus-visible { color: #eee; background: transparent; border: 0; outline: none; box-shadow: none; }
-  .folder-name-input { flex: 1; min-width: 0; width: 0; padding: 2px 6px; border: 1px solid #4a4a52; border-radius: 6px; background: #151518; color: #eee; font: inherit; outline: none; user-select: text; }
+  .folder-name-input { flex: 1; min-width: 0; width: 0; padding: var(--sp-05) var(--sp-2); border: 1px solid #4a4a52; border-radius: 6px; background: #151518; color: #eee; font: inherit; outline: none; user-select: text; }
   .folder-name-input:focus { border-color: #f24e4e; }
 </style>

@@ -64,15 +64,15 @@
   .type-chips {
     display: inline-flex;
     flex-wrap: wrap;
-    gap: 2px;
+    gap: var(--sp-05);
     min-width: 0;
-    padding: 2px;
+    padding: var(--sp-05);
     border: 1px solid var(--line);
     border-radius: var(--r-1);
     background: var(--ink-2);
   }
   .chip {
-    display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px;
+    display: inline-flex; align-items: center; gap: var(--sp-1); height: 24px; padding: 0 var(--sp-2);
     border: 0; border-radius: 4px; background: transparent; color: var(--text-2);
     font-size: var(--fs-2xs); cursor: pointer; white-space: nowrap;
     transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;

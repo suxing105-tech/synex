@@ -117,16 +117,16 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
+    gap: var(--sp-2);
     pointer-events: none;
   }
   .toast-pill {
     pointer-events: auto;
     display: inline-flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--sp-3);
     max-width: min(92vw, 620px);
-    padding: 7px 8px 7px 14px;
+    padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);
     border-radius: 999px;
     background: #232326;
     border: 1px solid #3a3a40;
@@ -139,7 +139,7 @@
   .pill-action {
     flex: none;
     height: 26px;
-    padding: 0 12px;
+    padding: 0 var(--sp-3);
     border-radius: 999px;
     border: 1px solid #4a4a52;
     background: transparent;

@@ -48,7 +48,7 @@ import Icon from "./Icon.svelte";
 
 <style>
   .desktop-titlebar { position: fixed; top: 0; left: 0; right: 0; height: var(--desktop-titlebar-height, 28px); display: flex; align-items: stretch; background: #202020; color: #e8e8e8; border-bottom: 1px solid #2e2e33; z-index: 200; user-select: none; }
-  .titlebar-drag { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 0 18px; }
+  .titlebar-drag { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-3); padding: 0 var(--sp-5); }
   .titlebar-drag img, .titlebar-drag span { pointer-events: none; }
   .titlebar-drag img { object-fit: contain; }
   .titlebar-drag span { font-size: var(--fs-base); font-weight: 500; }
@@ -57,7 +57,7 @@ import Icon from "./Icon.svelte";
   .is-booting { background: transparent; border-bottom-color: transparent; }
   .is-booting .titlebar-drag img, .is-booting .titlebar-drag span { opacity: 0; }
 
-  .compact .titlebar-drag { gap: 8px; padding-inline: 12px; }
+  .compact .titlebar-drag { gap: var(--sp-2); padding-inline: var(--sp-3); }
   .compact .titlebar-drag img { width: 16px; height: 16px; }
   .compact .titlebar-drag span { font-size: var(--fs-xs); }
   .window-controls { display: flex; flex-shrink: 0; }

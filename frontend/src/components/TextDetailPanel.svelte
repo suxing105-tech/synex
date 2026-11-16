@@ -133,11 +133,11 @@
         <button type="button" class="dock-btn hover:bg-surface-3 transition-colors" title="更多操作" aria-label="更多操作" aria-haspopup="menu" aria-expanded={menuOpen} onclick={() => (menuOpen = !menuOpen)}>⋯</button>
         {#if menuOpen}
           <div class="absolute right-4 top-full z-20 mt-1 min-w-[150px] rounded-md border border-border bg-surface-2 shadow-lg py-1 text-xs" role="menu" aria-label="文本更多操作">
-            <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={startRename}>重命名</button>
-            <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={() => void copyFile()}>复制文本文件</button>
-            <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={() => void copyFull()}>复制全文</button>
-            <button type="button" class="w-full px-3 py-1.5 text-left hover:bg-surface-3" role="menuitem" onclick={() => void reveal()}>文件位置</button>
-            <button type="button" class="w-full px-3 py-1.5 text-left text-danger hover:bg-surface-3" role="menuitem" onclick={() => { confirming = true; menuOpen = false; }}>移入回收站</button>
+            <button type="button" class="w-full px-3 py-2 text-left hover:bg-surface-3" role="menuitem" onclick={startRename}>重命名</button>
+            <button type="button" class="w-full px-3 py-2 text-left hover:bg-surface-3" role="menuitem" onclick={() => void copyFile()}>复制文本文件</button>
+            <button type="button" class="w-full px-3 py-2 text-left hover:bg-surface-3" role="menuitem" onclick={() => void copyFull()}>复制全文</button>
+            <button type="button" class="w-full px-3 py-2 text-left hover:bg-surface-3" role="menuitem" onclick={() => void reveal()}>文件位置</button>
+            <button type="button" class="w-full px-3 py-2 text-left text-danger hover:bg-surface-3" role="menuitem" onclick={() => { confirming = true; menuOpen = false; }}>移入回收站</button>
           </div>
         {/if}
       </div>
@@ -191,14 +191,14 @@
       <section>
         <h3 class="section-title mb-2">路径</h3>
         <div class="flex items-start gap-2">
-          <code class="flex-1 min-w-0 break-words font-mono text-2xs rounded-md border border-border bg-surface-2 p-2.5">{#each pathSegs as seg, i}{seg}{#if i !== pathSegs.length - 1}<wbr />{/if}{/each}</code>
+          <code class="flex-1 min-w-0 break-words font-mono text-2xs rounded-md border border-border bg-surface-2 p-3">{#each pathSegs as seg, i}{seg}{#if i !== pathSegs.length - 1}<wbr />{/if}{/each}</code>
           <button type="button" class="dock-btn hover:bg-surface-3 shrink-0" aria-label="复制路径" onclick={() => void copyText(it.path).then(ok => pushToast(ok ? "已复制路径" : "复制失败", { kind: ok ? "success" : "error" }))}>复制</button>
         </div>
       </section>
 
       <section>
         <h3 class="section-title mb-2">标签</h3>
-        <div class="flex flex-wrap gap-1.5">
+        <div class="flex flex-wrap gap-2">
           {#each it.tags as tag}
             <button type="button" class="px-2 py-0.5 rounded-full border border-border hover:bg-surface-3" onclick={() => searchTag(tag)}>{tag}</button>
           {/each}

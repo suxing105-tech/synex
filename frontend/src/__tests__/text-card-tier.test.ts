@@ -104,7 +104,7 @@ describe("文本详情栏的操作带：与媒体 tab 行同尺，标题拿回�
     const band = ruleBody(appCss, ".detail-text-actions") || "";
     expect(band).not.toBe("");
     expect(band).toContain("height: var(--ctl-lg)");
-    expect(band).toContain("padding: 0 16px");
+    expect(band).toContain("padding: 0 var(--sp-4)");
     expect(band).toContain("border-bottom: 1px solid var(--line)");
     // 页签那一行确实没了：留着这条，是为了防止哪天又冒出一份第二套 tab 尺
     expect(detailPanel).not.toContain('class="detail-tabs"');

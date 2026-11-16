@@ -169,7 +169,7 @@
   .fp-item {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--sp-2);
     font-size: var(--fs-sm);
     cursor: pointer;
     color: #e4e4e7;

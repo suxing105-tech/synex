@@ -80,7 +80,7 @@
         </div>
         <button
           type="button"
-          class="p-1.5 rounded-md hover:bg-surface-3 focus:outline-none focus:border-accent transition-colors"
+          class="p-2 rounded-md hover:bg-surface-3 focus:outline-none focus:border-accent transition-colors"
           title="关闭 (Esc)"
           aria-label="关闭"
           onclick={close}

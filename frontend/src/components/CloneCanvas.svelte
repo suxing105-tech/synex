@@ -234,7 +234,7 @@
 </div>
 
 <style>
-  .cc-root { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; width: 100%; }
+  .cc-root { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); min-width: 0; width: 100%; }
 
   /* 高度不在这里定：读弹窗 .cm-body 上那份 --cm-hero-h（自定义属性会继承下来）。这一格与
      展示图、等待台是轮流占的，各自写一个数就会在换状态时把输入卡顶一下、坠一下（1478x562 踩过）。
@@ -272,8 +272,8 @@
   }
   .cc-open {
     position: absolute; right: 8px; bottom: 8px; z-index: 2;
-    display: inline-flex; align-items: center; gap: 4px;
-    padding: 4px 8px; border: 0; border-radius: 999px;
+    display: inline-flex; align-items: center; gap: var(--sp-1);
+    padding: var(--sp-1) var(--sp-2); border: 0; border-radius: 999px;
     font-size: var(--fs-xs); color: #fafafa; background: rgb(0 0 0 / 62%);
     opacity: 0; transition: opacity 0.16s ease;
   }

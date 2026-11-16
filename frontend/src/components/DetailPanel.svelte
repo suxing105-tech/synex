@@ -363,7 +363,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
   {@const d = $selectedDetail}
   <div class="h-full flex flex-col overflow-hidden">
     <header class="detail-header sticky top-0 z-20 shrink-0 border-b border-border bg-surface-2 px-3 py-4">
-      <div class="flex items-center gap-2.5 min-w-0" data-menu-root>
+      <div class="flex items-center gap-3 min-w-0" data-menu-root>
         <button
           type="button"
           class="detail-thumb shrink-0 w-10 h-10 hover:bg-surface-3"
@@ -390,12 +390,12 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
           </div>
         </div>
         {#if d.kind === "video"}
-          <button type="button" class="icon-action p-1.5 rounded border border-border hover:bg-surface-3 transition-colors" title="播放视频" aria-label="播放视频" onclick={playVideo}>
+          <button type="button" class="icon-action p-2 rounded border border-border hover:bg-surface-3 transition-colors" title="播放视频" aria-label="播放视频" onclick={playVideo}>
             <Icon name="play" size={14} />
           </button>
         {/if}
         {#if d.kind === "audio"}
-          <button type="button" class="icon-action p-1.5 rounded border border-border hover:bg-surface-3 transition-colors" title={$playingAudio?.id === d.id ? "暂停音频" : "播放音频"} aria-label={$playingAudio?.id === d.id ? "暂停音频" : "播放音频"} onclick={toggleSelectedAudio}>
+          <button type="button" class="icon-action p-2 rounded border border-border hover:bg-surface-3 transition-colors" title={$playingAudio?.id === d.id ? "暂停音频" : "播放音频"} aria-label={$playingAudio?.id === d.id ? "暂停音频" : "播放音频"} onclick={toggleSelectedAudio}>
             <Icon name={$playingAudio?.id === d.id ? "pause" : "play"} size={14} />
           </button>
         {/if}
@@ -550,8 +550,8 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
     overflow-y: auto;
   }
   .menu-item {
-    width:100%; display:flex; align-items:center; gap:8px;
-    padding:6px 10px; text-align:left; font-size: var(--fs-xs);
+    width:100%; display:flex; align-items:center; gap:var(--sp-2);
+    padding:var(--sp-2) var(--sp-3); text-align:left; font-size: var(--fs-xs);
     color:var(--text-2); white-space:nowrap;
   }
   .menu-item:hover,
@@ -559,17 +559,17 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
 
   .detail-body { scrollbar-gutter:stable; }
   .workbench-section {
-    padding:10px 2px;
+    padding:var(--sp-3) var(--sp-05);
     border:0;
     border-radius:0;
     background:transparent;
   }
-  .prompt-stack { display:flex; flex-direction:column; gap:10px; }
+  .prompt-stack { display:flex; flex-direction:column; gap:var(--sp-3); }
   .prompt-stack :global(.reverse-panel),
   .prompt-stack :global(.rounded-lg.border) { margin-top:0; }
-  .workbench-disclosure { border-top:1px solid var(--line); margin-top:9px; padding-top:8px; }
+  .workbench-disclosure { border-top:1px solid var(--line); margin-top:var(--sp-2); padding-top:var(--sp-2); }
   .workbench-disclosure > summary {
-    display:flex; align-items:center; gap:8px; min-height:26px;
+    display:flex; align-items:center; gap:var(--sp-2); min-height:26px;
     cursor:pointer; list-style:none; color:var(--text-2); font-size: var(--fs-2xs);
   }
   .workbench-disclosure > summary::-webkit-details-marker { display:none; }
@@ -580,19 +580,19 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
   }
   .workbench-disclosure[open] > summary::before { color:var(--text-3); }
   .workbench-disclosure summary span { color:var(--text-3); font-family:var(--font-mono); }
-  .disclosure-content { padding-top:9px; }
-  .workflow-download-slot { margin-top:10px; }
+  .disclosure-content { padding-top:var(--sp-2); }
+  .workflow-download-slot { margin-top:var(--sp-3); }
   .queue-live-dot { width:7px; height:7px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px color-mix(in srgb, var(--accent) 70%, transparent); }
   @media (max-width: 390px) {
-    .detail-header { padding-inline:9px; }
-    .detail-body { padding-inline:9px; }
-    .workbench-section { padding:10px; }
+    .detail-header { padding-inline:var(--sp-2); }
+    .detail-body { padding-inline:var(--sp-2); }
+    .workbench-section { padding:var(--sp-3); }
   }
 
   /* 面板里的缩略图只借共用形状（圆角、无常态描边），hover 仍旧只改底色：
      详情面板的交互件统一「底色变化」是用户定过的规则，不吃主网格那圈描边。 */
   /* 启动期详情骨架：一个头块 + 两条文字 + 一块方形占位 */
-  .detail-skeleton { display: flex; flex-direction: column; gap: 10px; padding: 16px; }
+  .detail-skeleton { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); }
   .detail-skeleton span {
     display: block; border-radius: var(--r-1); background: var(--ink-2);
     animation: ds-in 260ms ease-out both;
@@ -600,7 +600,7 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
   }
   .ds-head { width: 55%; height: 14px; }
   .ds-line { width: 82%; height: 10px; }
-  .ds-block { width: 100%; height: 132px; margin-top: 6px; }
+  .ds-block { width: 100%; height: 132px; margin-top: var(--sp-2); }
   @keyframes ds-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
   @media (prefers-reduced-motion: reduce) {
     .detail-skeleton span { animation: none; opacity: 1; transform: none; }

@@ -84,7 +84,7 @@ it('角标的尺寸由页脚高度派生，位置是右下角，页脚让位公�
   expect(clone).toContain('right: 8px');
   expect(clone).toContain('max(4px, calc((var(--card-footer-h, 0px) - var(--clone-btn)) / 2))');
   // 名字要让开角标；音频卡上那颗播放角标删掉后，这条让位规矩只剩这一处
-  expect(clone).toContain('padding-right: calc(8px + var(--clone-btn) + 6px)');
+  expect(clone).toContain('padding-right: calc(var(--sp-2) + var(--clone-btn) + var(--sp-2))');
   expect(feedCss).not.toContain('--audio-btn');
 });
 

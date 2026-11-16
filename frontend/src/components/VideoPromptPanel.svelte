@@ -542,7 +542,7 @@
                 <button class="vp-button" disabled={running} onclick={() => generate([unit.index], [tab])}>重试本段</button>
               </div>
             {:else if record}
-              <div class="space-y-1.5">
+              <div class="space-y-2">
                 {#if viewing}
                   <div class="flex items-center gap-2 flex-wrap text-2xs text-amber-400">
                     <span>
@@ -693,17 +693,17 @@
 
 <style>
   .vp-field {
-    display: block; width: 100%; margin-top: 4px; padding: 6px 8px; font-size: var(--fs-2xs);
+    display: block; width: 100%; margin-top: var(--sp-1); padding: var(--sp-2) var(--sp-2); font-size: var(--fs-2xs);
     color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 5px;
   }
   /* 与标签同行时去掉 margin-top 与 100% 宽，否则"H3 模式"会被挤成两行 */
   .vp-field-inline { display: inline-block; width: auto; margin-top: 0; }
   .vp-label { font-size: var(--fs-2xs); color: #a1a1aa; flex: none; white-space: nowrap; }
-  .vp-version { font-size: var(--fs-2xs); padding: 4px 6px; border: 1px solid #3f3f46; border-radius: 5px; background: #18181b; }
+  .vp-version { font-size: var(--fs-2xs); padding: var(--sp-1) var(--sp-2); border: 1px solid #3f3f46; border-radius: 5px; background: #18181b; }
   .vp-version[aria-pressed="true"] { border-color: #f24e4e; color: #fda4a4; }
   .vp-danger { color: var(--danger); border-color: rgb(var(--danger-rgb) / 45%); background: rgb(var(--danger-rgb) / 8%); }
   .vp-button {
-    font-size: var(--fs-2xs); padding: 5px 8px; border: 1px solid #3f3f46; border-radius: 5px; background: #202024;
+    font-size: var(--fs-2xs); padding: var(--sp-1) var(--sp-2); border: 1px solid #3f3f46; border-radius: 5px; background: #202024;
   }
   .vp-button:disabled { opacity: .5; cursor: default; }
   /* 正在跑的那颗按钮不变灰，反而亮起来：一眼看出"你点的这一下确实开始了"。 */
@@ -713,12 +713,12 @@
   .vp-primary:enabled:hover, .vp-primary:enabled:focus-visible {
     background-color: #f24e4e; color: #0e0e10; border-color: #f24e4e;
   }
-  .vp-tab { font-size: var(--fs-2xs); padding: 5px 10px; background: #202024; }
+  .vp-tab { font-size: var(--fs-2xs); padding: var(--sp-1) var(--sp-3); background: #202024; }
   .vp-tab[aria-pressed="true"] { background: #f24e4e; color: #0e0e10; }
   .vp-badge {
-    font-size: var(--fs-2xs); padding: 1px 6px; border-radius: 999px; border: 1px solid #3f3f46; color: #a1a1aa;
+    font-size: var(--fs-2xs); padding: 1px var(--sp-2); border-radius: 999px; border: 1px solid #3f3f46; color: #a1a1aa;
   }
-  .vp-translate { display: inline-flex; align-items: center; gap: 4px; }
+  .vp-translate { display: inline-flex; align-items: center; gap: var(--sp-1); }
   .vp-icon { width: 15px; height: 15px; flex: none; }
   .vp-warn { color: #fbbf24; border-color: #78500f; }
   /* H3 模式说明：一个问号 + 悬停浮层，四种模式各一行，不再占一整块正文 */
@@ -731,7 +731,7 @@
   .vp-help-button:hover, .vp-help-button:focus-visible { border-color: #f24e4e; color: #fda4a4; }
   .vp-help-card {
     position: absolute; top: calc(100% + 6px); right: 0; z-index: 40; width: 268px;
-    display: flex; flex-direction: column; gap: 6px; padding: 8px; background: #0e0e10;
+    display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2); background: #0e0e10;
     border: 1px solid #3f3f46; border-radius: 6px; box-shadow: 0 10px 28px rgba(0, 0, 0, .55);
     opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .12s ease;
   }
@@ -741,11 +741,11 @@
   .vp-help-row { display: flex; flex-direction: column; gap: 1px; font-size: var(--fs-2xs); line-height: var(--lh-ui); color: #a1a1aa; }
   .vp-help-row b { color: #e4e4e7; }
   .vp-help-note { font-size: var(--fs-2xs); line-height: var(--lh-ui); color: #71717a; }
-  .vp-frames { border: 1px solid #2e2e33; border-radius: 5px; background: #121215; padding: 6px 8px; }
+  .vp-frames { border: 1px solid #2e2e33; border-radius: 5px; background: #121215; padding: var(--sp-2) var(--sp-2); }
   .vp-frames-summary { font-size: var(--fs-2xs); color: #a1a1aa; cursor: pointer; user-select: none; }
-  .vp-ref { display: flex; flex-direction: column; gap: 4px; }
+  .vp-ref { display: flex; flex-direction: column; gap: var(--sp-1); }
   .vp-ref-label {
-    font-size: var(--fs-2xs); padding: 1px 6px; border-radius: 4px; color: #fbbf24;
+    font-size: var(--fs-2xs); padding: 1px var(--sp-2); border-radius: 4px; color: #fbbf24;
     background: #1f1a10; border: 1px solid #4a3a12; width: fit-content;
   }
   /* 生成中的反馈：转圈 + 走秒 + 进度条 + 骨架线。一次模型调用没有可上报的百分比，
@@ -758,10 +758,10 @@
   .vp-spin-sm { width: 10px; height: 10px; border-width: 1.5px; }
   @keyframes vp-spin { to { transform: rotate(360deg); } }
   .vp-progress {
-    display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 6px;
+    display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2); border-radius: 6px;
     border: 1px solid #5d3a1a; background: linear-gradient(180deg, #1c1510, #14110f);
   }
-  .vp-progress-top { display: flex; align-items: center; gap: 6px; }
+  .vp-progress-top { display: flex; align-items: center; gap: var(--sp-2); }
   .vp-progress-title { font-size: var(--fs-2xs); font-weight: 600; color: #fda4a4; }
   .vp-progress-time { margin-left: auto; font-size: var(--fs-2xs); color: #a1a1aa; font-variant-numeric: tabular-nums; }
   .vp-progress-note { font-size: var(--fs-2xs); line-height: var(--lh-ui); color: #a1a1aa; }
@@ -772,13 +772,13 @@
     animation: vp-sweep 1.2s ease-in-out infinite;
   }
   @keyframes vp-sweep { 0% { transform: translateX(-110%); } 100% { transform: translateX(320%); } }
-  .vp-skeleton { display: flex; flex-direction: column; gap: 4px; }
+  .vp-skeleton { display: flex; flex-direction: column; gap: var(--sp-1); }
   .vp-skeleton i {
     height: 8px; border-radius: 3px; background: linear-gradient(90deg, #1d1d21 0%, #2e2e36 50%, #1d1d21 100%);
     background-size: 200% 100%; animation: vp-shimmer 1.4s linear infinite;
   }
   @keyframes vp-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
-  .vp-queue { display: flex; align-items: center; gap: 6px; flex: 1 1 160px; min-width: 150px; }
+  .vp-queue { display: flex; align-items: center; gap: var(--sp-2); flex: 1 1 160px; min-width: 150px; }
   .vp-queue-text { font-size: var(--fs-2xs); color: #fda4a4; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .vp-queue-bar { flex: 1; height: 3px; border-radius: 999px; background: #2a2a30; overflow: hidden; }
   .vp-queue-bar i { display: block; height: 100%; background: #f24e4e; transition: width .25s ease; }
@@ -790,7 +790,7 @@
   .vp-body {
     font-family: var(--font-mono);
     font-size: var(--fs-xs); line-height: var(--lh-read); white-space: pre-wrap; word-break: break-word;
-    color: #e4e4e7; background: #121215; border: 1px solid #2e2e33; border-radius: 5px; padding: 8px;
+    color: #e4e4e7; background: #121215; border: 1px solid #2e2e33; border-radius: 5px; padding: var(--sp-2);
     overflow-y: auto;
   }
 </style>

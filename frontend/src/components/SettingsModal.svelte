@@ -654,50 +654,50 @@ import Icon from "./Icon.svelte";
 
 <style>
   .settings-shell { display: grid; grid-template-columns: 264px minmax(0, 1fr); overflow: hidden; color: #e4e4e7; background: #0e0e10; }
-  .settings-rail { display: flex; flex-direction: column; min-height: 0; padding: 18px 12px 16px; background: #16161a; border-right: 1px solid #232327; }
-  .settings-rail-head { display: flex; align-items: center; gap: 10px; padding: 2px 4px 14px; }
+  .settings-rail { display: flex; flex-direction: column; min-height: 0; padding: var(--sp-5) var(--sp-3) var(--sp-4); background: #16161a; border-right: 1px solid #232327; }
+  .settings-rail-head { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-05) var(--sp-1) var(--sp-4); }
   .settings-rail-head h2 { font-size: var(--fs-md); font-weight: 600; }
   .settings-return { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; color: #a1a1aa; }
-  .settings-search { position: relative; display: flex; align-items: center; margin: 0 4px 10px; }
+  .settings-search { position: relative; display: flex; align-items: center; margin: 0 var(--sp-1) var(--sp-3); }
   .settings-search > :global(svg) { position: absolute; left: 11px; color: var(--text-3); pointer-events: none; }
-  .settings-search input { width: 100%; height: 34px; padding: 0 30px 0 32px; font-size: var(--fs-sm); color: #e4e4e7; background: #101013; border: 1px solid #2b2b30; border-radius: 8px; }
+  .settings-search input { width: 100%; height: 34px; padding: 0 var(--sp-8) 0 var(--sp-8); font-size: var(--fs-sm); color: #e4e4e7; background: #101013; border: 1px solid #2b2b30; border-radius: 8px; }
   .settings-search input::placeholder { color: var(--text-3); }
   .settings-search input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
   .settings-search input:focus { border-color: #3f3f46; background: #191920; outline: none; }
   .settings-search-clear { position: absolute; right: 5px; display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 6px; color: #8a8a8e; }
-  .settings-nav { display: flex; flex-direction: column; gap: 2px; min-height: 0; overflow-y: auto; }
-  .settings-nav-group { margin: 14px 0 4px; padding: 0 10px; font-size: var(--fs-2xs); letter-spacing: var(--track-badge); color: var(--text-3); }
-  .settings-nav-group:first-child { margin-top: 2px; }
-  .settings-nav-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border-radius: 8px; text-align: left; font-size: var(--fs-sm); line-height: var(--lh-label); color: #a1a1aa; }
+  .settings-nav { display: flex; flex-direction: column; gap: var(--sp-05); min-height: 0; overflow-y: auto; }
+  .settings-nav-group { margin: var(--sp-4) 0 var(--sp-1); padding: 0 var(--sp-3); font-size: var(--fs-2xs); letter-spacing: var(--track-badge); color: var(--text-3); }
+  .settings-nav-group:first-child { margin-top: var(--sp-05); }
+  .settings-nav-item { display: flex; align-items: center; gap: var(--sp-3); width: 100%; padding: var(--sp-2) var(--sp-3); border-radius: 8px; text-align: left; font-size: var(--fs-sm); line-height: var(--lh-label); color: #a1a1aa; }
   .settings-nav-item :global(svg) { flex-shrink: 0; opacity: .7; }
   .settings-nav-item:hover { color: #e4e4e7; }
   .settings-nav-item[aria-current="location"] { color: #fafafa; background: #27272a; }
   .settings-nav-item[aria-current="location"] :global(svg) { color: var(--accent); opacity: 1; }
-  .settings-nav-empty { padding: 10px; font-size: var(--fs-sm); color: #71717a; }
+  .settings-nav-empty { padding: var(--sp-3); font-size: var(--fs-sm); color: #71717a; }
   .settings-nav-item:focus-visible { outline: none; background: #323237; text-decoration: underline; text-underline-offset: 4px; }
   .settings-content { min-height: 0; background: #0e0e10; overscroll-behavior: contain; scrollbar-gutter: stable; }
   /* 内容宽度跟着窗口长：窄时贴满，宽时最多加到 1440px 再居中留白，左右内边距按视口同步缩放。
      以前固定 820px，窗口最大化后两侧各空 700px 以上，看起来像页面坏了一半。 */
-  .settings-page { width: min(100%, 1440px); padding: 40px clamp(22px, 4.4vw, 84px) 120px; margin: 0 auto; }
-  .settings-section { padding-bottom: 34px; margin-bottom: 30px; border-bottom: 1px solid #232327; scroll-margin-top: 28px; }
+  .settings-page { width: min(100%, 1440px); padding: 40px clamp(var(--sp-6), 4.4vw, 84px) 120px; margin: 0 auto; }
+  .settings-section { padding-bottom: var(--sp-8); margin-bottom: var(--sp-8); border-bottom: 1px solid #232327; scroll-margin-top: 28px; }
   .settings-section:last-child { padding-bottom: 0; margin-bottom: 0; border-bottom: 0; }
-  .settings-section h3 { margin-bottom: 6px; font-size: var(--fs-lg); font-weight: 600; }
-  .section-description { margin-bottom: 22px; max-width: 88ch; font-size: var(--fs-sm); line-height: var(--lh-read); color: #85858f; }
-  .settings-load-state { display: flex; align-items: center; gap: 12px; padding: 18px 20px; font-size: var(--fs-sm); color: #a1a1aa; flex-wrap: wrap; }
-  .about-contacts { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 16px; }
+  .settings-section h3 { margin-bottom: var(--sp-2); font-size: var(--fs-lg); font-weight: 600; }
+  .section-description { margin-bottom: var(--sp-6); max-width: 88ch; font-size: var(--fs-sm); line-height: var(--lh-read); color: #85858f; }
+  .settings-load-state { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-5) var(--sp-5); font-size: var(--fs-sm); color: #a1a1aa; flex-wrap: wrap; }
+  .about-contacts { display: flex; align-items: flex-start; flex-wrap: wrap; gap: var(--sp-4); }
   /* 缩略图也要能直接扫出来，所以给到 168px；点开还有大图。 */
-  .about-qr { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 190px; padding: 10px; border-radius: 10px; background: #101013; font-size: var(--fs-xs); line-height: var(--lh-ui); color: #a1a1aa; }
+  .about-qr { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); width: 190px; padding: var(--sp-3); border-radius: 10px; background: #101013; font-size: var(--fs-xs); line-height: var(--lh-ui); color: #a1a1aa; }
   .about-qr img { width: 168px; height: auto; border-radius: 6px; background: #fafafa; }
   .about-contacts .settings-hint { flex: 1 1 220px; }
-  .about-zoom { position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 32px; background: rgba(8, 8, 10, .88); }
-  .about-zoom-figure { display: flex; flex-direction: column; align-items: center; gap: 14px; margin: 0; }
+  .about-zoom { position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-4); padding: var(--sp-8); background: rgba(8, 8, 10, .88); }
+  .about-zoom-figure { display: flex; flex-direction: column; align-items: center; gap: var(--sp-4); margin: 0; }
   .about-zoom img { max-width: min(90vw, 440px); max-height: 62%; border-radius: 10px; background: #fafafa; }
   .about-zoom figcaption { font-size: var(--fs-sm); color: #a1a1aa; }
-  .comfyui-found { display: flex; flex-direction: column; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
-  .comfyui-found li { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px; background: #101013; font-size: var(--fs-sm); }
+  .comfyui-found { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-3) 0 0; padding: 0; list-style: none; }
+  .comfyui-found li { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: 10px; background: #101013; font-size: var(--fs-sm); }
   .comfyui-found-url { flex: 1 1 auto; font-family: var(--font-mono); color: #e4e4e7; }
   .comfyui-found-version { font-size: var(--fs-xs); color: #85858f; }
-  .comfyui-notice { margin: 10px 0 0; font-size: var(--fs-xs); line-height: var(--lh-read); color: #a1a1aa; }
+  .comfyui-notice { margin: var(--sp-3) 0 0; font-size: var(--fs-xs); line-height: var(--lh-read); color: #a1a1aa; }
   @media (max-width: 1180px) {
     .settings-shell { grid-template-columns: 228px minmax(0, 1fr); }
   }
@@ -706,7 +706,7 @@ import Icon from "./Icon.svelte";
   }
   @media (max-width: 640px) {
     .settings-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-    .settings-rail { padding: 12px 12px 8px; border-right: 0; border-bottom: 1px solid #232327; }
+    .settings-rail { padding: var(--sp-3) var(--sp-3) var(--sp-2); border-right: 0; border-bottom: 1px solid #232327; }
     .settings-nav { flex-direction: row; overflow-x: auto; }
     .settings-nav-item { flex-shrink: 0; }
     .settings-nav-group { display: none; }

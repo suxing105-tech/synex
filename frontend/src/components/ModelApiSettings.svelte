@@ -383,57 +383,57 @@
 <style>
   .model-settings { width: 100%; }
   /* 卡片内表单自己的内边距：保存条挂在卡片底部时要通到边，所以不能给整张卡片加 padding。 */
-  .settings-model-body { padding: 20px; }
+  .settings-model-body { padding: var(--sp-5); }
   /* 竖排表单铺满卡片：右边缘要和卡片、右下角保存条对齐（固定宽度会在右边留一条空白）。 */
   .model-settings fieldset { max-width: none; }
   /* 服务商卡片区：一厂商一卡，状态写在卡上。清单长度不由我们决定，所以给它一个会滚的筐。 */
-  .api-filter { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-  .api-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .api-filter { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
+  .api-tabs { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   /* 无障碍：那颗方框只有 13×13，够不着 24（WCAG 2.5.8）。label 包着方框和文字，
      整行都是命中区，所以把整行抬到 24 高，方框本身的大小不动。 */
-  .api-filter-builtin { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; font-size: var(--fs-sm); color: #a1a1aa; }
-  .api-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 8px; max-height: 272px; overflow: auto; }
-  .api-card { display: flex; align-items: center; gap: 10px; padding: 10px 12px; text-align: left; border: 1px solid #2a2a30; border-radius: 10px; background: #17171b; color: #e6e6ea; cursor: pointer; }
+  .api-filter-builtin { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 24px; font-size: var(--fs-sm); color: #a1a1aa; }
+  .api-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: var(--sp-2); max-height: 272px; overflow: auto; }
+  .api-card { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-3); text-align: left; border: 1px solid #2a2a30; border-radius: 10px; background: #17171b; color: #e6e6ea; cursor: pointer; }
   .api-card:hover:not(:disabled) { border-color: #3f3f46; }
   /* 必须自己写 color：全局 .fill-interactions button[aria-pressed="true"] 会把选中按钮的字涂成
      近黑（那是给红底胶囊用的），它只覆盖背景不覆盖文字，选中那张卡的名字就会糊在深红底上。 */
   .api-card[aria-pressed="true"] { border-color: #ef4444; background: #1d1416; color: #fafafa; }
   .api-card:disabled { opacity: .55; cursor: default; }
   .api-avatar { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: #26262c; font-size: var(--fs-2xs); font-weight: 600; color: #d4d4d8; flex: none; }
-  .api-card-body { display: grid; gap: 2px; min-width: 0; }
+  .api-card-body { display: grid; gap: var(--sp-05); min-width: 0; }
   .api-card-name { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .api-card-state { font-size: var(--fs-xs); color: #fbbf24; }
   .api-card-set { color: #4ade80; }
-  .api-key-section { display: grid; gap: 6px; padding-top: 12px; border-top: 1px solid rgb(255 255 255 / 7%); }
+  .api-key-section { display: grid; gap: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid rgb(255 255 255 / 7%); }
   .api-key-title { margin: 0; font-size: var(--fs-sm); font-weight: 600; color: #e4e4e7; }
   .api-key-desc { margin: 0; font-size: var(--fs-xs); line-height: var(--lh-read); color: #8b8b94; }
   .api-legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .api-provider-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+  .api-provider-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-3); margin-bottom: var(--sp-3); }
   .api-provider-name { font-size: var(--fs-base); font-weight: 600; color: #fafafa; }
-  .api-provider-badge { padding: 2px 8px; border-radius: 999px; font-size: var(--fs-xs); color: #fbbf24; background: rgb(251 191 36 / 12%); }
+  .api-provider-badge { padding: var(--sp-05) var(--sp-2); border-radius: 999px; font-size: var(--fs-xs); color: #fbbf24; background: rgb(251 191 36 / 12%); }
   .api-provider-set { color: #4ade80; background: rgb(74 222 128 / 12%); }
-  .api-provider-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
-  .api-help { margin-bottom: 4px; font-size: var(--fs-xs); color: #a1a1aa; }
+  .api-provider-actions { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; flex-wrap: wrap; }
+  .api-help { margin-bottom: var(--sp-1); font-size: var(--fs-xs); color: #a1a1aa; }
   .api-help summary { cursor: pointer; color: #93c5fd; }
-  .api-help ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; line-height: var(--lh-read); }
+  .api-help ul { margin: var(--sp-2) 0 0; padding-left: var(--sp-5); display: grid; gap: var(--sp-1); line-height: var(--lh-read); }
   .api-console { color: #93c5fd; text-decoration: none; }
-  fieldset { margin-top: 18px; }
+  fieldset { margin-top: var(--sp-5); }
   fieldset:first-child { margin-top: 0; }
-  legend { margin-bottom: 10px; font-size: var(--fs-base); font-weight: 500; color: #e6e6ea; }
+  legend { margin-bottom: var(--sp-3); font-size: var(--fs-base); font-weight: 500; color: #e6e6ea; }
   label { display: block; font-size: var(--fs-sm); color: #b8b8c3; }
   /* 这一页既没有长文本框（指令都在「反推指令」那一页），也没有下拉了（模型不在这里挑），
      所以选择器里不留 textarea 和 select。 */
-  input:not([type=checkbox]) { display: block; width: 100%; margin-top: 6px; padding: 9px 12px; color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 6px; }
+  input:not([type=checkbox]) { display: block; width: 100%; margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3); color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 6px; }
   button:disabled { opacity: .5; }
   .model-summary { cursor: pointer; }
-  .model-confirm { display: flex; align-items: center; gap: 10px; margin-top: 16px; font-size: var(--fs-sm); color: #b8b8c3; flex-wrap: wrap; }
-  .model-error { margin-top: 14px; font-size: var(--fs-sm); color: #fb7185; }
-  .model-notice { margin-top: 14px; font-size: var(--fs-sm); color: #a1a1aa; }
-  @media (max-width: 860px) { .settings-model-body { padding: 16px; } }
+  .model-confirm { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-4); font-size: var(--fs-sm); color: #b8b8c3; flex-wrap: wrap; }
+  .model-error { margin-top: var(--sp-4); font-size: var(--fs-sm); color: #fb7185; }
+  .model-notice { margin-top: var(--sp-4); font-size: var(--fs-sm); color: #a1a1aa; }
+  @media (max-width: 860px) { .settings-model-body { padding: var(--sp-4); } }
   /* Key 那一格不能是 type=password：Chrome 把它当登录密码，先问你要不要存，下次再自动填一串点进来，
      看着就像「这格里存了一把看不见的 Key」（苏醒就是被这串点骗过一回，键盘删干净以为把 Key 清了）。
      打点交给 CSS，密码管理器就不认它；要删有「清除」那颗，不靠「把框清空」这个假动作。 */
-  .api-key-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  .api-key-row { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); }
   .api-key-row input { flex: 1; min-width: 0; margin-top: 0; }
   .api-key-row .api-key-clear { flex: none; }
   .secret { -webkit-text-security: disc; }

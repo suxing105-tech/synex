@@ -838,15 +838,15 @@
      上面，看着像在画遮罩，手一抖就是一次真跑图。7 压过弹窗里的全部，只把悬停放大那张 .cm-ref-zoom(9)
      让在外面：画遮罩时鼠标不碰参考图那一排，它本来也不会出现。 */
   .me {
-    position: absolute; inset: 0; z-index: 7; display: flex; flex-direction: column; gap: 8px;
-    padding: 12px 14px; background: var(--ink-0); color: var(--text-1);
+    position: absolute; inset: 0; z-index: 7; display: flex; flex-direction: column; gap: var(--sp-2);
+    padding: var(--sp-3) var(--sp-4); background: var(--ink-0); color: var(--text-1);
     font-size: var(--fs-sm); outline: none;
   }
-  .me-top { display: flex; flex-direction: column; gap: 4px; flex: none; }
-  .me-line { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
-  .me-what { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-base); font-weight: 600; }
+  .me-top { display: flex; flex-direction: column; gap: var(--sp-1); flex: none; }
+  .me-line { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; flex-wrap: wrap; }
+  .me-what { display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-base); font-weight: 600; }
   .me-mode {
-    padding: 2px 8px; border-radius: var(--r-pill); background: var(--ink-3);
+    padding: var(--sp-05) var(--sp-2); border-radius: var(--r-pill); background: var(--ink-3);
     color: var(--text-1); font-size: var(--fs-xs);
   }
   .me-prompt {
@@ -860,7 +860,7 @@
     margin: 0 auto; color: var(--text-2); font-size: var(--fs-xs);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .me-swatches { gap: 6px; }
+  .me-swatches { gap: var(--sp-2); }
   .me-swatch {
     width: 24px; height: 24px; padding: 0; border-radius: var(--r-pill);
     border: 1px solid var(--line); cursor: pointer;
@@ -897,12 +897,12 @@
   .me-load { color: var(--text-2); }
 
   .me-bar {
-    flex: none; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-    padding: 6px 0 0; border-top: 1px solid var(--line-soft);
+    flex: none; display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
+    padding: var(--sp-2) 0 0; border-top: 1px solid var(--line-soft);
   }
-  .me-group { display: inline-flex; align-items: center; gap: 4px; }
+  .me-group { display: inline-flex; align-items: center; gap: var(--sp-1); }
   .me-btn {
-    height: var(--ctl-sm); min-width: 24px; padding: 0 10px; border-radius: var(--r-1);
+    height: var(--ctl-sm); min-width: 24px; padding: 0 var(--sp-3); border-radius: var(--r-1);
     background: var(--ink-3); color: var(--text-1); font-size: var(--fs-sm);
     border: 1px solid transparent; cursor: pointer;
   }
@@ -912,7 +912,7 @@
   .me-btn-go { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
   .me-btn-go:hover { background: var(--accent-strong); }
   .me-zoom { min-width: 44px; text-align: center; color: var(--text-1); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
-  .me-slider { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-size: var(--fs-xs); }
+  .me-slider { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--text-2); font-size: var(--fs-xs); }
   .me-slider input { width: 96px; height: 24px; accent-color: var(--accent); }
   .me-slider b { min-width: 34px; color: var(--text-1); font-weight: 500; font-variant-numeric: tabular-nums; }
   .me-actions { margin-left: auto; }

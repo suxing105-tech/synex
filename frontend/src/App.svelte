@@ -384,8 +384,8 @@ import Icon from "./components/Icon.svelte";
 </div>
 
 <style>
-  .sidebar-actions { gap: 8px; }
-  .sidebar-actions.collapsed-actions { flex-direction: column-reverse; gap: 4px; }
+  .sidebar-actions { gap: var(--sp-2); }
+  .sidebar-actions.collapsed-actions { flex-direction: column-reverse; gap: var(--sp-1); }
   /* 收起时这一列底部的「设置」和「更新」要跟上面的导航图标同一副底框。两颗平时写死
      w-10 h-10（40），只有 .collapsed-actions 在场时才收到 --rail-btn，展开态不动。
      :global 是因为更新那颗在 SidebarUpdateButton 里，scoped 样式进不去别人的组件。 */
@@ -439,7 +439,7 @@ import Icon from "./components/Icon.svelte";
     z-index: 70;
     background: #f24e4e;
     color: #0e0e10;
-    padding: 8px 14px;
+    padding: var(--sp-2) var(--sp-4);
     border-radius: 999px;
     font-size: var(--fs-xs);
     font-weight: 500;

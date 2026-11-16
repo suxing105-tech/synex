@@ -134,7 +134,7 @@ if (location.origin === request.origin) {
       button.textContent = "\u2190 \u8fd4\u56de\u753b\u5e03";
       button.title = "\u56de\u5230 ComfyUI \u753b\u5e03\uff08Esc\uff09";
       button.style.cssText =
-        "position:fixed;left:12px;bottom:12px;z-index:2147483000;padding:6px 12px;border-radius:999px;" +
+        "position:fixed;left:12px;bottom:12px;z-index:2147483000;padding:8px 12px;border-radius:999px;" +
         "border:1px solid rgba(255,255,255,.22);background:rgba(18,18,20,.88);color:#f2f2f2;" +
         "font:600 12px/1 system-ui,-apple-system,Segoe UI,sans-serif;cursor:pointer;backdrop-filter:blur(6px);";
       button.addEventListener("click", function () {

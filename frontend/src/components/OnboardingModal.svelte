@@ -141,8 +141,8 @@
         </div>
       {/if}
       <div class="flex justify-between gap-2 mt-5">
-        <button class="text-xs px-3 py-1.5 rounded border border-border enabled:hover:bg-white/10 enabled:focus-visible:bg-white/10 transition-colors disabled:opacity-50" disabled={submitting} onclick={close}>{completed ? "完成" : "暂不导入"}</button>
-        <button class="text-sm px-4 py-1.5 rounded bg-accent text-bg font-medium disabled:opacity-50" disabled={busy || !path.trim()} onclick={startImport}>{submitting ? "导入中…" : "开始导入"}</button>
+        <button class="text-xs px-3 py-2 rounded border border-border enabled:hover:bg-white/10 enabled:focus-visible:bg-white/10 transition-colors disabled:opacity-50" disabled={submitting} onclick={close}>{completed ? "完成" : "暂不导入"}</button>
+        <button class="text-sm px-4 py-2 rounded bg-accent text-bg font-medium disabled:opacity-50" disabled={busy || !path.trim()} onclick={startImport}>{submitting ? "导入中…" : "开始导入"}</button>
       </div>
     </div>
   </div>

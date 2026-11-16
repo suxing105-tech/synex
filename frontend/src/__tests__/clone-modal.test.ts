@@ -645,7 +645,7 @@ it('这一层收进缩略图那一列：纯色底 + 一整块模块底，不再�
   expect(src).toMatch(/\.cm-panel:focus-within \{/);
   expect(src).not.toMatch(/\.cm-composer:focus-within \{/);
   // 撤的是外框，不是几何：钉住的坞 bottom:-20px 量的就是这里的下内边距
-  expect(panel).toMatch(/overflow:\s*auto;\s*padding:\s*20px 22px/);
+  expect(panel).toMatch(/overflow:\s*auto;\s*padding:\s*var\(--sp-5\) var\(--sp-6\)/);
   // 两侧栏还在外面可点：aria-modal 是句假话，撤；role=dialog 必须留着，全局快捷键判重认它
   const panelTag = /<div class="cm-panel"[^>]*>/.exec(src)?.[0] ?? '';
   expect(panelTag).not.toContain('aria-modal');
@@ -828,10 +828,10 @@ it('左右两栏：展示图归左栏、输入卡归右栏、弹窗放宽，卡�
   expect(dock).toMatch(/bottom:\s*-20px/);
   // 左右负 margin 只吃**卡片**的内边距（12px）：这一排住在卡里，不再横到弹窗整宽。
   // -22px 是这条还挂在框外、要横到弹窗整宽那个时代的数，回来一次就露一次「框里挂了块板」。
-  expect(dock).toMatch(/margin:\s*2px -12px 0/);
+  expect(dock).toMatch(/margin:\s*var\(--sp-05\) calc\(var\(--sp-3\) \* -1\) 0/);
   expect(dock).not.toMatch(/margin:[^;]*-22px/);
   // 卡自己的下内边距必须是 0：留着的这几 px 会留在钉住的条下面，字从缝里露出来。
-  expect(rule(".cm-composer {")).toMatch(/padding:\s*12px 12px 0/);
+  expect(rule(".cm-composer {")).toMatch(/padding:\s*var\(--sp-3\) var\(--sp-3\) 0/);
   // 卡不能 overflow:hidden（工作流弹层要往卡外冒），下圆角只能这条自己带：模块圆角 20px 减 1px 边框。
   expect(dock).toMatch(/border-radius:\s*0 0 19px 19px/);
   // 这条不再自己画框：上面加一条分隔线就把「一次输入」劈成两块（苏醒要的是一个圆角矩形）。
@@ -1143,12 +1143,12 @@ it('云端那一屏两列同一行：标签行左右各一格，服务商那颗�
   const head = css.slice(css.indexOf('<div class="cm-api">'), css.indexOf('<div class="cm-api-side">'));
   expect(head).toMatch(/<p class="cm-api-cap">服务商<\/p>\s*<span class="cm-api-cap cm-api-cap-void" aria-hidden="true"><\/span>/);
   // 标签与清单之间还是那 3px（左列自己的 gap 从此只管服务商与服务商之间），列距 10 不变
-  expect(css).toMatch(/\.cm-api\s*\{[^}]*gap: 3px 10px/);
+  expect(css).toMatch(/\.cm-api\s*\{[^}]*gap: 3px var\(--sp-3\)/);
   // 标签的左内边距 = 服务商行图标的左内边距（原来 6/8 差 2px，墨迹左沿 731 对不上 733）
-  expect(css).toMatch(/\.cm-api-cap\s*\{[^}]*padding: 0 8px/);
+  expect(css).toMatch(/\.cm-api-cap\s*\{[^}]*padding: 0 var\(--sp-2\)/);
   // 同一行高才有同一条中线：那颗走 --ctl-md 32（26 的图标 + 上下各 3），模型行走 .cm-wf 那套 8px 之外自己收 7
-  expect(css).toMatch(/\.cm-api-vendor\s*\{[^}]*min-height: var\(--ctl-md\)[^}]*padding: 3px 8px/);
-  expect(css).toMatch(/\.cm-wf\.cm-api-model\s*\{[^}]*align-items: flex-start[^}]*padding-top: 7px[^}]*padding-bottom: 7px/);
+  expect(css).toMatch(/\.cm-api-vendor\s*\{[^}]*min-height: var\(--ctl-md\)[^}]*padding: 3px var\(--sp-2\)/);
+  expect(css).toMatch(/\.cm-wf\.cm-api-model\s*\{[^}]*align-items: flex-start[^}]*padding-top: var\(--sp-2\)[^}]*padding-bottom: var\(--sp-2\)/);
   // 裸 .cm-api-model 那条会被后面的 .cm-wf 整个盖掉（同特异性、它在后），别再写回去
   expect(css).not.toMatch(/^\s*\.cm-api-model\s*\{/m);
   // 叠成一列时没有右列要对齐，空的那一格必须撤掉

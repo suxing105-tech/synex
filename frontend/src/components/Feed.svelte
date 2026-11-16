@@ -1165,7 +1165,7 @@ import { hoverPlay } from "../lib/hover-play";
           <span>{selectedLabel}</span>
           <button
             type="button"
-            class="px-1.5 py-0.5 text-2xs rounded border border-border inline-flex min-h-6 items-center hover:border-accent"
+            class="px-2 py-0.5 text-2xs rounded border border-border inline-flex min-h-6 items-center hover:border-accent"
             onclick={() => clearSelection()}
             title="清空选区（Esc）"
           >清空</button>
@@ -1177,8 +1177,8 @@ import { hoverPlay } from "../lib/hover-play";
   <GallerySearch label={$scope === 'all' ? '搜索图片、视频、音频、文本' : $scope === 'video' ? '搜索视频' : $scope === 'audio' ? '搜索音频' : $scope === 'text' ? '搜索文本' : '搜索图片'} />
   <div class="toolbar-actions flex flex-wrap items-center text-sm text-muted">
     {#if isTextScope}
-      <button type="button" class="text-tool shrink-0 rounded-lg px-2.5 py-2 text-xs" onclick={() => { textCreateOpen = true; }}>新建文本</button>
-      <button type="button" class="text-tool shrink-0 rounded-lg px-2.5 py-2 text-xs" onclick={() => associateTextPaths.set([])} title="把本地 TXT / MD / SRT / VTT 关联进图库，编辑直接写原文件">关联本地文本</button>
+      <button type="button" class="text-tool shrink-0 rounded-lg px-3 py-2 text-xs" onclick={() => { textCreateOpen = true; }}>新建文本</button>
+      <button type="button" class="text-tool shrink-0 rounded-lg px-3 py-2 text-xs" onclick={() => associateTextPaths.set([])} title="把本地 TXT / MD / SRT / VTT 关联进图库，编辑直接写原文件">关联本地文本</button>
     {/if}
     <TypeChips />
     <input
@@ -1415,7 +1415,7 @@ import { hoverPlay } from "../lib/hover-play";
                     <div
                       role="button"
                       tabindex="-1"
-                      class="comfyui-open-btn absolute top-[12px] right-[12px] w-7 h-7 rounded-[6px] flex items-center justify-center bg-black/70 hover:bg-accent text-white backdrop-blur-sm transition-colors cursor-pointer"
+                      class="comfyui-open-btn absolute top-3 right-3 w-7 h-7 rounded-[6px] flex items-center justify-center bg-black/70 hover:bg-accent text-white backdrop-blur-sm transition-colors cursor-pointer"
                       title="在 ComfyUI 中打开工作流"
                       aria-label="在 ComfyUI 中打开工作流"
                       onclick={(e) => { e.stopPropagation(); e.preventDefault(); openInComfyui(it); }}
@@ -1548,7 +1548,7 @@ import { hoverPlay } from "../lib/hover-play";
   /* 缩略图的形状语言（圆角 / hover 描边 / 选中外圈环 / 淡入 / 页脚）统一在 app.css 的
      .media-card* 上，Feed 与详情面板、参考帧、素材选择器共用同一套，这里不再各自定义。 */
   .image-rename { min-width: 0; border: 1px solid #888; border-radius: 3px; background: #222; color: #eee; padding: 1px 3px; outline: none; font: inherit; }
-  .import-progress { position: sticky; top: 0; z-index: 25; width: fit-content; margin: 0 auto 8px; padding: 6px 12px; background: #292929; border-radius: 16px; font-size: var(--fs-xs); color: #ddd; }
+  .import-progress { position: sticky; top: 0; z-index: 25; width: fit-content; margin: 0 auto var(--sp-2); padding: var(--sp-2) var(--sp-3); background: #292929; border-radius: 16px; font-size: var(--fs-xs); color: #ddd; }
   /* 「所有素材」里的文本卡：没有画面的一条横幅，徽标 + 文件名 + 摘录，点开进中间栏的阅读层。
      摘录取几行随列宽降级（t2 两行 / t1 一行 / t0 收掉），整卡高度与贪心分列同源于
      lib/media-format.ts 的 textCardHeightFor，所以窄列里不再出现「内容比卡高」。
@@ -1560,8 +1560,8 @@ import { hoverPlay } from "../lib/hover-play";
      行间距从 3px 收到 2px：3 不在 4px 网格上，2 是 §3.1 那半步（只用在图标和文字之间），
      徽标和标题、标题和摘录正是这两处。字号往档位上迁会多占的 2px 也由这里还回去。 */
   .text-card {
-    position: relative; display: flex; flex-direction: column; gap: 2px; flex: none; min-height: 0;
-    padding: 8px 10px; border: 0; border-radius: var(--thumb-radius); overflow: hidden;
+    position: relative; display: flex; flex-direction: column; gap: var(--sp-05); flex: none; min-height: 0;
+    padding: var(--sp-2) var(--sp-3); border: 0; border-radius: var(--thumb-radius); overflow: hidden;
     background: var(--thumb-bg); color: var(--text-1);
     text-align: left; cursor: pointer; user-select: none;
     transition: box-shadow 160ms ease;
@@ -1583,28 +1583,28 @@ import { hoverPlay } from "../lib/hover-play";
   .text-card.is-selected::after {
     box-shadow: inset 0 0 0 1px var(--thumb-ring);
   }
-  .text-tool { border: 1px solid rgb(58 58 65); background: #232327; color: #d9d8e0; margin-left: 6px; }
+  .text-tool { border: 1px solid rgb(58 58 65); background: #232327; color: #d9d8e0; margin-left: var(--sp-2); }
   /* 搜索没结果 / 文件夹本来就空的空态。颜色一律走 token（这几条是 2026-11-11 无障碍那轮加的，
      别跟着旁边那套老 hex 走）；按钮 min-height 用 --ctl-sm，24×24 是 WCAG 2.2 的下限。 */
-  .empty-search { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 12px; color: var(--text-2); font-size: var(--fs-sm); }
-  .empty-search button { min-height: var(--ctl-sm); border: 1px solid var(--line-strong); border-radius: var(--r-1); background: var(--ink-3); color: var(--text-1); padding: 6px 12px; font-size: var(--fs-sm); cursor: pointer; margin: 0 4px; }
+  .empty-search { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); padding: var(--sp-7) var(--sp-3); color: var(--text-2); font-size: var(--fs-sm); }
+  .empty-search button { min-height: var(--ctl-sm); border: 1px solid var(--line-strong); border-radius: var(--r-1); background: var(--ink-3); color: var(--text-1); padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); cursor: pointer; margin: 0 var(--sp-1); }
   .empty-search button:hover { background: var(--ink-4); }
   .empty-search button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .empty-search small { color: var(--text-3); }
-  .empty-text-actions { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 12px; color: #a9a7b3; font-size: var(--fs-sm); }
-  .empty-text-actions button { border: 1px solid rgb(58 58 65); border-radius: 6px; background: #232327; color: #dddce4; padding: 6px 12px; font-size: var(--fs-xs); cursor: pointer; margin: 0 4px; }
+  .empty-text-actions { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); padding: var(--sp-7) var(--sp-3); color: #a9a7b3; font-size: var(--fs-sm); }
+  .empty-text-actions button { border: 1px solid rgb(58 58 65); border-radius: 6px; background: #232327; color: #dddce4; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-xs); cursor: pointer; margin: 0 var(--sp-1); }
   .empty-text-actions button.primary { background: #6d4c4c; border-color: #8a5f5f; }
   .empty-text-actions small { color: #74727e; }
-  .text-dialog-backdrop { position: fixed; inset: var(--desktop-titlebar-height, 0px) 0 0; background: #000a; z-index: 90; display: flex; align-items: center; justify-content: center; padding: 24px; }
-  .text-dialog { width: 460px; max-width: 96vw; border: 1px solid #44404a; border-radius: 12px; background: #18181b; padding: 20px; color: #dddce4; font-size: var(--fs-sm); }
-  .text-dialog h2 { font-size: var(--fs-md); font-weight: 600; margin-bottom: 12px; }
-  .text-dialog label { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
-  .text-dialog input { background: #101012; border: 1px solid #45454d; border-radius: 6px; color: inherit; padding: 7px 9px; }
-  .text-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-xs); line-height: var(--lh-read); font-family: var(--font-mono); background: #0e0e10; padding: 12px; border-radius: 6px; }
+  .text-dialog-backdrop { position: fixed; inset: var(--desktop-titlebar-height, 0px) 0 0; background: #000a; z-index: 90; display: flex; align-items: center; justify-content: center; padding: var(--sp-6); }
+  .text-dialog { width: 460px; max-width: 96vw; border: 1px solid #44404a; border-radius: 12px; background: #18181b; padding: var(--sp-5); color: #dddce4; font-size: var(--fs-sm); }
+  .text-dialog h2 { font-size: var(--fs-md); font-weight: 600; margin-bottom: var(--sp-3); }
+  .text-dialog label { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-3) 0; }
+  .text-dialog input { background: #101012; border: 1px solid #45454d; border-radius: 6px; color: inherit; padding: var(--sp-2) var(--sp-2); }
+  .text-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-xs); line-height: var(--lh-read); font-family: var(--font-mono); background: #0e0e10; padding: var(--sp-3); border-radius: 6px; }
   .dialog-muted { color: #8b8997; font-size: var(--fs-xs); line-height: var(--lh-read); }
-  .dialog-error { color: #f0ce9b; font-size: var(--fs-xs); margin-bottom: 8px; }
-  .dialog-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 14px; }
-  .dialog-actions button { border: 1px solid #49424c; border-radius: 6px; background: #26262b; color: #dddce4; padding: 6px 12px; font-size: var(--fs-xs); cursor: pointer; }
+  .dialog-error { color: #f0ce9b; font-size: var(--fs-xs); margin-bottom: var(--sp-2); }
+  .dialog-actions { display: flex; justify-content: flex-end; gap: var(--sp-2); margin-top: var(--sp-4); }
+  .dialog-actions button { border: 1px solid #49424c; border-radius: 6px; background: #26262b; color: #dddce4; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-xs); cursor: pointer; }
   .dialog-actions button:disabled { opacity: .45; cursor: default; }
   .dialog-actions .primary { background: #6d4c4c; border-color: #8a5f5f; }
   .dialog-actions .danger { background: var(--danger); border-color: var(--danger); color: var(--accent-ink); }
@@ -1619,7 +1619,7 @@ import { hoverPlay } from "../lib/hover-play";
      字号 9.5px 是「比 10.5 更小的存量」，这一处迁掉之后全站只剩 9px 两颗。
      圆角走 --r-pill：4px 不在圆角四档里，chip 该是胶囊。 */
   .text-format {
-    align-self: flex-start; padding: 1px 5px; border-radius: var(--r-pill); background: var(--raise-2);
+    align-self: flex-start; padding: 1px var(--sp-1); border-radius: var(--r-pill); background: var(--raise-2);
     color: var(--text-2); font-size: var(--fs-2xs); line-height: var(--lh-label); letter-spacing: var(--track-label);
   }
   .text-name {
@@ -1737,18 +1737,18 @@ import { hoverPlay } from "../lib/hover-play";
     background: #ffe9d6;
     box-shadow: 0 0 8px 1px rgba(255, 214, 170, .75);
   }
-  .feed-more { text-align: center; padding: 14px 0 6px; font-size: var(--fs-xs); color: #8a8a8e; }
+  .feed-more { text-align: center; padding: var(--sp-4) 0 var(--sp-2); font-size: var(--fs-xs); color: #8a8a8e; }
   .feed-more-hint { color: #5c5c62; }
   /* 工具栏两段式布局。
      宽列（≥1280px）：三段网格，左右两条轨道都是 minmax(0,1fr) —— 两侧严格等宽，
      中列才是几何居中，搜索框不再因为「左边标题短、右边控件长」被拽偏。
      侧轨 min 必须留 0：0.2.22 的裁切事故就是网格侧列设了 min 下限，撑破容器把控件整段切掉。
      窄列（详情栏打开 / 窗口变小）：退回可换行 flex，控件整组贴右、放不下整段换行，不裁切。 */
-  .gallery-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(200px, 30%) minmax(0, 1fr); column-gap: 12px; row-gap: 8px; }
+  .gallery-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(200px, 30%) minmax(0, 1fr); column-gap: var(--sp-3); row-gap: var(--sp-2); }
   .toolbar-info { min-width: 0; }
-  .toolbar-actions { min-width: 0; justify-content: flex-end; column-gap: 8px; row-gap: 6px; }
+  .toolbar-actions { min-width: 0; justify-content: flex-end; column-gap: var(--sp-2); row-gap: var(--sp-2); }
   .toolbar-actions .columns-slider { flex-shrink: 0; }
-  .detail-toggle { display:flex; align-items:center; justify-content:center; flex-shrink:0; padding:4px; border:0; background:transparent; color:var(--text-3); box-shadow:none; outline:none; }
+  .detail-toggle { display:flex; align-items:center; justify-content:center; flex-shrink:0; padding:var(--sp-1); border:0; background:transparent; color:var(--text-3); box-shadow:none; outline:none; }
   .detail-toggle:hover, .detail-toggle:focus-visible { color:var(--text-1); background:transparent; border:0; box-shadow:none; outline:none; }
   /* 侧轨要装下控件组（排序 + chips + 滑块约 416px），中列取 30% 才留得下：
      代数关系 sides = 0.35 * 内容宽 - 12 ≥ 416 → 容器要 ≥ 1255，这里取 1280。
@@ -1759,10 +1759,10 @@ import { hoverPlay } from "../lib/hover-play";
     /* GallerySearch 是另一个组件，样式拿不到作用域类，只能用 :global 命中 */
     :global(.gallery-toolbar .gallery-search) { flex: 0 1 268px; }
     /* 整组贴右：不占剩余空间，靠 margin-left:auto 顶到滑块那一侧，chips 与滑块之间只留一个 gap */
-    .toolbar-actions { flex: 0 1 auto; margin-left: auto; justify-content: flex-end; min-width: 0; column-gap: 8px; row-gap: 6px; }
+    .toolbar-actions { flex: 0 1 auto; margin-left: auto; justify-content: flex-end; min-width: 0; column-gap: var(--sp-2); row-gap: var(--sp-2); }
   }
   @container (max-width: 650px) {
-    .gallery-toolbar { padding-inline: 10px; }
+    .gallery-toolbar { padding-inline: var(--sp-3); }
     .toolbar-info { display:none; }
     .gallery-toolbar .columns-slider { width:48px; }
   }
@@ -1772,7 +1772,7 @@ import { hoverPlay } from "../lib/hover-play";
     overflow-x: auto;
     overflow-y: visible;
     /* 选中描边与投影向外扩 1px + 阴影，不给这点余量就会被左右边缘裁掉 */
-    padding: 2px;
+    padding: var(--sp-05);
   }
   /* 骨架 -> 真卡：420ms 的窗口里刚挂载的卡片淡入。类会自动摘掉，不影响后续翻页。
      时长与缓动必须和 SplashOverlay 的 splash-fade-out 一模一样：遮罩在 1->0、卡片在
@@ -1839,7 +1839,7 @@ import { hoverPlay } from "../lib/hover-play";
     width: 14px;
     height: 14px;
     /* 轨道 4px、thumb 14px：Chrome 把 thumb 顶边贴在轨道顶边上，(4-14)/2 才居中 */
-    margin-top: -5px;
+    margin-top: calc(var(--sp-1) * -1);
     border-radius: 50%;
     background: rgb(var(--accent-rgb));
     border: 2px solid rgb(24 24 27);

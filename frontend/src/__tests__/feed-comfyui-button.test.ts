@@ -112,7 +112,7 @@ it("ComfyUI 打开按钮离卡片边角留出 12px", () => {
   const path = require("node:path");
   const src = fs.readFileSync(path.resolve(__dirname, "..", "components", "Feed.svelte"), "utf8");
   const cls = src.slice(src.indexOf('class="comfyui-open-btn'), src.indexOf('"', src.indexOf('class="comfyui-open-btn') + 7));
-  expect(cls).toMatch(/top-\[12px\]/);
-  expect(cls).toMatch(/right-\[12px\]/);
+  expect(cls).toMatch(/top-3\b/);
+  expect(cls).toMatch(/right-3\b/);
   expect(cls).not.toMatch(/top-1\b/);
 });

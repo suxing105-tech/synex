@@ -141,17 +141,17 @@
 <style>
   .model-settings { width: 100%; }
   /* 卡片内表单自己的内边距：保存条挂在卡片底部时要通到边，所以不能给整张卡片加 padding。 */
-  .settings-model-body { padding: 20px; }
+  .settings-model-body { padding: var(--sp-5); }
   /* 竖排表单铺满卡片：右边缘要和卡片、右下角保存条对齐（固定宽度会在右边留一条空白）。 */
   .model-settings fieldset { max-width: none; }
   /* 指令框里是长段文字：白字压黑底太刺眼，行距也偏挤，所以压灰一档、行距放到 1.9。 */
   .model-settings textarea { color: #c2c2ca; line-height: var(--lh-prose); }
-  fieldset { margin-top: 18px; }
+  fieldset { margin-top: var(--sp-5); }
   fieldset:first-child { margin-top: 0; }
   label { display: block; font-size: var(--fs-sm); color: #b8b8c3; }
-  input:not([type=checkbox]), textarea, select { display: block; width: 100%; margin-top: 6px; padding: 9px 12px; color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 6px; }
+  input:not([type=checkbox]), textarea, select { display: block; width: 100%; margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3); color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 6px; }
   button:disabled { opacity: .5; }
-  .model-error { margin-top: 14px; font-size: var(--fs-sm); color: #fb7185; }
-  .model-notice { margin-top: 14px; font-size: var(--fs-sm); color: #a1a1aa; }
-  @media (max-width: 860px) { .settings-model-body { padding: 16px; } }
+  .model-error { margin-top: var(--sp-4); font-size: var(--fs-sm); color: #fb7185; }
+  .model-notice { margin-top: var(--sp-4); font-size: var(--fs-sm); color: #a1a1aa; }
+  @media (max-width: 860px) { .settings-model-body { padding: var(--sp-4); } }
 </style>

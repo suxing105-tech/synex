@@ -140,7 +140,7 @@
     {:else}
       <div class="space-y-2">
       {#if current.status === "complete"}
-        <div class="flex items-center gap-1.5 flex-wrap">
+        <div class="flex items-center gap-2 flex-wrap">
           <button class="language-label" class:language-active={outputLanguage === "zh"} aria-pressed={outputLanguage === "zh"} onclick={() => outputLanguage = "zh"}>中文</button>
           <button class="language-label" class:language-active={outputLanguage === "en"} aria-pressed={outputLanguage === "en"} onclick={() => outputLanguage = "en"}>EN</button>
           <button class="icon-button ml-auto" aria-label={shownCopyLabel} title={shownCopyLabel} onclick={() => copy(shownPrompt)}><Icon name="copy" size={12} /></button>
@@ -189,7 +189,7 @@
 </section>
 
 <style>
-  button { font-size: var(--fs-2xs); padding: 5px 8px; border: 1px solid #3f3f46; border-radius: 5px; background: #202024; }
+  button { font-size: var(--fs-2xs); padding: var(--sp-1) var(--sp-2); border: 1px solid #3f3f46; border-radius: 5px; background: #202024; }
   .reverse-panel button.generate-reverse {
     background-color: #f24e4e;
     color: #fff;
@@ -201,19 +201,19 @@
   /* 两颗语种：未选中的压一档控件底（--ink-3，与面板底差一级），选中的整颗品牌红 + 墨字。
      先前未选中是 transparent，两颗一样灰，看不出「现在读的是哪一版」。
      对比度：--text-2 压在 --ink-3 上 5.3:1，--accent-ink 压在 --accent 上 5.5:1，都在正文地板之上。 */
-  .language-label { color:var(--text-2); font-size:var(--fs-2xs); padding:4px 6px; min-width:34px; text-align:center; border-color:transparent; background:var(--ink-3); }
+  .language-label { color:var(--text-2); font-size:var(--fs-2xs); padding:var(--sp-1) var(--sp-2); min-width:34px; text-align:center; border-color:transparent; background:var(--ink-3); }
   .language-label:enabled:hover { background:var(--ink-4); color:var(--text-1); }
   .language-label.language-active { color:var(--accent-ink); background:var(--accent); }
   .language-label.language-active:enabled:hover,
   .language-label.language-active:enabled:focus-visible { background:var(--accent-strong); color:var(--accent-ink); }
-  .icon-button { display:inline-flex; align-items:center; gap:4px; }
+  .icon-button { display:inline-flex; align-items:center; gap:var(--sp-1); }
   .icon-button span { font-size:var(--fs-2xs); }
   .reverse-prompt-content { min-width:0; }
   /* 350px 起手 + 纵向可拖高是 2026-11-14 定的（长提示词要一眼读完），留着。
      去掉的是底色，描边要回来（2026-11-15 苏醒：这个提示词框还是需要描边的）——
      这是一块能滚动、能拖高、能双击复制的正文区，不给边界人就不知道它是一块区域。
      分区靠描边，不靠第二层底色。 */
-  .prompt-copy { height:350px; min-height:56px; max-height:40vh; overflow:auto; resize:vertical; padding:8px; border:1px solid var(--line); border-radius:var(--r-1); color:var(--text-1); text-align:justify; text-justify:inter-ideograph; }
+  .prompt-copy { height:350px; min-height:56px; max-height:40vh; overflow:auto; resize:vertical; padding:var(--sp-2); border:1px solid var(--line); border-radius:var(--r-1); color:var(--text-1); text-align:justify; text-justify:inter-ideograph; }
   button:disabled { opacity: .5; cursor: default; }
   /* 删除是不可逆的，按钮与二次确认都要压成红色，别和"选择版本"混在一起 */
   button.danger { color: var(--danger); border-color: rgb(var(--danger-rgb) / 45%); background: rgb(var(--danger-rgb) / 8%); }
@@ -226,5 +226,5 @@
     color: var(--text-1);
   }
   .reverse-panel button.version-item[aria-current="true"] { font-weight: 600; }
-  textarea { display: block; width: 100%; margin-top: 6px; padding: 8px; font-size: var(--fs-xs); color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 5px; }
+  textarea { display: block; width: 100%; margin-top: var(--sp-2); padding: var(--sp-2); font-size: var(--fs-xs); color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: 5px; }
 </style>

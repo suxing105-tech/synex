@@ -568,39 +568,39 @@ import { basenameOnly } from '../lib/media-format';
 <style>
   /* 阅读层自己就是一层内嵌视图：顶栏 / 正文 / 底栏三段，弹层只盖中间栏，不铺满屏幕。 */
   .reader-header button, .reader-footer button, .text-toolbar button { cursor: pointer; border: 1px solid #3a3a41; background: #232327; color: #d9d8e0; }
-  .format-badge { flex: none; font-size: var(--fs-2xs); letter-spacing: var(--track-label); color: #b9b7c4; border: 1px solid #3f3f47; border-radius: 4px; padding: 1px 5px; }
-  .notice { background: #433325; color: #f0ce9b; padding: 8px 16px; font-size: var(--fs-xs); white-space: pre-wrap; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: none; }
-  .notice button { cursor: pointer; border: 0; border-radius: 5px; padding: 3px 8px; font-size: var(--fs-xs); background: #594434; color: #ffe6bf; }
-  .text-toolbar { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 16px; flex: none; border-bottom: 1px solid var(--color-border, #26262b); background: #141416; }
-  .text-toolbar button { cursor: pointer; border: 1px solid #3a3a41; border-radius: 5px; background: #232327; color: #d9d8e0; padding: 3px 8px; font-size: var(--fs-xs); }
+  .format-badge { flex: none; font-size: var(--fs-2xs); letter-spacing: var(--track-label); color: #b9b7c4; border: 1px solid #3f3f47; border-radius: 4px; padding: 1px var(--sp-1); }
+  .notice { background: #433325; color: #f0ce9b; padding: var(--sp-2) var(--sp-4); font-size: var(--fs-xs); white-space: pre-wrap; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); flex: none; }
+  .notice button { cursor: pointer; border: 0; border-radius: 5px; padding: 3px var(--sp-2); font-size: var(--fs-xs); background: #594434; color: #ffe6bf; }
+  .text-toolbar { display: flex; flex-wrap: wrap; gap: var(--sp-1); padding: var(--sp-2) var(--sp-4); flex: none; border-bottom: 1px solid var(--color-border, #26262b); background: #141416; }
+  .text-toolbar button { cursor: pointer; border: 1px solid #3a3a41; border-radius: 5px; background: #232327; color: #d9d8e0; padding: 3px var(--sp-2); font-size: var(--fs-xs); }
   .reader-body { background: var(--color-bg, #0e0e10); }
-  .state-line { padding: 40px 20px; text-align: center; color: #8b8997; font-size: var(--fs-sm); }
+  .state-line { padding: 40px var(--sp-5); text-align: center; color: #8b8997; font-size: var(--fs-sm); }
   .reader-state { color: #8b8997; }
   .reader-state.problem { color: #f0ce9b; }
   .muted { color: #8b8997; font-size: var(--fs-xs); }
 
-  .text-modal-backdrop { position: absolute; inset: 0; background: #000a; z-index: 30; display: flex; align-items: center; justify-content: center; padding: 25px; color: #dddce4; }
-  .text-modal { width: 540px; max-width: 96%; max-height: 92%; overflow: auto; border: 1px solid #44404a; border-radius: 12px; background: #18181b; padding: 22px; box-shadow: 0 22px 90px #0008; font-size: var(--fs-sm); }
+  .text-modal-backdrop { position: absolute; inset: 0; background: #000a; z-index: 30; display: flex; align-items: center; justify-content: center; padding: var(--sp-6); color: #dddce4; }
+  .text-modal { width: 540px; max-width: 96%; max-height: 92%; overflow: auto; border: 1px solid #44404a; border-radius: 12px; background: #18181b; padding: var(--sp-6); box-shadow: 0 22px 90px #0008; font-size: var(--fs-sm); }
   .text-modal.wide { width: 920px; }
-  .text-modal header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+  .text-modal header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-5); }
   .text-modal h2 { font-size: var(--fs-lg); font-weight: 600; }
   .text-modal header button { border: 0; background: transparent; color: inherit; font-size: var(--fs-lg); cursor: pointer; }
-  .text-modal label { display: flex; flex-direction: column; gap: 7px; margin: 14px 0; }
-  .text-modal p { line-height: var(--lh-read); margin: 12px 0; }
-  .text-modal input, .text-modal select { background: #101012; border: 1px solid #45454d; border-radius: 6px; color: inherit; padding: 7px 9px; }
-  .text-modal button { border: 1px solid #49424c; border-radius: 6px; background: #26262b; color: #dddce4; padding: 6px 10px; margin: 3px; cursor: pointer; font-size: var(--fs-xs); }
+  .text-modal label { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-4) 0; }
+  .text-modal p { line-height: var(--lh-read); margin: var(--sp-3) 0; }
+  .text-modal input, .text-modal select { background: #101012; border: 1px solid #45454d; border-radius: 6px; color: inherit; padding: var(--sp-2) var(--sp-2); }
+  .text-modal button { border: 1px solid #49424c; border-radius: 6px; background: #26262b; color: #dddce4; padding: var(--sp-2) var(--sp-3); margin: 3px; cursor: pointer; font-size: var(--fs-xs); }
   .text-modal button:disabled { opacity: .45; cursor: default; }
   .text-modal .primary { background: #6d4c4c; border-color: #8a5f5f; }
   .text-modal .danger { background: var(--danger); border-color: var(--danger); color: var(--accent-ink); }
-  .text-modal pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-sm); line-height: var(--lh-read); font-family: var(--font-mono); background: #0e0e10; padding: 14px; border-radius: 6px; }
-  .history-layout { display: grid; grid-template-columns: 190px 1fr; height: 340px; gap: 16px; }
+  .text-modal pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-sm); line-height: var(--lh-read); font-family: var(--font-mono); background: #0e0e10; padding: var(--sp-4); border-radius: 6px; }
+  .history-layout { display: grid; grid-template-columns: 190px 1fr; height: 340px; gap: var(--sp-4); }
   .history-layout aside, .history-layout pre { overflow: auto; }
   .history-layout aside button { display: block; width: 95%; text-align: left; }
-  .conflict-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .conflict-layout { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
   .conflict-layout pre { height: 280px; overflow: auto; }
-  .conflict-layout h3 { margin: 10px 0; }
-  .modal-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-top: 15px; }
-  .media-search { display: flex; gap: 10px; }
+  .conflict-layout h3 { margin: var(--sp-3) 0; }
+  .modal-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-2); margin-top: var(--sp-4); }
+  .media-search { display: flex; gap: var(--sp-3); }
   .media-search input { flex: 1; }
   /* 素材卡走 app.css 的 .media-card 共用规范。本弹窗的 .text-modal button 会把
      按钮刷成带边框的小按钮，这里必须把它复位，否则共用卡片样式全被吃掉。 */

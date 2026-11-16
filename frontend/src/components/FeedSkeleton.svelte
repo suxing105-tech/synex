@@ -41,7 +41,7 @@
     position: relative;
     display: grid;
     align-items: start;
-    padding: 2px;
+    padding: var(--sp-05);
     overflow: hidden;
   }
   .sk-col {

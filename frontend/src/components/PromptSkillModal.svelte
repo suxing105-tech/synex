@@ -464,18 +464,18 @@
 <style>
   .psk-scrim {
     position: fixed; inset: var(--desktop-titlebar-height, 0px) 0 0; z-index: 95;
-    display: flex; align-items: center; justify-content: center; padding: 24px;
+    display: flex; align-items: center; justify-content: center; padding: var(--sp-6);
     background: var(--shade-2);
   }
   .psk {
-    display: flex; flex-direction: column; gap: 12px; width: 880px; max-width: 96vw; max-height: 92vh;
-    padding: 16px; border: 1px solid var(--line-strong); border-radius: var(--r-3);
+    display: flex; flex-direction: column; gap: var(--sp-3); width: 880px; max-width: 96vw; max-height: 92vh;
+    padding: var(--sp-4); border: 1px solid var(--line-strong); border-radius: var(--r-3);
     background: var(--ink-1); color: var(--text-1); box-shadow: 0 22px 90px var(--shade-2);
     font-size: var(--fs-sm);
   }
-  .psk-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .psk-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
   .psk-head h2 { margin: 0; font-size: var(--fs-md); font-weight: 600; }
-  .psk-sub { margin: 4px 0 0; color: var(--text-2); font-size: var(--fs-xs); }
+  .psk-sub { margin: var(--sp-1) 0 0; color: var(--text-2); font-size: var(--fs-xs); }
   .psk-x {
     display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: none;
     padding: 0; border: 1px solid var(--line); border-radius: var(--r-1); background: transparent;
@@ -483,52 +483,52 @@
   }
   .psk-x:hover { background: var(--ink-4); color: var(--text-1); }
 
-  .psk-body { display: flex; gap: 12px; min-height: 0; flex: 1; }
-  .psk-side { display: flex; flex-direction: column; gap: 8px; flex: none; width: 228px; }
+  .psk-body { display: flex; gap: var(--sp-3); min-height: 0; flex: 1; }
+  .psk-side { display: flex; flex-direction: column; gap: var(--sp-2); flex: none; width: 228px; }
   .psk-list {
-    display: flex; flex-direction: column; gap: 2px; flex: 1; min-height: 120px; overflow-y: auto;
-    padding: 4px; border: 1px solid var(--line); border-radius: var(--r-2); background: var(--ink-2);
+    display: flex; flex-direction: column; gap: var(--sp-05); flex: 1; min-height: 120px; overflow-y: auto;
+    padding: var(--sp-1); border: 1px solid var(--line); border-radius: var(--r-2); background: var(--ink-2);
   }
   .psk-item {
-    display: flex; flex-direction: column; gap: 4px; align-items: flex-start; width: 100%;
-    padding: 8px; border: 0; border-radius: var(--r-1); background: transparent;
+    display: flex; flex-direction: column; gap: var(--sp-1); align-items: flex-start; width: 100%;
+    padding: var(--sp-2); border: 0; border-radius: var(--r-1); background: transparent;
     color: var(--text-2); text-align: left; cursor: pointer;
   }
   .psk-item:hover { background: var(--raise-1); color: var(--text-1); }
   .psk-item.is-on { background: var(--ink-3); color: var(--text-1); }
   .psk-item-name { font-size: var(--fs-sm); }
-  .psk-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+  .psk-tags { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
   .psk-tag {
-    padding: 1px 6px; border-radius: var(--r-pill); background: var(--raise-2);
+    padding: 1px var(--sp-2); border-radius: var(--r-pill); background: var(--raise-2);
     color: var(--text-3); font-size: var(--fs-2xs); font-style: normal;
   }
   .psk-tag.is-default { background: rgb(var(--accent-rgb) / 16%); color: var(--accent-strong); }
-  .psk-side-foot { display: flex; flex-direction: column; gap: 4px; }
+  .psk-side-foot { display: flex; flex-direction: column; gap: var(--sp-1); }
 
   .psk-edit {
-    display: flex; flex: 1; flex-direction: column; gap: 8px; min-width: 0; min-height: 0;
-    overflow-y: auto; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-2); background: var(--ink-2);
+    display: flex; flex: 1; flex-direction: column; gap: var(--sp-2); min-width: 0; min-height: 0;
+    overflow-y: auto; padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-2); background: var(--ink-2);
   }
-  .psk-field { display: flex; flex-direction: column; gap: 4px; }
+  .psk-field { display: flex; flex-direction: column; gap: var(--sp-1); }
   .psk-field-grow { flex: 1; min-height: 96px; }
   .psk-label { color: var(--text-2); font-size: var(--fs-xs); }
-  .psk-label-inline { margin-left: 8px; }
+  .psk-label-inline { margin-left: var(--sp-2); }
   .psk-input, .psk-text {
-    box-sizing: border-box; width: 100%; padding: 6px 8px; border: 1px solid var(--line-strong);
+    box-sizing: border-box; width: 100%; padding: var(--sp-2) var(--sp-2); border: 1px solid var(--line-strong);
     border-radius: var(--r-1); background: var(--ink-1); color: var(--text-1);
     font-family: inherit; font-size: var(--fs-sm);
   }
   .psk-input:focus, .psk-text:focus { border-color: var(--accent); outline: none; }
   .psk-text { flex: 1; min-height: 96px; resize: vertical; line-height: var(--lh-read); }
-  .psk-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .psk-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
   .psk-select { width: auto; min-height: var(--ctl-sm); }
-  .psk-check { display: inline-flex; align-items: center; gap: 4px; color: var(--text-1); font-size: var(--fs-sm); cursor: pointer; }
+  .psk-check { display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--text-1); font-size: var(--fs-sm); cursor: pointer; }
   .psk-hint { color: var(--text-3); font-size: var(--fs-xs); }
-  .psk-edit-foot { display: flex; flex-wrap: wrap; gap: 4px; padding-top: 4px; }
+  .psk-edit-foot { display: flex; flex-wrap: wrap; gap: var(--sp-1); padding-top: var(--sp-1); }
 
   .psk-btn {
-    display: inline-flex; min-height: var(--ctl-sm); align-items: center; gap: 4px;
-    padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--r-1);
+    display: inline-flex; min-height: var(--ctl-sm); align-items: center; gap: var(--sp-1);
+    padding: 0 var(--sp-2); border: 1px solid var(--line-strong); border-radius: var(--r-1);
     background: transparent; color: var(--text-1); font-size: var(--fs-sm); cursor: pointer;
   }
   .psk-btn:hover:not(:disabled) { background: var(--ink-4); }
@@ -542,15 +542,15 @@
   .psk-foot { margin: 0; color: var(--text-2); font-size: var(--fs-xs); }
   .psk-file { display: none; }
   .psk-pkg {
-    display: flex; flex-direction: column; gap: 6px; padding: 8px 10px;
+    display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3);
     border: 1px solid var(--line); border-radius: var(--r-2); background: var(--ink-2);
   }
-  .psk-pkg-head { display: flex; align-items: baseline; gap: 8px; }
+  .psk-pkg-head { display: flex; align-items: baseline; gap: var(--sp-2); }
   .psk-pkg-list {
     display: flex; flex-direction: column; gap: 3px; margin: 0; padding: 0;
     list-style: none; max-height: 132px; overflow-y: auto;
   }
-  .psk-pkg-list li { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); }
+  .psk-pkg-list li { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-xs); }
   .psk-pkg-path {
     flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     color: var(--text-2); direction: rtl; text-align: left;

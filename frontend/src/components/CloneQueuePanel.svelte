@@ -252,35 +252,35 @@
 
 <style>
   .queue { padding: 0; }
-  .queue-older { border-top: 1px solid var(--line); padding-top: 6px; }
+  .queue-older { border-top: 1px solid var(--line); padding-top: var(--sp-2); }
   .queue-older > summary { min-height: 28px; display: flex; align-items: center; cursor: pointer; color: var(--text-3); font-size: var(--fs-2xs); list-style: none; }
   .queue-older > summary::-webkit-details-marker { display: none; }
-  .queue-older > summary::before { content: ""; width: 5px; height: 5px; margin-right: 7px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(-45deg); }
+  .queue-older > summary::before { content: ""; width: 5px; height: 5px; margin-right: var(--sp-2); border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(-45deg); }
   .queue-older[open] > summary::before { transform: rotate(45deg); }
   .queue-card {
     border: 1px solid var(--line);
     border-radius: var(--r-2);
     background: var(--ink-2);
-    padding: 10px;
+    padding: var(--sp-3);
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--sp-2);
   }
   .queue-card.is-bad {
     border-color: rgb(var(--danger-rgb) / 45%);
     background: rgb(var(--danger-rgb) / 8%);
   }
-  .queue-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .queue-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
   .queue-engine {
-    display: inline-flex; align-items: center; gap: 5px;
+    display: inline-flex; align-items: center; gap: var(--sp-1);
     font-size: var(--fs-2xs); color: var(--text-2);
-    padding: 2px 6px; border-radius: var(--r-pill);
+    padding: var(--sp-05) var(--sp-2); border-radius: var(--r-pill);
     background: var(--raise-1);
   }
   .queue-elapsed { font-size: var(--fs-2xs); color: var(--text-3); font-variant-numeric: tabular-nums; }
   .queue-state { font-size: var(--fs-sm); color: var(--text-1); }
   .queue-msg { font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-ui); word-break: break-word; }
-  .queue-stages { display: flex; gap: 4px; }
+  .queue-stages { display: flex; gap: var(--sp-1); }
   .queue-stage {
     flex: 1; text-align: center; padding: 3px 0;
     font-size: var(--fs-2xs); border-radius: var(--r-1);
@@ -303,7 +303,7 @@
   @media (prefers-reduced-motion: reduce) {
     .queue-bar-run { animation: none; width: 100%; opacity: 0.6; }
   }
-  .queue-outs, .queue-thumbs { display: flex; gap: 4px; flex-wrap: wrap; }
+  .queue-outs, .queue-thumbs { display: flex; gap: var(--sp-1); flex-wrap: wrap; }
   .queue-out {
     width: 34px; height: 34px; object-fit: cover; display: block;
     border-radius: var(--r-1); background: var(--ink-0);
@@ -320,27 +320,27 @@
   .queue-out-btn.is-plain:hover { background: var(--ink-0); color: var(--text-3); }
   .queue-cancel, .queue-btn {
     align-self: flex-start;
-    display: inline-flex; align-items: center; gap: 5px;
-    height: var(--ctl-sm); padding: 0 9px;
+    display: inline-flex; align-items: center; gap: var(--sp-1);
+    height: var(--ctl-sm); padding: 0 var(--sp-2);
     border: 1px solid var(--line); border-radius: var(--r-1);
     background: transparent; color: var(--text-2);
     font-size: var(--fs-xs); cursor: pointer;
   }
   .queue-cancel:hover, .queue-btn:hover { background: var(--ink-3); color: var(--text-1); }
   .queue-btn:disabled { opacity: 0.5; cursor: default; }
-  .queue-block { display: flex; flex-direction: column; gap: 6px; }
+  .queue-block { display: flex; flex-direction: column; gap: var(--sp-2); }
   .queue-label { font-size: var(--fs-2xs); letter-spacing: var(--track-badge); color: var(--text-3); text-transform: uppercase; }
   .queue-row {
-    display: flex; align-items: center; gap: 8px;
-    padding: 6px; border: 1px solid var(--line-soft); border-radius: var(--r-2);
+    display: flex; align-items: center; gap: var(--sp-2);
+    padding: var(--sp-2); border: 1px solid var(--line-soft); border-radius: var(--r-2);
     background: var(--ink-2);
   }
-  .queue-row-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+  .queue-row-main { display: flex; flex-direction: column; gap: var(--sp-05); min-width: 0; flex: 1; }
   .queue-row-title { font-size: var(--fs-xs); color: var(--text-1); }
   .queue-row-sub { font-size: var(--fs-2xs); color: var(--text-3); }
   .queue-empty {
-    display: flex; flex-direction: column; align-items: center; gap: 6px;
-    padding: 18px 10px; text-align: center; color: var(--text-3);
+    display: flex; flex-direction: column; align-items: center; gap: var(--sp-2);
+    padding: var(--sp-5) var(--sp-3); text-align: center; color: var(--text-3);
     border: 1px dashed var(--line); border-radius: var(--r-2);
     font-size: var(--fs-xs);
   }

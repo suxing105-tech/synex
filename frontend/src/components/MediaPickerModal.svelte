@@ -321,19 +321,19 @@
 {/if}
 
 <style>
-  .mp-backdrop { position: fixed; inset: 0; z-index: 70; background: rgba(0, 0, 0, 0.5); -webkit-backdrop-filter: blur(20px) saturate(110%); backdrop-filter: blur(20px) saturate(110%); display: flex; align-items: center; justify-content: center; padding: 16px; }
-  .mp-panel { width: min(1160px, 100%); max-height: 84vh; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 18px; border: 1px solid rgb(255 255 255 / 8%); border-radius: 16px; background: rgba(20 20 23 / 88%); -webkit-backdrop-filter: blur(34px); backdrop-filter: blur(34px); box-shadow: 0 30px 90px rgba(0, 0, 0, 0.6); color: #e4e4e7; }
+  .mp-backdrop { position: fixed; inset: 0; z-index: 70; background: rgba(0, 0, 0, 0.5); -webkit-backdrop-filter: blur(20px) saturate(110%); backdrop-filter: blur(20px) saturate(110%); display: flex; align-items: center; justify-content: center; padding: var(--sp-4); }
+  .mp-panel { width: min(1160px, 100%); max-height: 84vh; overflow: auto; display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-5); border: 1px solid rgb(255 255 255 / 8%); border-radius: 16px; background: rgba(20 20 23 / 88%); -webkit-backdrop-filter: blur(34px); backdrop-filter: blur(34px); box-shadow: 0 30px 90px rgba(0, 0, 0, 0.6); color: #e4e4e7; }
   /* 标题 + 三族 tab + 搜索 + 列数滑块挤在一行：窄窗口里宁可整块换行，也别把「图片」掰成竖排两个字。 */
-  .mp-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .mp-head { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
   .mp-head h3 { margin: 0; font-size: var(--fs-md); font-weight: 600; }
   /* 族 tab 只在能挑几族时出现：图片再次创作仍是原来那颗干净的标题行。 */
-  .mp-tabs { display: flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid #26262b; border-radius: 10px; background: #101013; }
-  .mp-tab { flex: none; white-space: nowrap; height: 26px; padding: 0 10px; font-size: var(--fs-sm); color: #a1a1aa; background: transparent; border-radius: 8px; cursor: pointer; transition: background-color 140ms ease, color 140ms ease; }
+  .mp-tabs { display: flex; align-items: center; gap: var(--sp-05); padding: var(--sp-05); border: 1px solid #26262b; border-radius: 10px; background: #101013; }
+  .mp-tab { flex: none; white-space: nowrap; height: 26px; padding: 0 var(--sp-3); font-size: var(--fs-sm); color: #a1a1aa; background: transparent; border-radius: 8px; cursor: pointer; transition: background-color 140ms ease, color 140ms ease; }
   .mp-tab:hover { color: #e4e4e7; }
   .mp-tab[aria-pressed="true"] { color: #fafafa; background: #303036; }
-  .mp-search { flex: 1; min-width: 0; height: 32px; padding: 0 10px; font-size: var(--fs-sm); color: #e4e4e7; background: #101013; border: 1px solid #2b2b30; border-radius: 8px; }
+  .mp-search { flex: 1; min-width: 0; height: 32px; padding: 0 var(--sp-3); font-size: var(--fs-sm); color: #e4e4e7; background: #101013; border: 1px solid #2b2b30; border-radius: 8px; }
   /* 列数滑块：照抄图库工具栏那条（细轨 + 圆 thumb + 已填段），两处手势一个手感。 */
-  .mp-cols { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: #8a8a8e; white-space: nowrap; }
+  .mp-cols { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: #8a8a8e; white-space: nowrap; }
   .mp-cols-num { min-width: 12px; text-align: right; color: #d4d4d8; font-variant-numeric: tabular-nums; }
   .mp-slider { -webkit-appearance: none; appearance: none; width: 72px; height: 4px; border-radius: 2px; outline: none; cursor: pointer;
     background: linear-gradient(to right,
@@ -345,34 +345,34 @@
   .mp-search:focus { border-color: #3f3f46; outline: none; }
   /* 音频卡的页脚排成一行：文件名占满余下宽度（该省略号还是省略号），角标钉在最右，
      两者共用这条 26px 行的中线。全局 .media-card-footer 是 column，这里换成 row。 */
-  .mp-footer-audio { flex-direction: row; align-items: center; gap: 6px; }
+  .mp-footer-audio { flex-direction: row; align-items: center; gap: var(--sp-2); }
   .mp-footer-audio .media-card-name { flex: 1 1 auto; }
   /* 角标不再 absolute：它现在就是这一行的第二个成员，跟着文字垂直居中，不再浮在波形上。 */
   .mp-audio-btn { flex: none; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
   .mp-audio-icon { width: 100%; height: 100%; opacity: 0.92; transition: transform 140ms ease, opacity 140ms ease; }
   .mp-audio-btn:hover .mp-audio-icon, .mp-audio-btn:focus-visible .mp-audio-icon { opacity: 1; transform: scale(1.06); }
-  .mp-btn { height: 32px; padding: 0 12px; font-size: var(--fs-sm); color: #e4e4e7; background: #27272a; border: 1px solid #303036; border-radius: 8px; cursor: pointer; }
+  .mp-btn { height: 32px; padding: 0 var(--sp-3); font-size: var(--fs-sm); color: #e4e4e7; background: #27272a; border: 1px solid #303036; border-radius: 8px; cursor: pointer; }
   .mp-btn:hover:not(:disabled) { border-color: #4b4b52; }
   .mp-btn:disabled { opacity: .55; cursor: default; }
   .mp-more { align-self: center; }
   .mp-note { margin: 0; font-size: var(--fs-sm); color: #8a8a8e; }
   /* 主体分左右两栏：左边是文件夹分类，右边才是素材网格。 */
-  .mp-body { display: flex; gap: 14px; align-items: flex-start; min-height: 0; }
-  .mp-side { flex: none; width: 196px; max-height: calc(84vh - 170px); overflow-y: auto; overflow-x: hidden; padding-right: 4px; }
-  .mp-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+  .mp-body { display: flex; gap: var(--sp-4); align-items: flex-start; min-height: 0; }
+  .mp-side { flex: none; width: 196px; max-height: calc(84vh - 170px); overflow-y: auto; overflow-x: hidden; padding-right: var(--sp-1); }
+  .mp-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
   /* 窄窗口：左栏改成网格上方的一条横向带，不然两张图并排都放不下。 */
   @media (max-width: 760px) {
     .mp-body { flex-direction: column; }
-    .mp-side { width: 100%; max-height: 168px; border-bottom: 1px solid var(--line-soft); padding-bottom: 8px; }
+    .mp-side { width: 100%; max-height: 168px; border-bottom: 1px solid var(--line-soft); padding-bottom: var(--sp-2); }
   }
   /* 分列容器：覆盖全局 .media-pick-grid 的 grid，列内自己往下堆。
      align-items 必须是 flex-start：stretch 会把每一列硬拉到容器高度，列里的卡片
      作为 flex item 就被压扁（overflow:hidden 顺手把文件名那一条也裁没了）。 */
-  .mp-grid { display: flex; align-items: flex-start; gap: 12px; margin: 0;
+  .mp-grid { display: flex; align-items: flex-start; gap: var(--sp-3); margin: 0;
     /* 全局 .media-pick-grid 的 max-height:480px 是给小弹窗用的：在这个弹窗里它把缩略图
        压成一条 480px 的窄带，一屏只看得见四张，等于逼用户滚。这里按弹窗自己的高度撑开。 */
     max-height: calc(84vh - 168px); overflow: auto; }
-  .mp-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+  .mp-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
   .mp-col > .mp-card { flex: none; }
   .mp-card { border: 0; padding: 0; margin: 0; color: inherit; background: var(--thumb-bg); }
   /* 选择器里不做悬停放大：图已经是不裁切的等比例框，再放大就变成裁切，看着像变形。 */

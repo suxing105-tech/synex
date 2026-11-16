@@ -328,7 +328,7 @@ describe("详情栏共用一把尺子（2026-11-13 oil-ui 评审第一刀 T4 + T
     expect(declOf(appCss, ".section-title", "color")).toBe("var(--text-1)");
     expect(declOf(appCss, ".section-title.is-card", "font-size")).toBe("var(--fs-xs)");
     expect(declOf(appCss, ".section-subtitle", "font-size")).toBe("var(--fs-2xs)");
-    expect(declOf(appCss, ".section-heading", "gap")).toBe("8px");
+    expect(declOf(appCss, ".section-heading", "gap")).toBe("var(--sp-2)");
     // 旧的那套不许复活，也不许有人再在组件里留一份私有定义（对照 .dock-btn 那条）
     expect(appCss, ".detail-section-title 又回来了").not.toContain(".detail-section-title {");
     expect(read("components/DetailPanel.svelte"), ".section-heading 又变回 DetailPanel 私有定义")

@@ -2784,7 +2784,7 @@
      #0e0e10 就是 tailwind 的 bg-bg，Lightbox 那块用的同一支色；z-30 在 main 的 isolate 里，
      比 Lightbox 的 z-20 高一档，顺序是定的（两者不同屏，但别靠 DOM 顺序赌）。 */
   .cm-backdrop {
-    position: absolute; inset: 0; z-index: 30; padding: 20px;
+    position: absolute; inset: 0; z-index: 30; padding: var(--sp-5);
     display: flex; align-items: center; justify-content: center;
     background: #0e0e10;
   }
@@ -2800,7 +2800,7 @@
      侧栏 260 与详情栏 326 都开着）实测那一列 1123、面板吃满 1080；1440x900（可视 1418x802）
      那一列只有 832、面板 792，装不下两栏，跟着 is-stacked 收回上下结构（见 .cm-body）。 */
   .cm-panel {
-    position: relative; width: min(1080px, 100%); max-height: 100%; overflow: auto; padding: 20px 22px;
+    position: relative; width: min(1080px, 100%); max-height: 100%; overflow: auto; padding: var(--sp-5) var(--sp-6);
     border: 1px solid rgb(255 255 255 / 8%); border-radius: 20px; background: #131316; color: #e4e4e7;
     transition: border-color 160ms ease, box-shadow 160ms ease;
   }
@@ -2808,13 +2808,13 @@
   /* 顶栏只剩大字那一行（2026-11-10 照旧图放回来时是两行，2026-11-11 苏醒「再次创作四字删除，
      标题合理上移」把上面那行小字撤了）：当前挂的工作流 / 模型自己就是顶栏。标题吃左、关闭那颗吃右，
      名字长了截断，全名在悬停提示里。整行上下居中——大字与右边那颗 30px 的关闭键同一条中线。 */
-  .cm-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -2px -4px 6px; }
+  .cm-top { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin: calc(var(--sp-05) * -1) calc(var(--sp-1) * -1) var(--sp-2); }
   .cm-heading { min-width: 0; }
   .cm-title { margin: 0; font-size: var(--fs-md); line-height: var(--lh-label); font-weight: 600; color: #fafafa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cm-close { flex: none; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 9px; color: #8a8a8e; background: transparent; }
   .cm-close:hover { color: #fafafa; background: rgb(255 255 255 / 10%); }
 
-  .cm-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; padding: 9px 12px; font-size: var(--fs-sm); color: #f7d9a8; background: #2a2318; border: 1px solid #4a3c22; border-radius: 10px; }
+  .cm-banner { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin-bottom: var(--sp-4); padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); color: #f7d9a8; background: #2a2318; border: 1px solid #4a3c22; border-radius: 10px; }
 
   /* 左右两栏（2026-11-10 苏醒照旧图：「改回类似之前的这种版式」）：展示图在左、输入卡在右，
      两栏都从顶上开始（align-items: start）。旧图的读法是左图顶到弹窗上沿一路长到底、右列从上往下排；
@@ -2824,7 +2824,7 @@
      右列上限从旧版 470 抬到 524：底部那一排现在是三颗胶囊 + 圆形生成那颗，470 会把参数胶囊截断。
      1080 那档实测 左 490 / 右 524 → 竖构图展示图 852 高（窗口高的 63%，旧图那版 72%，同量级）。
      轨道最小值一律 minmax(0, …)：写成 minmax(240px, …) 列一窄就不收缩，顶出来的是面板横向滚动条。 */
-  .cm-body { --cm-hero-h: min(46vh, 480px); display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 524px); gap: 22px; align-items: start; min-width: 0; }
+  .cm-body { --cm-hero-h: min(46vh, 480px); display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 524px); gap: var(--sp-6); align-items: start; min-width: 0; }
   /* 中间那一列窄到放不下两栏时收回上下结构。判宽的是面板自己，不是窗口——侧栏折展、详情栏开关改的
      都是这一列的宽度；门槛与推导见脚本里 stacked 那条注释。 */
   .cm-body.is-stacked { grid-template-columns: minmax(0, 1fr); }
@@ -2855,7 +2855,7 @@
      所以这里的数往下调并不会让弹窗不滚（1440x900 实测 46vh→32vh 只省 112，同一档还差 260），
      它只决定高屏上让完之后还剩多少给图。 */
   .cm-body:not(.is-stacked) { --cm-hero-h: min(74vh, 1080px); }
-  .cm-left { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
+  .cm-left { position: relative; display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); min-width: 0; }
   /* 竖排之后展示图由高度定大小（横排时是栏宽撑着的）：限高、等比、居中。
      2026-11-04 苏醒：「适当放大展示图」。26vh/300px 是这张还跟右侧并排时定的数；改成上下结构之后
      顶上这一格独占整宽，先在真浏览器里量了四档（1440x900 可视高 802，展示图是竖构图时）：
@@ -2869,15 +2869,15 @@
   .cm-hero { width: auto; max-width: 100%; max-height: var(--cm-hero-h); object-fit: contain; border-radius: 16px; background: #0c0c0e; }
   /* 展示图下面那行文件名（旧图有这一行，2026-11-10 放回来）：从这一格跳回图库、或一次出几份时，
      认的就是它。长名字截断，完整名字在 title 里。 */
-  .cm-hero-name { margin: 2px 0 0; max-width: 100%; font-size: var(--fs-xs); line-height: var(--lh-label); color: #8a8a8e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cm-hero-name { margin: var(--sp-05) 0 0; max-width: 100%; font-size: var(--fs-xs); line-height: var(--lh-label); color: #8a8a8e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* 文件名与「这一趟出多大」并排一行（2026-11-12 苏醒照图：文件名右边那块空位就是留给它的）。
      被挤的只许是名字——省略号本来就长在它身上；尺寸不许被顶出这一行。 */
-  .cm-hero-meta { display: flex; align-items: baseline; gap: 8px; max-width: 100%; min-width: 0; }
+  .cm-hero-meta { display: flex; align-items: baseline; gap: var(--sp-2); max-width: 100%; min-width: 0; }
   .cm-hero-meta .cm-hero-name { flex: 0 1 auto; min-width: 0; }
-  .cm-hero-dims { flex: none; margin: 2px 0 0; font-size: var(--fs-xs); line-height: var(--lh-label); color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cm-hero-dims { flex: none; margin: var(--sp-05) 0 0; font-size: var(--fs-xs); line-height: var(--lh-label); color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
   /* 波形是一张扁的后端 PNG：照搬 cm-hero 的 contain 会把它拉成一大块模糊，这里锁住高度。 */
   .cm-hero-wave { width: min(100%, 560px); height: clamp(88px, 18vh, 148px); object-fit: cover; }
-  .cm-hero-audio { width: min(100%, 560px); margin-top: 10px; height: 36px; }
+  .cm-hero-audio { width: min(100%, 560px); margin-top: var(--sp-3); height: 36px; }
   .cm-hero-empty { display: flex; align-items: center; justify-content: center; min-height: 140px; font-size: var(--fs-sm); color: #71717a; }
 
   /* ── 生成中这一格：等待台。三层叠——底图慢慢呼吸、一条光带斜着扫过去、中间那张卡报状态。
@@ -2915,12 +2915,12 @@
   .cm-stage:hover .cm-stage-beam { animation-duration: 2.1s; }
   .cm-stage-card {
     /* flex: none —— 框比卡窄时不跟着被压窄：宁可探出框外，也别把台阶那排字挤断 */
-    position: relative; z-index: 2; flex: none; display: flex; flex-direction: column; align-items: center; gap: 9px;
-    padding: 18px 24px; border-radius: 15px; text-align: center;
+    position: relative; z-index: 2; flex: none; display: flex; flex-direction: column; align-items: center; gap: var(--sp-2);
+    padding: var(--sp-5) var(--sp-6); border-radius: 15px; text-align: center;
     background: rgb(12 12 14 / 62%); border: 1px solid rgb(255 255 255 / 8%);
     -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
   }
-  .cm-stage-orb { display: inline-flex; align-items: flex-end; gap: 4px; height: 22px; }
+  .cm-stage-orb { display: inline-flex; align-items: flex-end; gap: var(--sp-1); height: 22px; }
   .cm-stage-orb i { width: 4px; height: 8px; border-radius: 3px; background: linear-gradient(180deg, #ff8a70, #f24e4e); animation: cm-pulse 1.15s ease-in-out infinite; }
   .cm-stage-orb i:nth-child(2) { animation-delay: .16s; }
   .cm-stage-orb i:nth-child(3) { animation-delay: .32s; }
@@ -2933,7 +2933,7 @@
   .cm-stage-bar::after { content: ""; position: absolute; inset: 0; pointer-events: none;
     background-image: linear-gradient(90deg, transparent calc(34% - 1px), #0c0c0e calc(34% - 1px), #0c0c0e calc(34% + 1px), transparent calc(34% + 1px)),
       linear-gradient(90deg, transparent calc(76% - 1px), #0c0c0e calc(76% - 1px), #0c0c0e calc(76% + 1px), transparent calc(76% + 1px)); }
-  .cm-stage-steps { display: flex; gap: 9px; margin: 0; padding: 0; font-size: var(--fs-2xs); color: #6f6f78; }
+  .cm-stage-steps { display: flex; gap: var(--sp-2); margin: 0; padding: 0; font-size: var(--fs-2xs); color: #6f6f78; }
   .cm-stage-step { transition: color 220ms ease; }
   .cm-stage-step.is-past { color: #8f8f97; }
   .cm-stage-step.is-now { color: #f8a29a; }
@@ -2947,9 +2947,9 @@
   .cm-hero-new { animation: cm-hero-in 320ms cubic-bezier(.22, .61, .36, 1); }
   .cm-hero-out:hover .cm-hero-new, .cm-hero-out:focus-visible .cm-hero-new { outline: 1px solid rgb(255 255 255 / 24%); outline-offset: 3px; }
   .cm-hero-out-play { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 50%; color: #fafafa; background: rgb(12 12 14 / 62%); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
-  .cm-hero-out-hint { position: absolute; right: 12px; bottom: 12px; display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; font-size: var(--fs-xs); color: #f4f4f5; border-radius: 999px; background: rgb(12 12 14 / 74%); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); opacity: 0; transition: opacity 140ms ease; }
+  .cm-hero-out-hint { position: absolute; right: 12px; bottom: 12px; display: inline-flex; align-items: center; gap: var(--sp-1); padding: var(--sp-1) var(--sp-3); font-size: var(--fs-xs); color: #f4f4f5; border-radius: 999px; background: rgb(12 12 14 / 74%); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); opacity: 0; transition: opacity 140ms ease; }
   .cm-hero-out:hover .cm-hero-out-hint, .cm-hero-out:focus-visible .cm-hero-out-hint { opacity: 1; }
-  .cm-hero-pager { display: flex; align-items: center; gap: 6px; }
+  .cm-hero-pager { display: flex; align-items: center; gap: var(--sp-2); }
   .cm-hero-nav { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; color: #c9c9cf; background: rgb(255 255 255 / 7%); border: 1px solid rgb(255 255 255 / 8%); cursor: pointer; transition: background-color 140ms ease, color 140ms ease; }
   .cm-hero-nav:hover { color: #fafafa; background: rgb(255 255 255 / 14%); }
   .cm-hero-count { font-size: var(--fs-xs); color: #8a8a8e; font-variant-numeric: tabular-nums; }
@@ -2962,21 +2962,21 @@
     .cm-stage-bar > span, .cm-stage-step, .cm-hero-out-hint { transition: none; }
   }
 
-  .cm-right { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-  .cm-block { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .cm-right { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+  .cm-block { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
   .cm-block-title { margin: 0; font-size: var(--fs-base); font-weight: 600; color: #ececef; }
 
   /* 一次输入从上往下排（2026-11-10 苏醒照旧图：「改回类似之前的这种版式」）：参考在上、话在下、
      操作钉在卡底，两块各带一行小标题。11-04 那一版是「素材在左、话在右」，代价是参考那一摞只有
      84px 宽、编号只能压在照片上，几份参考叠在一起读不出「这是几张不同的东西」。
      参考多到一行装不下（十六格那种配方）时整排换行——以前靠竖摞长高，现在靠 wrap 长。 */
-  .cm-input-row { display: flex; flex-direction: column; align-items: stretch; gap: 12px; min-width: 0; }
-  .cm-prompt-col { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .cm-input-row { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-3); min-width: 0; }
+  .cm-prompt-col { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
   /* 参考是一排缩略图（2026-11-10 改回横排）：每格 = 一张照片 + 摆在格子下面的编号，装不下整排换行。
      --z 由行内顺着给（后挂的压在前面那张上头），整排关在 z-index:0 这一层：格子悬停抬起时也会互相压，
      但再也出不去这层；卡底那条与它上面的弹层是 3 层，永远盖得住这一排。 */
   .cm-ref-stack {
-    position: relative; z-index: 0; flex: none; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 12px; min-width: 0;
+    position: relative; z-index: 0; flex: none; display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--sp-3) var(--sp-3); min-width: 0;
   }
   /* 一格 = 一张照片 + 下面那行编号，格子自己就是定位基准。叠放用的那几条负 margin 撤了（横排不叠）。 */
   .cm-ref-cell { position: relative; min-width: 0; flex: none; z-index: var(--z, 1);
@@ -2998,11 +2998,11 @@
   }
   .cm-tile { position: relative; width: 84px; height: 84px; overflow: hidden; border-radius: 14px; background: #141417; border: 1px solid rgb(255 255 255 / 7%); }
   .cm-tile-img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; }
-  .cm-tile-add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 0; font-size: var(--fs-sm); color: #d4d4d8; background: #1a1a1e; cursor: pointer; transition: background-color 140ms ease, border-color 140ms ease; }
+  .cm-tile-add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-1); padding: 0; font-size: var(--fs-sm); color: #d4d4d8; background: #1a1a1e; cursor: pointer; transition: background-color 140ms ease, border-color 140ms ease; }
   /* 音频格子里那是波形图（840×360 的透明 PNG）：cover 会把波形切成一条中线，contain 才看得出起伏。
      背景压深一档，透明的波形才不会和卡片糊成一片。 */
   .cm-tile-audio { background: #101013; }
-  .cm-tile-audio .cm-tile-img { object-fit: contain; padding: 12px 8px; }
+  .cm-tile-audio .cm-tile-img { object-fit: contain; padding: var(--sp-3) var(--sp-2); }
   .cm-tile-add:hover { background: #232327; border-color: rgb(255 255 255 / 14%); }
   /* 整块缩略图都是替换的热区：这一层铺满格子，只管接点击，画面还是底下那张图。 */
   .cm-tile-pick { position: absolute; inset: 0; display: block; padding: 0; border: 0; background: transparent; cursor: pointer; }
@@ -3022,7 +3022,7 @@
   /* 编号摆在格子下面（横排之后照片不再互相压着，下沿是空的，读得清了）。提示词里写的是 @图片1，
      编号必须一眼对得上是谁，所以这一行不省。 */
   .cm-ref-caption {
-    display: block; margin-top: 6px; max-width: 100%;
+    display: block; margin-top: var(--sp-2); max-width: 100%;
     font-size: var(--fs-2xs); line-height: var(--lh-label); color: var(--text-3); text-align: center;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none;
   }
@@ -3040,9 +3040,9 @@
      一圈就是卡中卡，左右照样读成两截。这里只剩布局：一份内边距 + 上下两块的间距，几何照旧不动。
      底色走上浅下深的一层薄光 + 内上沿一道高光，卡片才不像在面板上又贴了一块黑纸。 */
   .cm-composer {
-    position: relative; display: flex; flex-direction: column; gap: 10px;
+    position: relative; display: flex; flex-direction: column; gap: var(--sp-3);
     /* 下内边距 0：这条最后那根卡底条自己带 12px 下内边距，它的下边界就是这条的内边界。留 9px 的话，钉住时那 9px 会留在条下面，滚上去的字从缝里露出来。 */
-    padding: 12px 12px 0;
+    padding: var(--sp-3) var(--sp-3) 0;
   }
   /* 整块模块响应聚焦（原先挂在 composer 那圈画上，那层撤了就搬到这里）：人在下面打字，左边那张图
      与上面那几格也还在说「这些就是要用的参考」。描边提亮 + 一层很淡的品牌色外圈，不加底色。 */
@@ -3094,7 +3094,7 @@
   .cm-ref-zoom-img { width: 100%; height: 100%; display: block; object-fit: cover; }
   .cm-ref-zoom-cap {
     position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: baseline;
-    justify-content: space-between; gap: 8px; margin: 0; padding: 20px 10px 8px;
+    justify-content: space-between; gap: var(--sp-2); margin: 0; padding: var(--sp-5) var(--sp-3) var(--sp-2);
     font-size: var(--fs-xs); color: #e8e8ec; background: linear-gradient(180deg, transparent, rgba(8, 8, 10, 0.88));
   }
   .cm-ref-zoom-file { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #9a9aa2; }
@@ -3104,7 +3104,7 @@
 
   /* 高亮遮罩和 textarea 是叠在一起的两层字，盒模型 / 字体 / 折行规则必须一字不差，
      所以两边写进同一条规则：谁要改排版就一起改，拆开改第一次滚动就会看见高亮在飘。 */
-  .cm-prompt-bg, .cm-textarea { display: block; box-sizing: border-box; width: 100%; padding: 11px 12px; border: 1px solid transparent; font-family: inherit; font-size: var(--fs-sm); line-height: var(--lh-read); white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; }
+  .cm-prompt-bg, .cm-textarea { display: block; box-sizing: border-box; width: 100%; padding: var(--sp-3) var(--sp-3); border: 1px solid transparent; font-family: inherit; font-size: var(--fs-sm); line-height: var(--lh-read); white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; }
   .cm-prompt-bg { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; border-radius: 12px; color: #e4e4e7; background: rgba(0, 0, 0, 0.35); }
   .cm-textarea { position: relative; z-index: 1; background: transparent; border-color: rgb(255 255 255 / 8%); border-radius: 12px; resize: vertical; }
   /* 提示词框跟着窗口高矮走：窗口矮的时候先让提示词框让出高度，而不是把下面那排按钮挤出弹窗 ——
@@ -3118,7 +3118,7 @@
   .cm-textarea::placeholder { color: var(--text-3); opacity: 1; }
   /* 附框（参考音频的原话那种）比主框矮：它是「别乱动」的东西，占了大半个弹窗反而没人看台词 */
   .cm-textarea-sub { height: auto; min-height: 60px; color: #e4e4e7; background: rgba(0, 0, 0, 0.35); }
-  .cm-sub-prompt-title { margin-top: 12px; }
+  .cm-sub-prompt-title { margin-top: var(--sp-3); }
   /* 高亮只许动颜色和背景：padding / border / font-weight 都会推字节，一改高亮就和光标错位。 */
   .cm-mention-hl { color: #ff6a4d; }
   /* 提示词框右下角那一排的容器：每颗各占 24×24，谁的条件不成立谁不在，最右边那颗永远落在同一格。
@@ -3126,7 +3126,7 @@
      z-index 4：压过镜像层 0 和输入框 1，被 mention 弹层（6）盖住，与拉高手柄 3 不重叠。 */
   .cm-prompt-tools {
     position: absolute; right: 24px; bottom: 4px; z-index: 4;
-    display: flex; align-items: center; gap: 2px;
+    display: flex; align-items: center; gap: var(--sp-05);
   }
   /* 那一排三颗共用一张脸（2026-11-12 苏醒：「图标不要圆框描边」）：裸图标——不画圆框、不铺底、
      不毛玻璃，静止压暗，滑过或键盘聚焦才亮，反馈只剩透明度和颜色。
@@ -3147,7 +3147,7 @@
      （提示词是跟着内容长高的，最后一行就贴着底）。留 28px 把那条让出来——空着时框会高一档（约 46→59），
      这是有意的取舍：宁可空态高一点，也不要字压在图标底下。这一排一颗都不画（音频工作流、又没有内置提示词
      可载入）才不留。高亮镜像层和输入框同一条规则，改一处两处一起动，不然高亮和字会错位。 */
-  .cm-prompt-wrap.has-tools .cm-prompt-bg, .cm-prompt-wrap.has-tools .cm-textarea { padding-bottom: 28px; }
+  .cm-prompt-wrap.has-tools .cm-prompt-bg, .cm-prompt-wrap.has-tools .cm-textarea { padding-bottom: var(--sp-7); }
   /* 提示词框右下角那颗拉高手柄（2026-11-10 苏醒：「提示词输入框右下角加一个拉高提示词的功能」）。
      静止时压暗、滑过/拖动/键盘聚焦才亮。斜纹画在伪元素上并裁成三角形：看着只是口内角的一小片纹路，
      命中区仍是整颗方块——好点中，也不会挡住正文文字。整颗往里让 4px：框的口角是 12px 圆角，
@@ -3178,7 +3178,7 @@
     .cm-skill.is-busy { animation: none; }
   }
   .cm-note { margin: 0; font-size: var(--fs-xs); color: #71717a; }
-  .cm-empty { display: flex; flex-direction: column; gap: 10px; padding: 16px; font-size: var(--fs-sm); color: #a1a1aa; background: #1b1b1f; border: 1px dashed #33333a; border-radius: 12px; }
+  .cm-empty { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); font-size: var(--fs-sm); color: #a1a1aa; background: #1b1b1f; border: 1px dashed #33333a; border-radius: 12px; }
 
   /* 让位顺序写死在这一行：右边按钮组不参与压缩（「取消」那一格连静止时都提前占好，按下生成的一瞬间
      右边宽度不变），左边每一格 min-width:0 可以被压缩；容器真装不下就整排换行，让位的永远是左边
@@ -3196,7 +3196,7 @@
     position: sticky; bottom: -20px; z-index: 3;
     /* 左右负 margin 只吃**卡片**的内边距（12px）：这一排住在卡里，左右跟卡内边对齐，
        看起来是框的一部分而不是一块外挂的板。下边不需要负——卡的下内边距已经是 0。 */
-    margin: 2px -12px 0; padding: 10px 12px 12px;
+    margin: var(--sp-05) calc(var(--sp-3) * -1) 0; padding: var(--sp-3) var(--sp-3) var(--sp-3);
     /* 卡不能 overflow:hidden（工作流弹层要往卡外冒），所以这条带自己的下圆角：模块圆角 20px 减 1px 边框。 */
     border-radius: 0 0 19px 19px;
     /* 一点都不许透：0.98/0.9 那一版在 538x682 打长提示词时，「完整提示词 · …」那行从坞底下
@@ -3213,14 +3213,14 @@
     background: linear-gradient(180deg, rgb(19 19 22 / 0) 0%, #131316 100%);
     pointer-events: none;
   }
-  .cm-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
+  .cm-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2) var(--sp-3); flex-wrap: wrap; }
   /* flex-basis 仍旧定死 240px：这一排要不要换行只跟容器宽度有关，跟工作流名字长短无关
      （名字一长就把「生成」顶到第二行，是苏醒 Round 15 截图里那个毛病）。
      但多出来的宽度不再摊给胶囊——胶囊只包到名字那么宽（苏醒 Round 26：
      「工作流按钮右边空太多」——七个字的胶囊拉到三百像素宽，右边一大片空白）。 */
   /* 2026-10-30 用户点名：左边先跟正文那一列对齐——整排靠右时参数胶囊前面空出一截，读着像漏了一块。
      省下的宽度落在胶囊组与「生成」之间，那是这一行本来就该有的呼吸位；右边按钮组仍不参与压缩。 */
-  .cm-foot-left { display: flex; align-items: center; justify-content: flex-start; gap: 10px; min-width: 0; flex: 1 1 240px; }
+  .cm-foot-left { display: flex; align-items: center; justify-content: flex-start; gap: var(--sp-3); min-width: 0; flex: 1 1 240px; }
   /* min-width:0：flex 子项默认 min-width:auto，长名字会把这一格顶穿，压到右边的按钮上 */
   .cm-pop-wrap { position: relative; min-width: 0; }
   /* 工作流那一格跟着名字收缩；装不下时还是它先让（可压缩 + min-width:0，名字在胶囊里截断），
@@ -3232,7 +3232,7 @@
      图标 + 名字 + 下拉箭头已经把「这是一颗能点的当前值」说完了，外面再套一圈框是重复表达。
      静止态完全透明，只在悬浮和展开时给一层极淡的底当反馈——radius 留着，那是反馈的形状不是框。
      左右内边距从 13 收到 10：没有框之后，间隔由 padding + gap 给，读起来还是三件事。 */
-  .cm-pill { position: relative; z-index: 5; flex: 0 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 10px; font-size: var(--fs-sm); color: #d4d4d8; background: transparent; border: 0; border-radius: 999px; cursor: pointer; transition: background 140ms ease, color 140ms ease; }
+  .cm-pill { position: relative; z-index: 5; flex: 0 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: var(--sp-2); height: 34px; padding: 0 var(--sp-3); font-size: var(--fs-sm); color: #d4d4d8; background: transparent; border: 0; border-radius: 999px; cursor: pointer; transition: background 140ms ease, color 140ms ease; }
   .cm-pill:hover:not(:disabled) { color: #fafafa; background: rgb(255 255 255 / 7%); }
   .cm-pill-text { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* 箭头不参与压缩，被挤的只许是中间那段名字（svg 自带尺寸，压不动） */
@@ -3244,7 +3244,7 @@
   .cm-pop-scrim { position: fixed; inset: 0; z-index: 4; }
   .cm-pop {
     position: absolute; left: 0; bottom: calc(100% + 10px); z-index: 5; width: 328px; max-height: 46vh; overflow: auto;
-    display: flex; flex-direction: column; gap: 10px; padding: 14px;
+    display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4);
     border: 1px solid rgb(255 255 255 / 9%); border-radius: 16px; background: #1a1a1e;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
   }
@@ -3255,7 +3255,7 @@
      贴右长就回到右栏之内：那颗的右边缘本来就在栏内，328 < 右栏净宽 498。
      写两条类名是为了压过窄窗口那条 .cm-pop { width: min(328px, 78vw) }：锚点换了，封顶得跟着换来源。 */
   .cm-pop.cm-pop-params { left: auto; right: 0; width: min(328px, var(--cm-pop-left, 328px)); }
-  .cm-pop-title { margin: 2px 0 0; font-size: var(--fs-sm); color: #a1a1aa; }
+  .cm-pop-title { margin: var(--sp-05) 0 0; font-size: var(--fs-sm); color: #a1a1aa; }
   /* 弹层最底那行是上面那几颗的合算结果：只写数字，不套「尺寸：」这类前缀（2026-11-12 定稿）。
      用 --text-2 不用 --text-3：这行压在 #1a1a1e 的弹层底上还要读得出，是结论不是注脚。 */
   .cm-pop-size { margin: 0; font-size: var(--fs-sm); line-height: var(--lh-label); color: var(--text-2); font-variant-numeric: tabular-nums; }
@@ -3266,8 +3266,8 @@
   /* 「创作类型」那一层只有三行，收窄；行距与清单同一套，别做出第二种菜单。 */
   /* 宽度按内容收（2026-11-10 照图：行末那串数撤了以后 268 的右半页全是空的）。这层只有一族一名，
   max-content 就是「图标 + 四个字 + 勾」那么宽；留 152 的地板防止哪天名字更短时空成一格。 */
-  .cm-pop-kind { left: 0; right: auto; width: max-content; min-width: 152px; max-width: 78vw; gap: 3px; padding: 8px; }
-  .cm-kind-row { padding: 9px 10px; border-radius: 10px; }
+  .cm-pop-kind { left: 0; right: auto; width: max-content; min-width: 152px; max-width: 78vw; gap: 3px; padding: var(--sp-2); }
+  .cm-kind-row { padding: var(--sp-2) var(--sp-3); border-radius: 10px; }
   .cm-kind-icon { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; color: #a1a1aa; }
   .cm-kind-check { flex: none; display: inline-flex; color: #e4e4e7; }
   /* 三颗里它最窄，也最不能截断——截成「图片生…」没人认得那是干什么的。让位的是工作流那颗的名字。 */
@@ -3286,15 +3286,15 @@
   /* 左列 140：装「图标 + 服务商名 + 箭头」够了（名字过长自己截断，全名在悬浮提示里）。
      原来是 172，多出来的宽度全给了右边那列的模型名（2026-11-11 苏醒：右边显示具体模型名称即可）。 */
   /* 行距 3 = 原来那句标签与服务商行之间的那 3px（左列自己的 gap 从现在起只管服务商与服务商之间），列距 10 不变。 */
-  .cm-api { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 3px 10px; min-height: 0; }
-  .cm-api-side { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding-right: 10px; border-right: 1px solid rgb(255 255 255 / 8%); }
+  .cm-api { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 3px var(--sp-3); min-height: 0; }
+  .cm-api-side { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding-right: var(--sp-3); border-right: 1px solid rgb(255 255 255 / 8%); }
   /* 左内边距 8 与服务商行那颗图标的左内边距同一个数（原来 6：实测标签墨迹左沿 731、图标左沿 733，差 2px）。 */
-  .cm-api-cap { margin: 2px 0 0; padding: 0 8px; font-size: var(--fs-2xs); color: #7f7f87; }
+  .cm-api-cap { margin: var(--sp-05) 0 0; padding: 0 var(--sp-2); font-size: var(--fs-2xs); color: #7f7f87; }
   /* 服务商那一行：图标方块 + 名字 + 右箭头（小字两行 2026-11-11 撤，见模板那条注释）。
      选中态走 aria-current，不走 aria-pressed——全局 .fill-interactions 会把 pressed 的按钮整颗刷成品牌红底黑字（0.2.34 那轮在设置页栽过一次）。 */
   /* 行高走 --ctl-md 32：26 的图标方块 + 上下各 3 = 32，右边那一行模型也是 32 那一档（见下面 .cm-wf.cm-api-model），
      同一行高才有同一条中线。原来是 7+26+7=40，比模型行高出 6，再叠上标签行顶下来的 18.75，两列怎么都对不齐。 */
-  .cm-api-vendor { display: flex; align-items: center; gap: 8px; width: 100%; min-height: var(--ctl-md); padding: 3px 8px; text-align: left; color: #d4d4d8; background: transparent; border-radius: 10px; cursor: pointer; }
+  .cm-api-vendor { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: var(--ctl-md); padding: 3px var(--sp-2); text-align: left; color: #d4d4d8; background: transparent; border-radius: 10px; cursor: pointer; }
   .cm-api-vendor:hover, .cm-api-vendor[aria-current="true"] { color: #fafafa; background: rgb(255 255 255 / 7%); }
   .cm-api-vendor-mark { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; color: #93c5fd; background: rgb(59 130 246 / 14%); }
   .cm-api-vendor-name { flex: 1; min-width: 0; font-size: var(--fs-sm); }
@@ -3306,7 +3306,7 @@
   /* 这两条以前写在小写的 .cm-wf（同特异性、声明在后面）之前，被它整个盖掉了：实测 padding 还是 8px、align-items
      还是 center，单行模型行高 34.8 而不是这里要的 32.8。加上 .cm-wf 一起选，特异性高一级才真落得下来——
      徽章那颗也才真按这条钉在第一行，而不是跟着两行名字上下居中。 */
-  .cm-wf.cm-api-model { align-items: flex-start; padding-top: 7px; padding-bottom: 7px; }
+  .cm-wf.cm-api-model { align-items: flex-start; padding-top: var(--sp-2); padding-bottom: var(--sp-2); }
   .cm-api-model .cm-wf-kind { margin-top: 1px; }
   .cm-api-model .cm-wf-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; overflow: hidden; line-height: var(--lh-label); }
   .cm-api-model .cm-wf-tag { margin-top: 1px; }
@@ -3316,21 +3316,21 @@
   .cm-wf-tag-ok { color: #4ade80; background: rgb(34 197 94 / 16%); }
   .cm-wf-tag-cur { color: #e4e4e7; background: rgb(255 255 255 / 12%); }
   /* 弹层顶部那两屏：像同一颗胶囊里的两段，选中那段提亮，不额外占一行标题 */
-  .cm-pop-tabs { display: flex; gap: 4px; padding: 2px; margin-bottom: 2px; background: rgb(255 255 255 / 4%); border-radius: 10px; }
+  .cm-pop-tabs { display: flex; gap: var(--sp-1); padding: var(--sp-05); margin-bottom: var(--sp-05); background: rgb(255 255 255 / 4%); border-radius: 10px; }
   .cm-pop-tab {
-    flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
-    padding: 5px 0; font-size: var(--fs-xs); color: #a1a1aa; background: transparent; border-radius: 8px;
+    flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-1);
+    padding: var(--sp-1) 0; font-size: var(--fs-xs); color: #a1a1aa; background: transparent; border-radius: 8px;
     transition: background-color 120ms ease, color 120ms ease;
   }
   .cm-pop-tab[aria-pressed="true"] { color: #fafafa; background: rgb(255 255 255 / 9%); }
-  .cm-pop-tab-count { font-size: var(--fs-2xs); color: #f87171; background: rgb(242 78 78 / 16%); border-radius: 999px; padding: 0 6px; }
-  .cm-pop-empty { margin: 2px 0; padding: 0 4px; font-size: var(--fs-xs); color: #a1a1aa; }
-  .cm-pop-sep { height: 1px; margin: 5px 0; background: rgb(255 255 255 / 8%); }
-  .cm-wf { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; font-size: var(--fs-sm); color: #d4d4d8; text-align: left; background: transparent; border-radius: 10px; cursor: pointer; }
+  .cm-pop-tab-count { font-size: var(--fs-2xs); color: #f87171; background: rgb(242 78 78 / 16%); border-radius: 999px; padding: 0 var(--sp-2); }
+  .cm-pop-empty { margin: var(--sp-05) 0; padding: 0 var(--sp-1); font-size: var(--fs-xs); color: #a1a1aa; }
+  .cm-pop-sep { height: 1px; margin: var(--sp-1) 0; background: rgb(255 255 255 / 8%); }
+  .cm-wf { display: flex; align-items: center; gap: var(--sp-2); width: 100%; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); color: #d4d4d8; text-align: left; background: transparent; border-radius: 10px; cursor: pointer; }
   .cm-wf:hover:not(:disabled) { background: rgb(255 255 255 / 7%); color: #fafafa; }
   .cm-wf:disabled { opacity: .5; cursor: default; }
   .cm-wf-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .cm-wf-tag { flex: none; padding: 1px 7px; font-size: var(--fs-2xs); color: #f87171; background: rgb(242 78 78 / 16%); border-radius: 999px; }
+  .cm-wf-tag { flex: none; padding: 1px var(--sp-2); font-size: var(--fs-2xs); color: #f87171; background: rgb(242 78 78 / 16%); border-radius: 999px; }
   /* 图片和视频的工作流排在同一份清单里，出片还是出图得一眼分得开（颜色之外还有字，不靠颜色独担信息）。 */
   /* 族徽定宽并钉在名字前面：宽度一致 + 位置固定，两行工作流的名称才在同一条竖线上。 */
   .cm-wf-kind { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 34px; padding: 1px 0; font-size: var(--fs-2xs); color: #93c5fd; background: rgb(59 130 246 / 14%); border-radius: 999px; }
@@ -3338,7 +3338,7 @@
   .cm-wf-kind-video { color: #fbbf24; background: rgb(245 158 11 / 16%); }
   .cm-wf-kind-audio { color: #c4b5fd; background: rgb(139 92 246 / 16%); }
   /* 一行一条工作流：整行就是一颗胶囊，名字和那颗 X 在同一个亮面上，不再像并排的两个控件 */
-  .cm-wf-row { display: flex; align-items: center; gap: 2px; padding-right: 4px; border-radius: 10px; transition: background-color 120ms ease; }
+  .cm-wf-row { display: flex; align-items: center; gap: var(--sp-05); padding-right: var(--sp-1); border-radius: 10px; transition: background-color 120ms ease; }
   .cm-wf-row:hover { background: rgb(255 255 255 / 7%); }
   /* 名字自己不再画底，底色归整行；不然名字亮一块、X 亮另一块，看着还是分开的 */
   .cm-wf-row > .cm-wf { flex: 1; min-width: 0; padding-right: 0; border-radius: 10px 0 0 10px; }
@@ -3355,8 +3355,8 @@
   .cm-wf-del:hover:not(:disabled) { color: #fafafa; background: rgb(255 255 255 / 10%); }
   .cm-wf-del:disabled { cursor: default; }
   .cm-file { display: none; }
-  .cm-ratio-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-  .cm-ratio { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 8px 2px; border-radius: 10px; color: #b8b8bf; background: transparent; cursor: pointer; transition: background-color 120ms ease, color 120ms ease; }
+  .cm-ratio-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-2); }
+  .cm-ratio { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-05); border-radius: 10px; color: #b8b8bf; background: transparent; cursor: pointer; transition: background-color 120ms ease, color 120ms ease; }
   .cm-ratio:hover { background: rgb(255 255 255 / 6%); color: #e4e4e7; }
   .cm-ratio.is-on { background: rgb(255 255 255 / 13%); color: #fafafa; }
   .cm-ratio-box { border: 1.5px solid currentColor; border-radius: 3px; opacity: .85; }
@@ -3382,7 +3382,7 @@
   /* 右上角那三条：不要圆圈底，就是三根裸着的品牌红窄条压在头像右上角（用户给的那张图）。
      静置时从左到右 6/10/14px 一阶梯，跑起来各自绕底边缩放，错开相位就是波形。
      压到浅色头像上靠一层很淡的投影撑住，深底上看不出来。 */
-  .cm-voice-eq { position: absolute; top: -1px; right: -5px; display: flex; align-items: flex-end; gap: 2px; height: 14px; filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 45%)); }
+  .cm-voice-eq { position: absolute; top: -1px; right: -5px; display: flex; align-items: flex-end; gap: var(--sp-05); height: 14px; filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 45%)); }
   .cm-voice-eq i { width: 3px; border-radius: 999px; background: #f24e4e; transform-origin: bottom center; animation: cm-voice-eq 900ms ease-in-out infinite; }
   .cm-voice-eq i:nth-child(1) { height: 6px; animation-delay: -300ms; }
   .cm-voice-eq i:nth-child(2) { height: 10px; animation-delay: -150ms; }
@@ -3397,8 +3397,8 @@
   }
 
   .cm-pill-face { flex: none; width: 20px; height: 20px; border-radius: 50%; object-fit: cover; background: #2a2a2e; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 14%); }
-  .cm-seg { display: flex; flex-wrap: wrap; gap: 6px; }
-  .cm-seg-item { min-width: 46px; height: 30px; padding: 0 10px; font-size: var(--fs-sm); color: #b8b8bf; background: rgb(255 255 255 / 5%); border-radius: 8px; cursor: pointer; }
+  .cm-seg { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+  .cm-seg-item { min-width: 46px; height: 30px; padding: 0 var(--sp-3); font-size: var(--fs-sm); color: #b8b8bf; background: rgb(255 255 255 / 5%); border-radius: 8px; cursor: pointer; }
   .cm-seg-item:hover { background: rgb(255 255 255 / 9%); }
   .cm-seg-item.is-on { background: rgb(255 255 255 / 15%); color: #fafafa; font-weight: 600; }
   /* 音频模式那一排：三颗字都短，只加粗读不出选中。品牌色描一圈 + 压深底，与生成按钮同一套色。 */
@@ -3407,10 +3407,10 @@
   .cm-seg-item:disabled { opacity: .55; cursor: default; }
   .cm-seg-item:hover:disabled { background: rgb(255 255 255 / 5%); }
   .cm-seg-item.is-on:hover:disabled { background: rgb(255 255 255 / 15%); }
-  .cm-custom { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: var(--fs-xs); color: #7c7c84; }
-  .cm-custom input { width: 92px; height: 28px; padding: 0 8px; font-size: var(--fs-sm); color: #e4e4e7; background: rgba(0, 0, 0, 0.4); border: 1px solid rgb(255 255 255 / 9%); border-radius: 8px; }
+  .cm-custom { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); font-size: var(--fs-xs); color: #7c7c84; }
+  .cm-custom input { width: 92px; height: 28px; padding: 0 var(--sp-2); font-size: var(--fs-sm); color: #e4e4e7; background: rgba(0, 0, 0, 0.4); border: 1px solid rgb(255 255 255 / 9%); border-radius: 8px; }
   /* 时长滑块：细轨 + 圆 thumb + 已填段，跟图库工具栏那条列数滑块一个手感。 */
-  .cm-slide { display: flex; align-items: center; gap: 10px; }
+  .cm-slide { display: flex; align-items: center; gap: var(--sp-3); }
   .cm-slider { -webkit-appearance: none; appearance: none; flex: 1; min-width: 0; height: 4px; border-radius: 2px; outline: none; cursor: pointer;
     background: linear-gradient(to right,
       rgb(242 78 78) 0%, rgb(242 78 78) calc((var(--value) - var(--min)) * 100% / var(--span)),
@@ -3420,14 +3420,14 @@
   .cm-slider::-moz-range-thumb { width: 15px; height: 15px; border-radius: 50%; background: #f4f4f5; border: 2px solid rgb(24 24 27); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(242, 78, 78, 0.45); cursor: grab; }
   .cm-slider::-moz-range-track { height: 4px; border-radius: 2px; background: rgb(64 64 70); }
   .cm-slider:focus-visible::-webkit-slider-thumb { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55), 0 0 0 4px rgba(242, 78, 78, 0.35); }
-  .cm-slide-num { flex: none; width: 62px; height: 28px; padding: 0 8px; font-size: var(--fs-sm); color: #e4e4e7; background: rgba(0, 0, 0, 0.4); border: 1px solid rgb(255 255 255 / 9%); border-radius: 8px; }
+  .cm-slide-num { flex: none; width: 62px; height: 28px; padding: 0 var(--sp-2); font-size: var(--fs-sm); color: #e4e4e7; background: rgba(0, 0, 0, 0.4); border: 1px solid rgb(255 255 255 / 9%); border-radius: 8px; }
   .cm-slide-unit { flex: none; font-size: var(--fs-xs); color: #8a8a8e; }
 
   /* 按钮组画在胶囊之上：哪天再溢出，被压住的也不许是「取消」和「生成」 */
-  .cm-actions { position: relative; z-index: 6; display: flex; align-items: center; gap: 8px; margin-left: auto; flex: none; }
-  .cm-btn { height: 34px; padding: 0 14px; font-size: var(--fs-sm); color: #e4e4e7; background: #27272a; border: 1px solid #303036; border-radius: 999px; cursor: pointer; }
+  .cm-actions { position: relative; z-index: 6; display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; flex: none; }
+  .cm-btn { height: 34px; padding: 0 var(--sp-4); font-size: var(--fs-sm); color: #e4e4e7; background: #27272a; border: 1px solid #303036; border-radius: 999px; cursor: pointer; }
 /* 生成中只留一颗会动的按钮：取消退成一句安静的话，不再和参数胶囊抢位置。 */
-.cm-btn-quiet { color: #9a9aa2; background: transparent; border-color: transparent; padding: 0 12px; }
+.cm-btn-quiet { color: #9a9aa2; background: transparent; border-color: transparent; padding: 0 var(--sp-3); }
 .cm-btn-quiet:hover:not(:disabled) { color: #e4e4e7; background: rgb(255 255 255 / 6%); border-color: transparent; }
 /* 静止时先把「取消」那一格占住（同字号同内边距，只是不画出来）：取消出现与消失都不改右边这组的宽度，
    左边胶囊不会在按下「生成」的瞬间重排一次——同一排忽长忽短正是错位的起点。 */
@@ -3458,7 +3458,7 @@
   .cm-go.is-busy .cm-go-shine { animation: cm-sweep 1.45s linear infinite; }
   /* 转圈那一条：圆里同一时刻只许有一个东西，所以生成中把字标藏掉、这一颗绝对居中。
      display:none 那条被测试钉着（真机上它把居中的字标顶偏过），别改写法。 */
-  .cm-go-dot { position: absolute; left: 50%; top: 50%; flex: none; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: radial-gradient(circle at 34% 32%, #fff, rgba(255, 255, 255, .35)); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .4); }
+  .cm-go-dot { position: absolute; left: 50%; top: 50%; flex: none; width: 14px; height: 14px; margin: calc(var(--sp-2) * -1) 0 0 calc(var(--sp-2) * -1); border-radius: 50%; background: radial-gradient(circle at 34% 32%, #fff, rgba(255, 255, 255, .35)); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .4); }
   .cm-go:not(.is-busy) .cm-go-dot { display: none; }
   .cm-go.is-busy .cm-go-mark { visibility: hidden; }
   .cm-go.is-busy .cm-go-dot { background: transparent; box-shadow: none; border: 2px solid rgba(255, 255, 255, .42); border-top-color: #fff; animation: cm-spin .68s linear infinite; }
@@ -3471,7 +3471,7 @@
   .cm-error { margin: 0; font-size: var(--fs-xs); color: #f28b82; }
   .cm-status { margin: 0; font-size: var(--fs-xs); color: #9ad1a4; }
 /* 状态与报错单独占操作行下面一行：生成前后那颗按钮一动不动。 */
-.cm-foot-note { margin: 8px 0 0; }
+.cm-foot-note { margin: var(--sp-2) 0 0; }
   /* 卡底那排「本次产出」缩略图连同这几条样式一起撤了：刚出来的那一份现在直接摆在顶上那一格，
      视频与音频的角标跟着搬过去（.cm-hero-out-play）。 */
 
@@ -3488,8 +3488,8 @@
        两列改成上下叠：服务商在上、模型清单在下，一样能挑，只是不再左右两栏。 */
     /* 窄窗口这一档锚点退回贴左：竖排之后这颗在底部那一排的最左边，往左长会顶穿面板左边界。 */
     .cm-pop-wf.is-api { left: 0; right: auto; width: min(268px, 78vw); }
-    .cm-api { grid-template-columns: minmax(0, 1fr); gap: 6px; }
-    .cm-api-side { padding-right: 0; padding-bottom: 5px; border-right: 0; border-bottom: 1px solid rgb(255 255 255 / 8%); }
+    .cm-api { grid-template-columns: minmax(0, 1fr); gap: var(--sp-2); }
+    .cm-api-side { padding-right: 0; padding-bottom: var(--sp-1); border-right: 0; border-bottom: 1px solid rgb(255 255 255 / 8%); }
     /* 叠成一列就没有右列要对齐了，那格空的留着是在标签和服务商之间凭空多一行。 */
     .cm-api-cap-void { display: none; }
   }
@@ -3501,7 +3501,7 @@
     /* 同上：只换竖排那一档。154px 是等待台中间那张卡量出来的最低可用高度。
      两栏那一档不受这条影响：它的值自己带 240px 的地板。 */
   .cm-body { --cm-hero-h: max(154px, 19vh); }
-    .cm-stage-card { gap: 7px; padding: 14px 18px; }
+    .cm-stage-card { gap: var(--sp-2); padding: var(--sp-4) var(--sp-5); }
     .cm-stage-bar { width: 168px; }
     .cm-hero-wave { height: clamp(64px, 12vh, 96px); }
     .cm-hero-empty { min-height: 96px; }
@@ -3511,12 +3511,12 @@
   .cm-prompt-wrap { position: relative; }
   .cm-mention {
     position: absolute; z-index: 6; width: 236px; max-height: 214px; overflow: auto;
-    display: flex; flex-direction: column; gap: 2px; padding: 8px;
+    display: flex; flex-direction: column; gap: var(--sp-05); padding: var(--sp-2);
     border: 1px solid rgb(255 255 255 / 10%); border-radius: 14px; background: #1c1c20;
     box-shadow: 0 18px 46px rgba(0, 0, 0, 0.55);
   }
-  .cm-mention-title { margin: 2px 6px 6px; font-size: var(--fs-xs); color: #7f7f87; }
-  .cm-mention-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; font-size: var(--fs-sm); color: #d4d4d8; text-align: left; background: transparent; border: 0; border-radius: 9px; cursor: pointer; }
+  .cm-mention-title { margin: var(--sp-05) var(--sp-2) var(--sp-2); font-size: var(--fs-xs); color: #7f7f87; }
+  .cm-mention-item { display: flex; align-items: center; gap: var(--sp-2); width: 100%; padding: var(--sp-2) var(--sp-2); font-size: var(--fs-sm); color: #d4d4d8; text-align: left; background: transparent; border: 0; border-radius: 9px; cursor: pointer; }
   .cm-mention-item:hover, .cm-mention-item.is-on { background: rgb(255 255 255 / 8%); color: #fafafa; }
   .cm-mention-icon { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; overflow: hidden; border-radius: 7px; color: #a1a1aa; background: rgb(255 255 255 / 6%); }
   .cm-mention-thumb { width: 100%; height: 100%; object-fit: cover; background: #0c0c0e; }
@@ -3534,8 +3534,8 @@
     pointer-events: none; border-radius: 16px;
   }
   .cm-mask-corner {
-    position: absolute; z-index: 1; display: inline-flex; align-items: center; gap: 4px;
-    min-height: var(--ctl-sm); padding: 0 10px; border: 0; border-radius: var(--r-pill);
+    position: absolute; z-index: 1; display: inline-flex; align-items: center; gap: var(--sp-1);
+    min-height: var(--ctl-sm); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-pill);
     font-size: var(--fs-xs); color: var(--text-1); background: rgb(14 14 16 / 78%);
     cursor: pointer; transition: background-color 140ms ease;
   }
@@ -3545,7 +3545,7 @@
   .cm-mask-corner.is-top-right { right: 8px; top: 8px; }
   .cm-mask-corner.is-bottom-right { right: 8px; bottom: 8px; }
   .cm-mask-flag {
-    position: absolute; left: 3px; bottom: 3px; z-index: 2; padding: 2px 6px;
+    position: absolute; left: 3px; bottom: 3px; z-index: 2; padding: var(--sp-05) var(--sp-2);
     border-radius: var(--r-1); font-size: var(--fs-2xs); line-height: var(--lh-label);
     /* 红底配墨底字（token 里 --accent-ink 就是为这个定的）：白字压品牌红只有 3.2:1 */
     color: var(--accent-ink); background: var(--accent); pointer-events: none;

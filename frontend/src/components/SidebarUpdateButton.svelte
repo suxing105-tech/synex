@@ -79,7 +79,7 @@ import Icon from "./Icon.svelte";
     left: calc(100% + 8px);
     bottom: 6px;
     z-index: 70;
-    padding: 7px 10px;
+    padding: var(--sp-2) var(--sp-3);
     border-radius: 8px;
     border: 1px solid #2e2e33;
     background: #0b0b0d;
@@ -114,7 +114,7 @@ import Icon from "./Icon.svelte";
     position: fixed;
     inset: 0;
     z-index: 95;
-    padding: 20px;
+    padding: var(--sp-5);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -125,7 +125,7 @@ import Icon from "./Icon.svelte";
 
   .update-modal {
     width: min(420px, 100%);
-    padding: 20px 22px 22px;
+    padding: var(--sp-5) var(--sp-6) var(--sp-6);
     border-radius: 20px;
     border: 1px solid rgb(255 255 255 / 8%);
     background: rgba(19, 19, 22, 0.88);
@@ -135,7 +135,7 @@ import Icon from "./Icon.svelte";
   }
 
   .update-card-kicker {
-    margin: 0 0 6px;
+    margin: 0 0 var(--sp-2);
     font-size: var(--fs-xs);
     color: #7f7f87;
   }
@@ -148,17 +148,17 @@ import Icon from "./Icon.svelte";
   }
 
   .update-card-note {
-    margin-top: 2px;
+    margin-top: var(--sp-05);
     font-size: var(--fs-xs);
     line-height: var(--lh-ui);
     color: #8a8a8e;
   }
 
   .update-card-row {
-    margin-top: 12px;
+    margin-top: var(--sp-3);
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--sp-3);
   }
 
   .update-progress-track {

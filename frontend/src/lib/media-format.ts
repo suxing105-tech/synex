@@ -76,8 +76,12 @@ export const FOOTER_HEIGHT_TWO_LINES = 48;
 /** `--1l` 页脚的实测高度（px），与 app.css 的 .media-card-footer--1l 对齐 */
 export const FOOTER_HEIGHT_ONE_LINE = 28;
 
-/** 卡片间距（px）。app.css 的 --thumb-gap 与 Feed 的贪心分列共用这一个值。 */
-export const THUMB_GAP = 10;
+/**
+ * 卡片间距（px）。app.css 的 --thumb-gap 与 Feed 的贪心分列共用这一个值。
+ * 必须是 4 的倍数：贪心分列、选中框、骨架屏都从它派生，它脱档就是整个瀑布流脱档。
+ * （2026-11-16 从 10 抬到 12，和 --sp-3 同档。）
+ */
+export const THUMB_GAP = 12;
 
 export type FooterTier = 0 | 1 | 2;
 

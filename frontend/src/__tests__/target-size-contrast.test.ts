@@ -159,7 +159,7 @@ it("点击目标够 24×24 第三批：design-QA 同视口复跑剩下的三处"
   // 补 min-w-6（断言并到第二批）；这里钉另外两处。
 
   const feed = readFileSync("src/components/Feed.svelte", "utf8");
-  expect(feed).toMatch(/class="px-1\.5 py-0\.5 text-2xs[^"]*inline-flex min-h-6 items-center/);
+  expect(feed).toMatch(/class="px-2 py-0\.5 text-2xs[^"]*inline-flex min-h-6 items-center/);
 
   // 分段控件里那颗按钮原来写 --ctl-sm 减 6px，等于自己把尺子往下垫了 6px。
   // 抬回 var(--ctl-sm) 之后外框 26+2×2+1×2=32，正好还是 --ctl-md 那一档。
@@ -170,7 +170,7 @@ it("点击目标够 24×24 第三批：design-QA 同视口复跑剩下的三处"
   // 侧栏那颗 ⋯ 抬到 24 之后，文件夹行的上下内边距从 6 收到 4：24+4×2=32，
   // 还是 --ctl-md 那一档。不收的话复跑实测 20 行全部被撑成 36，侧栏整体变疏。
   const tree = readFileSync("src/components/FolderTree.svelte", "utf8");
-  expect(decl(tree, ":global(.folder-item)", "padding")).toBe("4px 10px");
+  expect(decl(tree, ":global(.folder-item)", "padding")).toBe("var(--sp-1) var(--sp-3)");
   expect(decl(tree, ":global(.folder-item)", "min-height")).toBe("32px");
   expect(px(decl(tree, ":global(.folder-item .menu-btn)", "min-height"))).toBeGreaterThanOrEqual(24);
 });

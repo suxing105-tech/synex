@@ -160,6 +160,22 @@
   --track-badge: 0.06em;   /* 全大写的小 kicker */
   --track-display: 0.12em; /* 启动页那种一行大字 */
 
+  /* 间距 = 4px 网格，和 class 侧同一个数说同一件事：class 写 p-2，<style> 里就写
+     padding: var(--sp-2)。2026-11-16 之前只有 class 侧在守这个网格，app.css 和各组件的
+     <style> 里全是 5/6/7/9/10/11/13/14/15 这类凭手感的手值（439 个数值、330 处），
+     同一个视觉角色在不同面板里有三四种内边距——这就是「间距没规范」的真样子。
+     --sp-05 那半步只用在图标和文字之间（= class 侧的 p-0.5）。
+     1px / 3px 是描边补偿和视觉微调，不进门禁；>32px 属于版式尺寸，按 §3.1 不算间距尺度。 */
+  --sp-05: 2px;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 28px;
+  --sp-8: 32px;
+
   /* 控件高度 3 档：同一排控件必须同高，差 2px 就会看着像没对齐 */
   --ctl-sm: 26px;
   --ctl-md: 32px;
@@ -219,7 +235,7 @@ html {
    所以下面两个页脚高度一旦改动，那边的常量必须同步改。 */
 :root {
   --thumb-radius: 10px;
-  --thumb-gap: 10px;
+  --thumb-gap: 12px;
   /* 页脚（也就是卡片露出来的那一点底色）要比画面明显暗，文字才像是压在
      图下面的信息条上，而不是画面自己的暗部。原来的 #27272a 太接近卡面高亮。 */
   --thumb-bg: var(--ink-2);
@@ -364,9 +380,9 @@ html {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 2px;
+  gap: var(--sp-05);
   min-width: 0;
-  padding: 0 8px;
+  padding: 0 var(--sp-2);
   background: var(--thumb-bg);
 }
 
@@ -401,7 +417,7 @@ html {
 
 /* 文件名要让开角标，否则长名字会伸到按钮底下 */
 .media-card.is-cloneable .media-card-footer {
-  padding-right: calc(8px + var(--clone-btn) + 6px);
+  padding-right: calc(var(--sp-2) + var(--clone-btn) + var(--sp-2));
 }
 
 .media-clone-btn {
@@ -447,7 +463,7 @@ html {
 .media-card-meta {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--sp-1);
   min-width: 0;
   font-size: var(--fs-xs);
   line-height: var(--lh-label);
@@ -470,7 +486,7 @@ html {
   display: inline-flex;
   align-items: center;
   height: 15px;
-  padding: 0 4px;
+  padding: 0 var(--sp-1);
   border-radius: calc(var(--r-1) - 2px);
   background: var(--raise-2);
   color: var(--text-2);
@@ -487,7 +503,7 @@ html {
   display: inline-block;
   width: 6px;
   height: 6px;
-  margin-right: 5px;
+  margin-right: var(--sp-1);
   border-radius: 50%;
   background: var(--thumb-accent);
   vertical-align: 1px;
@@ -528,8 +544,8 @@ html {
   gap: var(--thumb-gap);
   max-height: 480px;
   overflow: auto;
-  margin: 16px 0;
-  padding: 2px;
+  margin: var(--sp-4) 0;
+  padding: var(--sp-05);
 }
 
 @media (max-width: 900px) {
@@ -546,7 +562,7 @@ html {
   background: var(--ink-2);
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 10px 16px;
+  padding: var(--sp-3) var(--sp-4);
   font-size: var(--fs-sm);
   z-index: 90;
   animation: toastIn 0.2s ease-out;
@@ -610,7 +626,7 @@ html {
 
 .fill-interactions label:has(input[type="checkbox"]) {
   border-radius: 6px;
-  padding: 6px;
+  padding: var(--sp-2);
   transition: background-color 140ms ease;
 }
 
@@ -655,7 +671,7 @@ html {
 }
 
 .settings-card + .settings-card {
-  margin-top: 14px;
+  margin-top: var(--sp-4);
 }
 
 .settings-card .setting-row + .setting-row {
@@ -668,17 +684,17 @@ html {
 }
 
 .settings-card-pad {
-  padding: 20px;
+  padding: var(--sp-5);
 }
 
 .setting-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  column-gap: 24px;
-  row-gap: 12px;
+  column-gap: var(--sp-6);
+  row-gap: var(--sp-3);
   align-items: center;
   min-height: 62px;
-  padding: 15px 20px;
+  padding: var(--sp-4) var(--sp-5);
 }
 
 .setting-row-top {
@@ -688,7 +704,7 @@ html {
 .setting-row-main {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-1);
   min-width: 0;
 }
 
@@ -710,7 +726,7 @@ html {
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--sp-2);
   /* 绝对宽度上限：grid 里给 auto 列写百分比 max-width 会变成循环约束，
      长状态文字会把左边的标题列挤成一个字宽（0.2.23 之后的版式踩过）。 */
   max-width: 320px;
@@ -722,7 +738,7 @@ html {
 .setting-row-side select {
   min-width: 170px;
   min-height: 34px;
-  padding: 6px 10px;
+  padding: var(--sp-2) var(--sp-3);
   font-size: var(--fs-sm);
   color: var(--text-1);
   background: var(--ink-1);
@@ -738,7 +754,7 @@ html {
   grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-2);
 }
 
 .setting-row-mono {
@@ -750,9 +766,9 @@ html {
 .settings-subrow {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--sp-3);
   min-height: 40px;
-  padding: 6px 0 6px 12px;
+  padding: var(--sp-2) 0 var(--sp-2) var(--sp-3);
   border-left: 2px solid var(--line);
 }
 
@@ -774,15 +790,15 @@ html {
 
 .settings-addrow {
   display: flex;
-  gap: 10px;
-  margin-top: 4px;
+  gap: var(--sp-3);
+  margin-top: var(--sp-1);
 }
 
 .settings-addrow input {
   flex: 1;
   min-width: 0;
   min-height: 36px;
-  padding: 6px 12px;
+  padding: var(--sp-2) var(--sp-3);
   font-size: var(--fs-sm);
   color: var(--text-1);
   background: var(--ink-1);
@@ -794,8 +810,8 @@ html {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 12px;
-  padding: 12px 20px;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
   border-top: 1px solid var(--line-soft);
   background: var(--ink-1);
 }
@@ -808,7 +824,7 @@ html {
 }
 
 .settings-group-label {
-  margin: 26px 0 10px;
+  margin: var(--sp-7) 0 var(--sp-3);
   font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: var(--track-label);
@@ -830,8 +846,8 @@ html {
    交互态一律交给 .fill-interactions（只换底色，边框任何状态都不变色），这里只定形状。 */
 .settings-seg {
   display: inline-flex;
-  gap: 2px;
-  padding: 2px;
+  gap: var(--sp-05);
+  padding: var(--sp-05);
   border: 1px solid var(--line-soft);
   border-radius: var(--r-1);
   background: var(--ink-1);
@@ -839,7 +855,7 @@ html {
 
 .settings-seg button {
   height: var(--ctl-sm);
-  padding: 0 10px;
+  padding: 0 var(--sp-3);
   border: 0;
   border-radius: calc(var(--r-1) - 2px);
   background: transparent;
@@ -935,7 +951,7 @@ html {
   align-items: center;
   justify-content: center;
   min-height: 34px;
-  padding: 7px 13px;
+  padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--ink-5);
   border-radius: 7px;
   font-size: var(--fs-sm);
@@ -948,7 +964,7 @@ html {
 
 .setting-button-ghost {
   min-height: 28px;
-  padding: 4px 10px;
+  padding: var(--sp-1) var(--sp-3);
   font-size: var(--fs-xs);
   color: var(--text-2);
 }
@@ -962,8 +978,8 @@ html {
 
 @media (max-width: 860px) {
   .setting-row {
-    column-gap: 14px;
-    padding: 14px 16px;
+    column-gap: var(--sp-4);
+    padding: var(--sp-4) var(--sp-4);
   }
 
   .setting-row-side {
@@ -977,7 +993,7 @@ html {
 
   .settings-card-footer,
   .settings-card-pad {
-    padding: 14px 16px;
+    padding: var(--sp-4) var(--sp-4);
   }
 }
 
@@ -1046,8 +1062,8 @@ html {
   height: var(--ctl-md);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 8px;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-2);
   border: 1px solid var(--line);
   border-radius: var(--r-1);
   background: transparent;
@@ -1074,8 +1090,8 @@ html {
 .section-heading {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
 }
 
 .section-title {
@@ -1090,7 +1106,7 @@ html {
 }
 
 .section-subtitle {
-  margin-top: 2px;
+  margin-top: var(--sp-05);
   font-size: var(--fs-2xs);
   line-height: var(--lh-label);
   color: var(--text-3);
@@ -1117,9 +1133,9 @@ html {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 4px;
+  gap: var(--sp-1);
   height: var(--ctl-lg);
-  padding: 0 16px;
+  padding: 0 var(--sp-4);
   border-bottom: 1px solid var(--line);
 }
 

@@ -118,31 +118,31 @@
 </div>
 
 <style>
-  .text-editor { overflow:auto; flex:1; min-height:0; padding:30px clamp(20px,5vw,90px) 120px; }
-  textarea { display:block; width:100%; min-height:180px; resize:none; background:transparent; border:0; outline:none; color:inherit; font-size: var(--fs-base); line-height: var(--lh-prose); font-family: var(--font-mono); padding:8px 0; tab-size:2; }
+  .text-editor { overflow:auto; flex:1; min-height:0; padding:var(--sp-8) clamp(var(--sp-5),5vw,90px) 120px; }
+  textarea { display:block; width:100%; min-height:180px; resize:none; background:transparent; border:0; outline:none; color:inherit; font-size: var(--fs-base); line-height: var(--lh-prose); font-family: var(--font-mono); padding:var(--sp-2) 0; tab-size:2; }
   /* 阅读页是全站唯一比界面正文还大一档的地方，正文走 --fs-md；标题按 24/19/16 三级跳，
      h3 和正文同字号，靠 600 字重分层——字重只有 400/500/600 三档，不能再往上要。 */
   .markdown-page { max-width:880px; margin:auto; font-size:var(--fs-md); line-height: var(--lh-prose); overflow-wrap:anywhere; }
   .plain-page { max-width:880px; margin:auto; font-size:var(--fs-md); line-height: var(--lh-prose); overflow-wrap:anywhere; }
   .plain-block { margin:0 0 1.1em; white-space:pre-wrap; font:inherit; }
-  .plain-page :global(mark.text-hit), .markdown-page :global(mark.text-hit) { background:#5b4413; color:#ffe9a8; border-radius:3px; padding:0 2px; }
+  .plain-page :global(mark.text-hit), .markdown-page :global(mark.text-hit) { background:#5b4413; color:#ffe9a8; border-radius:3px; padding:0 var(--sp-05); }
   .markdown-block { min-height:15px; cursor:text; outline:none; border-radius:5px; }
   .markdown-block:focus-visible { box-shadow:0 0 0 1px #777; }
   .empty-reading { color:#8a8a8e; }
-  .markdown-page :global(h1) { font-size:var(--fs-xl); font-weight:600; margin:12px 0 24px; }
-  .markdown-page :global(h2) { font-size:var(--fs-lg); font-weight:600; margin:18px 0 12px; }
-  .markdown-page :global(h3) { font-size:var(--fs-md); font-weight:600; margin:15px 0 8px; }
-  .markdown-page :global(p) { margin:8px 0; white-space:pre-wrap; }
-  .markdown-page :global(ul), .markdown-page :global(ol) { padding-left:26px; list-style:revert; }
-  .markdown-page :global(blockquote) { border-left:3px solid #ac6666; color:#b6b3bf; padding-left:18px; margin:14px 0; }
-  .markdown-page :global(pre) { background:#18181b; padding:16px; border-radius:8px; overflow:auto; }
-  .markdown-page :global(code) { font-family:var(--font-mono); background:#27272a; padding:2px 4px; border-radius:3px; }
+  .markdown-page :global(h1) { font-size:var(--fs-xl); font-weight:600; margin:var(--sp-3) 0 var(--sp-6); }
+  .markdown-page :global(h2) { font-size:var(--fs-lg); font-weight:600; margin:var(--sp-5) 0 var(--sp-3); }
+  .markdown-page :global(h3) { font-size:var(--fs-md); font-weight:600; margin:var(--sp-4) 0 var(--sp-2); }
+  .markdown-page :global(p) { margin:var(--sp-2) 0; white-space:pre-wrap; }
+  .markdown-page :global(ul), .markdown-page :global(ol) { padding-left:var(--sp-7); list-style:revert; }
+  .markdown-page :global(blockquote) { border-left:3px solid #ac6666; color:#b6b3bf; padding-left:var(--sp-5); margin:var(--sp-4) 0; }
+  .markdown-page :global(pre) { background:#18181b; padding:var(--sp-4); border-radius:8px; overflow:auto; }
+  .markdown-page :global(code) { font-family:var(--font-mono); background:#27272a; padding:var(--sp-05) var(--sp-1); border-radius:3px; }
   .markdown-page :global(pre code) { background:transparent; padding:0; }
-  .markdown-page :global(table) { width:100%; border-collapse:collapse; margin:16px 0; }
-  .markdown-page :global(th),.markdown-page :global(td) { border:1px solid #454550; padding:8px 12px; text-align:left; }
+  .markdown-page :global(table) { width:100%; border-collapse:collapse; margin:var(--sp-4) 0; }
+  .markdown-page :global(th),.markdown-page :global(td) { border:1px solid #454550; padding:var(--sp-2) var(--sp-3); text-align:left; }
   .markdown-page :global(img) { max-width:100%; max-height:520px; object-fit:contain; border-radius:8px; display:block; }
-  .markdown-page :global(button) { color:#dfa2a2; cursor:pointer; font-size: var(--fs-sm); padding:4px; }
+  .markdown-page :global(button) { color:#dfa2a2; cursor:pointer; font-size: var(--fs-sm); padding:var(--sp-1); }
   .markdown-page :global(a) { color:#dfa2a2; text-decoration:underline; }
-  .markdown-page :global(.text-asset) { display:block; margin:16px 0; }
+  .markdown-page :global(.text-asset) { display:block; margin:var(--sp-4) 0; }
   .markdown-page :global(.placeholder) { color:var(--text-3); }
 </style>

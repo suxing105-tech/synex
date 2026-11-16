@@ -174,7 +174,7 @@
     display: block;
     width: 168px;
     height: 14px; /* 按控制件的满高占位，14px 圆头不会被后面的文案顶到 */
-    margin-top: 34px;
+    margin-top: var(--sp-8);
     animation: splash-rule-in 180ms ease-out 40ms both;
   }
   .rule-track {
@@ -229,7 +229,7 @@
   }
 
   .splash-caption {
-    margin-top: 26px;
+    margin-top: var(--sp-7);
     font-size: var(--fs-2xs);
     letter-spacing: var(--track-display);
     color: #8a8e93;
@@ -243,10 +243,10 @@
     color: #fb7185;
     overflow-wrap: anywhere;
   }
-  .splash-hint { margin-top: 10px; font-size: var(--fs-xs); line-height: var(--lh-read); color: #a1a1aa; max-width: 380px; }
+  .splash-hint { margin-top: var(--sp-3); font-size: var(--fs-xs); line-height: var(--lh-read); color: #a1a1aa; max-width: 380px; }
   .splash-retry {
-    margin-top: 18px;
-    padding: 6px 18px;
+    margin-top: var(--sp-5);
+    padding: var(--sp-2) var(--sp-5);
     border: 1px solid #3a3a41;
     border-radius: 6px;
     background: #1c1c20;

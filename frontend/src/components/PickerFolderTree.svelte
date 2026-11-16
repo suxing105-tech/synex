@@ -127,7 +127,7 @@
   .pft-toggle { flex: none; width: 17px; height: 24px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: var(--text-3); cursor: pointer; }
   .pft-toggle:hover { background: var(--raise-2); color: var(--text-1); }
   .pft-toggle-spacer { flex: none; width: 17px; }
-  .pft-item { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px 0 2px; border: 0; border-radius: 7px; background: transparent; color: var(--text-2); font-size: var(--fs-sm); font-family: inherit; text-align: left; cursor: pointer; transition: background-color 140ms ease, color 140ms ease; }
+  .pft-item { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--sp-2); height: 28px; padding: 0 var(--sp-2) 0 var(--sp-05); border: 0; border-radius: 7px; background: transparent; color: var(--text-2); font-size: var(--fs-sm); font-family: inherit; text-align: left; cursor: pointer; transition: background-color 140ms ease, color 140ms ease; }
   .pft-item:hover { background: var(--raise-1); color: var(--text-1); }
   .pft-item.active { background: var(--ink-3); color: var(--text-1); }
   .pft-icon { flex: none; display: flex; color: var(--text-3); }
@@ -135,5 +135,5 @@
   .pft-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pft-count { flex: none; font-size: var(--fs-2xs); color: var(--text-3); font-variant-numeric: tabular-nums; }
   .pft-count.zero { opacity: .4; }
-  .pft-group { margin: 10px 0 2px; padding: 0 8px; font-size: var(--fs-2xs); color: var(--text-3); letter-spacing: var(--track-label); }
+  .pft-group { margin: var(--sp-3) 0 var(--sp-05); padding: 0 var(--sp-2); font-size: var(--fs-2xs); color: var(--text-3); letter-spacing: var(--track-label); }
 </style>

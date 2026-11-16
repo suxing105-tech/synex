@@ -244,29 +244,29 @@
 </div>
 
 <style>
-  .video-compare { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; gap: 8px; }
+  .video-compare { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; gap: var(--sp-2); }
   .compare-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #000; border-radius: 8px; }
   .base-video { width: 100%; height: 100%; object-fit: contain; display: block; }
   .compare-overlay { position: absolute; inset: 0; background: #000; }
-  .label { position: absolute; top: 10px; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 8px; border-radius: 6px; background: #0009; color: #eee; font-size: var(--fs-2xs); z-index: 3; }
+  .label { position: absolute; top: 10px; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: var(--sp-1) var(--sp-2); border-radius: 6px; background: #0009; color: #eee; font-size: var(--fs-2xs); z-index: 3; }
   .left { left: 10px; } .right { right: 10px; }
   .divider { position: absolute; top: 0; bottom: 0; width: 1px; background: #ffffffb0; pointer-events: none; z-index: 4; }
-  .divider span { position: absolute; top: 50%; transform: translate(-50%, -50%); border-radius: 20px; padding: 6px; white-space: nowrap; background: #222c; border: 1px solid #aaa; color: white; }
+  .divider span { position: absolute; top: 50%; transform: translate(-50%, -50%); border-radius: 20px; padding: var(--sp-2); white-space: nowrap; background: #222c; border: 1px solid #aaa; color: white; }
   .compare-control { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; touch-action: none; z-index: 5; }
-  .compare-bar { display: flex; align-items: center; gap: 10px; padding: 0 12px; }
+  .compare-bar { display: flex; align-items: center; gap: var(--sp-3); padding: 0 var(--sp-3); }
   .bar-btn { width: 34px; height: 34px; border-radius: 50%; background: #fff2; color: #fff; display: flex; align-items: center; justify-content: center; }
   .bar-btn:hover { background: #fff4; }
   .seek { flex: 1; accent-color: #f24e4e; }
   .time { color: #ccc; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .sync-badge { font-size: var(--fs-2xs); color: #9fe0a0; background: #2e7d3226; border: 1px solid #2e7d3255; border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+  .sync-badge { font-size: var(--fs-2xs); color: #9fe0a0; background: #2e7d3226; border: 1px solid #2e7d3255; border-radius: 999px; padding: var(--sp-05) var(--sp-2); white-space: nowrap; }
   .sync-badge.off { color: #bbb; background: #ffffff14; border-color: #ffffff22; }
-  .side-stage { flex: 1; min-height: 0; display: flex; gap: 12px; }
-  .side-panel { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .side-stage { flex: 1; min-height: 0; display: flex; gap: var(--sp-3); }
+  .side-panel { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
   .side-video { width: 100%; flex: 1; min-height: 0; object-fit: contain; background: #000; border-radius: 8px; }
   .side-label { color: #ccc; font-size: var(--fs-2xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
-  .ctx-menu { position: absolute; z-index: 20; min-width: 128px; padding: 4px; background: #26262a; border: 1px solid #3a3a40; border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); }
-  .ctx-item { display: block; width: 100%; text-align: left; padding: 7px 10px; border-radius: 6px; font-size: var(--fs-sm); color: #eee; background: transparent; }
+  .ctx-menu { position: absolute; z-index: 20; min-width: 128px; padding: var(--sp-1); background: #26262a; border: 1px solid #3a3a40; border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); }
+  .ctx-item { display: block; width: 100%; text-align: left; padding: var(--sp-2) var(--sp-3); border-radius: 6px; font-size: var(--fs-sm); color: #eee; background: transparent; }
   .ctx-item:hover { background: #f24e4e; color: #fff; }
-  .ctx-sep { height: 1px; margin: 4px 2px; background: #3a3a40; }
-  .ctx-hint { margin: 0; padding: 4px 10px 2px; font-size: var(--fs-2xs); color: #8a8a92; }
+  .ctx-sep { height: 1px; margin: var(--sp-1) var(--sp-05); background: #3a3a40; }
+  .ctx-hint { margin: 0; padding: var(--sp-1) var(--sp-3) var(--sp-05); font-size: var(--fs-2xs); color: #8a8a92; }
 </style>

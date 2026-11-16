@@ -67,7 +67,7 @@
 </figure>
 
 <style>
-  .vt-frame { margin: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .vt-frame { margin: 0; display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
   /* 形状与 hover 走 app.css 的 .media-chip（与主网格同规格），这里只管尺寸 */
   .vt-thumb { width: 132px; height: 92px; cursor: zoom-in; }
   .vt-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -79,8 +79,8 @@
   .vt-caption { display: flex; flex-direction: column; gap: 3px; }
   .vt-meta { font-size: var(--fs-2xs); color: #a1a1aa; }
   .vt-danger { color: var(--danger); }
-  .vt-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+  .vt-actions { display: flex; gap: var(--sp-1); flex-wrap: wrap; }
   .vt-button {
-    font-size: var(--fs-2xs); padding: 3px 6px; border: 1px solid #3f3f46; border-radius: 5px; background: #202024;
+    font-size: var(--fs-2xs); padding: 3px var(--sp-2); border: 1px solid #3f3f46; border-radius: 5px; background: #202024;
   }
 </style>

@@ -41,15 +41,15 @@
 <style>
   .compare-stage { position: absolute; inset: 16px; overflow: hidden; background: #101010; }
   img { width: 100%; height: 100%; object-fit: contain; user-select: none; pointer-events: none; }
-  .side-stage { position:absolute; inset:16px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; min-height:0; }
+  .side-stage { position:absolute; inset:16px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--sp-3); min-height:0; }
   .side-item { position:relative; display:flex; align-items:center; justify-content:center; min-width:0; min-height:0; overflow:hidden; background:#101010; }
   .side-item img { object-fit:contain; }
   .side-item .label { left:12px; right:auto; }
   .compare-overlay { position: absolute; inset: 0; background: #101010; }
-  .label { position: absolute; top: 12px; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 5px 9px; border-radius: 6px; background: #0009; color: #eee; font-size: var(--fs-2xs); }
+  .label { position: absolute; top: 12px; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: var(--sp-1) var(--sp-2); border-radius: 6px; background: #0009; color: #eee; font-size: var(--fs-2xs); }
   .left { left: 12px; } .right { right: 12px; }
   .divider { position: absolute; top: 0; bottom: 0; width: 1px; background: #ffffffb0; pointer-events: none; }
-  .divider span { position: absolute; top: 50%; transform: translate(-50%, -50%); border-radius: 20px; padding: 6px; white-space: nowrap; background: #222c; border: 1px solid #aaa; color: white; }
+  .divider span { position: absolute; top: 50%; transform: translate(-50%, -50%); border-radius: 20px; padding: var(--sp-2); white-space: nowrap; background: #222c; border: 1px solid #aaa; color: white; }
   .compare-control { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; touch-action: none; }
   .compare-stage:focus-within .divider { background: white; width: 2px; }
 </style>

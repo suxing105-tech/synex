@@ -95,7 +95,7 @@ python frontend\scripts\verify-public-release.py --version 0.2.21 --dir outputs\
 丢了私钥就再也签不出能自动更新的版本（已发布客户端只认这把公钥）。
 新增副本时同步更新上面两处路径的记录。
 
-### 更新密钥只用一把，不换（2026-11-16 定稿）
+### 更新密钥只用一把，不换（2026-11-15 定稿）
 
 发布通道与更新密钥就是本仓库这一套：`suxing105-tech/synex` + 公钥 `2544671ABFEF8FD0`，私钥是上面记的
 `outputs\auto-update-v1\private\updater.key`（`F:\SeekX-Backups\auto-update-private\` 有同 mtime 的一份）。
@@ -103,7 +103,7 @@ python frontend\scripts\verify-public-release.py --version 0.2.21 --dir outputs\
 
 fork `virsux/synex` 在 0.2.37 把自己的仓库名和新公钥 `8C00E93C8F6C6093` 写进了脚本与文档，并说
 「旧私钥已丢失、仓库内与 `F:\` 备份都是空的、旧公钥是 Tauri 公开的测试密钥」。**三条都不成立**，
-2026-11-16 复核过：仓库内和 `F:\` 两处都有 `updater.key` 与 `.pub`（同 mtime 2026-09-09 01:33），
+2026-11-15 复核过：仓库内和 `F:\` 两处都有 `updater.key` 与 `.pub`（同 mtime 2026-09-09 01:33），
 两份 `.pub` 与 `tauri.conf.json` 里的 `pubkey` 逐字相同；公钥原文和 key id 在全网搜不到。
 同一目录里另有一对同日生成的 `test.key` / `test.key.pub`（与 `pubkey` 不同），他们说的「测试密钥」
 应当是认错了这一对。2026-11-15 合并 0.2.35–0.2.37 时没采纳它那笔发布口径（仓库地址与

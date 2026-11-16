@@ -172,7 +172,7 @@ describe("脱档字号棘轮：只许降，不许升", () => {
   // 小节标题从 text-[11px] 换成共用类里的 var(--fs-xs)，280 → 270。
   // 2026-11-13 oil-ui 评审第三刀：右栏那族微标签六处 text-[11px] 收进 .detail-section-title
 // （App / WorkflowCard / VideoPromptPanel / MetadataCard×2 / ParamsCard），270 → 264。
-  // 2026-11-16 右栏标题统一成一套语言：DetailPanel 私有的 12px / 10px、ReversePromptPanel
+  // 2026-11-15 右栏标题统一成一套语言：DetailPanel 私有的 12px / 10px、ReversePromptPanel
   // 的 text-[13px]、PromptCard 的 text-[11px] 全并进 .section-title，264 → 248。
   const BASELINE = 248;
 
@@ -216,7 +216,7 @@ describe("详情栏共用一把尺子（2026-11-13 oil-ui 评审第一刀 T4 + T
     expect(textPanel.match(/class="dock-btn/g) || []).toHaveLength(8);
   });
 
-  it("右栏标题只有一套语言：加粗 + --text-1，两级只差字号（2026-11-16 定稿）", () => {
+  it("右栏标题只有一套语言：加粗 + --text-1，两级只差字号（2026-11-15 定稿）", () => {
     // 苏醒的口径：右栏统一一种标题长相，以 0.2.35 工作台那一套为准。定稿前三套并存——
     // DetailPanel 私有的 .section-heading（12px / 10px 档外）、app.css 的 .detail-section-title
     // （--fs-xs + uppercase + 字距）、卡片里各写各的 text-[11px] / text-[13px]。现在只剩一套：

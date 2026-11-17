@@ -7,7 +7,7 @@ import {
   modeLabel, optionLabel, promptSourceLabel, promptSlots, ratioShape, referenceCells, referenceIssues, visibleRefCells,
   resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, templateDisplayName,
   applyMention, comparePair, matchMention, mentionAddLabel, mentionChunks, mentionItems, mentionToken,
-  familyCells, formatElapsed, inspectAsTemplate, isAudioOnlyRefs, isAudioTemplate, isImageOnlyRefs, isVideoTemplate,
+  elapsedCostLabel, familyCells, formatElapsed, inspectAsTemplate, isAudioOnlyRefs, isAudioTemplate, isImageOnlyRefs, isVideoTemplate,
   mentionInsertText, refTag, templateMediaKind, WF_KIND_WORDS, WF_OUTPUT_WORDS,
   referenceCounter, referenceFamilies, referenceNoun,
   defaultPromptGroupValues, primaryPromptGroup, promptGroupHint, promptGroupValues, promptGroups, promptPlaceholder, secondaryPromptGroups,
@@ -740,6 +740,19 @@ describe("生成中那一行说人话", () => {
     expect(cloneStatusLabel(video)).toBe("已生成 1 条");
     expect(video.outputs.map((o) => [o.id, o.kind, o.thumbnail_url])).toEqual([[3, "video", "/api/videos/3/thumb"]]);
     expect(cloneStatusLabel(applyCloneProgress({ state: "done", running: false, image_ids: [3] }))).toBe("已生成 1 张");
+  });
+
+  it("elapsedCostLabel：一律秒，拿不到时长就不说", () => {
+    // 2026-11-17 苏醒在队列那一页点名「用秒（S）为计量单位，示例：耗时：40S」——
+    // 这一页比的是快慢，跳成「3分12秒」还得心算一次才知道和上一条差几秒。
+    expect(elapsedCostLabel(40)).toBe("耗时：40S");
+    expect(elapsedCostLabel(192)).toBe("耗时：192S");
+    expect(elapsedCostLabel(40.4)).toBe("耗时：40S");
+    // null / 0 / 坏值一律空串：那一格整个不排，写个「耗时：0S」是假话
+    expect(elapsedCostLabel(null)).toBe("");
+    expect(elapsedCostLabel(undefined)).toBe("");
+    expect(elapsedCostLabel(0)).toBe("");
+    expect(elapsedCostLabel(Number.NaN)).toBe("");
   });
 
   it("formatElapsed：不到一分钟说秒，整分钟不说余秒", () => {

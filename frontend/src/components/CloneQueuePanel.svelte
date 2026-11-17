@@ -25,6 +25,7 @@
     cloneStatusLabel,
     cloudApi,
     coinsLabel,
+    elapsedCostLabel,
     formatElapsed,
     stateLabel,
   } from "../lib/clone";
@@ -181,6 +182,7 @@
     <h4 class="queue-label">本次运行</h4>
     {#if $cloneHistory.length}
       {#each $cloneHistory.slice(0, 3) as entry}
+        {@const cost = elapsedCostLabel(entry.elapsedSec)}
         <div class="queue-row">
           <div class="queue-thumbs">
             {#each entry.outputs.slice(0, 4) as o}
@@ -207,12 +209,14 @@
             <span class="queue-row-title">{entry.outputs.length} {counterFor(entry.mediaKind)} · {entry.engine === "cloud" ? "云端" : "本机"}</span>
             <span class="queue-row-sub">{footerTimeLabel(entry.at / 1000)}{costOf(entry.costCoins)}</span>
           </div>
+          {#if cost}<span class="queue-row-cost">{cost}</span>{/if}
         </div>
       {/each}
       {#if $cloneHistory.length > 3}
         <details class="queue-older">
           <summary>更早的产出（{$cloneHistory.length - 3} 批）</summary>
           {#each $cloneHistory.slice(3) as entry}
+            {@const cost = elapsedCostLabel(entry.elapsedSec)}
             <div class="queue-row">
               <div class="queue-thumbs">
                 {#each entry.outputs.slice(0, 4) as o}
@@ -236,6 +240,7 @@
                 <span class="queue-row-title">{entry.outputs.length} {counterFor(entry.mediaKind)} · {entry.engine === "cloud" ? "云端" : "本机"}</span>
                 <span class="queue-row-sub">{footerTimeLabel(entry.at / 1000)}{costOf(entry.costCoins)}</span>
               </div>
+              {#if cost}<span class="queue-row-cost">{cost}</span>{/if}
             </div>
           {/each}
         </details>
@@ -338,6 +343,12 @@
   .queue-row-main { display: flex; flex-direction: column; gap: var(--sp-05); min-width: 0; flex: 1; }
   .queue-row-title { font-size: var(--fs-xs); color: var(--text-1); }
   .queue-row-sub { font-size: var(--fs-2xs); color: var(--text-3); }
+  /* 这一批跑了多久：右侧那一格读的是数，所以等宽数字；它是这一行的第二个事实，
+     用 --text-2 压过「几分前」那层灰，但不到 --text-1（那是「几张·本机/云端」那行的位置）。 */
+  .queue-row-cost {
+    flex: none; font-size: var(--fs-2xs); color: var(--text-2);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
   .queue-empty {
     display: flex; flex-direction: column; align-items: center; gap: var(--sp-2);
     padding: var(--sp-5) var(--sp-3); text-align: center; color: var(--text-3);

@@ -115,6 +115,20 @@ describe("右侧栏队列的本次运行封存", () => {
     expect(cloud.costCoins).toBe(12);
   });
 
+  it("记住这一批跑了多久，重复推 done 不把耗时改大", () => {
+    // 后端 public_state 的 elapsed 是「现在减开始时间」，跑完之后每次再读都会变大。
+    // 封存只认第一次那一条（done 那一刻推来的数才是真跑完用的秒数），口径同 at。
+    applyCloneProgress(done("j1", [out(1)], { elapsed: 40.4 }));
+    expect(get(cloneHistory)[0]?.elapsedSec).toBe(40);
+    applyCloneProgress(done("j1", [out(1)], { elapsed: 3_600 }));
+    expect(get(cloneHistory)[0]?.elapsedSec).toBe(40);
+  });
+
+  it("后端没给 elapsed 时耗时是 null，不是 0（界面上那一格因此整个不排）", () => {
+    applyCloneProgress(done("j1", [out(1)]));
+    expect(get(cloneHistory)[0]?.elapsedSec).toBeNull();
+  });
+
   it("clearCloneHistory 清空（换库 / 重开这种整屏作废的场合用）", () => {
     applyCloneProgress(done("j1", [out(1)]));
     clearCloneHistory();

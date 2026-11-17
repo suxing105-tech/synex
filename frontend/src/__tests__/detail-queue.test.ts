@@ -76,7 +76,7 @@ afterEach(() => {
 });
 
 describe("队列页的空态", () => {
-  it("这一轮没跑过就给一句话和下一步去哪点，不摆假列表", () => {
+  it("默认只展示最近三条，更早的产出自己展开看", () => {
     const ui = render(CloneQueuePanel, { active: false });
     expect(ui.getByText("这一轮还没跑过生成")).toBeTruthy();
     expect(ui.getByText(/在卡片右下角点「再次创作」跑一批/)).toBeTruthy();
@@ -192,10 +192,32 @@ describe("云端那条钱已经付了、产物还没回来的", () => {
 });
 
 describe("本次运行的那几批", () => {
+
+  it("每批右侧写着这一批跑了多久，单位秒", () => {
+    // 2026-11-17 苏醒在队列那一页圈了右侧那格：「我希望这里显示生成用的时间，用秒（S）为计量单位，
+    // 示例：耗时：40S」。左边那句「几分前」答的是什么时候跑完的，答不了快慢，两句都要在。
+    cloneHistory.set([
+      {
+        key: "job-a", jobId: "job-a", outputs: [out(201)], mediaKind: "image",
+        engine: "comfyui", provider: "", costCoins: null, at: Date.now(), elapsedSec: 40,
+      },
+      {
+        key: "job-b", jobId: "job-b", outputs: [out(202)], mediaKind: "image",
+        engine: "comfyui", provider: "", costCoins: null, at: Date.now(), elapsedSec: null,
+      },
+    ]);
+    const ui = render(CloneQueuePanel, { active: false });
+    expect(ui.getByText("耗时：40S")).toBeTruthy();
+    // 第二条没测出时长：那一格整个不排，不写「耗时：0S」骗人
+    expect(ui.getAllByText("耗时：40S")).toHaveLength(1);
+    expect(ui.queryByText(/耗时：0S/)).toBeNull();
+    expect(ui.getAllByText("1 张 · 本机")).toHaveLength(2);
+  });
   it("默认显示最近三批，更早批次在展开后仍能打开产出", async () => {
     cloneHistory.set(Array.from({ length: 5 }, (_, i) => ({
       key: `job-${i}`, jobId: `job-${i}`, outputs: [out(100 + i)], mediaKind: "image",
       engine: "comfyui", provider: "", costCoins: null, at: Date.now() - i * 60_000,
+      elapsedSec: 40 + i,
     })));
     const ui = render(CloneQueuePanel, { active: false });
     expect(ui.getByRole("button", { name: "看 out-100.png 产出" })).toBeTruthy();

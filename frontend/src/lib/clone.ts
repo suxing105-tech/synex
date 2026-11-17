@@ -603,6 +603,13 @@ export interface CloneHistoryEntry {
   costCoins: number | null;
   /** 前端收到「跑完」那一刻的时间戳，只用来排序与显示「几分前」。 */
   at: number;
+  /**
+   * 这一批跑了多久（秒），拿不到是 null。
+   *
+   * 「几分前」答的是什么时候跑完的，回答不了「这批比上一批快不快」——那是 2026-11-17 苏醒
+   * 在队列那一页圈出来要的：右栏每批右侧要写耗时，单位秒。
+   */
+  elapsedSec: number | null;
 }
 
 /** 右侧栏那一页放得下的量；再多就成了翻相册，不是「刚跑完的那几批」。 */
@@ -621,6 +628,10 @@ function sealCloneHistory(job: CloneJob): void {
   cloneHistory.update((list) => {
     const at = list.findIndex((h) => h.key === key);
     const prev = at >= 0 ? list[at] : undefined;
+    // 时长在封存这一刻从进度里取：后端 public_state 的 elapsed 是「现在几点减开始时间」，
+    // 跑完之后每次再读都会变大，只有 done 那一条推过来的数才是真跑完用的秒数。
+    // 记第一次（和上面 at 同一口径）：WS 会重复推 done，重复推不该把耗时改大。
+    const seconds = Math.round(Number(job.elapsed) || 0);
     const entry: CloneHistoryEntry = {
       key,
       jobId: job.job_id,
@@ -630,6 +641,7 @@ function sealCloneHistory(job: CloneJob): void {
       provider: job.provider ?? "",
       costCoins: job.cost_coins ?? null,
       at: prev?.at ?? Date.now(),
+      elapsedSec: prev?.elapsedSec ?? (seconds > 0 ? seconds : null),
     };
     if (at >= 0 && prev) {
       const copy = [...list];
@@ -763,6 +775,20 @@ export function formatElapsed(seconds: number): string {
   const rest = total % 60;
   if (!minutes) return `${total}秒`;
   return rest ? `${minutes}分${rest}秒` : `${minutes}分钟`;
+}
+
+/**
+ * 「耗时：40S」——队列那一页右侧那句：这一批从头到尾跑了多久。
+ *
+ * 单位一律秒，不跳成「3分12秒」（2026-11-17 苏醒点名用秒）：这一页比的是快慢，
+ * 一句「3分12秒」还得在心算一次才知道和上一条差几秒；formatElapsed 那句是给等待中的人
+ * 看的进度读数，两句话不共用一个口径。
+ * 拿不到时长（老封存记录、后端没给 elapsed）返回空串，那一格整个不排——写个「0S」是假话。
+ */
+export function elapsedCostLabel(seconds: number | null | undefined): string {
+  const total = Number(seconds);
+  if (!Number.isFinite(total) || total <= 0) return "";
+  return `耗时：${Math.round(total)}S`;
 }
 
 export function cloneStatusLabel(job: CloneJob): string {

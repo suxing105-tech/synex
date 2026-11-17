@@ -482,6 +482,9 @@ describe("reverse prompts", () => {
     const panel = render(ModelApiSettings);
     await waitForReady(panel);
     await pickProvider(panel, "runninghub");
+    // 工作流那一把存过了也给同一串暗下去的点，和模型那一格一个长相
+    const wfMask = (panel.getByLabelText("工作流 API Key") as HTMLInputElement).getAttribute("placeholder") ?? "";
+    expect(/^•+$/.test(wfMask)).toBe(true);
     // 撤了复选框以后，「怎么删」这件事得在页面上说得出人话
     expect(panel.container.querySelector(".api-help")?.textContent).toContain("点它右边那颗「清除」");
     await fireEvent.click(panel.getByRole("button", { name: "清除工作流这把 Key" }));
@@ -630,7 +633,7 @@ describe("reverse prompts", () => {
     // 超时不分厂商留着：思考档的模型真会跑过 120 秒，没有这一格只能来问我们
     expect((panel.getByLabelText("请求超时") as HTMLInputElement).value).toBe("120");
   });
-  it("存过 Key 的这一格锁住：不能编辑、格子里不写中文；清除以后才重新打开", async () => {
+  it("存过 Key 的这一格锁住：格子里给一串暗下去的点；清除以后才重新打开", async () => {
     const clear = vi.spyOn(reverseApi, "clearModelKey").mockResolvedValue({ ...model, has_api_key: false });
     const panel = render(ModelApiSettings);
     await waitForReady(panel);
@@ -638,7 +641,10 @@ describe("reverse prompts", () => {
     const box = panel.getByLabelText("API Key") as HTMLInputElement;
     expect(box.disabled).toBe(true);
     expect(box.value).toBe("");
-    expect(box.getAttribute("placeholder")).toBe("");
+    // 那串点是 placeholder：格子里要有东西，但绝不能是 value（value 里进了东西会被当成新 Key 存回去）
+    const mask = box.getAttribute("placeholder") ?? "";
+    expect(mask.length).toBeGreaterThanOrEqual(8);
+    expect(/^•+$/.test(mask)).toBe(true);
     expect(panel.getByText(/这一格已锁住/)).toBeTruthy();
     await fireEvent.click(panel.getByRole("button", { name: "清除这把 Key" }));
     await waitFor(() => expect(clear).toHaveBeenCalled());
@@ -669,7 +675,11 @@ describe("reverse prompts", () => {
     expect(buttonRule).toContain("min-height: 0");
     const fieldRule = source.match(/\.model-settings input:not\(\[type=checkbox\]\)\s*\{([^}]*)\}/)?.[1] ?? "";
     expect(fieldRule).toContain("height: var(--ctl-md)");
-    expect(source).toMatch(/\.api-key-row input:disabled\s*\{[^}]*opacity/);
+    // 存过 Key 那一格：字与边框退一档、点用 --text-3。整格压 opacity 会把那串点一起糊掉，所以不许回来
+    const locked = source.match(/\.api-key-row input:disabled\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(locked).toContain("color: var(--text-3)");
+    expect(locked).not.toContain("opacity");
+    expect(source).toMatch(/\.api-key-row input:disabled::placeholder\s*\{\s*color: var\(--text-3\)/);
   });
   it("手动填写那一条在库里 provider 是 NULL：进 store 统一成 custom，设置页才认得它", async () => {
     vi.mocked(reverseApi.models).mockResolvedValue([{ ...model, provider: null }]);

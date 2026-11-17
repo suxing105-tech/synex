@@ -25,6 +25,9 @@
   const headGlyph = $derived(preset || editingId ? "" : "＋");
   /** RunningHub 这类服务商不一样：Key 的家在云端账号表（gen_accounts）那一行里，这条配置不另存一份。 */
   const sharedKey = $derived(preset?.credential_scope === "cloud");
+  /** 存过 Key 之后格子里那串暗下去的点：走 placeholder，永远进不了 value，
+      既不会被当成新 Key 存回去，也不会让人以为这一格是空的。 */
+  const keyMask = "•".repeat(24);
   /** 新建那条配置自己还不知道 Key 在不在，这时照服务商清单带回的布尔说。 */
   const keyReady = $derived(sharedKey ? (hasKey || !!preset?.shared_has_key) : hasKey);
   const cloudPreset = $derived($providerPresets.find(p => p.credential_scope === "cloud"));
@@ -354,7 +357,7 @@
             <div class="api-key-row">
               <input class="secret" type="text" autocomplete="off" spellcheck="false"
                      aria-label="工作流 API Key" bind:value={workflowKeyInput}
-                     disabled={workflowReady} placeholder={workflowReady ? "" : "粘贴工作流 API 密钥"} />
+                     disabled={workflowReady} placeholder={workflowReady ? keyMask : "粘贴工作流 API 密钥"} />
               {#if workflowReady}
                 <button class="setting-button setting-button-ghost api-key-clear"
                         aria-label="清除工作流这把 Key" onclick={() => void clearKeyNow("workflow")}>清除</button>
@@ -378,7 +381,7 @@
           <div class="api-key-row">
             <input class="secret" type="text" autocomplete="off" spellcheck="false"
                    aria-label="API Key" bind:value={keyInput}
-                   disabled={keyReady} placeholder={keyReady ? "" : "粘贴 API Key"} />
+                   disabled={keyReady} placeholder={keyReady ? keyMask : "粘贴 API Key"} />
             {#if keyReady}
               <button class="setting-button setting-button-ghost api-key-clear"
                       aria-label="清除这把 Key" onclick={() => void clearKeyNow("model")}>清除</button>
@@ -477,8 +480,11 @@
      只写在本组件的 <style> 里：app.css 的 .setting-button 别的设置页也在用，不在这里动它。 */
   .model-settings .setting-button { height: var(--ctl-md); min-height: 0; padding: 0 var(--sp-3); box-sizing: border-box; }
   .model-settings input:not([type=checkbox]) { height: var(--ctl-md); padding: 0 var(--sp-3); box-sizing: border-box; }
-  /* 存过 Key 的这一格「暗下去、不能编辑」（disabled 挡住打字，opacity 给出暗下去的样子）：
-     格子里既不回显 Key 也不写中文，要换先点右边的「清除」。 */
-  .api-key-row input:disabled { opacity: .55; cursor: default; }
+  /* 存过 Key 的这一格：不能编辑，格子里给一串暗下去的点（走 placeholder，进不了 value，
+      既不会被当成新 Key 存回去，也不让人以为这一格空着）。点用 --text-3，全站最暗的一档正文灰，
+      压在这格的底上还有 5.1:1；边框退到 --ink-4 一档，读出「这格锁着」。上一版整格压 opacity，
+      那串点跟着糊到看不见，等于没给，所以这里只让字与边框退档。 */
+  .api-key-row input:disabled { color: var(--text-3); border-color: var(--ink-4); cursor: default; }
+  .api-key-row input:disabled::placeholder { color: var(--text-3); opacity: 1; }
   .secret { -webkit-text-security: disc; }
 </style>

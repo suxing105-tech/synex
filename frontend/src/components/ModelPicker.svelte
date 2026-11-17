@@ -9,10 +9,11 @@
    * 模型也不用手输：清单里能对话的那几个由后端认出来，面板进来就先认一次，这一列只用来换一家/换一个。
    */
   import { reverseApi, errorMessage, modelConfigs, promptModelConfigs, rememberConfigModel } from "../lib/reverse-prompts";
-import Icon from "./Icon.svelte";
+  import Icon from "./Icon.svelte";
+  import BrandMark from "./BrandMark.svelte";
   import type { ProviderModel } from "../lib/reverse-prompts";
 
-  type List = { items: ProviderModel[]; reason: string; error: string; loading: boolean; hidden: number };
+  type List = { items: ProviderModel[]; reason: string; error: string; loading: boolean };
 
   let {
     value = null,
@@ -47,7 +48,6 @@ import Icon from "./Icon.svelte";
   const popStyle = $derived("left:" + pos.left + "px; top:" + pos.top + "px; width:" + pos.width + "px;"
     + (pos.up ? " transform: translateY(-100%);" : ""));
 
-  const avatar = (name: string) => (name.trim().slice(0, 2) || "?").toUpperCase();
 
   function place() {
     const rect = trigger?.getBoundingClientRect();
@@ -65,13 +65,12 @@ import Icon from "./Icon.svelte";
 
   async function load(id: number) {
     if (lists[id]) return;
-    lists = { ...lists, [id]: { items: [], reason: "", error: "", loading: true, hidden: 0 } };
+    lists = { ...lists, [id]: { items: [], reason: "", error: "", loading: true } };
     try {
       const out = await reverseApi.configModels(id);
-      lists = { ...lists, [id]: { items: out.models, reason: out.reason ?? "", error: "", loading: false,
-        hidden: out.hidden ?? 0 } };
+      lists = { ...lists, [id]: { items: out.models, reason: out.reason ?? "", error: "", loading: false } };
     } catch (e) {
-      lists = { ...lists, [id]: { items: [], reason: "", error: errorMessage(e), loading: false, hidden: 0 } };
+      lists = { ...lists, [id]: { items: [], reason: "", error: errorMessage(e), loading: false } };
     }
   }
 
@@ -147,7 +146,7 @@ import Icon from "./Icon.svelte";
           {#each configs as item (item.id)}
             <button class="mp-provider" class:mp-on={item.id === preview} type="button"
                     aria-current={item.id === preview} onclick={() => void enter(item.id)}>
-              <span class="mp-avatar" aria-hidden="true">{avatar(item.name)}</span>
+              <BrandMark id={item.provider} name={item.name} compact />
               <span class="mp-pname">{item.name}</span>
               {#if !item.has_api_key}<span class="mp-tag mp-warn">需配置</span>{/if}
             </button>
@@ -171,10 +170,6 @@ import Icon from "./Icon.svelte";
             <p class="mp-empty">{previewList.reason}</p>
           {:else if previewConfig}
             <p class="mp-empty">这家没报回能用的语言模型，到设置里检查这把 Key，或换一家。</p>
-          {/if}
-          {#if previewList?.items.length && previewList.hidden}
-            <!-- 这一家把纯文本档也报回来了，反推用不了，但要说清不是没读到：「5.3 怎么看不到」就答在这儿 -->
-            <p class="mp-empty mp-note">这家另外报了 {previewList.hidden} 个模型，认不出哪个能看图，没列进来（反推是把图发给模型看）。</p>
           {/if}
           {#if previewConfig && !previewConfig.has_api_key}
             <button class="mp-goto" type="button" onclick={gotoSettings}>这把 Key 还没配，去设置</button>
@@ -210,17 +205,11 @@ import Icon from "./Icon.svelte";
   }
   .mp-provider:hover, .mp-model:hover { background: #26262b; }
   .mp-on { background: #2f2f35; }
-  .mp-avatar {
-    width: 18px; height: 18px; flex: none; border-radius: var(--r-0); background: #3f3f46;
-    font-size: var(--fs-2xs); display: flex; align-items: center; justify-content: center; color: #a1a1aa;
-  }
   .mp-pname, .mp-mname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mp-tag { flex: none; font-size: var(--fs-2xs); padding: 1px var(--sp-1); border-radius: var(--r-0); background: #27272a; color: #a1a1aa; }
   .mp-rec { color: #4ade80; border: 1px solid #14532d; }
   .mp-warn { color: #fbbf24; border: 1px solid #78350f; }
   .mp-empty { font-size: var(--fs-2xs); line-height: var(--lh-ui); color: #a1a1aa; padding: var(--sp-2); margin: 0; }
-  /* 这是一句成句的说明，不是词级标签，按尺度规矩提到 12px（--fs-2xs 只给徽标和计数用）。 */
-  .mp-note { font-size: var(--fs-xs); }
   .mp-goto { display: block; width: calc(100% - 8px); margin: var(--sp-1); padding: var(--sp-1) var(--sp-2); font-size: var(--fs-2xs); color: #fbbf24; border: 1px solid #3f3f46; border-radius: var(--r-1); background: #202024; }
   .mp-error { font-size: var(--fs-2xs); color: #f87171; padding: var(--sp-1) var(--sp-2); margin: 0; }
 </style>

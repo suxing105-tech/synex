@@ -319,6 +319,34 @@ describe("reverse prompts", () => {
     expect(save.mock.calls[0][0]).toMatchObject({ provider: "qwen", api_key: "sk-123" });
     expect("model" in save.mock.calls[0][0]).toBe(false);
   });
+  it("厂商卡用真 LOGO，认不得的才回字母块：自定义那张还是＋", async () => {
+    vi.mocked(reverseApi.providers).mockResolvedValue([preset, cloudPreset]);
+    const panel = render(ModelApiSettings);
+    await waitForReady(panel);
+    // 通义千问在 brands 清单里 → 那张卡里是 <img>，src 指向随包的文件
+    const qwen = panel.container.querySelector('[data-provider="qwen"]');
+    expect(qwen?.querySelector(".brand-img")?.getAttribute("src")).toBe("/brands/qwen.svg");
+    // RunningHub 没有 LOGO → 回字母块，不是空白
+    const rh = panel.container.querySelector('[data-provider="runninghub"]');
+    expect(rh?.querySelector(".brand-img")).toBeNull();
+    expect(rh?.querySelector(".brand-mark")?.textContent?.trim()).toBe("RU");
+    // 自定义那张不给厂商标识，保留那颗加号
+    const custom = panel.container.querySelector('[data-provider="custom"]');
+    expect(custom?.querySelector(".brand-img")).toBeNull();
+    expect(custom?.querySelector(".brand-mark")?.textContent?.trim()).toBe("＋");
+  });
+  it("反推下拉左列那一家也认 LOGO：provider 认不得时退回字母，不留空格子", async () => {
+    modelConfigs.set([{ ...model, provider: "zhipu", name: "智谱 GLM", model: "glm-4.6v" }]);
+    vi.mocked(reverseApi.models).mockResolvedValue([{ ...model, provider: "zhipu", name: "智谱 GLM", model: "glm-4.6v" }]);
+    vi.spyOn(reverseApi, "configModels").mockResolvedValue({
+      models: [{ id: "glm-4.6v", label: "GLM-4.6V", recommended: true }], source: "live", reason: "",
+    });
+    const panel = render(ReversePromptPanel, { imageId: 1 });
+    await waitFor(() => expect(panel.getByText("反推提示词")).toBeTruthy());
+    await fireEvent.click(panel.getByLabelText("反推模型"));
+    await waitFor(() => expect(rows(panel)).toContain("GLM-4.6V"));
+    expect(panel.container.querySelector(".mp-provider .brand-img")?.getAttribute("src")).toBe("/brands/zhipu.svg");
+  });
   it("选 RunningHub：Key 那一格说清这是一把共用的 Key，且这一页不再碰模型清单", async () => {
     vi.mocked(reverseApi.providers).mockResolvedValue([preset, cloudPreset]);
     const list = vi.spyOn(reverseApi, "configModels");
@@ -575,8 +603,9 @@ describe("reverse prompts", () => {
     await fireEvent.click(panel.getByText("开始反推"));
     await waitFor(() => expect(generate).toHaveBeenCalledWith(1, 1, "b/qwen2.5-vl"));
   });
-  it("这家另外报了用不上的模型时说得清数量：「5.3 怎么看不到」要在下拉里当场答", async () => {
-    // 智谱的清单里 glm-5.3 这类是纯文本档，反推收不到图，所以没列进来——但得让人看见不是没读到。
+  it("反推下拉里不解释「另外报了 N 个模型」：这一列只列能反推的，不写为什么少列了", async () => {
+    // 苏醒 2026-11-16 明确要删这句：清单干净比解释重要。数量还留在接口的 hidden 里，
+    // 哪天要放回别处（比如 tooltip）不必再动后端。
     modelConfigs.set([{ ...model, model: "glm-4.6v" }]);
     vi.mocked(reverseApi.models).mockResolvedValue([{ ...model, model: "glm-4.6v" }]);
     vi.spyOn(reverseApi, "configModels").mockResolvedValue({
@@ -587,20 +616,8 @@ describe("reverse prompts", () => {
     await waitFor(() => expect(panel.getByText("反推提示词")).toBeTruthy());
     await fireEvent.click(panel.getByLabelText("反推模型"));
     await waitFor(() => expect(rows(panel)).toContain("GLM-4.6V"));
-    expect(panel.container.querySelector(".mp-models")?.textContent).toContain("另外报了 9 个模型");
-  });
-  it("一个模型都没挡住时不显示那句说明", async () => {
-    modelConfigs.set([{ ...model, model: "glm-4.6v" }]);
-    vi.mocked(reverseApi.models).mockResolvedValue([{ ...model, model: "glm-4.6v" }]);
-    vi.spyOn(reverseApi, "configModels").mockResolvedValue({
-      models: [{ id: "glm-4.6v", label: "GLM-4.6V", recommended: true }],
-      source: "live", reason: "", hidden: 0,
-    });
-    const panel = render(ReversePromptPanel, { imageId: 1 });
-    await waitFor(() => expect(panel.getByText("反推提示词")).toBeTruthy());
-    await fireEvent.click(panel.getByLabelText("反推模型"));
-    await waitFor(() => expect(rows(panel)).toContain("GLM-4.6V"));
     expect(panel.container.querySelector(".mp-models")?.textContent).not.toContain("另外报了");
+    expect(panel.container.querySelector(".mp-note")).toBeNull();
   });
   it("图片提示词反推的模型列表不显示 MiniMax 生图、视频和音频 API", async () => {
     const minimax = {

@@ -3,6 +3,7 @@
   import { modelConfigs, reverseSettings, refreshReverseConfig, refreshProviderPresets, providerPresets, reverseApi, errorMessage } from "../lib/reverse-prompts";
   import type { ModelConfig, ModelDraft, ProviderPreset } from "../lib/reverse-prompts";
   import { cloudApi } from "../lib/clone";
+  import BrandMark from "./BrandMark.svelte";
   const CUSTOM = "custom";
   const blank = (): ModelDraft => ({ name: "", base_url: "", model: "", timeout: 120, provider: CUSTOM });
   let draft = $state<ModelDraft>(blank());
@@ -88,7 +89,6 @@
   const presetReady = (item: ProviderPreset) => item.credential_scope === "cloud"
     ? !!(item.shared_has_key || item.shared_has_workflow_key || configsFor(item.id).some(c => c.has_api_key))
     : configsFor(item.id).some(c => c.has_api_key);
-  const avatar = (name: string) => (name.trim().slice(0, 2) || "?").toUpperCase();
   function selectProvider(id: string) {
     const existing = configsFor(id)[0];
     workflowKeyInput = "";
@@ -222,7 +222,7 @@
         <!-- legend 只留给读屏；界面上的标题行是下面这一行（照苏醒贴的那张参考页）。 -->
         <legend class="api-legend">当前服务商：{preset ? preset.name : "自定义（手动填写）"}</legend>
         <div class="api-provider-head">
-          <span class="api-avatar" aria-hidden="true">{preset ? avatar(preset.name) : "＋"}</span>
+          <BrandMark id={preset ? preset.id : "custom"} name={preset ? preset.name : ""} glyph={preset ? "" : "＋"} />
           <span class="api-provider-name">{preset ? preset.name : "自定义（手动填写）"}</span>
           <span class="api-provider-badge" class:api-provider-set={keyCount > 0} role="status">{keyCountLabel}</span>
           <span class="api-provider-actions">
@@ -266,7 +266,7 @@
           {#each visiblePresets as item (item.id)}
             <button class="api-card" data-provider={item.id} aria-pressed={draft.provider === item.id}
               disabled={busy} onclick={() => selectProvider(item.id)}>
-              <span class="api-avatar" aria-hidden="true">{avatar(item.name)}</span>
+              <BrandMark id={item.id} name={item.name} />
               <span class="api-card-body">
                 <span class="api-card-name">{item.name}</span>
                 <span class="api-card-state" class:api-card-set={presetReady(item)}>{presetReady(item) ? "已配置" : "未配置"}</span>
@@ -279,7 +279,7 @@
           {#if !onlyBuiltin}
             <button class="api-card" data-provider="custom" aria-pressed={draft.provider === CUSTOM}
               disabled={busy} onclick={() => selectProvider(CUSTOM)}>
-              <span class="api-avatar" aria-hidden="true">＋</span>
+              <BrandMark id="custom" glyph="＋" />
               <span class="api-card-body">
                 <span class="api-card-name">自定义（手动填写）</span>
                 <span class="api-card-state">自己的 Base URL</span>
@@ -399,7 +399,6 @@
      近黑（那是给红底胶囊用的），它只覆盖背景不覆盖文字，选中那张卡的名字就会糊在深红底上。 */
   .api-card[aria-pressed="true"] { border-color: #ef4444; background: #1d1416; color: #fafafa; }
   .api-card:disabled { opacity: .55; cursor: default; }
-  .api-avatar { display: grid; place-items: center; width: 26px; height: 26px; border-radius: var(--r-1); background: #26262c; font-size: var(--fs-2xs); font-weight: 600; color: #d4d4d8; flex: none; }
   .api-card-body { display: grid; gap: var(--sp-05); min-width: 0; }
   .api-card-name { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .api-card-state { font-size: var(--fs-xs); color: #fbbf24; }

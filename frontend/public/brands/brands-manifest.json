@@ -1,0 +1,54 @@
+{
+  "source": "LobeHub Icons (@lobehub/icons-static-svg v1.103.0, MIT)",
+  "note": "?? LOGO ?????????????????????fill ? currentColor ???????<img> ?????????",
+  "files": [
+    {
+      "file": "deepseek.svg",
+      "provider": "deepseek",
+      "fill": "#5786fe",
+      "bytes": 2104
+    },
+    {
+      "file": "doubao.svg",
+      "provider": "doubao",
+      "fill": "#3c8cff",
+      "bytes": 1068
+    },
+    {
+      "file": "gemini.svg",
+      "provider": "gemini",
+      "fill": "#8e75b2",
+      "bytes": 568
+    },
+    {
+      "file": "minimax.svg",
+      "provider": "minimax",
+      "fill": "#ff5c83",
+      "bytes": 1250
+    },
+    {
+      "file": "moonshot.svg",
+      "provider": "moonshot",
+      "fill": "#d4d4d8",
+      "bytes": 3941
+    },
+    {
+      "file": "openai.svg",
+      "provider": "openai",
+      "fill": "#f4f4f5",
+      "bytes": 1604
+    },
+    {
+      "file": "qwen.svg",
+      "provider": "qwen",
+      "fill": "#8f7bff",
+      "bytes": 960
+    },
+    {
+      "file": "zhipu.svg",
+      "provider": "zhipu",
+      "fill": "#d4d4d8",
+      "bytes": 3520
+    }
+  ]
+}

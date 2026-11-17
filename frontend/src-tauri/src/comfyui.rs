@@ -285,20 +285,73 @@ fn new_window_policy(
     })
 }
 
-/// 用系统默认浏览器打开链接。不引入 opener/shell 依赖，其它平台用各自的 opener。
+/// 把注册表里一条 `shell\open\command` 切成参数（引号里的内容算一段，路径带空格不会被切碎）。
+fn split_command_line(text: &str) -> Vec<String> {
+    let mut tokens: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut quoted = false;
+    let mut chars = text.trim().chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' => {
+                // 参数里要真想带一个引号，按 Windows 命令行那套写两个（"" ）。
+                if quoted && chars.peek() == Some(&'"') {
+                    current.push('"');
+                    chars.next();
+                } else {
+                    quoted = !quoted;
+                }
+            }
+            c if c.is_whitespace() && !quoted => {
+                if !current.is_empty() {
+                    tokens.push(std::mem::take(&mut current));
+                }
+            }
+            c => current.push(c),
+        }
+    }
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+    tokens
+}
+
+/// 注册表里那条「按 URL 关联打开程序」的命令行 → 能直接 spawn 的 (程序, 参数)。
 ///
-/// Windows 走 `ShellExecuteW("open", url)`：系统自己那条「用默认程序打开这个地址」的路，
-/// 浏览器也好、Tauri 官方 opener 插件也好，走的都是它。原先打的是 `explorer.exe <url>`，
-/// 那条只回一个退出码（连成功都回 1），坏在哪一层前端一概拿不到消息，只能干瞪眼。
-/// 当时把它记成「24H2 起 explorer 不再受理 URL」，是误诊——真凶是下面那条 job object。
+/// 三种写法都见过：`"C:\...\msedge.exe" --single-argument %1`（Edge）、`"\...\chrome.exe" "%1"`
+/// （Chrome，占位符整段带引号）、少数老 handler 用 `%l`（要的是带协议头的完整地址，
+/// 我们传进去的本来就是完整地址，同一个替换法）。没有占位符那种（`"...\firefox.exe"`）
+/// 把地址追加成最后一个参数。占位符两侧的引号在这儿已经被切掉了：spawn 不过 shell，
+/// 引号留在参数里浏览器会当成地址的一部分。
+fn open_command_of(command: &str, link: &str) -> Option<(String, Vec<String>)> {
+    let mut tokens = split_command_line(command).into_iter();
+    let exe = tokens.next()?.trim().to_string();
+    if exe.is_empty() {
+        return None;
+    }
+    let mut args: Vec<String> = Vec::new();
+    let mut placed = false;
+    for token in tokens {
+        if matches!(token.to_ascii_lowercase().as_str(), "%1" | "%l" | "%?") {
+            args.push(link.to_string());
+            placed = true;
+        } else {
+            args.push(token);
+        }
+    }
+    if !placed {
+        args.push(link.to_string());
+    }
+    Some((exe, args))
+}
+
+/// 系统自己那条「用默认程序打开这个地址」：ShellExecuteW("open", url)。
+///
+/// 返回值是 HINSTANCE，>32 算成功。**它的 Ok 不能当「真的打开了」看**（见下面
+/// open_in_default_browser 的实测记录），所以这一条现在只当备胎用。
 /// CoInitialize 是 reveal.rs 踩过的同一脚：Shell 这套接口里有处理器要先有 COM，没有直接失败。
-///
-/// 有个坑，2026-11-17 实测过，别再照着「返回 Ok 就是打开了」下结论：进程要是跑在受限的
-/// job object 里（agent 沙箱拉起来的预览包就是这种），Shell 这条「按关联程序打开」的路会被
-/// 静默吞掉——传 URL 起不来浏览器，连传个 .txt 都起不来记事本，返回值却照样是 HINSTANCE > 32。
-/// 所以「点了没反应、也没报错」先问一句这实例是谁起的：验外链只能用苏醒自己双击起来的包。
 #[cfg(windows)]
-pub(crate) fn open_in_default_browser(url: &str) -> Result<(), String> {
+fn shell_open(url: &str) -> Result<(), String> {
     use std::ffi::c_void;
     use std::os::windows::ffi::OsStrExt;
 
@@ -344,14 +397,95 @@ pub(crate) fn open_in_default_browser(url: &str) -> Result<(), String> {
     if initialized {
         unsafe { CoUninitialize() };
     }
-    // 返回值是个 HINSTANCE：>32 算成功，<=32 是 SE_ERR_* 错误码（31 = 系统里没有能开它的程序）。
+    // <=32 是 SE_ERR_* 错误码（31 = 系统里没有能开它的程序）。
     if instance > 32 {
         Ok(())
     } else {
-        Err(format!("系统打不开这个链接（错误码 {instance}）"))
+        Err(format!("ShellExecute 错误码 {instance}"))
     }
 }
 
+/// URL 这一族在注册表里登记的命令行（先问用户选的默认程序，再退回机器默认）。
+#[cfg(windows)]
+fn browser_open_command(scheme: &str, link: &str) -> Option<(String, Vec<String>)> {
+    use winreg::{enums::*, RegKey};
+
+    let progid = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey_with_flags(
+            format!(
+                "Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\{scheme}\\UserChoice"
+            ),
+            KEY_READ,
+        )
+        .and_then(|key| key.get_value::<String, _>("ProgId"))
+        .ok();
+    let classes = RegKey::predef(HKEY_CLASSES_ROOT);
+    let mut keys: Vec<String> = Vec::new();
+    if let Some(id) = progid.as_deref() {
+        if !id.trim().is_empty() {
+            keys.push(format!("{id}\\shell\\open\\command"));
+        }
+    }
+    keys.push(format!("{scheme}\\shell\\open\\command"));
+    for key in keys {
+        if let Ok(command) = classes
+            .open_subkey_with_flags(&key, KEY_READ)
+            .and_then(|sub| sub.get_value::<String, _>(""))
+        {
+            if let Some(parsed) = open_command_of(command.trim(), link) {
+                return Some(parsed);
+            }
+        }
+    }
+    None
+}
+
+/// 把浏览器自己拉起来（脱离本进程，不等它退出）。
+#[cfg(windows)]
+fn spawn_detached(exe: &str, args: &[String]) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    // CREATE_NO_WINDOW：万一那个 handler 是控制台程序，别在用户屏幕上闪一块黑。
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    std::process::Command::new(exe)
+        .args(args)
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+/// 用系统默认浏览器打开链接。不引入 opener/shell 依赖，其它平台用各自的 opener。
+///
+/// Windows 这一条为什么不是「一句 ShellExecuteW 就完事」，2026-11-17 在本机实测过三回：
+/// ① `ShellExecuteW("open", <http URL>)` 返回 42（>32＝成功）却什么都不起来；同一进程里
+///    `ShellExecuteW("open", "notepad.exe")` 起得来记事本，直接 spawn msedge.exe 也起得来，
+///    被吞掉的只有「按 URL 关联打开程序」这一条；`rundll32 url.dll,FileProtocolHandler <URL>`
+///    同样 rc=0、什么都没起来。② 上一版把这个记成「agent 沙箱的 job object 吞的」，是误诊：
+///    普通进程里照样复现，而苏醒点的就是这条。③ 它连失败都不回——返回的是「成功」。
+///    所以「点了没反应、界面上连一句错都没有」是必然表现，而不是运气。
+/// 于是主路改成自己做关联那一步：从注册表读出 URL 关联的命令行（HKCU 里用户选的默认程序优先，
+/// 退回 HKCR 机器默认），自己 spawn。这条能被验证（起不来就是 spawn 报错），做的又是同一件事
+/// ——注册表里那行 `"C:\...\msedge.exe" --single-argument %1` 本来就是 Shell 要去执行的。
+/// ShellExecute 留在后面当备胎，认不出关联时至少还试一次系统那条路。
+#[cfg(windows)]
+pub(crate) fn open_in_default_browser(url: &str) -> Result<(), String> {
+    let scheme = url
+        .split_once(':')
+        .map(|(head, _)| head.to_ascii_lowercase())
+        .unwrap_or_default();
+    let mut notes: Vec<String> = Vec::new();
+    match browser_open_command(&scheme, url) {
+        Some((exe, args)) => match spawn_detached(&exe, &args) {
+            Ok(()) => return Ok(()),
+            Err(error) => notes.push(format!("起 {exe} 失败：{error}")),
+        },
+        None => notes.push("注册表里没认出这个地址该用哪个程序".to_string()),
+    }
+    shell_open(url).map_err(|error| {
+        notes.push(format!("系统那条按关联打开的路也没成：{error}（它回的是成功还是失败都可能没真打开）"));
+        notes.join("；")
+    })
+}
 #[cfg(target_os = "macos")]
 pub(crate) fn open_in_default_browser(url: &str) -> Result<(), String> {
     std::process::Command::new("open")
@@ -579,6 +713,53 @@ mod tests {
         let opener = url("http://tauri.localhost/index.html");
         assert_eq!(popup_target(&opener, &url("http://127.0.0.1:8188/"), false), PopupTarget::ExternalBrowser);
         assert_eq!(popup_target(&opener, &url("mailto:me@example.com"), false), PopupTarget::Deny);
+    }
+
+    #[test]
+    fn open_command_of_fills_the_registered_placeholder() {
+        // Edge 与 Chrome 各自那两种写法（占位符裸着写 / 整段带引号），加上老 handler 的 %l
+        let edge = open_command_of(
+            r#""C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --single-argument %1"#,
+            "https://example.com/a?b=1",
+        )
+        .expect("Edge 那条要认得");
+        assert_eq!(edge.0, r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe");
+        assert_eq!(edge.1, vec!["--single-argument", "https://example.com/a?b=1"]);
+
+        let chrome = open_command_of(r#""C:\Program Files\Google\Chrome\Application\chrome.exe" "%1""#, "https://example.com/")
+            .expect("Chrome 那条要认得");
+        assert_eq!(chrome.1, vec!["https://example.com/"]);
+
+        let legacy = open_command_of(r#""C:\Old Browser\browser.exe" -u %l"#, "http://example.com/").unwrap();
+        assert_eq!(legacy.1, vec!["-u", "http://example.com/"]);
+
+        // 没有占位符：地址追加成最后一个参数，别把它丢了（丢了就是「打开一个空白浏览器窗口」）
+        let bare = open_command_of(r#""C:\Firefox\firefox.exe""#, "https://example.com/x").unwrap();
+        assert_eq!(bare.1, vec!["https://example.com/x"]);
+
+        // 空格切不进路径：带空格的可执行文件必须是一整段
+        assert_eq!(split_command_line(r#""C:\A B\x.exe" -flag"#), vec![r"C:\A B\x.exe", "-flag"]);
+
+        // 空命令行认不出程序：返回 None，交回给调用方去走备胎，不要 spawn 一个空字符串
+        assert!(open_command_of("   ", "https://example.com/").is_none());
+    }
+
+    #[test]
+    #[ignore = "读这台机器的真注册表，换一台机器结果不一样；排查外链打不开时手动跑"]
+    fn reads_this_machines_url_association() {
+        // 只读注册表，不拿它去起浏览器（起起来会真弹一个窗口）。
+        // 「点了没反应」先跑这条：读得到地址，起不来才是 spawn 的事；读不到就是关联本身没认出来。
+        let (exe, args) = browser_open_command("https", "https://example.com/")
+            .expect("这台机器上 https 关联应该读得出命令行");
+        assert!(
+            exe.to_ascii_lowercase().ends_with(".exe"),
+            "程序该是个可执行文件，实际读到：{exe}"
+        );
+        assert_eq!(
+            args.last().map(|one| one.as_str()),
+            Some("https://example.com/"),
+            "地址要原样落在参数里，参数：{args:?}"
+        );
     }
 
     #[test]

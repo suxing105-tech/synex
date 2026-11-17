@@ -6,6 +6,7 @@ import PromptSkillModal from "../components/PromptSkillModal.svelte";
 import { clearToasts, toasts } from "../lib/toast";
 import { subscribeFileDrop } from "../lib/native-drop";
 import { promptSkills, promptSkillSettings, resetPromptSkills, type PromptSkill } from "../lib/prompt-skills";
+import { skillModalOpen } from "../lib/stores";
 
 /**
  * 技能管理弹窗那一层：清单、编辑器、设默认、导入、删除。
@@ -547,5 +548,37 @@ describe("导入技能：一个入口", () => {
     await fireEvent.click(screen.getByRole("button", { name: "删除这条技能" }));
     expect(screen.getByRole("button", { name: /连同包内文件/ })).toBeTruthy();
     expect(call("DELETE", "/api/prompt-skills/7")).toBeFalsy();
+  });
+});
+
+describe("开着时右栏和那条竖线整体让掉", () => {
+  // 2026-11-17 苏醒：「不要显示右侧栏和分割竖线内容，貌似每次让你模糊背景都会犯这个错。」
+  // 中间那一列写着 container-type:inline-size，弹窗那层 fixed 的 inset:0 只算到这一列的边，
+  // 画不到右栏上；所以不是抬 z-index，而是开窗时把右栏和 splitter 整块让掉（照 picker-active 那条既有做法）。
+  it("弹窗开着 store 为真，卸载就还原成假", async () => {
+    promptSkills.set([skill()]);
+    routes(baseRoutes());
+    render(PromptSkillModal, { open: true, onClose: () => {} });
+    await vi.waitFor(() => expect(get(skillModalOpen)).toBe(true));
+    cleanup();
+    expect(get(skillModalOpen)).toBe(false);
+  });
+
+  it("没开窗就不该牵连右栏（组件常驻挂载也保持假）", async () => {
+    promptSkills.set([skill()]);
+    routes(baseRoutes());
+    render(PromptSkillModal, { open: false, onClose: () => {} });
+    expect(get(skillModalOpen)).toBe(false);
+    cleanup();
+  });
+
+  it("App 里是把 aside:last-child 与 splitter 整块 display:none，并把列宽收掉", () => {
+    const app = readFileSync("src/App.svelte", "utf8");
+    expect(app).toMatch(/class:skill-modal-active=\{\$skillModalOpen\}/);
+    expect(app).toMatch(/\.app-grid\.skill-modal-active\s*>\s*aside:last-child/);
+    expect(app).toMatch(/\.app-grid\.skill-modal-active\s*\.splitter/);
+    expect(app).toMatch(
+      /const detailHidden = \$derived\(detailCollapsed \|\| \$pickerOpen \|\| \$skillModalOpen\);/,
+    );
   });
 });

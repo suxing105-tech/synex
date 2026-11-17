@@ -258,6 +258,16 @@ export const folders = writable<FolderNode[]>([]);
  * 用户正在挑新素材，眼睛却盯着不相干的内容。关掉弹窗就恢复原样，不动用户自己折叠的状态。
  */
 export const pickerOpen = writable(false);
+/**
+ * 提示词优化技能弹窗开着没有。
+ *
+ * 它和素材选择器一样要让右侧详情栏退场（2026-11-17 苏醒：「不要显示右侧栏和分割竖线内容，
+ * 貌似每次让你模糊背景都会犯这个错」）。为什么不是「把遮罩抬高盖过去」：中间那一列写着
+ * `container-type:inline-size`，按 CSS 规定它就成了 fixed 后代的包含块——弹窗那层 fixed 的
+ * `inset:0` 只算到这一列的边，画不到右栏上去，抬 z-index 也照样被 `main` 的 isolate 关着。
+ * 所以走 picker-active 那条已经验证过的路：开窗时右栏和 splitter 整块 display:none。
+ */
+export const skillModalOpen = writable(false);
 export const stats = writable<Stats>({
   total_images: 0,
   total_videos: 0,

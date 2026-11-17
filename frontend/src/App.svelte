@@ -3,7 +3,7 @@
 import Icon from "./components/Icon.svelte";
   import { onMount, onDestroy } from "svelte";
   import { connectEvents, disconnectEvents } from "./lib/ws";
-  import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, mediaItems, tag, folderId, query, selectedDetail, appBooting, pickerOpen } from "./lib/stores";
+  import { refreshFolders, refreshStats, refreshFeed, selectedId, comfyuiStatus, mediaItems, tag, folderId, query, selectedDetail, appBooting, pickerOpen, skillModalOpen } from "./lib/stores";
   import { cloneOpen } from "./lib/clone";
   import { createSplashGate } from "./lib/splash-gate.svelte";
   import FolderTree from "./components/FolderTree.svelte";
@@ -209,7 +209,7 @@ import Icon from "./components/Icon.svelte";
   const DETAIL_MAX = 560;
 
   // 右侧栏这会儿要不要让位：用户自己折叠了，或者素材选择器开着（模态弹窗里不需要它）。
-  const detailHidden = $derived(detailCollapsed || $pickerOpen);
+  const detailHidden = $derived(detailCollapsed || $pickerOpen || $skillModalOpen);
 
   let narrowMode = $state(false);
   function checkNarrow() {
@@ -300,6 +300,7 @@ import Icon from "./components/Icon.svelte";
     class:sidebar-collapsed={sidebarCollapsed}
     class:detail-collapsed={detailCollapsed}
     class:picker-active={$pickerOpen}
+    class:skill-modal-active={$skillModalOpen}
     class:immersive={immersive}
     style="--sidebar-width: {sidebarCollapsed ? 44 : 260}px; grid-template-columns: {immersive ? '1fr' : `var(--sidebar-width) 1fr ${detailHidden ? '0px 0px' : `6px ${detailWidth}px`}`};"
   >
@@ -402,6 +403,12 @@ import Icon from "./components/Icon.svelte";
      抽屉模式（窄屏）那层浮在右边的详情也在这个规则里一起消失。 */
   .app-grid.picker-active > aside:last-child,
   .app-grid.picker-active .splitter { display: none; }
+  /* 技能弹窗开着时右栏和那条竖线一起退场，口径照上面那条：中间那一列的 fixed 遮罩出不了自己的
+     边界（container-type 让它成了包含块），抬 z-index 也被 main 的 isolate 关着。与其露着一块
+     模糊不掉的右栏，不如整块让掉。列宽由 detailHidden 收成 0px 0px，这里负责把内容连 splitter
+     那根 1px 线一起消掉。 */
+  .app-grid.skill-modal-active > aside:last-child,
+  .app-grid.skill-modal-active .splitter { display: none; }
   .desktop-shell :global(.fixed.inset-0) { top: var(--desktop-titlebar-height); }
 
   main { container-type:inline-size; }

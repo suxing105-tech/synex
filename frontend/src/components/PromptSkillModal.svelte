@@ -13,6 +13,7 @@
   import { subscribeFileDrop } from "../lib/native-drop";
   import { errorMessage, reverseApi } from "../lib/reverse-prompts";
   import { revealError, revealLocation } from "../lib/reveal";
+  import { skillModalOpen } from "../lib/stores";
   import { isTauri, selectSkillSourcePath } from "../lib/tauri";
   import { pushToast } from "../lib/toast";
   import Icon from "./Icon.svelte";
@@ -40,6 +41,16 @@
     onClose: () => void;
   }
   let { open, onClose }: Props = $props();
+
+  /**
+   * 开着的时候让掉右侧详情栏和那条竖线（App 读这个 store）：这一列的 fixed 遮罩出不了
+   * `main` 的边界，右栏留在外面既模糊不掉又还在显示上一张卡的提示词。关掉就还原，
+   * 不去动用户自己折叠右栏的状态。
+   */
+  $effect(() => {
+    skillModalOpen.set(open);
+    return () => skillModalOpen.set(false);
+  });
 
   const skills = $derived($promptSkills);
   /** 新建那条的起手式：后端要求指令非空，给一句说清这里写什么，比留白强。 */

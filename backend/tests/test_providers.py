@@ -1,12 +1,24 @@
 """预设服务商（provider preset）相关测试。"""
 from __future__ import annotations
 
+import time
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app import reverse_prompts as service
 from app.routes.reverse_prompts import router
+
+
+@pytest.fixture(autouse=True)
+def _clear_model_caches():
+    """清单缓存和「别再去敲它」那本账都是进程级的：每条用例开头结尾各清一次，别互相闻味儿。"""
+    service._MODEL_CACHE.clear()
+    service._MODEL_FAIL_UNTIL.clear()
+    yield
+    service._MODEL_CACHE.clear()
+    service._MODEL_FAIL_UNTIL.clear()
 
 
 @pytest.fixture
@@ -19,6 +31,27 @@ def client(init_db):
 
 def preset_draft(**kwargs):
     return {"provider": "qwen", "model": "qwen2.5-vl-72b-instruct", **kwargs}
+
+
+def _stub_models(monkeypatch, data, status: int = 200, calls: list | None = None):
+    """把「问一家要 /models」换成假的，顺手记下请求。返回 {"data":[...]}，status 用来演失败。"""
+    import httpx
+
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["auth"] = request.headers.get("authorization")
+        if calls is not None:
+            calls.append(str(request.url))
+        if status >= 300:
+            return httpx.Response(status, text="boom")
+        return httpx.Response(200, json={"data": data})
+
+    actual = httpx.AsyncClient
+    monkeypatch.setattr(service.httpx, "AsyncClient",
+                        lambda **kwargs: actual(transport=httpx.MockTransport(handler), **kwargs))
+    return seen
 
 
 def test_list_providers_no_secrets(client):
@@ -445,19 +478,29 @@ def test_picking_a_model_later_only_moves_the_model(client):
     assert service.key_for(service.get_config(row["id"])) == "k-later"
 
 
-def test_a_config_without_a_model_still_reports_its_models(client):
+def test_a_config_without_a_model_still_reports_its_models(client, monkeypatch):
     """还没挑模型，不影响「这一家有哪些模型可挑」——先选服务商、再看模型就靠这条。"""
+    import httpx
+
+    _stub_models(monkeypatch, [{"id": "qwen2.5-vl-72b-instruct"}, {"id": "qwen3-vl-plus"}])
     row = client.post("/api/model-configs", json={"provider": "qwen", "api_key": "k"}).json()
     out = client.get(f'/api/model-configs/{row["id"]}/models').json()
-    assert out["source"] == "preset" and out["models"][0]["id"] == "qwen2.5-vl-72b-instruct"
+    ids = [item["id"] for item in out["models"]]
+    assert out["source"] == "live" and ids[0] == "qwen2.5-vl-72b-instruct"
+    assert "qwen3-vl-plus" in ids, "这家新报回来的视觉模型要能看见"
 
 
-def test_minimax_text_model_can_be_used_for_reverse_prompt_without_media_models(client):
+def test_minimax_text_model_can_be_used_for_reverse_prompt_without_media_models(client, monkeypatch):
+    """一把 Key 三用的一家：反推那一列只摆能看懂图的，生图生视频那几路不许混进来。"""
+    import httpx
+
+    _stub_models(monkeypatch, [{"id": "MiniMax-M3.1-Flash"}, {"id": "MiniMax-M3"},
+                               {"id": "MiniMax-H3-Image"}, {"id": "MiniMax-H3"}])
     row = client.post("/api/model-configs", json={
         "provider": "minimax", "api_key": "minimax-generation-key"}).json()
     assert row["capabilities"] == ["text", "image", "video", "audio"]
     out = client.get(f'/api/model-configs/{row["id"]}/models').json()
-    assert out["source"] == "preset"
+    assert out["source"] == "live"
     assert [item["id"] for item in out["models"]] == ["MiniMax-M3.1-Flash", "MiniMax-M3"]
 
 
@@ -555,3 +598,126 @@ def test_check_key_for_the_shared_key_needs_no_config(client, monkeypatch):
 def test_check_key_with_nothing_to_check_says_so(client):
     resp = client.post("/api/model-configs/check-key", json={})
     assert resp.status_code == 422 and "Base URL" in resp.json()["detail"]
+
+
+# ---------- 预设那几家也要现拉：下拉里要看得见服务商最新的模型 ----------
+
+
+ZHIPU_TEXT_ONLY = [{"id": "glm-5.2"}, {"id": "glm-4.7"}, {"id": "glm-4.5-air"}, {"id": "embedding-3"}]
+
+
+def test_zhipu_registry_lists_the_current_vision_models():
+    """注册表那张表现在只是「问不到时兜底」用的，它自己得先是最新的，而且只留看得懂图的。"""
+    from app import providers
+
+    ids = [item["id"] for item in service.curated_models(providers.PRESETS["zhipu"])]
+    assert ids[0] == "glm-4.6v", "推荐位给当下这一代最强的视觉模型"
+    assert {"glm-5v-turbo", "glm-4.6v-flash", "glm-4.5v", "glm-4.1v-thinking-flash"} <= set(ids)
+    assert "glm-4v" not in ids and "glm-4v-plus" not in ids, "2024 年那两张老模型别留在兜底表里"
+
+
+@pytest.mark.parametrize("model_id", [
+    "glm-4.5v", "glm-4.6v", "glm-4.6v-flash", "glm-5v-turbo", "glm-4v", "glm-4v-flash",
+    "qwen2.5-vl-72b-instruct", "moonshot-v1-8k-vision-preview", "internvl3-78b"])
+def test_vision_hint_recognises_models_that_can_see(model_id):
+    """智谱这一家的写法是 glm-4.6v：没有「4v」这种连写，旧写法一律认不出来。"""
+    assert service._VISION_HINT.search(model_id)
+
+
+@pytest.mark.parametrize("model_id", [
+    "glm-4.5", "glm-4.5-air", "glm-4.6", "glm-5", "glm-5.2", "deepseek-v3", "gpt-4o-mini"])
+def test_vision_hint_does_not_invent_vision(model_id):
+    """纯文本模型不许被认成能看图：反推是发图过去，选中它只会换回一句 400。"""
+    assert not service._VISION_HINT.search(model_id)
+
+
+def test_preset_config_list_shows_what_the_account_reports(client, monkeypatch):
+    """智谱下拉里能看见什么，以它自己报回来的为准——这就是「看不到最新模型」的正解。"""
+    seen = _stub_models(monkeypatch, [{"id": "glm-4.6v"}, {"id": "glm-5.2"}, {"id": "glm-4.7"},
+                                      {"id": "glm-5v-turbo"}, {"id": "glm-4v-flash"}, {"id": "embedding-3"}])
+    row = client.post("/api/model-configs", json={"provider": "zhipu", "api_key": "ZHIPU-KEY"}).json()
+    out = client.get(f'/api/model-configs/{row["id"]}/models').json()
+
+    assert seen["url"] == "https://open.bigmodel.cn/api/paas/v4/models"
+    assert seen["auth"] == "Bearer ZHIPU-KEY"
+    assert out["source"] == "live"
+    # 顺序：注册表里且这家确实报回来的 → 这家新报回来的视觉模型 → 注册表有、这家没报回来的
+    assert [item["id"] for item in out["models"]] == [
+        "glm-4.6v", "glm-5v-turbo", "glm-4v-flash", "glm-4.6v-flash", "glm-4.5v", "glm-4.1v-thinking-flash"]
+    assert out["models"][0]["label"] == "GLM-4.6V", "注册表里的展示名要跟着过来，别只剩一串 id"
+    assert [item["id"] for item in out["models"] if item["recommended"]] == ["glm-4.6v"]
+    assert "glm-5.2" not in str(out) and "glm-4.7" not in str(out), "纯文本模型进不了反推这一列"
+    assert "ZHIPU-KEY" not in str(out)
+
+
+def test_preset_config_list_keeps_the_registry_when_the_account_reports_only_text(client, monkeypatch):
+    """清单只报账号开着的模型：一个视觉模型都没报回来时不许把列表清空，兜底那几张得在。"""
+    _stub_models(monkeypatch, ZHIPU_TEXT_ONLY)
+    row = client.post("/api/model-configs", json={"provider": "zhipu", "api_key": "ZHIPU-KEY"}).json()
+    out = client.get(f'/api/model-configs/{row["id"]}/models').json()
+
+    assert [item["id"] for item in out["models"]][0] == "glm-4.6v"
+    assert [item["id"] for item in out["models"] if item["recommended"]] == ["glm-4.6v"]
+
+
+def test_preset_config_list_falls_back_and_stops_knocking(client, monkeypatch):
+    """问不到就回注册表那一串，并且短时间内别反复敲同一家：不然每划过一家都要干等一次超时。"""
+    calls: list = []
+    _stub_models(monkeypatch, [], status=503, calls=calls)
+    row = client.post("/api/model-configs", json={"provider": "zhipu", "api_key": "ZHIPU-BAD"}).json()
+
+    first = client.get(f'/api/model-configs/{row["id"]}/models').json()
+    assert first["source"] == "preset" and first["models"][0]["id"] == "glm-4.6v"
+    assert "实时清单" in first["reason"]
+    second = client.get(f'/api/model-configs/{row["id"]}/models').json()
+    assert second["source"] == "preset"
+    assert len(calls) == 1, "刚失败过就别马上再敲，界面那边是每次划过一家都会问一遍"
+
+
+def test_preset_config_list_without_a_key_never_leaves_the_app(client, monkeypatch):
+    """没配 Key 就不该往外发请求：直接给内置那张表，并说清配好之后会换成它自己报的。"""
+    calls: list = []
+    _stub_models(monkeypatch, [{"id": "glm-4.6v"}], calls=calls)
+    row = client.post("/api/model-configs", json={"provider": "zhipu"}).json()
+    assert row["has_api_key"] is False
+
+    out = client.get(f'/api/model-configs/{row["id"]}/models').json()
+    assert calls == [] and out["source"] == "preset"
+    assert out["models"][0]["id"] == "glm-4.6v" and "Key" in out["reason"]
+
+
+def test_preset_config_list_reuses_the_cached_list_for_ten_minutes(client, monkeypatch):
+    """十分钟之内划过同一家不该反复敲它；过点了要重新问，否则清单又冻住了。"""
+    calls: list = []
+    _stub_models(monkeypatch, [{"id": "glm-4.6v"}], calls=calls)
+    row = client.post("/api/model-configs", json={"provider": "zhipu", "api_key": "ZHIPU-OK"}).json()
+    client.get(f'/api/model-configs/{row["id"]}/models')
+    client.get(f'/api/model-configs/{row["id"]}/models')
+    assert len(calls) == 1
+
+    # 把那份缓存的落章时间往回拨过十分钟，下一次问就该真的再问一次
+    cache_key = next(iter(service._MODEL_CACHE))
+    stamp, cached = service._MODEL_CACHE[cache_key]
+    service._MODEL_CACHE[cache_key] = (stamp - service.MODEL_CACHE_SECONDS - 1, cached)
+    out = client.get(f'/api/model-configs/{row["id"]}/models').json()
+    assert len(calls) == 2 and out["source"] == "live"
+
+
+def test_media_models_do_not_slip_into_the_reverse_column():
+    """名字里带 image 的生图模型（MiniMax-H3-Image）不许靠「看得懂图」混进反推那一列。"""
+    curated = [{"id": "MiniMax-M3", "label": "MiniMax M3", "recommended": True}]
+    live = [{"id": "MiniMax-H3-Image", "label": "MiniMax-H3-Image", "recommended": False},
+            {"id": "MiniMax-H3", "label": "MiniMax-H3 视频", "recommended": False},
+            {"id": "qwen3-vl-plus", "label": "qwen3-vl-plus", "recommended": False}]
+    merged = service.merge_model_lists(curated, live, exclude={"MiniMax-H3-Image", "MiniMax-H3"})
+    assert [item["id"] for item in merged] == ["qwen3-vl-plus", "MiniMax-M3"]
+    assert [item["id"] for item in merged if item["recommended"]] == ["MiniMax-M3"]
+
+
+def test_model_list_cache_ages_out():
+    """缓存只判「有没有」不判「多久」，等于进程开一整天清单就冻在启动那一刻——这条钉住过期。"""
+    stale = {"models": [{"id": "old-vl", "label": "old-vl", "recommended": True}], "source": "live", "reason": ""}
+    service._MODEL_CACHE["probe"] = (time.monotonic() - service.MODEL_CACHE_SECONDS - 1, stale)
+    assert service._cached_models("probe") is None
+    service._MODEL_CACHE["probe"] = (time.monotonic(), stale)
+    assert service._cached_models("probe") == stale

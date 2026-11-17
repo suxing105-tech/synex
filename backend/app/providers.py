@@ -69,9 +69,12 @@ PRESETS: dict[str, dict] = {
         "name": "智谱 GLM",
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
         "models": {
-            "glm-4.5v": {"label": "GLM-4.5V", "recommended": True},
-            "glm-4v-plus": {"label": "GLM-4V-Plus", "recommended": False},
-            "glm-4v": {"label": "GLM-4V", "recommended": False},
+            # 这张表只是「问不到智谱自己时兜底的那几张」，界面上优先的是它自己报回来的清单
+            # （见 reverse_prompts.list_config_models）。所以只留看得懂图的，别把它当唯一真相。
+            "glm-4.6v": {"label": "GLM-4.6V", "recommended": True},
+            "glm-5v-turbo": {"label": "GLM-5V Turbo", "recommended": False},
+            "glm-4.6v-flash": {"label": "GLM-4.6V Flash", "recommended": False},
+            "glm-4.5v": {"label": "GLM-4.5V", "recommended": False},
             "glm-4.1v-thinking-flash": {"label": "GLM-4.1V Thinking Flash", "recommended": False},
         },
         "default_timeout": 120,

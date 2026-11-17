@@ -278,8 +278,17 @@ def normalize_url(value: str) -> str:
 # 拉到过一次就记着：清单是服务商自己的真话，抄进代码才会过期。
 _MODEL_CACHE: dict[str, tuple[float, dict]] = {}
 MODEL_CACHE_SECONDS = 600.0
-# 只有这几个字样能猜出「这个模型看得懂图」。仅用来决定默认选中哪一个，不影响能选哪些。
-_VISION_HINT = re.compile(r"vl|vision|image|4v|omni|multimodal", re.I)
+# 问一家要清单失败之后，这么多秒之内别再去敲它：模型下拉每划过一家都会问一遍，
+# 连不上的那家会让界面干等三十秒。记的是「这会儿别试」，不是「这家没有模型」。
+_MODEL_FAIL_UNTIL: dict[str, float] = {}
+MODEL_FAIL_COOLDOWN_SECONDS = 60.0
+# 这几个字样能猜出「这个模型看得懂图」：决定默认选中哪一个，也决定从服务商报回来的一大串里
+# 留下哪几个能反推——反推是把图发过去，选中纯文本模型只会换回一句 400。
+# \d+v 是为智谱那一家加的：glm-4.5v / glm-4.6v-flash / glm-5v-turbo 里没有「4v」这种连写，
+# 旧写法只认得出 glm-4v，其余全被当成文本模型，等于替服务商把新出的视觉模型筛没了。
+_VISION_HINT = re.compile(r"vl|vision|image|omni|multimodal|\d+v", re.I)
+# 只会画图的那几种不算「看得懂图」：glm-image、Seedream 这类是生图模型，发图给它问不出提示词。
+_IMAGE_GEN_ID = re.compile(r"image|cogview|seedream|dalle?\d*", re.I)
 # 这几个字样摆明了不是「能对话的大语言模型」：把嵌入、语音、生图那几类塞进反推，只会换回一句 400。
 # 认不准的一律放行——宁可多列两个，也不替服务商编一个它没有的模型，也不把能用掉的视觉模型筛没。
 _NON_CHAT_MODEL = re.compile(
@@ -319,7 +328,95 @@ async def fetch_models(base_url: str, key: str, cache_key: str | None = None) ->
               "source": "live", "reason": ""}
     if cache_key:
         _MODEL_CACHE[cache_key] = (time.monotonic(), result)
+        _MODEL_FAIL_UNTIL.pop(cache_key, None)
     return result
+
+
+def _cached_models(cache_key: str) -> dict | None:
+    """读那份十分钟的清单缓存；过点了就当作没有。
+
+    以前只判「有没有」，不判「多久」：进程开一整天，清单就冻在第一次拉到的那一刻，
+    服务商第二天上新模型界面还是那一串旧的——和抄一份进代码里过期是同一个病。
+    """
+    cached = _MODEL_CACHE.get(cache_key)
+    if not cached:
+        return None
+    stamp, result = cached
+    if time.monotonic() - stamp > MODEL_CACHE_SECONDS:
+        _MODEL_CACHE.pop(cache_key, None)
+        return None
+    return result
+
+
+def curated_models(preset: dict) -> list[dict]:
+    """注册表给这一家抄好的常用模型，只留能反推的那类（图片/视频/音频那几路另有去处）。"""
+    return [{"id": mid, "label": info["label"], "recommended": bool(info.get("recommended"))}
+            for mid, info in preset["models"].items()
+            if info.get("capability", "text") == "text"]
+
+
+def media_model_ids(preset: dict) -> set[str]:
+    """这一家自己声明只做图片/视频/音频的模型 id，反推那列要把它们排除在外。"""
+    return {mid for mid, info in preset["models"].items()
+            if info.get("capability", "text") != "text"}
+
+
+async def try_fetch_models(base_url: str, key: str, cache_key: str) -> dict | None:
+    """要实时清单；问不到就回 None，让调用方回落，而不是把一句 502 甩在模型下拉里。
+
+    「检查这把 Key」那条不走这里，它要的是一次真话，包括失败的真话。
+    """
+    cached = _cached_models(cache_key)
+    if cached:
+        return cached
+    if time.monotonic() < _MODEL_FAIL_UNTIL.get(cache_key, 0.0):
+        return None
+    try:
+        return await fetch_models(base_url, key, cache_key)
+    except (HTTPException, httpx.RequestError):
+        _MODEL_FAIL_UNTIL[cache_key] = time.monotonic() + MODEL_FAIL_COOLDOWN_SECONDS
+        return None
+
+
+def merge_model_lists(curated: list[dict], live: list[dict], exclude=()) -> list[dict]:
+    """把「这家自己报的」和「注册表抄好的那几个」并成一列，只留看得懂图的那批。
+
+    为什么两边都要：报回来的清单只含这个账号开着的模型，注册表那几个也可能已经下架，
+    单独信哪一边都会出现「我要的那个在下拉里选不到」。顺序是——
+    ① 注册表里、而且这家确实报回来的：用注册表的展示名和推荐位；
+    ② 这家新报回来、注册表还没见过的视觉模型（「下拉里没有最新模型」就靠这一档补上）；
+    ③ 注册表有、这家没报回来的仍然留着：清单只报账号开的那几个是常事，筛没了才是真没法反推。
+    认不出是视觉模型的（glm-5.2 这种纯文本）不进这一列，反推是发图给模型看。
+    """
+    live_ids = {item["id"] for item in live}
+    curated_ids = {item["id"] for item in curated}
+    # 这一家自己声明只做图片/视频/音频的那几个 id 不参与「看得懂图」的判断：
+    # MiniMax-H3-Image 这种名字里带 image 的，是拿字换图，不是拿图换字。
+    media_ids = {str(item) for item in exclude}
+    ordered: list[dict] = []
+
+    def push(item: dict) -> None:
+        if all(item["id"] != done["id"] for done in ordered):
+            ordered.append(item)
+
+    for item in curated:
+        if item["id"] in live_ids:
+            push(dict(item))
+    for item in live:
+        mid = item["id"]
+        if mid in curated_ids or mid in media_ids or not _VISION_HINT.search(mid) or _IMAGE_GEN_ID.search(mid):
+            continue
+        push({"id": mid, "label": item.get("label") or mid, "recommended": False})
+    for item in curated:
+        if item["id"] not in live_ids:
+            push(dict(item))
+    # 推荐位只留一个：注册表那个推荐还在就用它，不然给第一个看得懂图的
+    keeper = next((item for item in ordered if item["recommended"]), None) or \
+        next((item for item in ordered if _VISION_HINT.search(item["id"])), None) or \
+        (ordered[0] if ordered else None)
+    for item in ordered:
+        item["recommended"] = item is keeper
+    return ordered
 
 
 async def list_models(provider: str | None) -> dict:
@@ -331,16 +428,12 @@ async def list_models(provider: str | None) -> dict:
     if preset is None:
         raise HTTPException(422, "自定义服务请按那条配置要模型清单")
     if not preset.get("models_dynamic"):
-        return {"models": [
-            {"id": mid, "label": info["label"], "recommended": bool(info.get("recommended"))}
-            for mid, info in preset["models"].items()
-            if info.get("capability", "text") == "text"
-        ], "source": "preset", "reason": ""}
+        return {"models": curated_models(preset), "source": "preset", "reason": ""}
 
     cache_key = f'{preset["id"]}|{preset["base_url"]}'
     key = cloud_key() if shares_cloud_key(preset["id"]) else ""
     if not key:
-        cached = _MODEL_CACHE.get(cache_key)
+        cached = _cached_models(cache_key)
         if cached:
             return {**cached[1], "source": "stale",
                     "reason": "这一把 Key 还没存住，先列上次拉到的清单"}
@@ -350,17 +443,44 @@ async def list_models(provider: str | None) -> dict:
 
 
 async def list_config_models(config_id: int) -> dict:
-    """按一条配置要模型清单：预设那家照服务商说，自定义那条照它自己的 Base URL 问。
+    """按一条配置要模型清单：预设那家先问它自己、问不到回落注册表；自定义那条问它自己的地址。
 
     为什么要按配置：自定义服务的地址和 Key 都长在那条配置身上，注册表里根本没有它。
     反推面板那两列（先点服务商、再看它有哪些模型）要能点到任意一条，就得有这条路。
+
+    预设那几家也要现拉：这是「模型下拉里为什么看不到最新那几个」的正解。以前只有 RunningHub
+    走实时清单，别家一律回注册表里抄的那几张，服务商上新界面不会跟着变——而这条配置身上那把
+    Key 本来就能问到它自己有哪些模型，设置页「检查这把 Key」问的就是同一条。
     """
     row = get_config(config_id)
     if row.get("provider"):
-        if "text" not in providers.capabilities_for(row["provider"]):
+        provider = row["provider"]
+        if "text" not in providers.capabilities_for(provider):
             return {"models": [], "source": "unsupported",
                     "reason": "该服务商配置仅支持图片、视频或音频生成，不能用于提示词反推。"}
-        return await list_models(row["provider"])
+        preset = providers.get_preset(provider)
+        if preset.get("models_dynamic"):
+            # 那一家能反推的模型由它自己和账号决定，注册表本来就是空的，照老路走
+            return await list_models(provider)
+        curated = curated_models(preset)
+        key = key_for(row)
+        if not key:
+            return {"models": curated, "source": "preset",
+                    "reason": "这把 Key 还没配上，先列内置的常用模型；配上之后这里换成它自己报的清单"}
+        live = await try_fetch_models(row["base_url"], key, f'config|{row["id"]}|{row["base_url"]}')
+        if live is None:
+            return {"models": curated, "source": "preset",
+                    "reason": "暂时没问到这家的实时清单，先列内置的常用模型"}
+        if not live["models"]:
+            # 问到了、但它一个都没报回来：这不算「这家只有这些」，照内置那几张报，别挂成实时清单
+            return {"models": curated, "source": "preset",
+                    "reason": live.get("reason") or "这家没报回模型清单，先列内置的常用模型"}
+        merged = merge_model_lists(curated, live["models"],
+                                   exclude=media_model_ids(preset))
+        # 一个都认不出来（清单里全是纯文本模型，注册表那几个又被账号挡着）：照实原样列出来，
+        # 比空着强，也比替它编一个强。
+        return {"models": merged or live["models"], "source": "live",
+                "reason": "" if merged else "这家报回来的清单里认不出看得懂图的模型，先原样列出，反推可能需要换一家"}
     return await fetch_models(row["base_url"], key_for(row), f'config|{row["id"]}|{row["base_url"]}')
 
 

@@ -1,0 +1,5 @@
+# core.autocrlf is true on this machine, so without these rules a fresh clone
+# checks the sh hooks out with CRLF and Git for Windows answers "bad interpreter"
+# instead of running the guard. Line endings for hook files are not a style
+# choice here - they decide whether the guard runs at all.
+frontend/scripts/git-hooks/pre-commit text eol=lf

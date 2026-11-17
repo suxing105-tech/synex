@@ -1,0 +1,41 @@
+#!/bin/sh
+# Seek-X pre-commit guard: the design-token rules from AGENTS.md 3.1 (font family,
+# size, line-height, tracking, weight, spacing, radius, icon entry) plus the
+# shipped-font charset coverage from backend/tests/test_font_bundle.py.
+#
+# install : powershell -NoProfile -ExecutionPolicy Bypass -File frontend/scripts/install-git-hooks.ps1
+# check   : the same script with -Check
+# bypass  : git commit --no-verify   (a deliberate act; verify-all.ps1 still runs before release)
+#
+# Scope: this guard reads the working tree, not the staged diff. It is a floor that
+# keeps off-scale values out of history; it is NOT the release gate.
+#
+# Keep this file ASCII-only with LF endings: Git for Windows runs it with its own
+# sh, where a BOM or a CRLF gives "bad interpreter" instead of a guard.
+set -u
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+cd "$root" || exit 0
+
+if ! command -v pnpm >/dev/null 2>&1; then
+    echo "pre-commit: pnpm not on PATH - design-token guard skipped" >&2
+elif [ ! -d frontend/node_modules ]; then
+    echo "pre-commit: frontend/node_modules missing - guard skipped (run pnpm install)" >&2
+else
+    (cd frontend && pnpm exec vitest run --reporter=dot \
+        type-scale font-vocabulary font-bundle spacing-scale \
+        radius-scale design-tokens icon-unification target-size-contrast) || {
+        echo "pre-commit: design-token guard failed. Fix the values - do not raise a baseline." >&2
+        exit 1
+    }
+fi
+
+py="$root/backend/.venv/Scripts/python.exe"
+if [ -f "$py" ]; then
+    (cd backend && "$py" -m pytest tests/test_font_bundle.py -q) || {
+        echo "pre-commit: font charset guard failed (missing glyph, see output above)." >&2
+        exit 1
+    }
+fi
+
+exit 0

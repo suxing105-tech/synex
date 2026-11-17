@@ -159,7 +159,9 @@ def save_config(values: dict, config_id: int | None = None):
     merged["provider"] = provider
     if preset:
         # 预设：用注册表 Base URL；模型下拉为常用名称（允许高级里覆盖为 endpoint id）
-        merged.setdefault("timeout", preset["default_timeout"])
+        # 超时归注册表，比地址还硬：界面上这一格删了，谁送来都不认。用 setdefault 的话，
+        # 老配置库里那串 120 会一直留着，等于这次改长对它没生效。
+        merged["timeout"] = preset["default_timeout"]
         provided_url = values.get("base_url")
         if provided_url and provided_url.strip() and provided_url.strip() != preset["base_url"]:
             merged["base_url"] = normalize_url(provided_url)
@@ -169,7 +171,7 @@ def save_config(values: dict, config_id: int | None = None):
         if not merged.get("base_url"):
             raise HTTPException(422, "自定义服务需填写 Base URL")
         merged["base_url"] = normalize_url(merged["base_url"])
-        merged.setdefault("timeout", 120)
+        merged.setdefault("timeout", providers.CUSTOM_TIMEOUT_SECONDS)
         if not merged.get("name"):
             raise HTTPException(422, "请填写配置名称")
     # 存 Key 不该被「先挑一个模型」卡住：Key 是这一家的入场券，用哪个模型是用的时候的事。
@@ -500,7 +502,7 @@ def resolve_draft(values: dict) -> dict:
     preset = providers.get_preset(provider) if provider else None
     if preset:
         values.setdefault("base_url", preset["base_url"])
-        values.setdefault("timeout", preset["default_timeout"])
+        values["timeout"] = preset["default_timeout"]  # 与真跑那次同一个口径，别让「测试」比正式还苛刻
     if not values.get("base_url"):
         raise HTTPException(422, "缺少 Base URL")
     values["base_url"] = normalize_url(values["base_url"])
@@ -581,9 +583,12 @@ async def request_model(config, key, content, instruction, output_rule=OUTPUT_RU
         {"role": "system", "content": instruction + output_rule},
         {"role": "user", "content": content},
     ]}
+    timeout = providers.request_timeout(config)
     try:
         # No redirects: credentials must not follow a server to a different host.
-        async with httpx.AsyncClient(timeout=config["timeout"], follow_redirects=False) as client:
+        # connect 单独收在 30 秒：地址不通要马上说话，别陪着等满十分钟
+        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=30.0),
+                                     follow_redirects=False) as client:
             response = await client.post(url, headers=headers, json=payload)
         if response.status_code >= 300:
             messages = {401: "API Key 无效或已过期", 403: "模型访问被拒绝，请检查权限", 404: "模型或 API 地址不存在",
@@ -601,7 +606,7 @@ async def request_model(config, key, content, instruction, output_rule=OUTPUT_RU
             text = text.replace(key, "[已隐藏密钥]")
         return text.strip()
     except httpx.TimeoutException:
-        raise HTTPException(504, "模型请求超时，可调整超时后手动重试") from None
+        raise HTTPException(504, f"模型超过 {timeout} 秒没回话，可稍后重试或换一家模型") from None
     except httpx.RequestError:
         raise HTTPException(502, "无法连接模型服务，请检查地址和网络") from None
     except (ValueError, KeyError, IndexError, TypeError):

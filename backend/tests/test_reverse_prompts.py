@@ -12,6 +12,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from app import providers
 from app import reverse_prompts as service
 from app.routes.reverse_prompts import router
 
@@ -178,6 +179,31 @@ async def test_upstream_errors_redacted(monkeypatch, status):
     with pytest.raises(HTTPException) as error:
         await service.request_model(draft(), "private-key", "data:", "describe")
     assert "private-key" not in str(error.value.detail) and count == 1
+
+
+@pytest.mark.asyncio
+async def test_stale_preset_config_waits_the_registry_timeout(monkeypatch):
+    """真发请求那一下吃的也是注册表的十分钟：只在保存时改，老库里那条 120 还是老样子。
+
+    connect 另给 30 秒：地址不通要马上说话，别陪着等满十分钟。
+    """
+    actual_client = httpx.AsyncClient
+    seen = {}
+
+    def handler(request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": "red"}}]})
+
+    def spy(**kwargs):
+        seen["timeout"] = kwargs.get("timeout")
+        return actual_client(transport=httpx.MockTransport(handler), **kwargs)
+
+    monkeypatch.setattr(service.httpx, "AsyncClient", spy)
+    stale = {"name": "通义千问 Qwen", "base_url": "https://example.com/api/v1", "model": "vl",
+             "timeout": 120, "provider": "qwen"}
+    text = await service.request_model(stale, "", "data:", "describe")
+    assert text == "red"
+    assert seen["timeout"].read == providers.PRESET_TIMEOUT_SECONDS
+    assert seen["timeout"].connect <= 30
 
 
 @pytest.mark.asyncio

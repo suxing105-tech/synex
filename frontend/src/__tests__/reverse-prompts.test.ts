@@ -551,6 +551,8 @@ describe("reverse prompts", () => {
     expect(panel.getByLabelText("Base URL")).toBeTruthy();
     expect(panel.queryByLabelText("模型 ID")).toBeNull();
     expect(panel.queryByLabelText("识别模型")).toBeNull();
+    // 只有自定义这条留着「请求超时」：地址是自己的机器，快慢只有自己知道，默认 120 秒、想调就调
+    expect((panel.getByLabelText("请求超时") as HTMLInputElement).value).toBe("120");
   });
   it("已存的手动填写配置在设置页有自己的卡：点它就是改这一条，不是又开一张空表单", async () => {
     // 苏醒撞上的那一下：本地那条（库里 provider 是 NULL）在反推下拉里是一行，设置页却没有它的卡，
@@ -620,7 +622,7 @@ describe("reverse prompts", () => {
     await pickProvider(panel, "runninghub");
     expect((panel.container.querySelector("a.api-console") as HTMLAnchorElement).href).toBe("https://www.runninghub.cn/");
   });
-  it("内置厂商不再摆「高级设置」：名称与地址不给改，只有「请求超时」留着", async () => {
+  it("内置厂商不摆「高级设置」，也不给「请求超时」那一格：时间归注册表管", async () => {
     const panel = render(ModelApiSettings);
     await waitForReady(panel);
     await pickProvider(panel, "qwen");
@@ -630,8 +632,9 @@ describe("reverse prompts", () => {
     expect(panel.queryByLabelText("配置名称")).toBeNull();
     expect(panel.queryByLabelText("Base URL")).toBeNull();
     expect(panel.queryByText(/请求地址：/)).toBeNull();
-    // 超时不分厂商留着：思考档的模型真会跑过 120 秒，没有这一格只能来问我们
-    expect((panel.getByLabelText("请求超时") as HTMLInputElement).value).toBe("120");
+    // 超时那一格也删了：内置厂商的时间由后端注册表给到十分钟（思考档够用）。
+    // 留个输入框反而误导——填了也不作数，还让人以为自己得先搞懂该填几秒
+    expect(panel.queryByLabelText("请求超时")).toBeNull();
   });
   it("存过 Key 的这一格锁住：格子里给一串暗下去的点；清除以后才重新打开", async () => {
     const clear = vi.spyOn(reverseApi, "clearModelKey").mockResolvedValue({ ...model, has_api_key: false });

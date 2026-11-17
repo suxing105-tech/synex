@@ -389,9 +389,11 @@
           </div>
         </div>
         <!-- 内置厂商这一侧不再有「高级设置」：那三样（配置名称 / Base URL / 请求地址）本来就不该由人改，
-             改了就和注册表里那个地址打架，出了错两边都查不到。只有「请求超时」不分厂商留着——
-             思考档的模型真会跑过 120 秒，没有这一格只能来问我们（智谱那家就是例子）。 -->
-        <label>请求超时（秒）<input aria-label="请求超时" type="number" min="10" max="600" bind:value={draft.timeout} /></label>
+             改了就和注册表里那个地址打架，出了错两边都查不到。「请求超时」也跟着删了：内置厂商的时间由
+             后端注册表给到十分钟，思考档的模型够跑；留这一格只会让人以为自己得懂怎么调它。 -->
+        {#if !isPreset}
+          <label>请求超时（秒）<input aria-label="请求超时" type="number" min="10" max="600" bind:value={draft.timeout} /></label>
+        {/if}
       </fieldset>
       {#if confirmDelete}
         <div class="model-confirm">

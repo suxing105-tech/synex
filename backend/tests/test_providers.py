@@ -8,6 +8,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app import providers
 from app import reverse_prompts as service
 from app.routes.reverse_prompts import router
 
@@ -70,11 +71,39 @@ def test_create_preset_fills_base_url_and_name(client):
     assert result["provider"] == "qwen"
     assert result["base_url"] == "https://dashscope.aliyuncs.com/compatible-mode/v1"
     assert result["model"] == "qwen2.5-vl-72b-instruct"
-    assert result["timeout"] == 120
+    assert result["timeout"] == providers.PRESET_TIMEOUT_SECONDS
     assert result["name"].startswith("通义千问 Qwen")
     row = service.get_config(result["id"])
     assert service.key_for(row) == "preset-key"
     assert row["provider"] == "qwen"
+
+
+def test_preset_timeout_ignores_what_the_client_sends(client):
+    """内置厂商的超时不认送来的值：界面上那一格已经删了，还能被写就等于留了个没人知道的口子。"""
+    created = client.post("/api/model-configs", json=preset_draft(api_key="k", timeout=30)).json()
+    assert created["timeout"] == providers.PRESET_TIMEOUT_SECONDS
+    patched = client.patch("/api/model-configs/%s" % created["id"], json={"timeout": 30}).json()
+    assert patched["timeout"] == providers.PRESET_TIMEOUT_SECONDS
+
+
+def test_custom_config_keeps_the_timeout_the_user_fills(client):
+    """自定义那条正好相反：那一格还在界面上，人填多少就是多少。"""
+    created = client.post("/api/model-configs", json={
+        "name": "本机视觉", "base_url": "https://example.com/v1", "model": "vl", "timeout": 45}).json()
+    assert created["timeout"] == 45
+
+
+def test_preset_timeout_leaves_room_for_thinking_models():
+    """思考档的模型一张图能跑几分钟：注册表这一头得给到十分钟，别又回到两分钟。"""
+    assert providers.PRESET_TIMEOUT_SECONDS >= 300
+    assert all(p["default_timeout"] == providers.PRESET_TIMEOUT_SECONDS for p in providers.PRESETS.values())
+
+
+def test_stale_preset_row_gets_the_new_timeout():
+    """老库里那串 120 不该继续管事：删了入口还吃旧值，等于这次改长对老用户没生效。"""
+    assert providers.request_timeout({"provider": "qwen", "timeout": 120}) == providers.PRESET_TIMEOUT_SECONDS
+    assert providers.request_timeout({"provider": None, "timeout": 45}) == 45
+    assert providers.request_timeout({"provider": "custom"}) == providers.CUSTOM_TIMEOUT_SECONDS
 
 
 def test_preset_accepts_custom_model_id(client):

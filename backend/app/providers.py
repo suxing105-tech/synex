@@ -3,7 +3,8 @@
 - id: 存库的稳定标识；custom 表示手动配置。
 - base_url: OpenAI 兼容根地址（后端会自动拼接 /chat/completions）。
 - models: {model_id: {"label": 展示名, "recommended": 是否为推荐}}。
-- default_timeout: 默认超时秒数。
+- default_timeout: 请求超时秒数。内置厂商的超时由注册表说了算（界面上那一格已删），
+  自定义配置由用户自己填。
 - note: 可选提示文案（展示给用户）。
 """
 from __future__ import annotations
@@ -11,6 +12,13 @@ from __future__ import annotations
 from fastapi import HTTPException
 
 CUSTOM_ID = "custom"
+
+# 内置厂商的请求超时：界面上那一格删了，值归这里定。
+# 十分钟是给思考档留余地——GLM / Kimi / Qwen 开了思考，一张图反推几分钟是正常节奏，
+# 卡在两分钟上只会让人以为服务坏了。地址不通另有 30 秒的 connect 闸兜着，不会白等满十分钟。
+PRESET_TIMEOUT_SECONDS = 600
+# 自定义配置的开档值：那一格还在界面上，人想调短随时调。
+CUSTOM_TIMEOUT_SECONDS = 120
 
 PRESETS: dict[str, dict] = {
     "openai": {
@@ -23,7 +31,7 @@ PRESETS: dict[str, dict] = {
             "gpt-4.1-mini": {"label": "GPT-4.1 mini", "recommended": False},
             "gpt-4.1": {"label": "GPT-4.1", "recommended": False},
         },
-        "default_timeout": 120,
+        "default_timeout": PRESET_TIMEOUT_SECONDS,
         "format": "openai",
         "console_url": "https://platform.openai.com/api-keys",
     },
@@ -36,7 +44,7 @@ PRESETS: dict[str, dict] = {
             "gemini-2.0-flash": {"label": "Gemini 2.0 Flash", "recommended": False},
             "gemini-2.5-pro": {"label": "Gemini 2.5 Pro", "recommended": False},
         },
-        "default_timeout": 120,
+        "default_timeout": PRESET_TIMEOUT_SECONDS,
         "format": "openai",
         "console_url": "https://aistudio.google.com/apikey",
     },
@@ -50,7 +58,7 @@ PRESETS: dict[str, dict] = {
             "qwen-vl-max": {"label": "Qwen-VL-Max", "recommended": False},
             "qwen-vl-plus": {"label": "Qwen-VL-Plus", "recommended": False},
         },
-        "default_timeout": 120,
+        "default_timeout": PRESET_TIMEOUT_SECONDS,
         "format": "openai",
         "console_url": "https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key",
     },
@@ -63,7 +71,7 @@ PRESETS: dict[str, dict] = {
             "doubao-1-5-vision-pro-250328": {"label": "Doubao 1.5 Vision Pro", "recommended": False},
             "doubao-1-5-vision-lite-250328": {"label": "Doubao 1.5 Vision Lite", "recommended": False},
         },
-        "default_timeout": 120,
+        "default_timeout": PRESET_TIMEOUT_SECONDS,
         "format": "openai",
         "note": "下拉为常见名称；若你的账号使用 endpoint id（ep-...），在反推面板的模型下拉里直接输入它。",
         "console_url": "https://ark.volcengine.com/region:cn-beijing/apikey",
@@ -87,7 +95,7 @@ PRESETS: dict[str, dict] = {
             "glm-4.5v": {"label": "GLM-4.5V", "recommended": False},
             "glm-4.1v-thinking-flash": {"label": "GLM-4.1V Thinking Flash", "recommended": False},
         },
-        "default_timeout": 120,
+        "default_timeout": PRESET_TIMEOUT_SECONDS,
         "format": "openai",
         "note": "反推只能用看得懂图的那几档：GLM-4.6V / GLM-4.6V Flash / GLM-5.3 Flash / GLM-5V Turbo。"
                 "GLM-5、GLM-5.1、GLM-5.2、GLM-5.3、GLM-4.7 这些是纯文本档，收不到图，反推会失败；"
@@ -104,7 +112,7 @@ PRESETS: dict[str, dict] = {
             "deepseek-ai/deepseek-vl2": {"label": "DeepSeek-VL2", "recommended": False},
             "Qwen/Qwen2-VL-72B-Instruct": {"label": "Qwen2-VL-72B", "recommended": False},
         },
-        "default_timeout": 120,
+        "default_timeout": PRESET_TIMEOUT_SECONDS,
         "format": "openai",
         "console_url": "https://cloud.siliconflow.cn/account/apikey",
     },
@@ -116,7 +124,7 @@ PRESETS: dict[str, dict] = {
             "moonshot-v1-8k-vision-preview": {"label": "Moonshot Vision 8K", "recommended": True},
             "moonshot-v1-32k-vision-preview": {"label": "Moonshot Vision 32K", "recommended": False},
         },
-        "default_timeout": 120,
+        "default_timeout": PRESET_TIMEOUT_SECONDS,
         "format": "openai",
         "console_url": "https://platform.kimi.com/console/api-keys",
     },
@@ -127,7 +135,7 @@ PRESETS: dict[str, dict] = {
         "models": {
             "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp": {"label": "DeepSeek V4 Flash Vision", "recommended": True},
         },
-        "default_timeout": 120,
+        "default_timeout": PRESET_TIMEOUT_SECONDS,
         "format": "openai",
         "note": "使用 ModelScope（魔搭）推理 API Key；模型支持图片识别。",
         "console_url": "https://modelscope.cn/my/myaccesstoken",
@@ -145,7 +153,7 @@ PRESETS: dict[str, dict] = {
         "models": {},
         "models_dynamic": True,
         "credential_scope": "cloud",
-        "default_timeout": 120,
+        "default_timeout": PRESET_TIMEOUT_SECONDS,
         "format": "openai",
         # 这一家除文本反推外，还接了图像/视频/音频生成 API。
         "capabilities": ("text", "image", "video", "audio"),
@@ -168,7 +176,7 @@ PRESETS: dict[str, dict] = {
             "MiniMax-M3.1-Flash": {"label": "MiniMax M3.1 Flash", "recommended": True, "capability": "text"},
             "MiniMax-M3": {"label": "MiniMax M3", "recommended": False, "capability": "text"},
         },
-        "default_timeout": 600,
+        "default_timeout": PRESET_TIMEOUT_SECONDS,
         "format": "openai",
         "capabilities": ("text", "image", "video", "audio"),
         "console_url": "https://platform.minimax.cn",
@@ -212,6 +220,19 @@ def get_preset(preset_id):
     if preset is None:
         raise HTTPException(422, "不支持的服务商预设")
     return preset
+
+
+def request_timeout(config):
+    """这一条配置发请求该等多久。
+
+    内置厂商只认注册表：那一格已经从界面上删了，库里那一份多半是老版本留下的 120，
+    跟着用等于「删了入口还留着旧值」——老配置永远等不到这次改长的时间。
+    自定义配置那一格还在，按人填的走。
+    """
+    preset = PRESETS.get((config or {}).get("provider") or "")
+    if preset:
+        return preset["default_timeout"]
+    return int((config or {}).get("timeout") or CUSTOM_TIMEOUT_SECONDS)
 
 
 def capabilities_for(provider_id):

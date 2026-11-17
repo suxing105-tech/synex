@@ -291,6 +291,25 @@ describe("版面口径", () => {
     }
   });
 
+  it("新建与导入排在同一行：左右各占一半、文字居中", async () => {
+    routes(baseRoutes());
+    const screen = await ready();
+    const actions = screen.container.querySelector(".psk-side-actions") as HTMLElement;
+    for (const name of ["新建技能", "导入技能"]) {
+      expect(actions.contains(screen.getByRole("button", { name }))).toBe(true);
+    }
+    const source = readFileSync("src/components/PromptSkillModal.svelte", "utf8");
+    const box = source.match(/\.psk-side-actions \{[^}]*\}/)?.[0] ?? "";
+    expect(box, "两个入口的容器样式没找到").not.toBe("");
+    expect(box, "容器不许再竖排：两颗入口要占同一行").not.toMatch(/flex-direction:\s*column/);
+    expect(box, "第三颗（浏览器版的选文件夹）要能换行").toMatch(/flex-wrap:\s*wrap/);
+    const lead = source.match(/\.psk-side-actions \.psk-btn \{[^}]*\}/)?.[0] ?? "";
+    expect(lead, "两颗按钮没有各占一半的规则").not.toBe("");
+    expect(lead).toMatch(/flex:\s*1 1 calc\(50%/);
+    expect(lead, "文字要居中，不再顶着左边").toMatch(/justify-content:\s*center/);
+    expect(lead).toMatch(/text-align:\s*center/);
+  });
+
   it("保存排在最后一排的最右，不跟辅助操作挤在一起", async () => {
     routes(baseRoutes());
     const screen = await ready();

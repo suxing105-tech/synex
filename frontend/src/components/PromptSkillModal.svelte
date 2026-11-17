@@ -604,7 +604,12 @@
     color: var(--text-3); font-size: var(--fs-2xs); font-style: normal;
   }
   .psk-tag.is-default { background: rgb(var(--accent-rgb) / 16%); color: var(--accent-strong); }
-  .psk-side-actions { display: flex; flex-direction: column; gap: var(--sp-1); }
+  /* 新建与导入是同一级动作：一行摆两颗、各占一半、文字居中。竖排两行等于把清单往下挤掉一条，
+     而这两颗本来不分主次，不必用上下排先后。浏览器版多出来的第三颗放不下半行，自己掉到下一行占满。 */
+  .psk-side-actions { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+  .psk-side-actions .psk-btn {
+    flex: 1 1 calc(50% - var(--sp-1)); justify-content: center; text-align: center;
+  }
 
   .psk-edit {
     display: flex; flex: 1; flex-direction: column; gap: var(--sp-2); min-width: 0; min-height: 0;

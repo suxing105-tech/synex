@@ -19,9 +19,9 @@
   "charsetGroups": {
     "latin+punct": 2898,
     "gb2312": 6763,
-    "source": 1637
+    "source": 1639
   },
-  "totalBytes": 5935948,
+  "totalBytes": 5937024,
   "licenseFile": "frontend/src-tauri/resources/OFL-SeekX-Sans.txt",
   "files": [
     {
@@ -29,40 +29,40 @@
       "family": "SeekX Sans",
       "subfamily": "Regular",
       "weight": 400,
-      "bytes": 1169164,
-      "sha256": "ce39a001d068a04d9fd8f0d3205ef49518599db13d36262bd9eaa75a03109b17"
+      "bytes": 1169688,
+      "sha256": "0ff6de30b84d0ac0e294e2616ff5ddbd440a634a95ad3347cf9581d0027f76d6"
     },
     {
       "file": "seekx-sans-medium.woff2",
       "family": "SeekX Sans",
       "subfamily": "Medium",
       "weight": 500,
-      "bytes": 1198272,
-      "sha256": "caa97e20455e492a5ff2c57e12731d7a747ea66a0450c3072956fe9009f50a87"
+      "bytes": 1199964,
+      "sha256": "35ec8b7838e9b7a300b6db8e8a599f84e21baa095b93689a851b30e408d97cf0"
     },
     {
       "file": "seekx-sans-semibold.woff2",
       "family": "SeekX Sans",
       "subfamily": "SemiBold",
       "weight": 600,
-      "bytes": 1209496,
-      "sha256": "f813377577446acb45262b7878cbec10bcf681a971d5ba0188530e457aea29fa"
+      "bytes": 1209524,
+      "sha256": "8ef7bbb39c033bd228465d9372403cf2b5aa0ad8b2c60546b3477c23321121db"
     },
     {
       "file": "seekx-sans-bold.woff2",
       "family": "SeekX Sans",
       "subfamily": "Bold",
       "weight": 700,
-      "bytes": 1208744,
-      "sha256": "959116361e276ee561b85ce3a8880a3694aa2ebdca02349ede8940e6c2f33ccf"
+      "bytes": 1208868,
+      "sha256": "b5c509ec616b6f3b09aec9cd16e0bcb942055ece51f396b3c7b475d83c7925e8"
     },
     {
       "file": "seekx-sans-condensed-regular.woff2",
       "family": "SeekX Sans Condensed",
       "subfamily": "Regular",
       "weight": 400,
-      "bytes": 1150272,
-      "sha256": "6cc608bedc95149c8fac9e9184ead0ba7511c4df96b735a224381c984d3a9660"
+      "bytes": 1148980,
+      "sha256": "0d1b7d664ce5697c1cd7f78515dbcaea00bc6b9edc38fc867c232d973a843769"
     }
   ]
 }

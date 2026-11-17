@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { get } from 'svelte/store';
 import CloneModal from '../components/CloneModal.svelte';
@@ -4251,4 +4251,68 @@ it('遮罩编辑层的工具条全是文字按钮，命中高度走控件档，�
   expect(src).toMatch(/画笔/);
   expect(src).toMatch(/橡皮/);
   expect(src).toMatch(/撤销/);
+});
+
+// 2026-11-17 苏醒：「闪寻图片生成工作流不能真的自定义宽高吗？」——比例菜单里有这一档，
+// 以下板却只有百万像素，那两个像素输入既不在槽位里也没处填，选了就等于提交工作流里那对 32×1024。
+const CUSTOM_TPL = {
+  ...TPL,
+  slots: [
+    { kind: 'prompt', node: '582', input: 'prompt', label: '完整提示词' },
+    { kind: 'image', node: '543', input: 'image', label: '人物参考' },
+    { kind: 'select', node: '584', input: '比例', label: '比例',
+      options: ['原始比例', '16:9', '自定义宽高'], value: '原始比例' },
+    { kind: 'number', node: '584', input: '百万像素', label: '分辨率', value: 2, min: 0.2, max: 50,
+      step: 0.1, multiple: 32, show_when: { input: '比例', not_equals: '自定义宽高' } },
+    { kind: 'number', node: '584', input: '自定宽度', label: '宽度', unit: 'px', value: 1024,
+      min: 8, max: 10240, step: 1, multiple: 32, show_when: { input: '比例', equals: '自定义宽高' } },
+    { kind: 'number', node: '584', input: '自定高度', label: '高度', unit: 'px', value: 1024,
+      min: 8, max: 10240, step: 1, multiple: 32, show_when: { input: '比例', equals: '自定义宽高' } },
+  ],
+};
+
+it('选「自定义宽高」就把宽高两个框换进来、百万像素换出去，填的数真进提交里', async () => {
+  let submitted: Record<string, unknown> | null = null;
+  routes({
+    ...baseRoutes(),
+    '/api/clone/templates': { items: [CUSTOM_TPL] },
+    '/api/clone/generate': (init?: RequestInit) => {
+      submitted = JSON.parse(String(init?.body));
+      return { ...EMPTY_CLONE_JOB, active: true, job_id: 'j1', state: 'queued', running: true };
+    },
+  });
+  const screen = await ready();
+  await fireEvent.click(screen.getByRole('button', { name: /^(画面参数|音频参数)$/ }));
+  const pop = await screen.findByRole('dialog', { name: /^(画面参数|音频参数)$/ });
+  // 没选这一档之前：宽高两个框不该占地方，百万像素在
+  expect(screen.queryByLabelText('宽度')).toBeNull();
+  expect(within(pop).getByLabelText('分辨率')).toBeTruthy();
+
+  await fireEvent.click(screen.getByRole('button', { name: '自定义宽高' }));
+  const width = screen.getByLabelText('宽度') as HTMLInputElement;
+  const height = screen.getByLabelText('高度') as HTMLInputElement;
+  expect(within(pop).queryByLabelText('分辨率')).toBeNull();
+  // 没有档位可点：像素的档因模型而异，后端没点名就不给（那两张通用表会筛出一个「8」）
+  expect(pop.querySelector('[aria-label="分辨率档位"]')).toBeNull();
+
+  // 报的是节点真会出的尺寸：1500 按 32 对齐是 1504
+  await fireEvent.input(width, { target: { value: '1500' } });
+  await fireEvent.input(height, { target: { value: '1080' } });
+  // 同一句话在文件名旁边也有一份（hero 那格），所以只在面板这一层里找
+  const sizeLine = await within(pop).findByTitle('按当前比例与分辨率，这一趟会出这么大的图');
+  expect(sizeLine.textContent).toContain('1504×1088');
+  expect(screen.getByRole('button', { name: /^(画面参数|音频参数)$/ }).textContent)
+    .toContain('自定义宽高 / 1504×1088');
+
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '换一套衣服' } });
+  await fireEvent.click(screen.getByRole('button', { name: '生成' }));
+  await tick();
+  expect(submitted).toMatchObject({
+    controls: { '584.比例': '自定义宽高', '584.自定宽度': 1500, '584.自定高度': 1080 },
+  });
+  // 藏起来的百万像素仍然跟着提交，这是故意的：面板留着那份数，用户换回 16:9 时他挑过的
+  // 分辨率才还在（隐藏 ≠ 清空）。而节点在这一档本就不看它，写进去不改变出图，
+  // 反而让存下来的工作流正文与面板上看到的一致。真正不许的是让它出现在面板上。
+  const sent = (submitted ?? {}) as unknown as { controls?: Record<string, unknown> };
+  expect(sent.controls?.['584.百万像素']).toBe(2);
 });

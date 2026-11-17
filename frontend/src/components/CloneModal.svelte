@@ -31,7 +31,7 @@
     pickedRatioOption,
     promptGroupValues, modeFromRefCount, modeLabel, numberPresets, numberUnit,
     primaryPromptGroup, promptGroupHint, promptPlaceholder, promptSlots, promptSourceLabel, secondaryPromptGroups,
-    ratioShape, referenceCells, referenceIssues, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, visibleRefCells, voiceAvatar, voiceSample, nativeLanguageOverride,
+    ratioShape, referenceCells, referenceIssues, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, slotVisible, visibleRefCells, voiceAvatar, voiceSample, nativeLanguageOverride,
     firstFreeRefKey, mergedRefCells, openRefKinds, REF_DISPLAY_ORDER,
     CLONE_SETTINGS_TAB, cloneOpen, cloneBatches, clearCloneBatches, armCloneBatchAspect, cloneOutputsOf,
     cloudApi, coinsLabel, isCloudTemplate, mentionsTags, supportsRefFamily,
@@ -519,8 +519,18 @@
       .join(" / ")}）`,
   );
   // 参数面板：combo 走带方框的比例网格，数值走档位 + 自定义输入。
-  const selectSlots = $derived(controlSlots(template).filter((slot) => slot.kind === "select"));
-  const numberSlots = $derived(controlSlots(template).filter((slot) => slot.kind !== "select"));
+  // 面板只画「现在活着」的那几颗：比例选到自定义宽高时宽高两个框进来、百万像素出去（那条分支里
+  // 节点不看它），换回任何一个比例就反过来。藏起来的控件不进面板、不进胶囊、也不参与算尺寸。
+  const selectSlots = $derived(
+    controlSlots(template).filter(
+      (slot) => slot.kind === "select" && slotVisible(template, slot, controls),
+    ),
+  );
+  const numberSlots = $derived(
+    controlSlots(template).filter(
+      (slot) => slot.kind !== "select" && slotVisible(template, slot, controls),
+    ),
+  );
   const hasParams = $derived(selectSlots.length + numberSlots.length > 0);
   /**
    * 底部胶囊上那颗小脸：当前参数里第一个「认得出是谁」的音色。语种、比例那类选项
@@ -2626,6 +2636,7 @@
                         {#each numberSlots as slot (slotKey(slot))}
                           {@const key = slotKey(slot)}
                           {@const range = durationRange(slot)}
+                          {@const steps = numberPresets(slot)}
                           <p class="cm-pop-title">{slot.label}</p>
                           {#if isDurationSlot(slot)}
                             <!-- 时长是连续量：档位按钮点起来像在猜，拖滑块到几秒就是几秒（3–15 秒，
@@ -2653,9 +2664,9 @@
                               />
                               <span class="cm-slide-unit">{numberUnit(slot) || "秒"}</span>
                             </div>
-                          {:else}
+                          {:else if steps.length}
                             <div class="cm-seg" role="group" aria-label={`${slot.label}档位`}>
-                              {#each numberPresets(slot) as preset (preset)}
+                              {#each steps as preset (preset)}
                                 <button
                                   class="cm-seg-item"
                                   class:is-on={Number(controls[key]) === preset}
@@ -2667,6 +2678,21 @@
                             </div>
                             <label class="cm-custom" for={`clone-${key}`}>
                               <span>自定义{numberUnit(slot) ? `（${numberUnit(slot)}）` : ""}</span>
+                              <input
+                                id={`clone-${key}`}
+                                type="number"
+                                aria-label={slot.label}
+                                min={slot.min ?? undefined}
+                                max={slot.max ?? undefined}
+                                step={slot.step ?? undefined}
+                                bind:value={controls[key]}
+                              />
+                            </label>
+                          {:else}
+                            <!-- 后端没给档位的那一颗（自定义宽高那两个像素框就是）：直接一个带名字的框。
+                                 这时候它不是「自定义」，它就是这一项本身，所以帽子写它的名字不写「自定义」。 -->
+                            <label class="cm-custom" for={`clone-${key}`}>
+                              <span>{slot.label}{numberUnit(slot) ? `（${numberUnit(slot)}）` : ""}</span>
                               <input
                                 id={`clone-${key}`}
                                 type="number"

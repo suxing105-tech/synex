@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   EMPTY_CLONE_JOB, applyCloneProgress, buildGenerateRequest, cloneError, cloneStatusLabel,
   allowsTextMode, controlSlots, controlSummary, defaultControlValues, defaultReferences, formatControlValue, modesFor,
-  formatTargetSize, pickedRatioOption, targetPixelSize,
+  formatTargetSize, pickedRatioOption, slotVisible, targetPixelSize, visibleControlSlots,
   imageSlots, jobForTemplate, latestReversePrompt, modeFromRefCount, numberPresets, numberUnit,
   modeLabel, optionLabel, promptSourceLabel, promptSlots, ratioShape, referenceCells, referenceIssues, visibleRefCells,
   resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, templateDisplayName,
@@ -317,6 +317,78 @@ describe("将生成的尺寸：弹窗在提交之前先把 ResolutionSelector �
     const split = tpl([promptSlot, ratioSlot, { ...megaSlot, node: "99" }]);
     expect(targetPixelSize(split, { "13.aspect_ratio": "9:16", "13.megapixels": 2.2, "99.megapixels": 2.2 }))
       .toBeNull();
+  });
+
+  it("自定义宽高：宽高两个框只在选了它之后才活着，百万像素那档同时退场", () => {
+    const ratio: CloneSlot = { kind: "select", node: "584", input: "比例", label: "比例",
+      options: ["原始比例", "16:9", "自定义宽高"], value: "原始比例" };
+    const mega: CloneSlot = { kind: "number", node: "584", input: "百万像素", label: "分辨率",
+      value: 2, multiple: 32, show_when: { input: "比例", not_equals: "自定义宽高" } };
+    const width: CloneSlot = { kind: "number", node: "584", input: "自定宽度", label: "宽度", unit: "px",
+      value: 1024, min: 8, max: 10240, step: 1, multiple: 32,
+      show_when: { input: "比例", equals: "自定义宽高" } };
+    const height: CloneSlot = { kind: "number", node: "584", input: "自定高度", label: "高度", unit: "px",
+      value: 1024, min: 8, max: 10240, step: 1, multiple: 32,
+      show_when: { input: "比例", equals: "自定义宽高" } };
+    const custom = tpl([promptSlot, imageSlot, ratio, mega, width, height]);
+    const inputs = (name: string) => visibleControlSlots(custom, { "584.比例": name }).map((s) => s.input);
+
+    // 选到自定义宽高：宽高进来、百万像素出去（这一档节点不看它，留着就是让人拧一个不生效的数）
+    expect(inputs("自定义宽高")).toEqual(["比例", "自定宽度", "自定高度"]);
+    // 换回任何一个比例：反过来
+    expect(inputs("16:9")).toEqual(["比例", "百万像素"]);
+    // 没写 show_when 的控件永远出现（绝大多数就是这种）
+    expect(slotVisible(custom, promptSlot, {})).toBe(true);
+    // 条件挂的那颗下拉不在槽位里 → 按出现处理，绝不因为算不出的条件把控件藏死
+    const orphan = tpl([promptSlot, imageSlot, { ...width }]);
+    expect(slotVisible(orphan, orphan.slots[2], {})).toBe(true);
+
+    // 像素档没有通用档位可退：那两张表是给 MP（0.5–8）和时长（5–15 秒）准备的，
+    // 套过来会筛出一个「8」，点一下把用户要的 1536 改成 8 像素
+    expect(numberPresets(width)).toEqual([]);
+    expect(numberUnit(width)).toBe("px");
+  });
+
+  it("自定义宽高报的是节点真会出的尺寸：先夹区间、再按倍数取整（32 对齐那条报 1500 就是骗人）", () => {
+    const ratio: CloneSlot = { kind: "select", node: "584", input: "比例", label: "比例",
+      options: ["原始比例", "自定义宽高"], value: "原始比例" };
+    const mk = (input: string, label: string): CloneSlot => ({
+      kind: "number", node: "584", input, label, unit: "px", value: 1024,
+      min: 8, max: 10240, step: 1, multiple: 32,
+      show_when: { input: "比例", equals: "自定义宽高" },
+    });
+    const custom = tpl([promptSlot, ratio, mk("自定宽度", "宽度"), mk("自定高度", "高度")]);
+    const size = (w: number | '', h: number | '') =>
+      formatTargetSize(custom, { "584.比例": "自定义宽高", "584.自定宽度": w, "584.自定高度": h });
+    // 节点那套账：max(multiple, round(v / multiple) * multiple)，1500→1504、1080→1088
+    expect(size(1500, 1080)).toBe("1504×1088");
+    // 半分处「四舍六入五成双」：1040 / 32 = 32.5 → 32（不是 33），Python 的 round 就是这么算的
+    expect(size(1040, 1040)).toBe("1024×1024");
+    // 越界由 ComfyUI 按输入框自己的上下限夹：填 4 出的是 32（一个倍数），填两万像素出 10240
+    expect(size(4, 4)).toBe("32×32");
+    expect(size(20000, 20000)).toBe("10240×10240");
+    // 空着 / 填了怪东西：不报，整行不排
+    expect(size("", 1024)).toBe("");
+    expect(size(0, 1024)).toBe("");
+    // 没选到自定义宽高这一档时不吃这两个框的数（那时它们不出现）
+    expect(formatTargetSize(custom, { "584.比例": "原始比例", "584.自定宽度": 1500, "584.自定高度": 1080 }))
+      .toBe("");
+  });
+
+  it("底部胶囊把宽和高说成一件事（1504×1088），不是两条孤零零的 px，也不带那颗不生效的 MP", () => {
+    const ratio: CloneSlot = { kind: "select", node: "584", input: "比例", label: "比例",
+      options: ["16:9", "自定义宽高"], value: "16:9" };
+    const mega: CloneSlot = { kind: "number", node: "584", input: "百万像素", label: "分辨率",
+      value: 2, multiple: 32, show_when: { input: "比例", not_equals: "自定义宽高" } };
+    const width: CloneSlot = { kind: "number", node: "584", input: "自定宽度", label: "宽度", unit: "px",
+      value: 1024, min: 8, max: 10240, multiple: 32, show_when: { input: "比例", equals: "自定义宽高" } };
+    const height: CloneSlot = { kind: "number", node: "584", input: "自定高度", label: "高度", unit: "px",
+      value: 1024, min: 8, max: 10240, multiple: 32, show_when: { input: "比例", equals: "自定义宽高" } };
+    const custom = tpl([promptSlot, ratio, mega, width, height]);
+    expect(controlSummary(custom, { "584.比例": "自定义宽高", "584.自定宽度": 1536, "584.自定高度": 1088 }))
+      .toBe("自定义宽高 / 1536×1088");
+    expect(controlSummary(custom, { "584.比例": "16:9", "584.百万像素": 2, "584.自定宽度": 1536 }))
+      .toBe("16:9 / 2MP");
   });
 
   it("pickedRatioOption 交回的是原选项串，不是短标签（画布排卡要拿它认档）", () => {

@@ -63,6 +63,12 @@ export interface CloneSlot {
   multiple?: number | null;
   /** 后端给的这句参数说明（云端的「Fast 便宜快」这类），面板上原样显示 */
   hint?: string;
+  /**
+   * 这颗控件只在同节点那颗下拉框选到某个值时才出现。
+   * 「自定义宽高」就是靠它把宽高两个框换掉百万像素：那两个框只在选到它时才是活的，
+   * 而百万像素在这条分支里被节点整个忽略——留着它，用户改的是一个不会生效的数。
+   */
+  show_when?: { input: string; equals?: string; not_equals?: string } | null;
 }
 
 /** 云端模型那张声明卡要说的话：模型叫什么、能干什么、哪几条还没实测。 */
@@ -975,6 +981,38 @@ export function controlSlots(template: CloneTemplate | null | undefined): CloneS
 }
 
 /**
+ * 这颗控件现在该不该出现。没写 show_when 的（绝大多数）永远出现。
+ *
+ * 条件挂在「同一台节点的另一个下拉框」上，所以判定只吃弹窗里那份 controls。
+ * 挂的那颗下拉不在槽位里时按「出现」处理：算不出条件就把控件藏掉，用户看到的是一颗
+ * 凭空消失的旋钮，比多显示一颗更糟——而且那一档本来也没人替它把关。
+ */
+export function slotVisible(
+  template: CloneTemplate | null | undefined,
+  slot: CloneSlot,
+  controls: Record<string, string | number>,
+): boolean {
+  const when = slot.show_when;
+  if (!when || !when.input) return true;
+  const gate = controlSlots(template).find(
+    (one) => one.kind === "select" && one.node === slot.node && one.input === when.input,
+  );
+  if (!gate) return true;
+  const value = controls[slotKey(gate)] ?? gate.value ?? "";
+  if (typeof when.equals === "string") return String(value) === when.equals;
+  if (typeof when.not_equals === "string") return String(value) !== when.not_equals;
+  return true;
+}
+
+/** 面板上真该画出来的那几颗控件（隐藏的既不进面板，也不进胶囊汇总、不参与算尺寸）。 */
+export function visibleControlSlots(
+  template: CloneTemplate | null | undefined,
+  controls: Record<string, string | number>,
+): CloneSlot[] {
+  return controlSlots(template).filter((slot) => slotVisible(template, slot, controls));
+}
+
+/**
  * 弹窗支持的生成档位。老模板没带 modes 时按槽位兜底：有几台 LoadImage 就有几档。
  */
 export function modesFor(template: CloneTemplate | null | undefined): CloneMode[] {
@@ -1639,6 +1677,10 @@ const DURATION_PRESETS = [5, 8, 10, 12, 15];
  * 用分辨率那张通用表会给出 0.5 秒这种没人能跑的片子）。没给才退回通用表 + min/max 收窄。
  */
 export function numberPresets(slot: CloneSlot): number[] {
+  // 像素档没有通用档位可退：那两张通用表是给百万像素（0.5–8）和时长（5–15 秒）准备的，
+  // 套到 px 上只会筛出一个「8」，一颗点下去把用户要的 1536 改成 8 像素。
+  // 尺寸的档因模型而异（同一条工作流换个检查点上限就变了），后端没点名就不给。
+  if ((slot.unit ?? "").toLowerCase() === "px") return [];
   const min = typeof slot.min === "number" ? slot.min : -Infinity;
   const max = typeof slot.max === "number" ? slot.max : Infinity;
   const declared = (slot.presets ?? []).filter((v) => typeof v === "number" && v >= min && v <= max);
@@ -1687,8 +1729,19 @@ export function controlSummary(
       .filter(Boolean)
       .join(" / ");
   }
+  // 自定义宽高那一档：两个框在胶囊上说成一件事（「1536×1024」），不报成两条孤零零的 px；
+  // 同时百万像素在这条分支里不出现——它是被节点忽略的那颗，留在胶囊上是谎报参数。
+  const pair = customSizeSlots(template);
+  const sizeText = customPixelSize(template, controls);
   return slots
-    .map((slot) => formatControlValue(slot, controls[slotKey(slot)]))
+    .filter((slot) => slotVisible(template, slot, controls))
+    .map((slot) => {
+      if (pair && slotKey(slot) === slotKey(pair.w)) {
+        return sizeText ? `${sizeText.w}×${sizeText.h}` : "";
+      }
+      if (pair && slotKey(slot) === slotKey(pair.h)) return "";
+      return formatControlValue(slot, controls[slotKey(slot)]);
+    })
     .filter(Boolean)
     .join(" / ");
 }
@@ -1740,6 +1793,59 @@ function roundHalfToEven(value: number): number {
   return floor % 2 === 0 ? floor : floor + 1;
 }
 
+/** 孤海「比例与分辨率」的自定义宽高那两个输入（中文键），以及英文名的那种写法。 */
+const PIXEL_WIDTH_INPUTS = ["自定宽度", "custom_width", "自定义宽度"];
+const PIXEL_HEIGHT_INPUTS = ["自定高度", "custom_height", "自定义高度"];
+
+/**
+ * 一对像素宽高槽：单位得是 px、名字认得出宽和高、挂在同一台节点上，缺一条都不算。
+ * 认错的代价比认不出大——把别的数字当成宽度，报的出图尺寸就是编的。
+ */
+function customSizeSlots(
+  template: CloneTemplate | null | undefined,
+): { w: CloneSlot; h: CloneSlot } | null {
+  const px = controlSlots(template).filter(
+    (slot) => slot.kind === "number" && numberUnit(slot) === "px",
+  );
+  const w = px.find((slot) => PIXEL_WIDTH_INPUTS.includes(slot.input));
+  const h = px.find((slot) => PIXEL_HEIGHT_INPUTS.includes(slot.input));
+  if (!w || !h || w.node !== h.node) return null;
+  return { w, h };
+}
+
+/**
+ * 自定义宽高那一档的出图尺寸。
+ *
+ * 走的是节点那套账（Goohaitools-comfyui/nodes/比例与分辨率.py）：这一档不看模式也不看百万像素，
+ * 宽度＝自定宽度、高度＝自定高度，ComfyUI 先按输入框自己的上下限夹一次，节点再各自按「倍数取整」
+ * 就近取整（`max(multiple, round(v / multiple) * multiple)`）。倍数取整那条工作流里是 32，
+ * 所以填 1500 出的是 1504——弹窗报 1500 就是骗人。
+ * 这两个框只在比例选到「自定义宽高」时才是活的，所以可见性就是这一档的开关。
+ */
+function customPixelSize(
+  template: CloneTemplate | null | undefined,
+  controls: Record<string, string | number>,
+): TargetPixelSize | null {
+  const pair = customSizeSlots(template);
+  if (!pair) return null;
+  if (!slotVisible(template, pair.w, controls) || !slotVisible(template, pair.h, controls)) {
+    return null;
+  }
+  const side = (slot: CloneSlot): number => {
+    const raw = Number(controls[slotKey(slot)] ?? slot.value);
+    if (!Number.isFinite(raw) || raw <= 0) return 0;
+    const low = typeof slot.min === "number" ? slot.min : 1;
+    const high = typeof slot.max === "number" ? slot.max : Infinity;
+    const clamped = Math.min(Math.max(raw, low), high);
+    const multiple = Number(slot.multiple) > 0 ? Number(slot.multiple) : DEFAULT_PIXEL_MULTIPLE;
+    return Math.max(multiple, roundHalfToEven(clamped / multiple) * multiple);
+  };
+  const w = side(pair.w);
+  const h = side(pair.h);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return null;
+  return { w, h };
+}
+
 /**
  * 「这么点下去会出多大一张图」——把 ComfyUI 那台 ResolutionSelector 的算法在前端先跑一遍。
  *
@@ -1756,6 +1862,10 @@ export function targetPixelSize(
   template: CloneTemplate | null | undefined,
   controls: Record<string, string | number>,
 ): TargetPixelSize | null {
+  // 自定义宽高那一档先答：那条分支压根不用下面的公式（没有比例、也没有百万像素），
+  // 而且比例选项「自定义宽高」认不出宽高比，走到下面必然返回 null。
+  const custom = customPixelSize(template, controls);
+  if (custom) return custom;
   const ratioSlot = pickedRatioSlot(template, controls);
   if (!ratioSlot) return null;
   const ratio = ratioShape(String(controls[slotKey(ratioSlot)])).ratio;
@@ -1763,7 +1873,8 @@ export function targetPixelSize(
   const mega = controlSlots(template).find(
     (slot) => slot.kind === "number"
       && slot.node === ratioSlot.node
-      && (slot.input.toLowerCase() === "megapixels" || numberUnit(slot) === "MP"),
+      && (slot.input.toLowerCase() === "megapixels" || numberUnit(slot) === "MP")
+      && slotVisible(template, slot, controls),
   );
   if (!mega) return null;
   const megapixels = Number(controls[slotKey(mega)] ?? mega.value);

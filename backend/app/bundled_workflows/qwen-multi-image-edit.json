@@ -79,8 +79,44 @@
    "min": 0.2,
    "multiple": 32,
    "node": "584",
+   "show_when": {
+    "input": "比例",
+    "not_equals": "自定义宽高"
+   },
    "step": 0.1,
    "value": 2
+  },
+  {
+   "input": "自定宽度",
+   "kind": "number",
+   "label": "宽度",
+   "max": 10240,
+   "min": 8,
+   "multiple": 32,
+   "node": "584",
+   "show_when": {
+    "equals": "自定义宽高",
+    "input": "比例"
+   },
+   "step": 1,
+   "unit": "px",
+   "value": 1024
+  },
+  {
+   "input": "自定高度",
+   "kind": "number",
+   "label": "高度",
+   "max": 10240,
+   "min": 8,
+   "multiple": 32,
+   "node": "584",
+   "show_when": {
+    "equals": "自定义宽高",
+    "input": "比例"
+   },
+   "step": 1,
+   "unit": "px",
+   "value": 1024
   }
  ],
  "source": "ComfyUI 导出的 Qwen image 2.1 多图编辑工作流",
@@ -376,7 +412,7 @@
     "模式": "总像素",
     "比例": "原始比例",
     "百万像素": 2,
-    "自定宽度": 32,
+    "自定宽度": 1024,
     "自定高度": 1024,
     "长边最大": 1536,
     "长边最小": 1024

@@ -636,6 +636,15 @@ def control_slot(node_id: str, key: str, spec: dict, current: Any = None) -> dic
 # 取数口径只认这两组名字，认不出就缺着——猜一个只会把「这一趟出多大」报错。
 MEGAPEXEL_INPUTS = ("megapixels", "百万像素")
 PIXEL_MULTIPLE_INPUTS = ("multiple", "倍数取整")
+# 「自定义宽高」这一档的两个像素输入。这一档里节点不看模式、也不看百万像素，
+# 宽高直接取这两个输入，所以它们必须能改——改不了的「自定义宽高」是假选项。
+CUSTOM_RATIO_OPTION = "自定义宽高"
+RATIO_INPUT_KEYS = ("比例", "aspect_ratio")
+PIXEL_WIDTH_INPUTS = ("自定宽度", "自定义宽度", "custom_width")
+PIXEL_HEIGHT_INPUTS = ("自定高度", "自定义高度", "custom_height")
+PIXEL_UNIT = "px"
+# 节点没接上（拿不到 object_info）时的区间，照节点源码那对写：min 8 / max 10240 / step 1
+PIXEL_FALLBACK_RANGE = (8, 10240)
 
 
 def node_pixel_multiple(node: Any) -> float | int | None:
@@ -657,8 +666,12 @@ def attach_pixel_multiple(control: dict, node: Any) -> None:
     把它做成 advanced 输入、默认 8，孤海「比例与分辨率」的总像素模式明写与官方同一套账、它的
     倍数取整默认 16——工作流里改成 32 就得按 32 算，写死任何常数都会把尺寸报错几十像素。
     节点没有这个输入、或者值不像个数，就不带这个键，前端按 8 兜底。
+
+    自定义宽高那两个像素框也吃这一颗：同一个「倍数取整」既管总像素那条分支，也管这一条
+    （节点源码里两条分支最后都过 _round_to_multiple），报尺寸得按同一个数对齐。
     """
-    if control.get("input") not in MEGAPEXEL_INPUTS:
+    if control.get("input") not in (
+            MEGAPEXEL_INPUTS + PIXEL_WIDTH_INPUTS + PIXEL_HEIGHT_INPUTS):
         return
     multiple = node_pixel_multiple(node)
     if multiple is not None:
@@ -692,6 +705,81 @@ def _duration_control(nodes: dict, used: set[str]) -> dict | None:
             "presets": list(DURATION_PRESETS),
         }
     return None
+
+
+def _custom_size_controls(nodes: dict, widgets: list, controls: list[dict],
+                         used: set[str]) -> list[dict]:
+    """认出「自定义宽高」这一档的两个像素框，顺手把百万像素那颗标成这一档不显示。
+
+    为什么要专门认：孤海「比例与分辨率」在比例选到自定义宽高时，宽高直接取「自定宽度／自定高度」，
+    而工作流里那两位默认写着 32×1024。弹窗里没有能改它们的框，用户选「自定义宽高」就等于
+    提交那对没人填过的数——2026-11-17 苏醒问的「不能真的自定义宽高吗」就是这么来的。
+
+    认法收得紧，四条同时成立才认：一、有一台节点的「比例」是 combo 且选项里明写「自定义宽高」
+    （必须问 object_info——没有这个选项就没有这一档）；二、那颗下拉本身已经是面板上的一颗控件
+    （条件得挂在一颗真能选的东西上。它不在控件里就没人能把条件扳过去，两个框会常驻在所有档位，
+    比不给更糟）；三、同一台节点上有宽和高两个字面量数字；四、这两个输入还没被别的槽位占走。
+    缺一条就当这份工作流没这一档。区间优先用 object_info 给的，没有才退回节点源码那对。
+    """
+    if not widgets:
+        return []
+    gates: dict[str, str] = {}
+    for nid, key, spec in widgets:
+        if key not in RATIO_INPUT_KEYS or spec.get("kind") != "combo":
+            continue
+        if CUSTOM_RATIO_OPTION not in [x for x in (spec.get("options") or []) if isinstance(x, str)]:
+            continue
+        gates.setdefault(nid, key)
+    bounds: dict[tuple[str, str], dict] = {}
+    for nid, key, spec in widgets:
+        bounds[(nid, key)] = spec
+    for nid in _ordered_ids(nodes):
+        ratio_key = gates.get(nid)
+        if not ratio_key:
+            continue
+        if not any(one.get("node") == nid and one.get("input") == ratio_key
+                   and one.get("kind") == "select" for one in controls):
+            continue
+        inputs = node_inputs(nodes[nid])
+        found = []
+        for group in (PIXEL_WIDTH_INPUTS, PIXEL_HEIGHT_INPUTS):
+            hit = next((k for k in group
+                        if isinstance(inputs.get(k), (int, float))
+                        and not isinstance(inputs.get(k), bool)), None)
+            if hit is None or f"{nid}.{hit}" in used:
+                found = []
+                break
+            found.append(hit)
+        if len(found) != 2:
+            continue
+        wkey, hkey = found
+        out: list[dict] = []
+        for label, key in (("宽度", wkey), ("高度", hkey)):
+            spec = bounds.get((nid, key)) or {}
+            control = control_slot(nid, key, {
+                "kind": "int",
+                "default": inputs[key],
+                "min": spec.get("min", PIXEL_FALLBACK_RANGE[0]),
+                "max": spec.get("max", PIXEL_FALLBACK_RANGE[1]),
+                "step": spec.get("step") or 1,
+            }, inputs[key])
+            if not control:
+                out = []
+                break
+            control["label"] = label
+            control["unit"] = PIXEL_UNIT
+            control["show_when"] = {"input": ratio_key, "equals": CUSTOM_RATIO_OPTION}
+            attach_pixel_multiple(control, nodes[nid])
+            out.append(control)
+            used.add(f"{nid}.{key}")
+        if not out:
+            continue
+        # 这一档里百万像素不参与出图：留着那颗旋钮，用户拧的是一个不会生效的数。
+        for control in controls:
+            if control.get("node") == nid and control.get("input") in MEGAPEXEL_INPUTS:
+                control["show_when"] = {"input": ratio_key, "not_equals": CUSTOM_RATIO_OPTION}
+        return out
+    return []
 
 
 def media_kind_of_template(template: dict | None) -> str:
@@ -933,6 +1021,9 @@ def detect_slots(nodes: dict, info: dict | None = None) -> dict:
                     controls.append(control)
                     used.add(slot_key(control))
                     auto_controls += 1
+        # 自定义宽高那两个框不占 MAX_AUTO_CONTROLS 那两个名额（比例＋分辨率已经用满了），
+        # 和时长同一个道理：它们是「这一档必须能改」，不是「多一个参数可以选」。
+        controls.extend(_custom_size_controls(nodes, widgets, controls, used))
         for nid, key, spec in widgets:
             if f"{nid}.{key}" in used:
                 continue
@@ -1078,7 +1169,7 @@ def detect_media_kind(nodes: dict) -> str:
 
 # 这些字段不是从工作流里"看"出来的，是这份模板的用法说明：能不能画遮罩、
 # 提示词留空算不算一个模式、一颗旋钮管几台节点。重新检测没资格把它们抹掉。
-SLOT_CONTRACT_KEYS = ("mask", "allow_empty", "empty_hint", "sync_to")
+SLOT_CONTRACT_KEYS = ("mask", "allow_empty", "empty_hint", "sync_to", "show_when")
 
 
 def _load_slots(raw: Any) -> list[dict]:
@@ -1162,6 +1253,20 @@ def normalize_slots(raw: Any, nodes: dict) -> list[dict]:
             hint = str(item.get("empty_hint") or "").strip()
             if hint:
                 slot["empty_hint"] = hint[:200]
+        shown = item.get("show_when")
+        if kind in ("number", "select") and isinstance(shown, dict):
+            # 「只有比例选到自定义宽高时才出现」这类条件。只允许挂在同一台节点的另一个
+            # 字面量文字输入上：跨节点前端算不出（那颗下拉可能压根不在弹窗里），
+            # 挂到连线上更不行——它的值不是选项文字。认不出就当没这个条件，控件照常显示，
+            # 绝不因为一个算不出的条件把控件藏死。
+            when_key = str(shown.get("input") or "")
+            equals, not_equals = shown.get("equals"), shown.get("not_equals")
+            if (when_key and when_key != key and when_key in inputs
+                    and isinstance(inputs[when_key], str)):
+                if isinstance(equals, str) and equals:
+                    slot["show_when"] = {"input": when_key, "equals": equals[:120]}
+                elif isinstance(not_equals, str) and not_equals:
+                    slot["show_when"] = {"input": when_key, "not_equals": not_equals[:120]}
         if kind in ("number", "select"):
             # 同一个参数在图里被写了两遍（局部重绘与移除两条分支各一份）时，
             # 弹窗里仍然只该有一颗旋钮，另一份跟着一起改，见 build_workflow。

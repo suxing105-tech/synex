@@ -284,6 +284,20 @@ describe("将生成的尺寸：弹窗在提交之前先把 ResolutionSelector �
     { "228.aspect_ratio": "16:9 (Widescreen)", "228.megapixels": 1.1 })).toBe("1432×808");
   });
 
+  it("孤海「比例与分辨率」：中文输入名，与官方同一套账，弹窗照样报尺寸", () => {
+    // 内置「闪寻图片生成」2026-11-17 起换到 GoohaiRatioAndResolution：
+    // 比例/百万像素是中文输入名，总像素模式明写与官方同一公式（MP×1024²，按倍数取整就近对齐）。
+    const goohai = tpl([promptSlot,
+      { kind: "select", node: "584", input: "比例", label: "比例",
+        options: ["原始比例", "1:1", "16:9", "自定义宽高"], value: "原始比例" },
+      { kind: "number", node: "584", input: "百万像素", label: "分辨率", value: 2, multiple: 32 }]);
+    expect(formatTargetSize(goohai, { "584.比例": "16:9", "584.百万像素": 2 })).toBe("1920×1088");
+    // 「原始比例」跟着参考图走，提交前没有确定的数：整行不排，不猜
+    expect(formatTargetSize(goohai, { "584.比例": "原始比例", "584.百万像素": 2 })).toBe("");
+    // MP 后缀从中文输入名认出（槽位没写 unit 也不瞎猜的那条兜底）
+    expect(numberUnit({ kind: "number", node: "584", input: "百万像素", label: "分辨率" })).toBe("MP");
+  });
+
   it("算不出来的那些一律空串——没把握的那行就不排（云端 / 没有 MP / 比例认不出 / MP 空着）", () => {
     // 云端那份只有 2K 这类档位名，没有百万像素那颗旋钮
     expect(formatTargetSize(tpl([promptSlot, ratioSlot]), { "13.aspect_ratio": "9:16" })).toBe("");

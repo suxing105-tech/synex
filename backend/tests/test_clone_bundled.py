@@ -160,6 +160,36 @@ def test_shipped_workflows_carry_the_two_real_machine_fixes():
     assert "@图片" not in text                          # 不是 @图片 那种 H3 不认的写法
 
 
+def test_the_image_workflow_moved_onto_the_goohai_ratio_node():
+    """图片那条的比例节点换过血（2026-11-17 苏醒重导）：ResolutionSelector → 孤海「比例与分辨率」。
+
+    新节点替掉的几件事逐条钉住，别哪天重新导资源又退回旧版：
+    - CLIP 的模型文件夹名跟着这次一起改对了（旧版写的是 Qwen-imgae-2.1，拼错的目录名）；
+    - 空 Latent 的宽高从新节点 584 的第 1/2 号输出取（原来取自 13）；
+    - 弹窗的两颗旋钮落在新节点的中文输入名上，选项是真机节点那份清单；
+      默认「原始比例」＝出图尺寸跟着参考图走。
+    """
+    entry = [e for e in clone_bundled.entries() if e["key"] == IMAGE_KEY][0]
+    nodes, slots = clone_bundled._prepare(entry)
+    classes = {n["class_type"] for n in nodes.values()}
+    assert "GoohaiRatioAndResolution" in classes and "ResolutionSelector" not in classes
+    assert "13" not in nodes
+    clip = [n for n in nodes.values() if n["class_type"] == "CLIPLoader"][0]
+    assert str(clip["inputs"]["clip_name"]).startswith("Qwen-image-2.1\\")
+    latent = [n for n in nodes.values() if n["class_type"] == "EmptyLatentImage"][0]
+    assert latent["inputs"]["width"] == ["584", 1]
+    assert latent["inputs"]["height"] == ["584", 2]
+    by = {clone_templates.slot_key(s): s for s in slots}
+    ratio = by["584.比例"]
+    assert ratio["kind"] == "select"
+    assert ratio["options"] == ["原始比例", "1:1", "2:3", "3:2", "3:4", "4:3", "5:7",
+                                "9:16", "16:9", "21:9", "1:2", "2:1", "自定义宽高"]
+    assert ratio["value"] == "原始比例"
+    mega = by["584.百万像素"]
+    assert mega["kind"] == "number" and mega["multiple"] == 32
+    assert mega["value"] == 2 and mega["min"] == 0.2 and mega["max"] == 50.0
+
+
 def test_shipped_slots_point_at_real_nodes():
     """内置 JSON 是生成出来的，槽位指到不存在的节点要在这里被拦住。"""
     for entry in clone_bundled.entries():
@@ -172,21 +202,21 @@ def test_shipped_slots_point_at_real_nodes():
 def test_shipped_slots_can_report_the_real_output_size():
     """带比例/百万像素旋钮的内置模板必须说得出对齐步长：弹窗靠它报「这一趟会出多大」。
 
-    缺这个键前端就退回 8（ComfyUI 那台节点自己的默认值），而包里视频那条正文写的是 32，
-    报出来差几十像素。顺带钉住「两条内置模板的步长本来就不一样」：所以那个兜底值不许
-    照着其中一条改成 32，那样只是把报错挪到另一条上。
+    缺这个键前端就退回 8，而包里视频与图片两条（2026-11-17 起图片换成孤海「比例与分辨率」）
+    正文写的都是 32，报出来差几十像素。值以正文节点为准：槽位上写的那份只是备胎，
+    节点没有这个输入时才轮得到它——兜底 8 也就只服务于「节点压根没这输入」的导入工作流。
     """
     declared = {}
     for entry in clone_bundled.entries():
         nodes, slots = clone_bundled._prepare(entry)
         for slot in slots:
-            if slot.get("input") != "megapixels":
+            if slot.get("input") not in clone_templates.MEGAPEXEL_INPUTS:
                 continue
             want = clone_templates.node_pixel_multiple(nodes[str(slot["node"])])
             assert want is not None, (entry["key"], "正文里没写对齐步长")
             assert slot.get("multiple") == want, (entry["key"], slot)
             declared[entry["key"]] = want
-    assert declared[VIDEO_KEY] == 32 and declared[IMAGE_KEY] == 8
+    assert declared[VIDEO_KEY] == 32 and declared[IMAGE_KEY] == 32
 
 
 # ---------- 装进库 ----------
@@ -532,7 +562,8 @@ def _strip_multiples(pool, row_id: int, slots: list[dict]) -> None:
 
 
 def _megapixels_slots(pool, key: str) -> list[dict]:
-    return [s for s in json.loads(_row_of_key(pool, key)["slots"]) if s.get("input") == "megapixels"]
+    return [s for s in json.loads(_row_of_key(pool, key)["slots"])
+            if s.get("input") in clone_templates.MEGAPEXEL_INPUTS]
 
 
 def test_a_stale_slot_gets_its_multiple_back_even_when_seed_skips_it(seeded):
@@ -561,7 +592,9 @@ def test_a_workflow_without_the_input_gets_no_invented_multiple(seeded):
     """正文里没有对齐步长就不补：猜一个只会把尺寸报错，宁缺毋滥（前端退回 8）。"""
     row = _row_of_key(seeded, IMAGE_KEY)
     nodes = json.loads(row["workflow"])
-    nodes[str(_megapixels_slots(seeded, IMAGE_KEY)[0]["node"])]["inputs"].pop("multiple", None)
+    knob = nodes[str(_megapixels_slots(seeded, IMAGE_KEY)[0]["node"])]["inputs"]
+    for name in clone_templates.PIXEL_MULTIPLE_INPUTS:
+        knob.pop(name, None)
     stale = _strip_multiples(seeded, int(row["id"]), json.loads(row["slots"]))
     seeded.main().execute("UPDATE clone_templates SET workflow=? WHERE id=?",
                           (json.dumps(nodes, ensure_ascii=False), int(row["id"])))

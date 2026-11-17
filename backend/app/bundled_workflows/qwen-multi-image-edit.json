@@ -50,53 +50,46 @@
    "node": "543"
   },
   {
-   "input": "aspect_ratio",
+   "input": "比例",
    "kind": "select",
    "label": "比例",
-   "node": "13",
+   "node": "584",
    "options": [
-    "1:1 (Square)",
-    "2:3 (Portrait Photo)",
-    "3:2 (Photo)",
-    "3:4 (Portrait Standard)",
-    "4:3 (Standard)",
-    "9:16 (Portrait Widescreen)",
-    "16:9 (Widescreen)",
-    "21:9 (Ultrawide)"
+    "原始比例",
+    "1:1",
+    "2:3",
+    "3:2",
+    "3:4",
+    "4:3",
+    "5:7",
+    "9:16",
+    "16:9",
+    "21:9",
+    "1:2",
+    "2:1",
+    "自定义宽高"
    ],
-   "value": "9:16 (Portrait Widescreen)"
+   "value": "原始比例"
   },
   {
-   "input": "megapixels",
+   "input": "百万像素",
    "kind": "number",
    "label": "分辨率",
-   "max": 16.0,
-   "min": 0.1,
-   "node": "13",
+   "max": 50.0,
+   "min": 0.2,
+   "multiple": 32,
+   "node": "584",
    "step": 0.1,
-   "value": 2.2
+   "value": 2
   }
  ],
  "source": "ComfyUI 导出的 Qwen image 2.1 多图编辑工作流",
  "workflow": {
-  "13": {
-   "_meta": {
-    "cnr_id": "comfy-core",
-    "title": "分辨率选择器",
-    "ver": "0.36.0"
-   },
-   "class_type": "ResolutionSelector",
-   "inputs": {
-    "aspect_ratio": "9:16 (Portrait Widescreen)",
-    "megapixels": 2.2,
-    "multiple": 8
-   }
-  },
   "461": {
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "保存图像（高级）",
-    "ver": "0.36.0"
+    "ver": "0.45.0"
    },
    "class_type": "SaveImageAdvanced",
    "inputs": {
@@ -114,7 +107,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "UNet加载器",
-    "ver": "0.36.0"
+    "ver": "0.45.0"
    },
    "class_type": "UNETLoader",
    "inputs": {
@@ -126,11 +119,11 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "加载CLIP",
-    "ver": "0.36.0"
+    "ver": "0.45.0"
    },
    "class_type": "CLIPLoader",
    "inputs": {
-    "clip_name": "Qwen-imgae-2.1\\qwen3vl_8b_bf16.safetensors",
+    "clip_name": "Qwen-image-2.1\\qwen3vl_8b_bf16.safetensors",
     "device": "default",
     "type": "qwen_image"
    }
@@ -139,7 +132,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "加载VAE",
-    "ver": "0.36.0"
+    "ver": "0.45.0"
    },
    "class_type": "VAELoader",
    "inputs": {
@@ -150,18 +143,18 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "空Latent图像",
-    "ver": "0.36.0"
+    "ver": "0.45.0"
    },
    "class_type": "EmptyLatentImage",
    "inputs": {
     "batch_size": 1,
     "height": [
-     "13",
-     1
+     "584",
+     2
     ],
     "width": [
-     "13",
-     0
+     "584",
+     1
     ]
    }
   },
@@ -169,7 +162,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "VAE解码",
-    "ver": "0.36.0"
+    "ver": "0.45.0"
    },
    "class_type": "VAEDecode",
    "inputs": {
@@ -198,7 +191,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "加载图像",
-    "ver": "0.3.64"
+    "ver": "0.45.0"
    },
    "class_type": "LoadImage",
    "inputs": {
@@ -209,7 +202,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "切换",
-    "ver": "0.37.0"
+    "ver": "0.45.0"
    },
    "class_type": "ComfySwitchNode",
    "inputs": {
@@ -228,7 +221,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "随机噪波",
-    "ver": "0.30.0"
+    "ver": "0.45.0"
    },
    "class_type": "RandomNoise",
    "inputs": {
@@ -239,7 +232,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "自定义采样器（高级）",
-    "ver": "0.37.0"
+    "ver": "0.45.0"
    },
    "class_type": "SamplerCustomAdvanced",
    "inputs": {
@@ -269,7 +262,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "基本引导器",
-    "ver": "0.37.0"
+    "ver": "0.45.0"
    },
    "class_type": "BasicGuider",
    "inputs": {
@@ -287,7 +280,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "K采样器选择",
-    "ver": "0.37.0"
+    "ver": "0.45.0"
    },
    "class_type": "KSamplerSelect",
    "inputs": {
@@ -298,7 +291,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "基本调度器",
-    "ver": "0.37.0"
+    "ver": "0.45.0"
    },
    "class_type": "BasicScheduler",
    "inputs": {
@@ -329,7 +322,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "文本编码 Qwen Image 2.1",
-    "ver": "0.36.0"
+    "ver": "0.45.0"
    },
    "class_type": "TextEncodeQwenImage21",
    "inputs": {
@@ -354,7 +347,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "Qwen Image 2.1 缓存",
-    "ver": "0.36.0"
+    "ver": "0.45.0"
    },
    "class_type": "QwenImage21Cache",
    "inputs": {
@@ -364,6 +357,29 @@
      "468",
      0
     ]
+   }
+  },
+  "584": {
+   "_meta": {
+    "aux_id": "goohai/Goohaitools-comfyui",
+    "title": "比例与分辨率",
+    "ver": "83abca47fa10d47a1ffd0c7cb62b7fa2a9dc0ddc"
+   },
+   "class_type": "GoohaiRatioAndResolution",
+   "inputs": {
+    "倍数取整": 32,
+    "固定边像素": 1536,
+    "图像": [
+     "543",
+     0
+    ],
+    "模式": "总像素",
+    "比例": "原始比例",
+    "百万像素": 2,
+    "自定宽度": 32,
+    "自定高度": 1024,
+    "长边最大": 1536,
+    "长边最小": 1024
    }
   }
  }

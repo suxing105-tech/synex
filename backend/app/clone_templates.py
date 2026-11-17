@@ -631,23 +631,34 @@ def control_slot(node_id: str, key: str, spec: dict, current: Any = None) -> dic
     return None
 
 
+# 百万像素那颗旋钮和对齐步长那颗，官方 ResolutionSelector 用英文名（megapixels / multiple），
+# 第三方也做同一件事的节点用中文名（孤海「比例与分辨率」：百万像素 / 倍数取整）。
+# 取数口径只认这两组名字，认不出就缺着——猜一个只会把「这一趟出多大」报错。
+MEGAPEXEL_INPUTS = ("megapixels", "百万像素")
+PIXEL_MULTIPLE_INPUTS = ("multiple", "倍数取整")
+
+
 def node_pixel_multiple(node: Any) -> float | int | None:
     """那台节点自己带的对齐步长；没有这个输入、或者值不像个数就返回 None（宁缺毋滥）。"""
-    multiple = node_inputs(node).get("multiple")
-    if isinstance(multiple, bool) or not isinstance(multiple, (int, float)) or multiple <= 0:
-        return None
-    return int(multiple) if float(multiple).is_integer() else multiple
+    inputs = node_inputs(node)
+    for key in PIXEL_MULTIPLE_INPUTS:
+        multiple = inputs.get(key)
+        if isinstance(multiple, bool) or not isinstance(multiple, (int, float)) or multiple <= 0:
+            continue
+        return int(multiple) if float(multiple).is_integer() else multiple
+    return None
 
 
 def attach_pixel_multiple(control: dict, node: Any) -> None:
     """百万像素那台节点上的对齐步长（ResolutionSelector 的 multiple）跟着槽位一起带走。
 
     弹窗靠它算「这一趟会出多大一张图」（前端 lib/clone.ts 的 targetPixelSize 是同一套公式：
-    总像素 = MP × 1024²，按比例开方后各自对齐到 multiple 的最近倍数）。那台节点把它做成
-    advanced 输入、默认 8，工作流里改成 32 就得按 32 算——写死 8 会把尺寸报错几十像素。
+    总像素 = MP × 1024²，按比例开方后各自对齐到 multiple 的最近倍数）。官方 ResolutionSelector
+    把它做成 advanced 输入、默认 8，孤海「比例与分辨率」的总像素模式明写与官方同一套账、它的
+    倍数取整默认 16——工作流里改成 32 就得按 32 算，写死任何常数都会把尺寸报错几十像素。
     节点没有这个输入、或者值不像个数，就不带这个键，前端按 8 兜底。
     """
-    if control.get("input") != "megapixels":
+    if control.get("input") not in MEGAPEXEL_INPUTS:
         return
     multiple = node_pixel_multiple(node)
     if multiple is not None:
@@ -1200,7 +1211,7 @@ def migrate_slot_multiples(conn) -> int:
     for row in conn.execute("SELECT id, workflow, slots FROM clone_templates").fetchall():
         slots = _load_slots(row["slots"])
         targets = [s for s in slots
-                   if s.get("kind") == "number" and s.get("input") == "megapixels"]
+                   if s.get("kind") == "number" and s.get("input") in MEGAPEXEL_INPUTS]
         if not targets:
             continue
         try:

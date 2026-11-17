@@ -10,22 +10,66 @@ function key(key: string, extra: KeyboardEventInit = {}, target: EventTarget = w
   target.dispatchEvent(event);
   return event;
 }
-it('Ctrl+Alt+B toggles right and either form of the tilde key toggles left', () => {
+it('波浪键的两种按法切换左栏；右栏不再认 Ctrl+Alt+B（那是 2026-11-11 的临时键）', () => {
   const left = vi.fn(), right = vi.fn();
   off = registerSidebarShortcuts(left, right);
-  const chord = { ctrlKey: true, altKey: true };
-  expect(key('b', chord).defaultPrevented).toBe(true);
-  key('b', chord); key('`', { code: 'Backquote' }); key('~', { code: 'Backquote', shiftKey: true });
-  expect(left).toHaveBeenCalledTimes(2); expect(right).toHaveBeenCalledTimes(2);
+  key('`', { code: 'Backquote' }); key('~', { code: 'Backquote', shiftKey: true });
+  expect(left).toHaveBeenCalledTimes(2);
+  expect(right).not.toHaveBeenCalled();
+  expect(key('b', { ctrlKey: true, altKey: true }).defaultPrevented).toBe(false);
 });
-it('Tab 永远归焦点遍历：任何快捷键都不许拦（WCAG 2.1.2）', () => {
+it('Tab 是右栏默认键，但只在中间这一列接管（2026-11-16 苏醒要回来的那一手）', () => {
+  const left = vi.fn(), right = vi.fn();
+  off = registerSidebarShortcuts(left, right);
+  // 不用用户自己改键：默认就是 Tab
+  expect(defaultShortcuts.rightSidebar).toBe('tab');
+  const grid = document.createElement('div');
+  grid.setAttribute('data-tab-sidebar', '');
+  const card = document.createElement('button');
+  grid.append(card);
+  document.body.append(grid);
+  card.focus();
+  expect(key('Tab', {}, card).defaultPrevented).toBe(true);
+  expect(right).toHaveBeenCalledTimes(1);
+  expect(left).not.toHaveBeenCalled();
+  // Shift+Tab 是原生的后退遍历，不抢：那是键盘用户在这颗列里的退路，撤了就成键盘陷阱
+  expect(key('Tab', { shiftKey: true }, card).defaultPrevented).toBe(false);
+  expect(right).toHaveBeenCalledTimes(1);
+  card.blur(); grid.remove();
+});
+it('点过工具条那颗「收起右侧栏」之后焦点停在按钮上，Tab 照样能把它展开回来', () => {
+  const left = vi.fn(), right = vi.fn();
+  off = registerSidebarShortcuts(left, right);
+  // 工具条和网格在 App.svelte 里同属中间那一列，所以标记打在列上，按钮和卡片一起算
+  const column = document.createElement('div');
+  column.setAttribute('data-tab-sidebar', '');
+  const toolbar = document.createElement('div');
+  const toggleBtn = document.createElement('button');
+  toolbar.append(toggleBtn);
+  column.append(toolbar);
+  document.body.append(column);
+  toggleBtn.focus();
+  expect(key('Tab', {}, toggleBtn).defaultPrevented).toBe(true);
+  expect(right).toHaveBeenCalledTimes(1);
+  toggleBtn.blur(); column.remove();
+});
+it('焦点不在中间这一列上时 Tab 照旧走焦点遍历（键盘进得来，WCAG 2.1.1 / 2.1.2）', () => {
   const toggle = vi.fn(); off = registerSidebarShortcuts(toggle, toggle);
+  // 应用刚打开：焦点还落在 body 上，这一会儿 Tab 必须还是「走到下一个控件」
   expect(key('Tab').defaultPrevented).toBe(false);
-  expect(key('Tab', { shiftKey: true }).defaultPrevented).toBe(false);
-  // 就算存储里还被塞回 Tab（老配置 / 手改 localStorage），也不许再吞
-  shortcutSettings.set({ ...defaultShortcuts, rightSidebar: 'tab', leftSidebar: 'shift+tab' });
-  expect(key('Tab').defaultPrevented).toBe(false);
-  expect(key('Tab', { shiftKey: true }).defaultPrevented).toBe(false);
+  // 输入框里：Tab 要能走到下一个控件，也要能用来打字区域的导航
+  const box = document.createElement('input');
+  document.body.append(box);
+  box.focus();
+  expect(key('Tab', {}, box).defaultPrevented).toBe(false);
+  // 长得像卡片、但不在那颗网格标记里（右栏那种缩略图）：同样不接管
+  const rail = document.createElement('div');
+  const railCard = document.createElement('button');
+  rail.append(railCard);
+  document.body.append(rail);
+  railCard.focus();
+  expect(key('Tab', {}, railCard).defaultPrevented).toBe(false);
+  box.remove(); rail.remove();
   expect(toggle).not.toHaveBeenCalled();
 });
 it('preserves typing, composition, repeated keys and modal focus navigation', () => {

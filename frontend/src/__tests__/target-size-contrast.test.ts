@@ -256,14 +256,17 @@ it("文本卡的底色落在墨阶上，摘录压在常态底和 hover 底上都
   }
 });
 
-it("格式徽标不再借朱红当常驻装饰，焦点环仍旧走 --accent", () => {
+it("格式徽标不再借朱红当常驻装饰，焦点环也与选中同白（2026-11-16）", () => {
   // 项目定的是「朱红只用于选中 · 进行中 · 主动作」。原先这颗徽标是 #f2a0a0 压在
   // rgba(242,78,78,.12) 上：一张常驻的技术标识，上面三样它一样都不占。
-  // 焦点环是另一回事——那是键盘可见性，app.css 的 .thumb.media-card:focus-visible::after 同一条口径。
+  // 焦点环一度挂在「键盘可见性」这句理由上用朱红，2026-11-16 撤了：
+  // 它和选中环共用那颗 ::after 覆盖层，方向键走的又是选中的那一张，两圈颜色没有意义。
   const feed = readFileSync("src/components/Feed.svelte", "utf8");
   const at = feed.indexOf(".text-format {");
   if (at < 0) throw new Error("Feed.svelte 里找不到 .text-format");
   const badge = feed.slice(at, feed.indexOf("}", at));
   expect(badge, "徽标又用回朱红了：" + badge).not.toMatch(/accent|#f24e4e|#f2a0a0|242,? ?78,? ?78/i);
-  expect(feed).toMatch(/\.text-card:focus-visible::after \{ box-shadow: inset 0 0 0 2px var\(--accent\)/);
+  expect(feed).toMatch(/\.text-card:focus-visible::after \{ box-shadow: inset 0 0 0 1px var\(--thumb-ring\)/);
+  // 选中环与焦点环同一条：文本卡也不许再单独冒出第二种颜色
+  expect(feed).toMatch(/\.text-card\.is-selected::after \{[\r\n]+\s*box-shadow: inset 0 0 0 1px var\(--thumb-ring\)/);
 });

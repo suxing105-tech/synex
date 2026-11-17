@@ -78,6 +78,25 @@ export function nearestInDirection(
 }
 
 /**
+ * 空格放大该开哪一张：先认「当前那一张」——鼠标左键点的、方向键走的都是它；
+ * 一张都没选中，才退回鼠标滑过的那张（纯鼠标那套手势：压在谁身上就开谁）。
+ *
+ * 顺序不许倒回悬停优先：方向键走的也是选中，鼠标停在别的卡上时，悬停优先会把
+ * 刚走到的那一张挤掉，按空格开出来的成了鼠标底下那张
+ * （2026-11-16 苏醒：鼠标滑过缩略图按空格键不再放大了，冲突）。
+ *
+ * 正好选中两张是图片对比那一手：开的是先选上的那一张（Set 的迭代顺序就是选中的先后）。
+ */
+export function previewTargetId(
+  multi: readonly number[],
+  selected: number | null,
+  hovered: number | null,
+): number | null {
+  if (multi.length === 2) return multi[0] ?? null;
+  return selected ?? hovered;
+}
+
+/**
  * 还没有任何选中时的落点：整片网格里最靠上、然后最靠左的那一张。
  * 读键盘的人第一次按方向键，也该落在一个看得见、可解释的位置上。
  */

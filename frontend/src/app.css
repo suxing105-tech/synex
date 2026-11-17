@@ -332,10 +332,13 @@ html {
 .media-card.is-selected::after {
   box-shadow: inset 0 0 0 1px var(--thumb-ring);
 }
-/* 键盘焦点单独一条：选中环是 1px 中性白，焦点环要是也跟着变白，键盘焦点就等于看不见。
-   焦点用 2px 品牌红，画在同一颗覆盖层上——落在图区里才真的看得见（文本卡同口径见 Feed.svelte）。 */
+/* 键盘焦点与选中同一圈白（2026-11-16 苏醒：方向键那下的高亮不要红色，和鼠标左键选中一样）。
+   环仍画在同一颗 ::after 覆盖层上——换成 outline 或卡片自己的 inset 阴影都会压在图区之下（见上面那段）。
+   旧口径是「焦点环单独用 2px 品牌红，否则键盘焦点看不见」，撤它的理由记在这儿：
+   方向键走的本来就是「当前那一张」，它同时也是选中的那一张，两圈颜色只会让同一张卡看着像被选了两遍。
+   代价如实留着：焦点和选中在视觉上不再分得开，状态本身仍由 aria-pressed 报给读屏器。 */
 .thumb.media-card:focus-visible::after {
-  box-shadow: inset 0 0 0 2px var(--accent);
+  box-shadow: inset 0 0 0 1px var(--thumb-ring);
 }
 
 /* 卡片窄到放不下页脚时收一档圆角，不然 90px 的卡顶着一个 10px 圆角会很肿 */

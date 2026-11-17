@@ -103,19 +103,23 @@ it('F2 在卡片上直接改名，不用先摸到文件名', async () => {
   await waitFor(() => expect(imagesApi.rename).toHaveBeenCalledWith(1, 'new'));
 });
 
-it('键盘焦点和选中态不是一回事：焦点环单独用品牌红 2px 内描边', () => {
+it('键盘焦点与选中同一圈白，不再单独用品牌红（2026-11-16 苏醒）', () => {
   const css = postcss.parse(readFileSync('src/app.css', 'utf8'));
   const decls: Record<string, string> = {};
   css.walkRules('.thumb.media-card:focus-visible::after', (rule) => {
     rule.walkDecls((d) => { decls[d.prop] = d.value; });
   });
-  // 焦点环和选中环共用那颗 ::after 覆盖层：outline / inset 阴影都绘在图区（position:relative）
-  // 之下，键盘焦点落在照片上就等于看不见（2026-11-15 苏醒：内描边不在最上层）
-  expect(decls['box-shadow']).toBe('inset 0 0 0 2px var(--accent)');
-  // 选中环保持中性灰白，没被焦点环带跑
+  // 环仍然画在那颗 ::after 覆盖层上：outline / inset 阴影都绘在图区（position:relative）
+  // 之下，落在照片上就等于看不见（2026-11-15 苏醒：内描边不在最上层）
+  expect(decls['box-shadow']).toBe('inset 0 0 0 1px var(--thumb-ring)');
+  // 和选中环逐字相同：方向键走的本来就是选中的那一张，再套一圈品牌红只会看着像被选了两遍
+  const sel: Record<string, string> = {};
+  css.walkRules('.media-card.is-selected::after', (rule) => {
+    rule.walkDecls((d) => { sel[d.prop] = d.value; });
+  });
+  expect(decls['box-shadow']).toBe(sel['box-shadow']);
+  // 这一圈白用的仍是那颗中性 token，没被顺手换成品牌红
   expect(rootToken('--thumb-ring')).toBe('var(--text-1)');
-  // 焦点环用的是品牌红，和选中环不是同一个颜色
-  expect(rootToken('--accent')).not.toBe('var(--text-1)');
 });
 
 function rootToken(name: string) {

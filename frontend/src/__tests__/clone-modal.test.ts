@@ -3178,15 +3178,27 @@ it('某一族一条都没铺：行末那串数撤了但理由仍在，点它也�
   expect(screen.getByRole('button', { name: '工作流' }).textContent).toContain('Qwen 多图编辑');
 });
 
-it('API 那一屏一条都没装时只给一句话，底部不再挂那颗「设置 Key」', async () => {
+it('API 那一屏一条都没装：空态那一行本身就是「设置 · 模型API配置」的入口', async () => {
+  // 2026-11-16 苏醒改了 2026-11-04 那一版：光留一句「去设置里填」不算出路，
+  // 读的人还得自己关掉这层、摸进设置、再翻到那一页。这一行现在点得动。
+  const onOpenSettings = vi.fn();
+  routes({ ...baseRoutes(), '/api/clone/cloud/status': cloudOn() });
+  const screen = await ready({ onOpenSettings });
+  await fireEvent.click(screen.getByRole('button', { name: '工作流' }));
+  await fireEvent.click(await screen.findByRole('button', { name: /^云端API服务/ }));
+  const row = await screen.findByRole('menuitem', { name: /去设置填云端模型的 API Key/ });
+  await fireEvent.click(row);
+  expect(onOpenSettings).toHaveBeenCalledWith('模型API配置');
+  // 本机那一屏的行仍只属于本机那一屏，云端空态不混摆两屏的东西
+  expect(screen.queryByRole('menuitem', { name: /加载本地工作流 JSON/ })).toBeNull();
+});
+
+it('没挂 onOpenSettings 时退回一句说明，不摆一颗点了没反应的行', async () => {
   routes({ ...baseRoutes(), '/api/clone/cloud/status': cloudOn() });
   const screen = await ready();
   await fireEvent.click(screen.getByRole('button', { name: '工作流' }));
   await fireEvent.click(await screen.findByRole('button', { name: /^云端API服务/ }));
   expect(await screen.findByText(/云端这一屏还空着/)).toBeTruthy();
-  // 那颗按钮整颗撤了（2026-11-04 苏醒圈的第二个框）：API 这屏既不给「加载本地工作流 JSON」，
-  // 也不给「设置 RunningHub 的 API Key」——Key 在设置 → 模型API配置里填，那句话就写在空态里。
-  expect(screen.queryByRole('menuitem', { name: /加载本地工作流 JSON/ })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: /API Key/ })).toBeNull();
 });
 
@@ -3738,6 +3750,9 @@ it('连着优化两次，撤销回的还是最早手打那句；中途手改的�
   await vi.waitFor(() => expect(ta.value).toBe('模型第1版'));
   await fireEvent.click(skillBtn(screen));
   await vi.waitFor(() => expect(ta.value).toBe('模型第2版'));
+  // 先等这一次优化真的收工（提示词锁松开）再点撤销：锁还按着的时候点撤销本来就不该动，
+  // 这条测的是「快照记的是最早手打那句」，不是抢在锁上点一下
+  await vi.waitFor(() => expect(undoBtn(screen)?.disabled).toBe(false));
   // 第二次优化不该把快照换成「模型第1版」——他要回的是自己打的那句
   await fireEvent.click(undoBtn(screen)!);
   expect(ta.value).toBe('我手打的那句');
@@ -4073,6 +4088,75 @@ it('编辑层是盖住整块弹窗的一层，不是挤在左栏里的一块', (
   })();
   expect(flag).toMatch(/background:\s*var\(--accent\)/);
   expect(flag).not.toMatch(/#[0-9a-fA-F]{3,6}/);
+});
+
+/* ── 提示词锁（2026-11-16 苏醒：「提示词在优化状态和生成状态的时候，应该暗下去，不能修改」）────
+   两个状态合成一把锁：优化回来会把刚敲的冲掉，生成中改的字和提交出去的那一份不是同一份。
+   锁的是那一句提示词本身（readonly + 压暗），不是整块面板——取消这一手必须一直点得动。 */
+const promptBox = (screen: any) => screen.getByLabelText('提示词') as HTMLTextAreaElement;
+const promptWrap = (screen: any) => screen.container.querySelector('.cm-prompt-wrap') as HTMLElement;
+const wandBtn = (screen: any) => screen.container.querySelector('.cm-wand') as HTMLButtonElement;
+
+it('生成中：提示词只读并压暗，那颗载入内置提示词的图标跟着锁住', async () => {
+  routes(baseRoutes());
+  const screen = await ready();
+  // 提示词空着的时候那颗「载入工作流内置提示词」才画得出来，所以这一条不先打字：
+  // 先趁没生成确认它点得动，再锁它
+  expect(wandBtn(screen)).not.toBeNull();
+  expect(wandBtn(screen).disabled).toBe(false);
+  expect(promptBox(screen).readOnly).toBe(false);
+  expect(promptWrap(screen).className).not.toContain('is-locked');
+  applyCloneProgress({ ...EMPTY_CLONE_JOB, active: true, job_id: 'j1', state: 'running', running: true, template_id: 1, image_ids: [] });
+  await tick();
+  expect(promptBox(screen).readOnly).toBe(true);
+  expect(promptWrap(screen).className).toContain('is-locked');
+  expect(wandBtn(screen).disabled).toBe(true);
+  expect(promptBox(screen).title).toContain('正在生成');
+  // readonly 而不是 disabled：还要能连上焦、选中、把这一句复制走
+  expect(promptBox(screen).disabled).toBe(false);
+});
+
+it('生成中那颗技能图标一起禁用：它会改写这一句，不是取消入口', async () => {
+  routes(baseRoutes());
+  const screen = await ready();
+  // 框里已有字、没在生成：这颗点得动
+  await fireEvent.input(promptBox(screen), { target: { value: '一句手打的提示词' } });
+  expect(skillBtn(screen).disabled).toBe(false);
+  applyCloneProgress({ ...EMPTY_CLONE_JOB, active: true, job_id: 'j1', state: 'running', running: true, template_id: 1, image_ids: [] });
+  await tick();
+  expect(skillBtn(screen).disabled).toBe(true);
+});
+
+it('生成结束提示词回到可改，锁不会留在框上', async () => {
+  routes(baseRoutes());
+  const screen = await ready();
+  applyCloneProgress({ ...EMPTY_CLONE_JOB, active: true, job_id: 'j1', state: 'running', running: true, template_id: 1, image_ids: [] });
+  await tick();
+  expect(promptBox(screen).readOnly).toBe(true);
+  applyCloneProgress({ ...EMPTY_CLONE_JOB, active: false, job_id: 'j1', state: 'done', running: false, template_id: 1, image_ids: [] });
+  await tick();
+  expect(promptBox(screen).readOnly).toBe(false);
+  expect(promptWrap(screen).className).not.toContain('is-locked');
+});
+
+it('优化中：提示词只读并压暗，那颗优化图标仍点得动——它是唯一的取消入口', async () => {
+  let release: (v: unknown) => void = () => {};
+  routes(skillRoutes({
+    '/api/prompt-skills/1/optimize': () => new Promise((resolve) => { release = resolve; }),
+  }));
+  const screen = await ready();
+  const ta = promptBox(screen);
+  await fireEvent.input(ta, { target: { value: '一句手打的提示词' } });
+  await fireEvent.click(skillBtn(screen));
+  await vi.waitFor(() => expect(ta.readOnly).toBe(true));
+  expect(promptWrap(screen).className).toContain('is-locked');
+  expect(ta.title).toContain('正在按技能优化');
+  expect(skillBtn(screen).disabled).toBe(false);
+  expect(skillBtn(screen).getAttribute('aria-busy')).toBe('true');
+  release({ prompt: '重写后：中景、柔光', model_name: '智谱', model: 'glm-4v', degraded_refs: null });
+  await vi.waitFor(() => expect(ta.readOnly).toBe(false));
+  expect(ta.value).toBe('重写后：中景、柔光');
+  expect(promptWrap(screen).className).not.toContain('is-locked');
 });
 
 it('遮罩编辑层的工具条全是文字按钮，命中高度走控件档，不靠悬停才现形', () => {

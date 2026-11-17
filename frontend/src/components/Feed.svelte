@@ -13,7 +13,7 @@
   import { mediaSummary, selectionSummary } from "../lib/counts";
   import { isTextItem, itemUid, kindsIn } from "../lib/items";
   import { matchesAction, shortcutBlocked } from "../lib/shortcut-settings";
-  import { firstBox, nearestInDirection, type GridBox, type GridDirection } from "../lib/grid-nav";
+  import { firstBox, nearestInDirection, previewTargetId, type GridBox, type GridDirection } from "../lib/grid-nav";
   import { backendUrl } from "../lib/backend-url";
   import { cardTitleMode, footerTitleFor } from "../lib/card-title";
   import {
@@ -605,7 +605,8 @@ import { hoverPlay } from "../lib/hover-play";
   }
 
 
-  // 当前鼠标滑过的缩略图 id（空格键放大这张；不受 selectedId 影响）
+  // 当前鼠标滑过的缩略图 id：只在「一张都没选中」时给空格键当落点。
+  // 有选中就让位给选中的那一张（口径见 handleKey 里 previewId 那段）。
   let hoveredId = $state<number | null>(null);
   let previewFailedIds = $state<Set<number>>(new Set());
   // 音频缩略图 = 懒生成的波形图。它 404 只说明「还没生成 / ffmpeg 不可用」，
@@ -1001,17 +1002,19 @@ import { hoverPlay } from "../lib/hover-play";
       // Lightbox 的 handler 看到 open=true 紧接着调 next()，结果展示的是选中图的下一张。
       if (lightboxOpen) return;
       // 悬停 / 选中的是文本卡时，空格打开阅读层：与图片同一手势，不需要另一套键。
+      // 先后顺序与下面媒体那一条一致：选中在前、悬停只兜底。
       const hoveredTextItem = hoveredText === null ? null : $feedItems.filter(isTextItem).find((x) => x.id === hoveredText) ?? null;
-      const textPreview = hoveredTextItem ?? $selectedText;
+      const textPreview = $selectedText ?? hoveredTextItem;
       if (textPreview) {
         e.preventDefault();
         e.stopImmediatePropagation();
         openTextReader(textPreview);
         return;
       }
-      // 空格放大：当前鼠标滑过的那张，不再依赖 selectedId。
-      // 鼠标没在任何缩略图上 → 不响应（避免误触发）。
-      const previewId = $multiSelectedIds.size === 2 ? [...$multiSelectedIds][0] : hoveredId ?? selectedId;
+      // 空格放大：开哪一张的判据在 lib/grid-nav.ts 的 previewTargetId（选中优先、悬停兜底，
+      // 正好两张走对比），这里只负责取三样现成的状态喂给它。
+      // 两边都没有 → 不响应（避免误触发）。
+      const previewId = previewTargetId([...$multiSelectedIds], selectedId, hoveredId);
       if (previewId !== null) {
         e.preventDefault();
         // 阻止 Lightbox 的 window keydown 也响应本次空格。
@@ -1608,7 +1611,9 @@ import { hoverPlay } from "../lib/hover-play";
   .dialog-actions button:disabled { opacity: .45; cursor: default; }
   .dialog-actions .primary { background: #6d4c4c; border-color: #8a5f5f; }
   .dialog-actions .danger { background: var(--danger); border-color: var(--danger); color: var(--accent-ink); }
-  .text-card:focus-visible::after { box-shadow: inset 0 0 0 2px var(--accent); }
+  /* 键盘焦点与选中同一圈白，和图片卡同口径（2026-11-16 苏醒：高亮不要红色）；
+     焦点环不再单独用品牌红，撤它的理由记在 app.css 那条旁边 */
+  .text-card:focus-visible::after { box-shadow: inset 0 0 0 1px var(--thumb-ring); }
   /* 格式徽标：TXT / MD / SRT 这种技术标识留着等宽小字，但朱红撤了 —— 项目定的是
      「朱红只用于选中 · 进行中 · 主动作」，一张常驻徽标不算任何一样。
      底色走 --raise-2（海拔那一族本来就是给「比所在面亮一点」准备的）：常驻时压在 ink-2 上

@@ -1,7 +1,11 @@
 import { writable, get } from "svelte/store";
 
 export const shortcutActions = [
-  { id: "rightSidebar", label: "展开 / 收起右侧栏", key: "ctrl+alt+b" },
+  // 右栏默认键 = Tab（2026-11-16 苏醒：「收起展开右边栏，我还是想默认 tab 键为快捷键」）。
+  // 2026-11-11 曾因「Tab 把整站焦点遍历吃掉」换成 Ctrl+Alt+B，这次不是整体回退：
+  // Tab 只在素材网格里归右栏，焦点在输入框 / 侧栏 / 右栏 / 弹层里时照旧走焦点遍历，
+  // 挡在哪、为什么不卡键盘，见 lib/sidebar-shortcuts.ts 的 gridHasTab。
+  { id: "rightSidebar", label: "展开 / 收起右侧栏", key: "tab" },
   { id: "leftSidebar", label: "展开 / 收起左侧栏", key: "backquote" },
   { id: "positive", label: "复制正向 Prompt", key: "p" },
   { id: "negative", label: "复制反向 Prompt", key: "n" },
@@ -21,12 +25,13 @@ export type ShortcutId = typeof shortcutActions[number]["id"];
 export type ShortcutMap = Record<ShortcutId, string>;
 export const defaultShortcuts = Object.fromEntries(shortcutActions.map(a => [a.id, a.key])) as ShortcutMap;
 /**
- * Tab 曾经是「展开 / 收起右侧栏」的默认键（2026-11-11 撤掉）。
- * 它把整站的键盘焦点遍历吃掉了：只要焦点不在输入框里，按 Tab 不走到下一个控件，
- * 而是收起右栏 —— WCAG 2.1.2「不能卡住键盘焦点」。这里留一张迁移表，
- * 让已经存过 "tab" 的设备平移到新默认键，其它自定义一个不动。
+ * Tab 与右栏默认键来回过两次，口径记全，免得下一轮又反着改：
+ * 2026-11-11 撤掉 Tab（焦点遍历被整个吃掉，WCAG 2.1.2）；2026-11-16 苏醒要回来，
+ * 但不是整体回退——Tab 只在素材网格里归右栏，其余地方照常走焦点（sidebar-shortcuts 把关）。
+ * 下面这串是当年那次迁移自动写进配置的，不是人挑的键：存过的设备把它让给新默认键 Tab。
+ * 代价如实说清：谁要是自己把右栏设成了同一个 Ctrl+Alt+B，这一版会把它换回 Tab，需要重设一次。
  */
-const TAB_KEY_MIGRATION: Partial<Record<ShortcutId, string>> = { rightSidebar: "ctrl+alt+b" };
+const TAB_AUTO_KEYS: Partial<Record<ShortcutId, string>> = { rightSidebar: "ctrl+alt+b" };
 /** 一个快捷键绑定的最后一段（裸键名），用来识别「这一条其实按的是 Tab」。 */
 function baseKey(key: string): string {
   return key.split("+").at(-1) || "";
@@ -42,7 +47,9 @@ export function validateShortcuts(value: ShortcutMap): string | null {
     if (typeof key !== "string" || (key && !validKey.test(key))) return `${a.label}：不支持该按键`;
     if (!key) continue;
     if (RESERVED_SCOPE_KEYS.includes(key)) return `${a.label}：0 / A / I / V / T / Q 保留用于切换素材类型`;
-    if (baseKey(key) === "tab") return `${a.label}：Tab 用于键盘焦点遍历，不能绑定`;
+    // Tab 只许给「展开 / 收起右侧栏」：它是苏醒要的那一手势，而且运行期只在素材网格里接管。
+    // 别的动作绑上 Tab 也只会在那一格里误触，所以这里直接不收（焦点遍历仍然照常走 Tab）。
+    if (baseKey(key) === "tab" && a.id !== "rightSidebar") return `${a.label}：Tab 只给「展开 / 收起右侧栏」，这一条请用带修饰键的组合`;
     const parts = key.split("+");
     const canonical = [...new Set(parts.slice(0, -1))].sort().concat(parts.at(-1)!).join("+");
     if (seen.has(canonical)) return `「${a.label}」与「${seen.get(canonical)}」的快捷键冲突`;
@@ -54,10 +61,14 @@ export function loadShortcuts(): ShortcutMap {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey) || "null");
     const value = { ...defaultShortcuts, ...saved };
-    // 老设备可能还把 Tab 绑在某个动作上：那一律解绑，右栏迁到新默认键，其余自定义不动。
+    // 上一轮自动写进配置的右栏键让给新默认键 Tab，其余自定义一个不动。
+    for (const [action, autoKey] of Object.entries(TAB_AUTO_KEYS) as [ShortcutId, string][]) {
+      if (value[action] === autoKey) value[action] = defaultShortcuts[action];
+    }
+    // 右栏之外谁还留着 Tab（2026-11-11 之前的老配置里会有）：就地清掉那一条。
+    // 不清的话 validateShortcuts 会把整份配置判坏，别的自定义改键会跟着一起回默认。
     for (const action of shortcutActions) {
-      if (baseKey(value[action.id]) !== "tab") continue;
-      value[action.id] = TAB_KEY_MIGRATION[action.id] ?? "";
+      if (action.id !== "rightSidebar" && baseKey(value[action.id]) === "tab") value[action.id] = "";
     }
     for (const action of shortcutActions) {
       if (RESERVED_SCOPE_KEYS.includes(value[action.id])) value[action.id] = action.id === 'tags' && value[action.id] === 't' ? 'shift+t' : '';
@@ -82,8 +93,9 @@ export function eventShortcut(e: KeyboardEvent): string {
 }
 export function shortcutBlocked(e: KeyboardEvent): boolean {
   const target = e.target;
-  // Tab / Shift+Tab 归键盘焦点遍历，任何快捷键都不许把它拦下来（见上面 TAB_KEY_MIGRATION）。
-  if (e.key === "Tab") return true;
+  // Tab 不再在这里一刀切禁掉（2026-11-16：右栏默认键就是它）。
+  // 「只在素材网格里接管、其余地方照常走焦点」由 lib/sidebar-shortcuts.ts 的 gridHasTab 把关；
+  // 留在这里挡的话，右栏那手快捷键永远不会响。
   return e.isComposing || e.repeat || !!document.querySelector('[data-settings-dialog]') ||
     (target instanceof HTMLElement && !!target.closest('input, textarea, select, [contenteditable="true"]'));
 }

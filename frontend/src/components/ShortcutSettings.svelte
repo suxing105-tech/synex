@@ -7,9 +7,11 @@
   let message = $state("");
   function capture(e: KeyboardEvent, id: ShortcutId) {
     if (recording !== id) return;
-    // Tab 不吞：录制中按 Tab 就是放弃录制、把焦点交给下一个控件。
-    // 快捷键永远不许绑 Tab（绑了就会卡死键盘焦点遍历，WCAG 2.1.2），这里没什么可录的。
-    if (e.key === "Tab") { recording = null; message = "Tab 用于移动焦点，不能绑定"; return; }
+    // Tab 只给「展开 / 收起右侧栏」这一条当快捷键（2026-11-16 苏醒要回来的那一手）。
+    // 录右栏时 Tab 是一次有效输入，所以照样吞掉按键：焦点若在录制中途被移走，onblur 会把录制打断。
+    if (e.key === "Tab" && id !== "rightSidebar") {
+      recording = null; message = "Tab 只给「展开 / 收起右侧栏」，这一条请用带修饰键的组合"; return;
+    }
     e.preventDefault();
     e.stopPropagation();
     if (e.key === "Escape") { recording = null; return; }
@@ -49,8 +51,9 @@
     </div>
   </div>
   <p class="settings-hint">
-    点击按键后按下新组合，支持 Ctrl、Alt、Shift、Win / Cmd。Esc 取消录制；Tab 只用来移动焦点，不能绑定成快捷键。
-    输入文字、输入法和打开设置时不触发；图片操作需选中图片，预览需鼠标停在图片上。系统占用的组合可能无法使用。
+    点击按键后按下新组合，支持 Ctrl、Alt、Shift、Win / Cmd。Esc 取消录制。
+    Tab 是「展开 / 收起右侧栏」的默认键，只在中间这一列（工具栏与素材网格）接管；焦点在输入框、左侧栏、右侧栏、设置或弹层里时，Tab 照旧移动焦点，Shift+Tab 任何时候都走焦点。
+    输入文字、输入法和打开设置时不触发；图片操作需选中图片，空格预览的是当前选中的那一张（没选中才用鼠标停在的那张）。系统占用的组合可能无法使用。
   </p>
 </section>
 

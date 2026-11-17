@@ -1735,6 +1735,16 @@
   let optimizing = $state(false);
   let optimizeAbort: AbortController | null = null;
   /**
+   * 提示词锁（2026-11-16 苏醒：「提示词在优化状态和生成状态的时候，应该暗下去，不能修改」）。
+   * 两个状态合成一把锁：优化中改字，模型回来的那一版会把刚敲的冲掉；
+   * 生成中改字，提交出去的那一份和框里看见的那一句就不是同一份了。
+   * 只锁这一句提示词和那两颗会改写它的图标；右下角那颗优化图标仍要点得动——它是唯一的取消入口。
+   */
+  const promptLocked = $derived(optimizing || busy);
+  const promptLockNote = $derived(optimizing
+    ? "正在按技能优化提示词：优化回来之前不能改（再点一下那颗图标可以取消）"
+    : "正在生成：这一句要等这一轮跑完才改");
+  /**
    * 被技能改写掉的那一版提示词（2026-11-12 苏醒：「优化之后我希望旁边还有一个撤销按钮，
    * 点击可以回到原来手动输入的提示词」）。null = 这一轮没被改写过，那颗撤销就不画。
    * 连着优化只留最早那一句：他要回的是「我手打的那句」，不是上一次模型写的那句。
@@ -2260,13 +2270,13 @@
                   {/if}
                   <div class="cm-prompt-col">
                     <p class="cm-block-title">{promptBlockTitle || "完整提示词"}</p>
-                    <div class="cm-prompt-wrap" class:has-tools={skillKind !== null || offerWorkflowPrompt}>
+                    <div class="cm-prompt-wrap" class:has-tools={skillKind !== null || offerWorkflowPrompt} class:is-locked={promptLocked}>
                       <div class="cm-prompt-bg" bind:this={promptBg} aria-hidden="true">
                         {#each mentionChunks(prompt) as chunk, i (i)}
                           <span class:cm-mention-hl={chunk.mention}>{chunk.text}</span>
                         {/each}
                       </div>
-                      <textarea id="clone-prompt" class="cm-textarea cm-textarea-mirror" bind:this={promptEl} oninput={onPromptInput} onkeydown={onPromptKeydown} onscroll={syncPromptBg} rows="1" aria-label="提示词" placeholder={promptPlaceholder(mediaKind, refNoun, cells.length > 0)} title={promptFoot} bind:value={prompt}></textarea>
+                      <textarea id="clone-prompt" class="cm-textarea cm-textarea-mirror" bind:this={promptEl} oninput={onPromptInput} onkeydown={onPromptKeydown} onscroll={syncPromptBg} rows="1" aria-label="提示词" placeholder={promptPlaceholder(mediaKind, refNoun, cells.length > 0)} title={promptLocked ? promptLockNote : promptFoot} readonly={promptLocked} bind:value={prompt}></textarea>
                       <!-- 右下角这颗拉高手柄（2026-11-10 苏醒：「提示词输入框右下角加一个拉高提示词的功能」）。
                            它改的是 promptUserH 那一档高度，所以拖完接着打字不会被打回原形；
                            双击（或聚焦后按 Home）退回「跟着内容长」。 -->
@@ -2287,7 +2297,8 @@
                         <div class="cm-prompt-tools">
                           {#if offerWorkflowPrompt}
                             <button class="cm-wand" type="button"
-                              aria-label="载入工作流内置提示词" title="载入工作流内置的提示词"
+                              aria-label="载入工作流内置提示词" title={promptLocked ? promptLockNote : "载入工作流内置的提示词"}
+                              disabled={promptLocked}
                               onclick={() => { promptTouched = true; prompt = workflowPrompt; }}
                             ><Icon name="wand" size={14} /></button>
                           {/if}
@@ -2296,14 +2307,15 @@
                                  点击可以回到原来手动输入的提示词，方便我继续修改手动提示词」）。
                                  只在真被技能改写过之后出现；点一下是两句对调，回去还能回来。 -->
                             <button class="cm-undo" type="button"
-                              aria-label="换回上一版提示词" title={"换回上一版提示词\n（技能改写前后那两句可以来回切）"}
+                              aria-label="换回上一版提示词" title={promptLocked ? promptLockNote : "换回上一版提示词\n（技能改写前后那两句可以来回切）"}
+                              disabled={promptLocked}
                               onclick={undoPrompt}><Icon name="undo" size={14} /></button>
                           {/if}
                           {#if skillKind}
                             <!-- 左键＝拿这一族的默认技能重写一句；右键＝换技能、进设置。音频工作流不画它：台词是念出来的
                                  东西，重写一遍等于换个人说话，后端那一族也拒收。 -->
                             <button class="cm-skill" class:is-busy={optimizing} type="button"
-                              disabled={!prompt.trim()} aria-busy={optimizing}
+                              disabled={!prompt.trim() || busy} aria-busy={optimizing}
                               aria-label={optimizing ? "正在优化提示词，点一下取消" : "用技能优化提示词"}
                               title={skillTitle}
                               onclick={() => (optimizing ? optimizeAbort?.abort() : void optimizePrompt())}
@@ -2508,7 +2520,20 @@
                           </div>
                         </div>
                       {:else}
-                        <p class="cm-pop-empty">云端这一屏还空着：去设置 → 模型API配置填 RunningHub 的 API Key。</p>
+                        <!-- 没填云端 Key 时不再只留一句「去设置里填」：那句话没有出路，读的人得自己关掉这层、
+                             摸进设置、再翻到那一页（2026-11-16 苏醒：应该设计成点击跳转到设置的模型API服务页）。
+                             这一行抄本机那屏末尾「加载本地工作流 JSON」同一套行样式、同一个位置，
+                             图标直接用设置左侧栏那一页自己的 glyph，一眼认得出点下去去哪儿。
+                             onOpenSettings 没挂（单独嵌这层的场合）才退回一句说明。 -->
+                        <div class="cm-pop-sep"></div>
+                        {#if onOpenSettings}
+                          <button class="cm-wf cm-wf-add" role="menuitem" onclick={() => { closeWorkflowPop(); onOpenSettings("模型API配置"); }}>
+                            <span class="cm-wf-lead" aria-hidden="true"><Icon name="nav-model-api" size={14} /></span>
+                            <span class="cm-wf-name">去设置填云端模型的 API Key</span>
+                          </button>
+                        {:else}
+                          <p class="cm-pop-empty">云端这一屏还空着：模型 API Key 在设置 · 模型API配置里填。</p>
+                        {/if}
                       {/if}
                       {#if wfTab === "local"}
                         <!-- 分隔线与底部这颗只属于本机这一屏：API 那屏到模型清单就结束（2026-11-04 苏醒圈掉了
@@ -3116,6 +3141,12 @@
   .cm-textarea-mirror { color: transparent; caret-color: #f24e4e; }
   .cm-textarea:focus { border-color: rgb(255 255 255 / 22%); outline: none; }
   .cm-textarea::placeholder { color: var(--text-3); opacity: 1; }
+  /* 优化中 / 生成中：提示词压暗、读着不能改（2026-11-16 苏醒）。
+     用 readonly 不用 disabled——disabled 的框连不上焦、选不中，想复制一句还得先等它跑完。
+     只压这两层字和那颗拉高手柄；右下角那排图标不压，优化那颗是唯一的取消入口。 */
+  .cm-prompt-wrap.is-locked .cm-prompt-bg, .cm-prompt-wrap.is-locked .cm-textarea { opacity: .5; }
+  .cm-prompt-wrap.is-locked .cm-textarea { cursor: default; }
+  .cm-prompt-wrap.is-locked .cm-prompt-grip { opacity: .3; }
   /* 附框（参考音频的原话那种）比主框矮：它是「别乱动」的东西，占了大半个弹窗反而没人看台词 */
   .cm-textarea-sub { height: auto; min-height: 60px; color: #e4e4e7; background: rgba(0, 0, 0, 0.35); }
   .cm-sub-prompt-title { margin-top: var(--sp-3); }

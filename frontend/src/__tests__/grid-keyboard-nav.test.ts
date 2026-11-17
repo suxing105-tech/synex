@@ -4,7 +4,7 @@ import { tick } from "svelte";
 import { readFileSync } from "node:fs";
 import { get } from "svelte/store";
 import Feed from "../components/Feed.svelte";
-import { firstBox, nearestInDirection, type GridBox } from "../lib/grid-nav";
+import { firstBox, nearestInDirection, previewTargetId, type GridBox } from "../lib/grid-nav";
 import { itemsApi } from "../lib/api";
 import {
   feedItems,
@@ -238,6 +238,39 @@ describe("方向键移动选中", () => {
     input.focus();
     await fireEvent.keyDown(input, { key: "ArrowRight" });
     expect(get(selectedId)).toBe(1);
+  });
+});
+
+describe("空格放大认的是当前那一张（2026-11-16 苏醒：与鼠标悬停冲突）", () => {
+  it("有选中就以选中为准：鼠标停在别的卡上，开的仍是键盘选中的那一张", () => {
+    expect(previewTargetId([], 2, 3)).toBe(2);
+    expect(previewTargetId([2], 2, 3)).toBe(2);
+  });
+
+  it("一张都没选中才退回鼠标滑过的那张（纯鼠标那套手势不欠）", () => {
+    expect(previewTargetId([], null, 3)).toBe(3);
+    expect(previewTargetId([], null, null)).toBeNull();
+  });
+
+  it("正好选中两张走对比，开的是先选上的那一张", () => {
+    expect(previewTargetId([4, 2], 2, 3)).toBe(4);
+  });
+
+  it("Feed 真的按这条判据取目标，没在调用点上把顺序又倒回去", () => {
+    const feedSrc = readFileSync("src/components/Feed.svelte", "utf8");
+    expect(feedSrc).toContain("previewTargetId([...$multiSelectedIds], selectedId, hoveredId)");
+    // 旧的「悬停优先」写法不许复活
+    expect(feedSrc).not.toMatch(/hoveredId\s*\?\?\s*selectedId/);
+  });
+
+  it("焦点环与选中环同一圈白：四类卡不分家", () => {
+    const appCss = readFileSync("src/app.css", "utf8");
+    const feedSrc = readFileSync("src/components/Feed.svelte", "utf8");
+    const media = appCss.slice(appCss.indexOf(".thumb.media-card:focus-visible::after"));
+    expect(media.slice(0, media.indexOf("}"))).toContain("box-shadow: inset 0 0 0 1px var(--thumb-ring)");
+    // 旧的红色焦点环不许复活（品牌红只留给选中 · 进行中 · 主动作）
+    expect(media.slice(0, media.indexOf("}"))).not.toContain("--accent");
+    expect(feedSrc).toContain(".text-card:focus-visible::after { box-shadow: inset 0 0 0 1px var(--thumb-ring); }");
   });
 });
 

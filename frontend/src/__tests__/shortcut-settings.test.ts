@@ -10,34 +10,40 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); docume
 describe("自定义快捷键", () => {
   it("旧配置补充两个侧栏默认键并保留已有改键", () => {
     localStorage.setItem("suxing.shortcuts.v1", JSON.stringify({ positive: "ctrl+q" }));
-    expect(loadShortcuts()).toMatchObject({ positive: "ctrl+q", rightSidebar: "ctrl+alt+b", leftSidebar: "backquote" });
-    // Tab 谁都不许绑：绑在侧栏上会把键盘焦点遍历整个吃掉（WCAG 2.1.2）
-    expect(validateShortcuts({ ...defaultShortcuts, leftSidebar: "tab" })).toContain("不能绑定");
-    expect(validateShortcuts({ ...defaultShortcuts, leftSidebar: "shift+tab" })).toContain("不能绑定");
+    expect(loadShortcuts()).toMatchObject({ positive: "ctrl+q", rightSidebar: "tab", leftSidebar: "backquote" });
+    // Tab 只给右栏那一条（2026-11-16 苏醒要回来的那一手）：绑到别的动作上只会在素材网格里误触
+    expect(validateShortcuts({ ...defaultShortcuts, leftSidebar: "tab" })).toContain("只给「展开 / 收起右侧栏」");
+    expect(validateShortcuts({ ...defaultShortcuts, leftSidebar: "shift+tab" })).toContain("只给「展开 / 收起右侧栏」");
+    expect(validateShortcuts({ ...defaultShortcuts, rightSidebar: "tab" })).toBeNull();
   });
-  it("旧配置里的 Tab 会被迁走，其余改键一个不动", () => {
-    localStorage.setItem("suxing.shortcuts.v1", JSON.stringify({ rightSidebar: "tab", positive: "ctrl+q", seed: "" }));
-    expect(loadShortcuts()).toMatchObject({ rightSidebar: "ctrl+alt+b", positive: "ctrl+q", seed: "" });
-    localStorage.setItem("suxing.shortcuts.v1", JSON.stringify({ preview: "tab" }));
-    expect(loadShortcuts().preview).toBe("");
+  it("当年自动写进配置的 ctrl+alt+b 让位给 Tab，其余改键一个不动", () => {
+    localStorage.setItem("suxing.shortcuts.v1", JSON.stringify({ rightSidebar: "ctrl+alt+b", positive: "ctrl+q", seed: "" }));
+    expect(loadShortcuts()).toMatchObject({ rightSidebar: "tab", positive: "ctrl+q", seed: "" });
+    // 右栏之外留着的那手 Tab（2026-11-11 之前的老配置）只清那一条，别的改键不跟着回默认
+    localStorage.setItem("suxing.shortcuts.v1", JSON.stringify({ preview: "tab", positive: "ctrl+q" }));
+    expect(loadShortcuts()).toMatchObject({ preview: "", positive: "ctrl+q" });
   });
-  it("Tab 录不进去且自动退出录制；波浪键照旧能录并保存", async () => {
+  it("Tab 只录得进右栏那一条，录别的动作就退出录制", async () => {
     const ui = render(ShortcutSettings);
     const right = ui.getByRole("button", { name: "设置展开 / 收起右侧栏快捷键" });
     const left = ui.getByRole("button", { name: "设置展开 / 收起左侧栏快捷键" });
+    await fireEvent.click(left);
+    // 没被吞：Tab 落到浏览器自己的焦点遍历上，录制同时取消
+    expect(await fireEvent.keyDown(left, { key: "Tab" })).toBe(true);
+    expect(left.getAttribute("aria-pressed")).toBe("false");
+    expect(ui.getByRole("status").textContent).toContain("只给「展开 / 收起右侧栏」");
+    // 录右栏这一下 Tab 是一次有效输入：吞掉按键（别让焦点在录制中途被移走），并把键记下来
     await fireEvent.click(right);
-    // fireEvent 返回 dispatchEvent 的结果：false 才说明有人吞了 Tab
-    expect(await fireEvent.keyDown(right, { key: "Tab" })).toBe(true);
-    expect(right.getAttribute("aria-pressed")).toBe("false"); // 录制已取消
-    expect(ui.getByRole("status").textContent).toContain("不能绑定");
-    await fireEvent.click(left); await fireEvent.keyDown(left, { key: "~", code: "Backquote", shiftKey: true });
+    expect(await fireEvent.keyDown(right, { key: "Tab" })).toBe(false);
+    expect(right.textContent).toContain("Tab");
     await fireEvent.click(ui.getByText("保存快捷键"));
-    expect(loadShortcuts()).toMatchObject({ rightSidebar: "ctrl+alt+b", leftSidebar: "backquote" });
+    expect(loadShortcuts()).toMatchObject({ rightSidebar: "tab", leftSidebar: "backquote" });
   });
-  it("Tab 打不动任何快捷键，包括还绑着 Tab 的老配置", () => {
-    expect(matchesAction(new KeyboardEvent("keydown", { key: "Tab" }), "rightSidebar")).toBe(false);
+  it("Tab 现在算右栏那一条的键，别的动作仍不认它", () => {
+    expect(matchesAction(new KeyboardEvent("keydown", { key: "Tab" }), "leftSidebar")).toBe(false);
     shortcutSettings.set({ ...defaultShortcuts, rightSidebar: "tab" });
-    expect(matchesAction(new KeyboardEvent("keydown", { key: "Tab" }), "rightSidebar")).toBe(false);
+    expect(matchesAction(new KeyboardEvent("keydown", { key: "Tab" }), "rightSidebar")).toBe(true);
+    // 真正的「只在网格里接管」由 sidebar-shortcuts 把关，见 sidebar-shortcuts.test.ts
   });
   it("保存后重载，支持清除，损坏存储回退默认", () => {
     saveShortcuts({ ...defaultShortcuts, positive: "ctrl+q", seed: "" });

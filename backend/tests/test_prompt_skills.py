@@ -615,6 +615,114 @@ def test_deleting_a_plain_skill_leaves_other_folders_alone(client, tmp_path):
     assert client.delete("/api/prompt-skills/" + str(created["id"])).status_code == 200
 
 
+# ---------- 技能包落盘的目录名（2026-11-17 苏醒：光一个数字不合理）----------
+
+
+def test_package_folder_is_named_after_the_package_not_the_row(client, tmp_path):
+    """落盘目录用包自己的英文名：文件管理器里一排 1 2 3 4，没人分得出哪个是哪条。"""
+    imported = only_imported(import_paths(client, make_package(tmp_path / "seekx-h3-image-prompt")))
+    folder = Path(imported["package_dir"])
+    assert folder.parent == service.skills_dir()
+    assert folder.name == "seekx-h3-image-prompt"
+    assert folder.name != str(imported["id"]), "不许再拿库里的行号当目录名"
+    assert (folder / "references" / "style.md").exists(), "落盘的还是包原本那几样"
+
+
+def test_package_folder_name_stays_the_same_after_a_replace(client, tmp_path):
+    """换包仍落在同一个目录：换一次多一个目录，skills/ 底下很快就没人认得哪份是活的。"""
+    first = only_imported(import_paths(client, make_package(tmp_path / "seekx-pack")))
+    again = only_imported(import_paths(
+        client, make_package(tmp_path / "seekx-pack", body="# 换一版\n\n新写法。"),
+        on_conflict="replace"))
+    assert again["package_dir"] == first["package_dir"]
+    assert "新写法" in (Path(again["package_dir"]) / "SKILL.md").read_text(encoding="utf-8")
+    staging = service.skills_dir() / "seekx-pack.new"
+    assert not staging.exists(), "换完不许留一份中间目录"
+
+
+def test_two_packages_of_the_same_name_do_not_share_a_folder(client, tmp_path):
+    """两条技能同名：后那条让开一档加行号，谁包里的 SKILL.md 都不许被顶掉。"""
+    first = only_imported(import_paths(client, make_package(tmp_path / "seekx-pack")))
+    second = only_imported(import_paths(
+        client, make_package(tmp_path / "seekx-pack", name="另一条写法",
+                             body="# 另一条写法\n\n另一套写法。"), on_conflict="new"))
+    assert Path(second["package_dir"]).name == f"seekx-pack-{second['id']}"
+    assert "先定光" in (Path(first["package_dir"]) / "SKILL.md").read_text(encoding="utf-8")
+    assert "另一套写法" in (Path(second["package_dir"]) / "SKILL.md").read_text(encoding="utf-8")
+
+
+def test_package_dir_slug_rules():
+    slug = service.package_dir_slug
+    assert slug("seekx-h3-image-prompt") == "seekx-h3-image-prompt"
+    assert slug("  SeekX Pack 2 ") == "SeekX-Pack-2", "空格换成分隔符，首尾的空白与点去掉"
+    assert slug("ｓｅｅｋｘ-pack") == "seekx-pack", "全角字母先归半角"
+    assert slug("pack:v1/name*") == "pack-v1-name", "Windows 不许的字符一律换掉"
+    assert slug("...") == "" and slug("") == "" and slug(None) == ""
+    assert slug("nul") == "pkg-nul", "保留设备名不能当目录名"
+    assert len(slug("x" * 200)) <= service.PACKAGE_DIR_MAX
+
+
+def test_chinese_only_package_folder_falls_back_to_the_row(client, tmp_path):
+    """整个包目录就叫中文名：洗不出可用字符，宁可退回行号，也不自己编一个英文名字。"""
+    imported = only_imported(import_paths(client, make_package(tmp_path / "电商视觉包")))
+    assert Path(imported["package_dir"]).name == str(imported["id"])
+    assert (Path(imported["package_dir"]) / "SKILL.md").exists()
+
+
+def test_old_numeric_folder_is_renamed_when_the_list_is_read(client, tmp_path, init_db):
+    """老库里那条 skills/<行号>：下一次列清单就改成英文名，库里记的路径一起换。
+
+    「在文件夹中显示」吃的正是库里那一个值，两边必须同时换，不许一个新一旧。
+    """
+    imported = only_imported(import_paths(client, make_package(tmp_path / "seekx-old-pack")))
+    numeric = service.skills_dir() / str(imported["id"])
+    Path(imported["package_dir"]).rename(numeric)      # 演一遍老库那一代
+    init_db.main().execute("UPDATE prompt_skills SET package_dir=? WHERE id=?",
+                           (str(numeric), imported["id"]))
+
+    row = next(r for r in client.get("/api/prompt-skills").json() if r["id"] == imported["id"])
+    assert Path(row["package_dir"]).name == "seekx-old-pack"
+    assert (service.skills_dir() / "seekx-old-pack" / "SKILL.md").exists()
+    assert not numeric.exists(), "改完不许留一个空壳在原地"
+
+    # 再拉一次清单：已经认不出「数字那一代」，既不该再动，也不该被 prune 当成删了
+    again = next(r for r in client.get("/api/prompt-skills").json() if r["id"] == imported["id"])
+    assert again["package_dir"] == row["package_dir"]
+
+
+def test_old_numeric_folder_rename_lets_a_foreign_dir_have_the_name(client, tmp_path, init_db):
+    """正名被人占着（他自己往 skills/ 里放了一个同名目录）：让一档加行号，不覆盖别人的东西。"""
+    imported = only_imported(import_paths(client, make_package(tmp_path / "seekx-taken")))
+    numeric = service.skills_dir() / str(imported["id"])
+    Path(imported["package_dir"]).rename(numeric)
+    squatter = service.skills_dir() / "seekx-taken"
+    squatter.mkdir()
+    (squatter / "我的东西.txt").write_text("不是技能包", encoding="utf-8")
+    init_db.main().execute("UPDATE prompt_skills SET package_dir=? WHERE id=?",
+                           (str(numeric), imported["id"]))
+
+    row = next(r for r in client.get("/api/prompt-skills").json() if r["id"] == imported["id"])
+    assert Path(row["package_dir"]).name == f"seekx-taken-{imported['id']}"
+    assert (Path(row["package_dir"]) / "SKILL.md").exists(), "搬过去的是这一条自己的包"
+    assert (squatter / "我的东西.txt").read_text(encoding="utf-8") == "不是技能包", "不许动别人的目录"
+    assert not numeric.exists()
+
+
+def test_old_numeric_folder_stays_when_both_names_are_taken(client, tmp_path, init_db):
+    """连让一档那一格也被占：整条不动。旧路径照样打得开，比留下一个坏状态好。"""
+    imported = only_imported(import_paths(client, make_package(tmp_path / "seekx-full")))
+    numeric = service.skills_dir() / str(imported["id"])
+    Path(imported["package_dir"]).rename(numeric)
+    (service.skills_dir() / "seekx-full").mkdir()
+    (service.skills_dir() / f"seekx-full-{imported['id']}").mkdir()
+    init_db.main().execute("UPDATE prompt_skills SET package_dir=? WHERE id=?",
+                           (str(numeric), imported["id"]))
+
+    row = next(r for r in client.get("/api/prompt-skills").json() if r["id"] == imported["id"])
+    assert row["package_dir"] == str(numeric)
+    assert (numeric / "SKILL.md").exists()
+
+
 # ---------- 压缩包、SKILL.md 自动升级、一摞技能 ----------
 
 

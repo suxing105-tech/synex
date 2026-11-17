@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import time
+import unicodedata
 from pathlib import Path, PurePosixPath
 
 from fastapi import HTTPException
@@ -305,7 +306,9 @@ def public(row):
 
 
 def list_skills():
-    """清单。顺手把「包目录已经被人在文件管理器里删掉」的那几条摘掉——不弹提示。"""
+    """清单。顺手做两件收口：老那代 skills/<行号> 改成英文名，
+    以及把「包目录已经被人在文件管理器里删掉」的那几条摘掉——都不弹提示。"""
+    rename_numeric_package_dirs()
     prune_missing_packages()
     rows = db.get_pool().main().execute("SELECT * FROM prompt_skills ORDER BY sort, id").fetchall()
     return [public(row) for row in rows]
@@ -533,6 +536,107 @@ def _row_get(row, key: str, default=""):
     return default if value is None else value
 
 
+# ---------- 技能包落盘的目录名 ----------
+#
+# 以前是 skills/<库里的行号>：文件管理器里一排「1 2 3 4」，谁也不知道哪个是谁
+# （2026-11-17 苏醒：「skill 的命名能统一以 skill 名字的英文名命名吗？光一个数字有点不合理」）。
+# 改成用包自己的英文名（SKILL.md 那个文件夹的名字，界面上「技能包」后面显示的就是它）。
+PACKAGE_DIR_MAX = 64
+# Windows 的保留设备名：不分大小写，也不能拿去当目录名
+WIN_RESERVED = re.compile(r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])$", re.IGNORECASE)
+
+
+def package_dir_slug(root_name) -> str:
+    """把技能包的英文名洗成一个能落盘的目录名；洗不出可用字符就返回空串。
+
+    全角字母数字先归半角，再只留 ASCII 的字母数字和 . _ -，其余（中文、空格、全角符号）
+    一律换成 -，连续分隔符并一个，首尾的 - 与 . 去掉。空串由调用方兜底——
+    这里不自己编一个名字，免得落盘目录和界面上那个「技能包」说得不是一回事。
+    """
+    text = unicodedata.normalize("NFKC", str(root_name or "")).strip()
+    text = re.sub(r"[^A-Za-z0-9._-]+", "-", text)
+    text = re.sub(r"-{2,}", "-", text).strip("-.").strip()
+    if len(text) > PACKAGE_DIR_MAX:
+        text = text[:PACKAGE_DIR_MAX].rstrip("-.")
+    if WIN_RESERVED.match(text):
+        text = "pkg-" + text
+    return text
+
+
+def _package_dir_names_excluding(skill_id: int) -> set[str]:
+    """库里别的技术已经占住的目录名（比的是大小写不敏感的那一份）。"""
+    rows = db.get_pool().main().execute(
+        "SELECT package_dir FROM prompt_skills WHERE id<>? AND package_dir IS NOT NULL AND package_dir<>''",
+        (skill_id,)).fetchall()
+    return {os.path.normcase(Path(str(r["package_dir"])).name) for r in rows}
+
+
+def _own_package_dir_name(skill_id: int) -> str:
+    """这条技能自己现在记着的那个目录名（没有就空串）：换包时要认它不是别人的。"""
+    row = db.get_pool().main().execute(
+        "SELECT package_dir FROM prompt_skills WHERE id=?", (skill_id,)).fetchone()
+    value = str(_row_get(row, "package_dir") or "")
+    return os.path.normcase(Path(value).name) if value else ""
+
+
+def _package_dir_path(root: Path, name: str, skill_id: int) -> Path:
+    """给这条技能在 skills/ 底下挑一个目录，两条技能不许共用一个。
+
+    占用有两处要问：库里别的技术记着同一个名字，或者磁盘上已经有个同名目录而它不是
+    这条自己的（上一版没清干净、或者有人手放进去一个）。两种都让开，退一档加行号——
+    仍然读得出是谁。真让不开就报错，绝不覆盖别人的目录。
+    """
+    others = _package_dir_names_excluding(skill_id)
+    own = _own_package_dir_name(skill_id)
+    for attempt in (name, f"{name}-{skill_id}"):
+        if os.path.normcase(attempt) in others:
+            continue
+        candidate = root / attempt
+        if candidate.exists() and os.path.normcase(attempt) != own:
+            continue
+        return candidate
+    raise OSError("技能包目录名已经被占用：" + name)
+
+
+def rename_numeric_package_dirs() -> list[int]:
+    """把老库里 skills/<行号> 那一代目录改成包自己的英文名，并同步库里记的路径。
+
+    只在三件事都成立时动手：目录名还就是那串行号、包清单里认得出一个英文名、
+    目标名没被别的技能或磁盘占住。改名失败（目录正开着、被杀毒软件按住）就整条不动：
+    旧路径本来也打得开，绝不能留下「库里指着新名、磁盘上还是旧名」那种坏状态。
+    """
+    root = skills_dir()
+    if not root.is_dir():
+        return []
+    pool = db.get_pool().main()
+    rows = pool.execute("SELECT id,package_dir,package_meta FROM prompt_skills"
+                        " WHERE package_dir IS NOT NULL AND package_dir<>''").fetchall()
+    moved: list[int] = []
+    for row in rows:
+        current = Path(str(row["package_dir"]))
+        if current.name != str(row["id"]) or not current.is_dir():
+            continue                       # 已经是英文名的那一代，或者目录本来就不在（交给 prune）
+        slug = package_dir_slug(json.loads(row["package_meta"] or "{}").get("root"))
+        if not slug:
+            continue
+        others = _package_dir_names_excluding(int(row["id"]))
+        target = root / slug
+        if os.path.normcase(slug) in others or target.exists():
+            target = root / f"{slug}-{row['id']}"
+            if os.path.normcase(target.name) in others or target.exists():
+                continue
+        try:
+            current.rename(target)
+        except OSError:
+            logger.warning("技能 %s 的包目录没能改成英文名：%s -> %s", row["id"], current, target)
+            continue
+        pool.execute("UPDATE prompt_skills SET package_dir=? WHERE id=?", (str(target), row["id"]))
+        moved.append(int(row["id"]))
+    if moved:
+        logger.info("技能包目录改成英文名，%d 条：%s", len(moved), moved)
+    return moved
+
+
 def remove_package_dir(package_dir: str | None) -> None:
     """删技能时把它落盘的包目录一起删掉。
 
@@ -693,15 +797,21 @@ def _package_candidate(root_name: str, entries: list[dict], skill_md_path: str, 
     }
 
 
-def _write_package_dir(skill_id: int, entries: list[dict], *, replacing: bool) -> str:
-    """把包里的文件原样存一份到 skills/<id>/，返回那个目录。
+def _write_package_dir(skill_id: int, entries: list[dict], *, replacing: bool,
+                       root_name: str = "") -> str:
+    """把包里的文件原样存一份到 skills/<包自己的英文名>/，返回那个目录。
 
-    替换时先写进 skills/<id>.new/，写成了才把旧的换掉：直接在原目录上写，
+    目录名走 package_dir_slug（2026-11-17 苏醒在文件管理器里看到的是一排数字：
+    「光一个数字有点不合理」），英文名洗不出可用字符（整个包目录就叫中文名）才退到
+    行号那一代，至少不留一个空名字。撞名怎么让开见 _package_dir_path。
+
+    替换时先写进 <名>.new/，写成了才把旧的换掉：直接在原目录上写，
     写到一半失败就是「库里还有这条技能，包却只剩半截」那种查不出来的脏状态。
     二进制走 data（压缩包来的），目录来的走 abs 原路径复制。
     """
     root = skills_dir()
-    target = root / (str(skill_id) + ".new" if replacing else str(skill_id))
+    final = _package_dir_path(root, package_dir_slug(root_name) or str(skill_id), skill_id)
+    target = root / (final.name + ".new" if replacing else final.name)
     shutil.rmtree(target, ignore_errors=True)
     target.mkdir(parents=True, exist_ok=True)
     for item in entries:
@@ -721,7 +831,6 @@ def _write_package_dir(skill_id: int, entries: list[dict], *, replacing: bool) -
                 pass
     if not replacing:
         return str(target)
-    final = root / str(skill_id)
     # 这里不 ignore_errors：旧目录被占着就该当场说话，
     # 而不是把「删不掉旧目录」糊成后面那次 rename 的一句怪错
     shutil.rmtree(final)
@@ -757,7 +866,8 @@ def _commit_package(candidate: dict, replace_skill_id: int | None = None) -> dic
         {"name": unique_name(candidate["name"]), "note": candidate["note"],
          "instruction": body, "source": "package"})["id"]
     try:
-        package_dir = _write_package_dir(skill_id, entries, replacing=old is not None)
+        package_dir = _write_package_dir(skill_id, entries, replacing=old is not None,
+                                         root_name=candidate["root_name"])
     except OSError as exc:
         if old is None:
             with db.transaction() as tx:

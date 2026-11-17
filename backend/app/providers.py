@@ -69,9 +69,10 @@ PRESETS: dict[str, dict] = {
         "name": "智谱 GLM",
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
         "models": {
-            # 这张表不只是「问不到智谱自己时兜底」——智谱的 GET /models 压根不报视觉模型，
-            # 只报语言那一串（glm-4.5…glm-5.2），所以看得懂图的这几张必须在这儿写着，
-            # 光靠现拉加字样猜是永远列不出来的（见 reverse_prompts.list_config_models）。
+            # 这张表不只是「问不到智谱自己时兜底」：智谱的 GET /models 只报这个账号开通的那几个
+            # （真机一把 Key 报回 12 条，能读图的只有 glm-4.6v 和 glm-5v-turbo，连 4.6V-Flash 都没报），
+            # 所以「清单里不报、其实能用」的那几张得在这儿写着，两边并起来才不重不漏
+            # （并法见 reverse_prompts.list_config_models）。
             # 名字里带不带 v 不算数：glm-5.3 是纯文本，glm-5.3-flash 反倒是 GLM-5 系列里
             # 第一个原生能读图/读视频的，别按字样把它筛掉。
             "glm-4.6v": {"label": "GLM-4.6V", "recommended": True},

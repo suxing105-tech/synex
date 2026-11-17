@@ -607,7 +607,7 @@ ZHIPU_TEXT_ONLY = [{"id": "glm-5.2"}, {"id": "glm-4.7"}, {"id": "glm-4.5-air"}, 
 
 
 def test_zhipu_registry_lists_the_current_vision_models():
-    """智谱的 GET /models 只报语言那一串，看得懂图的只能靠这张表写着——它必须跟着最新一代走。"""
+    """智谱的清单只报账号开通的那几个，能读图的不全在里面——这张表得跟着最新一代走。"""
     from app import providers
 
     ids = [item["id"] for item in service.curated_models(providers.PRESETS["zhipu"])]

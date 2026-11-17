@@ -274,7 +274,10 @@ describe("框选（Shift 加 / Alt 减）", () => {
 });
 const srcRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const componentSource = (name: string): string =>
-  readFileSync(resolve(srcRoot, "components", name), "utf8");
+  // 行尾在这里归一：这台机器 core.autocrlf=true，而 .gitattributes 只钉了 git-hooks 那一条，
+  // 新克隆签出来的 .svelte 是 CRLF。下面这些断言要按换行加两个空格再闭括号去切函数体，
+  // 不归一就切不到结尾——整份文件被当成一个函数体来比，红得完全看不出跟行尾有关系。
+  readFileSync(resolve(srcRoot, "components", name), "utf8").replace(/\r\n/g, "\n");
 
 /**
  * 层序护栏（2026-11-12 真机走查后补）。
@@ -327,7 +330,7 @@ describe("遮罩编辑层的层序", () => {
  * 画布在 happy-dom 里跑不动，测不了「撤销之后重做变亮」，那就把这类变量本身钉住。
  */
 it("编辑层里没有假装是状态的普通变量", () => {
-  const src = readFileSync(resolve(srcRoot, "components", "MaskEditor.svelte"), "utf8");
+  const src = componentSource("MaskEditor.svelte");
   const scriptEnd = src.indexOf("</script>");
   const styleStart = src.indexOf("<style>");
   if (scriptEnd < 0 || styleStart < 0) throw new Error("MaskEditor.svelte 的结构和这条测试想的不一样");
@@ -684,7 +687,7 @@ describe("涂到闭合自动填中间", () => {
   });
 
   it("填充只写遮罩层，且跟着笔迹栈重放（撤销/换显示色/反转都得照填）", () => {
-    const editor = readFileSync(resolve(srcRoot, "components", "MaskEditor.svelte"), "utf8");
+    const editor = componentSource("MaskEditor.svelte");
     const fill = editor.slice(editor.indexOf("function fillPoly"), editor.indexOf("function commitPending"));
     expect(fill).toContain("c.beginPath();");
     expect(fill).toContain("c.closePath();");
@@ -698,7 +701,7 @@ describe("涂到闭合自动填中间", () => {
   });
 
   it("松手那一刻判闭合、当场填、当场重染给人看", () => {
-    const editor = readFileSync(resolve(srcRoot, "components", "MaskEditor.svelte"), "utf8");
+    const editor = componentSource("MaskEditor.svelte");
     const up = editor.slice(editor.indexOf("function onUp"), editor.indexOf("function undo"));
     expect(up).toContain("maskEnclosedPolygon(");
     expect(up).toContain("stroke.fill = ring;");
@@ -708,7 +711,7 @@ describe("涂到闭合自动填中间", () => {
   });
 
   it("提示里要说出「涂到闭合自动填中间」，别让人自己发现", () => {
-    const editor = readFileSync(resolve(srcRoot, "components", "MaskEditor.svelte"), "utf8");
+    const editor = componentSource("MaskEditor.svelte");
     expect(editor).toContain("涂到闭合自动填中间");
     expect(editor).toContain("松手自动把中间填上");
   });

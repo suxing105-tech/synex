@@ -288,10 +288,15 @@ fn new_window_policy(
 /// 用系统默认浏览器打开链接。不引入 opener/shell 依赖，其它平台用各自的 opener。
 ///
 /// Windows 走 `ShellExecuteW("open", url)`：系统自己那条「用默认程序打开这个地址」的路，
-/// 浏览器也好、Tauri 官方 opener 插件也好，走的都是它。这儿原先打的是 `explorer.exe <url>`，
-/// 24H2（本机 26200）起 explorer 不再受理 URL——点了「获取 API Key」什么也不会发生；
-/// 更要紧的是它只回一个退出码（连成功都回 1），坏在哪一层前端一概拿不到消息，只能干瞪眼。
+/// 浏览器也好、Tauri 官方 opener 插件也好，走的都是它。原先打的是 `explorer.exe <url>`，
+/// 那条只回一个退出码（连成功都回 1），坏在哪一层前端一概拿不到消息，只能干瞪眼。
+/// 当时把它记成「24H2 起 explorer 不再受理 URL」，是误诊——真凶是下面那条 job object。
 /// CoInitialize 是 reveal.rs 踩过的同一脚：Shell 这套接口里有处理器要先有 COM，没有直接失败。
+///
+/// 有个坑，2026-11-17 实测过，别再照着「返回 Ok 就是打开了」下结论：进程要是跑在受限的
+/// job object 里（agent 沙箱拉起来的预览包就是这种），Shell 这条「按关联程序打开」的路会被
+/// 静默吞掉——传 URL 起不来浏览器，连传个 .txt 都起不来记事本，返回值却照样是 HINSTANCE > 32。
+/// 所以「点了没反应、也没报错」先问一句这实例是谁起的：验外链只能用苏醒自己双击起来的包。
 #[cfg(windows)]
 pub(crate) fn open_in_default_browser(url: &str) -> Result<(), String> {
     use std::ffi::c_void;

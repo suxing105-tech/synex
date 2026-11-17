@@ -407,14 +407,14 @@
       {/if}
     </div>
     <div class="settings-card-footer">
-      <span class="settings-hint">{draft.provider === "minimax"
-        ? "MiniMax API Key 会在再次创作生成时校验；这里不发试生成请求。"
-        : "「检查」只读这家的模型清单，不产生模型调用费用。"}</span>
+      <!-- 这一行小字 2026-11-16 苏醒标注删掉：「检查」只读清单、不花钱这件事说在按钮的 title 上，
+           MiniMax 那句（这里不发试生成请求）也一起走——它讲的是同一件事，而这一页不摆说明。 -->
       <!-- 内置厂商删不掉：注册表里就摆着这一家，删了这条配置，下次点它的卡又是一条新的。
            只有人自己填的那几条才真需要「删掉」。 -->
       {#if editingId && !isPreset}<button class="setting-button setting-button-ghost" onclick={() => (confirmDelete = true)}>删除配置</button>{/if}
       {#if draft.provider !== "minimax"}
-        <button class="setting-button" disabled={!canSave || busy} onclick={() => void checkKey()}>检查 API Key</button>
+        <button class="setting-button" title="不产生模型调用费用" disabled={!canSave || busy}
+          onclick={() => void checkKey()}>检查 API Key</button>
       {/if}
       <button class="setting-button bg-accent text-bg" onclick={saveModel} disabled={!canSave}>保存配置</button>
     </div>

@@ -236,10 +236,12 @@ describe("reverse prompts", () => {
     expect(panel.getByRole("button", { name: /MiniMax/ })).toBeTruthy();
     await fireEvent.click(panel.getByRole("button", { name: "图像" }));
     await pickProvider(panel, "minimax");
-    // 2026-11-16 苏醒第二轮（MiniMax 那句一起删）：这一页除了填 Key 那几格，不再摆任何说明文字
+    // 2026-11-16 苏醒第二轮（MiniMax 那句一起删）、第三轮（底部那行小字也删）：这一页除了填 Key
+    // 那几格不再摆任何说明；「不产生模型调用费用」只挂在检查按钮的 title 上，MiniMax 那颗本来就不画。
     expect(panel.queryByText(/再次创作可用 MiniMax-H3-Image/)).toBeNull();
     expect(panel.queryByRole("button", { name: "检查 API Key" })).toBeNull();
-    expect(panel.getByText("MiniMax API Key 会在再次创作生成时校验；这里不发试生成请求。")).toBeTruthy();
+    expect(panel.queryByText(/会在再次创作生成时校验/)).toBeNull();
+    expect(panel.container.querySelector(".settings-card-footer .settings-hint")).toBeNull();
     await fireEvent.input(panel.getByLabelText("API Key"), { target: { value: "sk-minimax-test" } });
     await fireEvent.click(panel.getByText("保存配置"));
     await waitFor(() => expect(save).toHaveBeenCalled());
@@ -533,6 +535,10 @@ describe("reverse prompts", () => {
     // 测的是后端标 is_shared 的那一行账号，不是数组里排第一条
     expect(test).toHaveBeenCalledWith(9);
     expect(panel.container.querySelector("a.api-console")?.textContent).toContain("获取 API Key");
+    // 2026-11-16 苏醒标注：底部那行「检查只读清单、不花钱」删掉，同一句话说在按钮的 title 上。
+    expect(panel.container.querySelector(".settings-card-footer .settings-hint")).toBeNull();
+    expect(panel.getByRole("button", { name: "检查 API Key" }).getAttribute("title"))
+      .toBe("不产生模型调用费用");
   });
   it("「设为默认服务商」点了就存住，不用再去「反推指令」那一页再点一次保存", async () => {
     const qwenModel = { ...model, provider: "qwen" };

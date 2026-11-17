@@ -14,15 +14,35 @@
 // 在这儿先挡下来比让它回一句「链接无效」清楚。
 
 import { isTauri } from "./tauri";
+import { pushToast } from "./toast";
+
+/**
+ * 打不开必须说一句。原来那句 catch 是空的，什么都不做——那副表现和「链接压根没被监听接管」
+ * 长得一模一样（点了没反应），谁也从界面上分不出坏的是 JS 还是壳，2026-11-16 那次「还是打不开」
+ * 就是这么卡住的。现在把壳给的错误码原样报出来，坏在哪一层当场就能看出来。
+ */
+function reportFailure(reason: string): void {
+  pushToast(`用默认浏览器打不开这个链接：${reason}`, { kind: "error" });
+}
 
 /** 用系统默认浏览器打开一个链接：桌面版走 Rust 命令，浏览器版开新标签。 */
 export function openExternalUrl(url: string): void {
   if (typeof window === "undefined") return;
-  if (isTauri()) {
-    void (window as any).__TAURI__.core.invoke("open_external_url", { url }).catch(() => {});
+  if (!isTauri()) {
+    window.open(url, "_blank", "noopener,noreferrer");
     return;
   }
-  window.open(url, "_blank", "noopener,noreferrer");
+  const core = (window as any).__TAURI__?.core;
+  if (typeof core?.invoke !== "function") {
+    reportFailure("桌面壳的通信接口没准备好");
+    return;
+  }
+  try {
+    void core.invoke("open_external_url", { url })
+      .catch((error: unknown) => reportFailure(String(error)));
+  } catch (error) {
+    reportFailure(String(error));
+  }
 }
 
 /**

@@ -285,15 +285,66 @@ fn new_window_policy(
     })
 }
 
-/// 用系统默认浏览器打开链接。不引入 opener/shell 依赖：
-/// Windows 走 explorer.exe（无控制台窗口），其它平台用各自的 opener。
+/// 用系统默认浏览器打开链接。不引入 opener/shell 依赖，其它平台用各自的 opener。
+///
+/// Windows 走 `ShellExecuteW("open", url)`：系统自己那条「用默认程序打开这个地址」的路，
+/// 浏览器也好、Tauri 官方 opener 插件也好，走的都是它。这儿原先打的是 `explorer.exe <url>`，
+/// 24H2（本机 26200）起 explorer 不再受理 URL——点了「获取 API Key」什么也不会发生；
+/// 更要紧的是它只回一个退出码（连成功都回 1），坏在哪一层前端一概拿不到消息，只能干瞪眼。
+/// CoInitialize 是 reveal.rs 踩过的同一脚：Shell 这套接口里有处理器要先有 COM，没有直接失败。
 #[cfg(windows)]
 pub(crate) fn open_in_default_browser(url: &str) -> Result<(), String> {
-    std::process::Command::new("explorer.exe")
-        .arg(url)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    use std::ffi::c_void;
+    use std::os::windows::ffi::OsStrExt;
+
+    #[link(name = "ole32")]
+    extern "system" {
+        fn CoInitialize(preserved: *mut c_void) -> i32;
+        fn CoUninitialize();
+    }
+    #[link(name = "shell32")]
+    extern "system" {
+        fn ShellExecuteW(
+            hwnd: *mut c_void,
+            operation: *const u16,
+            file: *const u16,
+            parameters: *const u16,
+            directory: *const u16,
+            show_cmd: i32,
+        ) -> isize;
+    }
+
+    fn wide(text: &str) -> Vec<u16> {
+        std::ffi::OsStr::new(text)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
+    }
+
+    const SW_SHOWNORMAL: i32 = 1;
+    let operation = wide("open");
+    let target = wide(url);
+    // S_OK / S_FALSE 都算「这次是我初始化的」；本来就是开着的，收回那句就不该说。
+    let initialized = unsafe { CoInitialize(std::ptr::null_mut()) } >= 0;
+    let instance = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            operation.as_ptr(),
+            target.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if initialized {
+        unsafe { CoUninitialize() };
+    }
+    // 返回值是个 HINSTANCE：>32 算成功，<=32 是 SE_ERR_* 错误码（31 = 系统里没有能开它的程序）。
+    if instance > 32 {
+        Ok(())
+    } else {
+        Err(format!("系统打不开这个链接（错误码 {instance}）"))
+    }
 }
 
 #[cfg(target_os = "macos")]

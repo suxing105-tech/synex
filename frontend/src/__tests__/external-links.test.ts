@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect } from "vitest";
+import { get } from "svelte/store";
+import { clearToasts, toasts } from "../lib/toast";
 import {
   externalHref,
   installExternalLinkHandler,
@@ -56,6 +58,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  clearToasts();
   uninstallExternalLinkHandler();
   document.body.innerHTML = "";
   delete (window as any).__TAURI__;
@@ -77,6 +80,26 @@ describe("external links", () => {
     // a.href 是解析过的绝对地址：域名根会被补上收尾斜杠，壳里拿到的就是这个值
     expect(invokes).toEqual([["open_external_url", { url: "https://www.runninghub.cn/" }]]);
     expect(opened).toEqual([]);
+  });
+  it("桌面壳那条命令失败：把壳报回来的错误码说出来，不再点了什么都不发生", async () => {
+    (window as any).__TAURI__ = {
+      core: { invoke: () => Promise.reject("系统打不开这个链接（错误码 31）") },
+    };
+    clearToasts();
+    installExternalLinkHandler();
+    click(link("https://platform.minimax.cn", "_blank"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const shown = get(toasts);
+    expect(shown.map((item) => item.message)).toEqual(["用默认浏览器打不开这个链接：系统打不开这个链接（错误码 31）"]);
+    expect(shown[0]?.kind).toBe("error");
+  });
+  it("桌面壳的通信接口没准备好：同样报出来，不静吞", () => {
+    (window as any).__TAURI__ = {}; // 壳在、core.invoke 不在：那一下 invoke 压根发不出去
+    clearToasts();
+    installExternalLinkHandler();
+    click(link("https://open.bigmodel.cn/usercenter/apikeys", "_blank"));
+    expect(get(toasts).map((item) => item.message))
+      .toEqual(["用默认浏览器打不开这个链接：桌面壳的通信接口没准备好"]);
   });
   it("监听只装一次：重复 install 不会让一次点击开两回", () => {
     installExternalLinkHandler();

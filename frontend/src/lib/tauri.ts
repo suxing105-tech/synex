@@ -28,10 +28,15 @@ export async function selectImportDirectory(current = "", previous = ""): Promis
   return (window as any).__TAURI__.core.invoke("select_import_directory", { current, previous });
 }
 
-/** 选一个技能包文件夹（Codex 那种一整个目录）。取消返回 null。 */
-export async function selectSkillPackageDir(): Promise<string | null> {
-  if (!isTauri()) throw new Error("选文件夹仅在桌面版提供，浏览器里请用「导入技能包」的上传方式");
-  return (window as any).__TAURI__.core.invoke("select_skill_package_dir");
+/**
+ * 「导入技能」那一个入口：挑一份 md 或一个 .zip，取消返回 null。
+ *
+ * 一整个文件夹不在这里挑（原生文件框挑不了文件夹）：点进目录选那颗 SKILL.md
+ * 后端就会连着整包一起收，真要点整个目录是把它拖进窗口。
+ */
+export async function selectSkillSourcePath(): Promise<string | null> {
+  if (!isTauri()) throw new Error("原生文件选择仅在桌面版提供，浏览器里请用文件框或「选文件夹」");
+  return (window as any).__TAURI__.core.invoke("select_skill_source");
 }
 
 export async function selectTextPaths(directory: boolean): Promise<string[]> {

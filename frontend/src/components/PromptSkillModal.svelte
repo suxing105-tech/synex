@@ -10,12 +10,15 @@
 -->
 <script lang="ts">
   import { modalFocus } from "../lib/modal-focus";
+  import { subscribeFileDrop } from "../lib/native-drop";
   import { errorMessage, reverseApi } from "../lib/reverse-prompts";
   import { revealError, revealLocation } from "../lib/reveal";
-  import { isTauri, selectSkillPackageDir } from "../lib/tauri";
+  import { isTauri, selectSkillSourcePath } from "../lib/tauri";
   import { pushToast } from "../lib/toast";
   import Icon from "./Icon.svelte";
   import {
+    describeImport,
+    isSkillSourcePath,
     isTextFilePath,
     KIND_WORDS,
     LANGUAGE_WORDS,
@@ -27,7 +30,9 @@
     type PromptSkillDraft,
     type PromptSkillKind,
     type PromptSkillLanguage,
-    type PromptSkillPackage,
+    type SkillConflictMode,
+    type SkillImportConflict,
+    type SkillImportResult,
   } from "../lib/prompt-skills";
 
   interface Props {
@@ -44,9 +49,15 @@
   let busy = $state(false);
   let error = $state("");
   let confirmDelete = $state(false);
-  let fileEl = $state<HTMLInputElement | null>(null);
-  /** 浏览器版选技能包目录用的隐藏 input（webkitdirectory）。桌面版走原生对话框。 */
+  /** 浏览器版那颗文件框：md 和 .zip 都从这儿进。桌面版走原生对话框。 */
+  let sourceEl = $state<HTMLInputElement | null>(null);
+  /** 浏览器版选技能包目录用的隐藏 input（webkitdirectory）。桌面版把文件夹直接拖进来。 */
   let dirEl = $state<HTMLInputElement | null>(null);
+  /** 后端在问「替换还是另存」时挂着的那一次尝试，和它报回来的冲突。 */
+  let pendingAttempt: ImportAttempt | null = $state(null);
+  let conflicts = $state<SkillImportConflict[]>([]);
+  /** 拖进来的东西像是技能才描红：亮一下再告诉人不收，比一直不亮更误导人。 */
+  let dropping = $state(false);
   let modelNote = $state("");
 
   // 草稿按字段摊平：bind:value 直连，省掉每敲一个字就 spread 一整个对象。
@@ -197,20 +208,145 @@
     await run(() => setDefaultSkill(kind, skill.id), "「" + label + "」现在是" + KIND_WORDS[kind] + "提示词的默认技能");
   }
 
-  /** 交出去的是读到的原文：截断规则只有后端一处，这里不许自己先切一刀。 */
-  async function onFile(event: Event) {
+  /** 那一个入口收到的一次尝试长什么样。冲突时原样重发，只改「怎么办」那一参。 */
+  type ImportAttempt =
+    | { kind: "paths"; paths: string[] }
+    | { kind: "markdown"; filename: string; content: string }
+    | { kind: "archive"; filename: string; file: File }
+    | { kind: "upload"; root: string; files: { path: string; content: string }[] };
+
+  const clashLine = $derived(
+    conflicts.length === 1
+      ? "库里已经有一条「" + conflicts[0].existing_name + "」" +
+        (conflicts[0].source_dir ? "就是这一份" : "同名") +
+        "。要换掉它，还是另存一条新的？"
+      : conflicts.length + " 条技能和已有的撞了名字。要全部换掉，还是另存新的？",
+  );
+
+  /** 四种来源打到四条路由上。撞了怎么办那一参每次都要跟着，别在别处再拼一遍。 */
+  function sendAttempt(attempt: ImportAttempt, onConflict: SkillConflictMode) {
+    if (attempt.kind === "paths") return promptSkillsApi.importPaths(attempt.paths, onConflict);
+    if (attempt.kind === "markdown") {
+      return promptSkillsApi.importMarkdown(attempt.filename, attempt.content, onConflict);
+    }
+    if (attempt.kind === "archive") {
+      return promptSkillsApi.importArchive(attempt.file, attempt.filename, onConflict);
+    }
+    return promptSkillsApi.importPackageUpload(attempt.root, attempt.files, onConflict);
+  }
+
+  /** 回来的条目并进清单：替换的那条原地换掉，新的排到最后，选中最末一条。 */
+  function applyImported(result: SkillImportResult) {
+    if (!result.imported.length) return;
+    promptSkills.update((list) => {
+      const next = [...list];
+      for (const item of result.imported) {
+        const at = next.findIndex((row) => row.id === item.id);
+        if (at >= 0) next[at] = item;
+        else next.push(item);
+      }
+      return next;
+    });
+    selectedId = result.imported[result.imported.length - 1].id;
+    // 替换是同一个 id 换了内容：草稿那格按 id 比对，不松一下 syncedId 就还挂着旧写法
+    syncedId = null;
+  }
+
+  /**
+   * 所有导入走这一个口。
+   *
+   * 后端默认「先问」：撞名那一次什么都不写，把冲突报回来，这里挂住原样那一次尝试，
+   * 人点了「替换」或「另存」再原样重发。中途不许顺手挑一个默认值——
+   * 一次拖二十个来源，猜错一次就是把用户改过的技能吃掉。
+   */
+  async function importWith(attempt: ImportAttempt, onConflict: SkillConflictMode) {
+    if (busy) return;
+    busy = true;
+    error = "";
+    try {
+      const result = await sendAttempt(attempt, onConflict);
+      if (result.conflicts.length) {
+        conflicts = result.conflicts;
+        pendingAttempt = attempt;
+        return;
+      }
+      conflicts = [];
+      pendingAttempt = null;
+      applyImported(result);
+      pushToast(describeImport(result), {
+        kind: result.imported.length && !result.skipped.length ? "success" : "error",
+        ttl: result.skipped.length || result.imported.some((item) => item.truncated) ? 6000 : 3000,
+      });
+    } catch (e) {
+      error = failText(e);
+      conflicts = [];
+      pendingAttempt = null;
+    } finally {
+      busy = false;
+    }
+  }
+
+  /** 「先不动」不发消息：撤掉那一条问句，库里一个字都没写过，没什么可回滚。 */
+  function resolveConflict(choice: "replace" | "new" | "cancel") {
+    const attempt = pendingAttempt;
+    conflicts = [];
+    pendingAttempt = null;
+    if (choice === "cancel" || !attempt) return;
+    void importWith(attempt, choice);
+  }
+
+  /** 桌面版那颗「导入技能」：原生文件框，md 和 .zip 一起摆出去。 */
+  async function pickSkillSource() {
+    if (busy) return;
+    conflicts = [];
+    pendingAttempt = null;
+    if (!isTauri()) {
+      void sourceEl?.click();
+      return;
+    }
+    let path: string | null = null;
+    try {
+      path = await selectSkillSourcePath();
+    } catch (e) {
+      error = failText(e);
+      return;
+    }
+    if (!path) return;
+    await importWith({ kind: "paths", paths: [path] }, "ask");
+  }
+
+  /** 浏览器版那颗文件框：.zip 走 multipart，其余读成文字交原文。截断只在后端切一刀。 */
+  async function onSourceFile(event: Event) {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     input.value = "";
-    if (!file) return;
-    await run(async () => {
-      const saved = await promptSkillsApi.import(file.name, await file.text());
-      promptSkills.update((list) => [...list, saved]);
-      selectedId = saved.id;
-      if (saved.truncated) {
-        pushToast("「" + saved.name + "」太长，超出的那截没进来，自己收一下", { kind: "error", ttl: 6000 });
-      }
-    }, "已导入「" + file.name + "」");
+    if (!file || busy) return;
+    if (file.name.toLowerCase().endsWith(".zip")) {
+      await importWith({ kind: "archive", filename: file.name, file }, "ask");
+      return;
+    }
+    await importWith({ kind: "markdown", filename: file.name, content: await file.text() }, "ask");
+  }
+
+  /**
+   * 整个弹窗都是落点：一整个技能包目录、.zip、SKILL.md 都能拖进来。
+   *
+   * 路径一律原样交给后端判断，被拒的原因由它说（只有这里能区分「7z 要先解压」
+   * 和「这不是个文件」）。描红只认像是技能的那批，拖一堆图片进来不点亮。
+   */
+  function dropSource(node: HTMLElement) {
+    return {
+      destroy: subscribeFileDrop(
+        () => node,
+        (count, paths) => {
+          dropping = count > 0 && paths.some(isSkillSourcePath);
+        },
+        async (paths) => {
+          dropping = false;
+          await importWith({ kind: "paths", paths }, "ask");
+        },
+      ),
+    };
   }
 
   /** 后端给的中文原因优先；本地抛的错就把 message 摆出来，别一律换成「请求失败」。 */
@@ -221,72 +357,27 @@
     return errorMessage(e);
   }
 
-  /** 导入完一条技能包：进清单、选中它、把「没进预算的文件」说出来。 */
-  function afterPackageImported(saved: PromptSkill & { package: PromptSkillPackage | null }) {
-    promptSkills.update((list) => [...list, saved]);
-    selectedId = saved.id;
-    const dropped = saved.package?.dropped?.length ?? 0;
-    pushToast(
-      dropped
-        ? "已导入技能包「" + saved.name + "」，" + dropped + " 个文件没进预算"
-        : "已导入技能包「" + saved.name + "」",
-      dropped ? { kind: "error", ttl: 6000 } : { kind: "success" },
-    );
-  }
-
   /**
-   * 导入一整个技能包。
+   * 浏览器版「选文件夹」：只送能读成文字的文件，二进制读成文字就是乱码。
    *
-   * 桌面版选文件夹（后端按路径扫盘）；浏览器开发模式没有原生对话框，
-   * 退回到目录上传——只送能读成文字的文件，二进制发过去就是乱码。
+   * 桌面版不走这条路——那边把文件夹拖进窗口就行，前端读一遍再传一遍是白搬一趟。
    */
-  async function importPackage() {
-    if (busy) return;
-    if (!isTauri()) {
-      dirEl?.click();
-      return;
-    }
-    let dir: string | null = null;
-    try {
-      dir = await selectSkillPackageDir();
-    } catch (e) {
-      error = failText(e);
-      return;
-    }
-    if (!dir) return;
-    busy = true;
-    error = "";
-    try {
-      afterPackageImported(await promptSkillsApi.importPackage(dir));
-    } catch (e) {
-      error = failText(e);
-    } finally {
-      busy = false;
-    }
-  }
-
   async function onPackageDir(event: Event) {
     const input = event.target as HTMLInputElement;
-    const files = Array.from(input.files ?? []);
+    const picked = Array.from(input.files ?? []);
     input.value = "";
-    if (!files.length || busy) return;
-    busy = true;
-    error = "";
-    try {
-      const payload: { path: string; content: string }[] = [];
-      for (const file of files) {
-        const rel = (file as any).webkitRelativePath || file.name;
-        if (!isTextFilePath(rel)) continue;
-        payload.push({ path: rel, content: await file.text() });
-      }
-      if (!payload.length) throw new Error("这个文件夹里没有能读成文字的文件");
-      const root = payload[0].path.split("/")[0] || "技能包";
-      afterPackageImported(await promptSkillsApi.importPackageUpload(root, payload));
-    } catch (e) {
-      error = failText(e);
-    } finally {
-      busy = false;
+    if (!picked.length || busy) return;
+    const payload: { path: string; content: string }[] = [];
+    for (const file of picked) {
+      const rel = (file as any).webkitRelativePath || file.name;
+      if (!isTextFilePath(rel)) continue;
+      payload.push({ path: rel, content: await file.text() });
     }
+    if (!payload.length) {
+      error = "这个文件夹里没有能读成文字的文件，换一个技能包目录。";
+      return;
+    }
+    await importWith({ kind: "upload", root: payload[0].path.split("/")[0] || "技能包", files: payload }, "ask");
   }
 
   /** 在系统文件管理器里打开技能包落盘的那份。 */
@@ -324,8 +415,10 @@
 </script>
 
 {#if open}
-  <div class="psk-scrim" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-    <div class="psk" role="dialog" aria-modal="true" aria-label="提示词优化技能" tabindex="-1" use:modalFocus>
+  <div class="psk-scrim" role="presentation" use:dropSource
+    onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div class="psk" class:is-dropping={dropping} role="dialog" aria-modal="true"
+      aria-label="提示词优化技能" tabindex="-1" use:modalFocus>
       <header class="psk-head">
         <div>
           <h2>提示词优化技能</h2>
@@ -349,13 +442,15 @@
                 </span>
               </button>
             {:else}
-              <p class="psk-hint">还没有技能。新建一条，或者导入一份 SKILL.md / 一整个技能包。</p>
+              <p class="psk-hint">还没有技能。新建一条，或者把 SKILL.md、.zip、一整个技能包文件夹拖到这个窗口里。</p>
             {/each}
           </div>
           <div class="psk-side-foot">
             <button class="psk-btn" disabled={busy} onclick={() => void create()}><Icon name="plus" size={12} />新建技能</button>
-            <button class="psk-btn" disabled={busy} onclick={() => fileEl?.click()}><Icon name="folder" size={12} />导入 SKILL.md</button>
-            <button class="psk-btn" disabled={busy} onclick={() => void importPackage()}><Icon name="folder" size={12} />导入技能包</button>
+            <button class="psk-btn" disabled={busy} onclick={() => void pickSkillSource()}><Icon name="folder" size={12} />导入技能</button>
+            {#if !isTauri()}
+              <button class="psk-btn" disabled={busy} onclick={() => dirEl?.click()}>选文件夹</button>
+            {/if}
           </div>
         </div>
 
@@ -451,10 +546,20 @@
         </div>
       </div>
 
+      {#if conflicts.length}
+        <div class="psk-clash" role="group" aria-label="已有同名技能">
+          <span class="psk-clash-text">{clashLine}</span>
+          <span class="psk-clash-btns">
+            <button class="psk-btn" disabled={busy} onclick={() => resolveConflict("replace")}>替换原来的</button>
+            <button class="psk-btn" disabled={busy} onclick={() => resolveConflict("new")}>另存为新的</button>
+            <button class="psk-btn" disabled={busy} onclick={() => resolveConflict("cancel")}>先不动</button>
+          </span>
+        </div>
+      {/if}
       {#if error}<p class="psk-error" role="alert">{error}</p>{/if}
       <p class="psk-foot">模型沿用「反推提示词」那一份默认配置{modelNote ? "：现在吃的是 " + modelNote : "，目前还没配好"}。要换模型去 设置 › 反推提示词。</p>
-      <input bind:this={fileEl} class="psk-file" type="file" accept=".md,.markdown,.txt" aria-label="选择 SKILL.md 文件"
-        onchange={(e) => void onFile(e)} />
+      <input bind:this={sourceEl} class="psk-file" type="file" accept=".md,.markdown,.txt,.zip"
+        aria-label="选择技能文件" onchange={(e) => void onSourceFile(e)} />
       <input bind:this={dirEl} class="psk-file" type="file" webkitdirectory multiple aria-label="选择技能包文件夹"
         onchange={(e) => void onPackageDir(e)} />
     </div>
@@ -538,7 +643,18 @@
   .psk-btn.is-danger { color: var(--danger); }
   .psk-btn.is-danger.is-armed { border-color: var(--danger); background: rgb(var(--danger-rgb) / 14%); }
 
+  .psk.is-dropping {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 45%), 0 22px 90px var(--shade-2);
+  }
   .psk-error { margin: 0; color: var(--danger); font-size: var(--fs-sm); }
+  .psk-clash {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+    gap: var(--sp-3); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--line-strong);
+    border-radius: var(--r-2); background: var(--ink-2);
+  }
+  .psk-clash-text { color: var(--text-1); font-size: var(--fs-xs); line-height: var(--lh-ui); }
+  .psk-clash-btns { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
   .psk-foot { margin: 0; color: var(--text-2); font-size: var(--fs-xs); }
   .psk-file { display: none; }
   .psk-pkg {

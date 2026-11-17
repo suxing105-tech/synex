@@ -55,7 +55,7 @@ describe('真实文件夹组件交互', () => {
     const screen = render(FolderTree);
     const [region, hover, drop] = vi.mocked(subscribeFileDrop).mock.calls[0];
     expect(region()).toBe(screen.container.querySelector('.folder-scroll'));
-    hover(1); await tick();
+    hover(1, ['D:/项目/图.png']); await tick();
     expect(screen.getByRole('status').textContent).toContain('复制');
     vi.mocked(foldersApi.importDirectories).mockResolvedValue({ copied: [{ id: 22, name: '桌面目录', path: 'D:/data/folders/桌面目录' }], failed: [], warnings: [] });
     // 落点这一参现在由 subscribeFileDrop 一并传进来；这一格的落位用不上，给 null

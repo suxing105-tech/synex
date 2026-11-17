@@ -112,6 +112,76 @@ export function isTextFilePath(path: string): boolean {
 export const LANGUAGE_WORDS: Record<PromptSkillLanguage, string> = { auto: "跟随原文", zh: "中文", en: "英文" };
 export const KIND_WORDS: Record<PromptSkillKind, string> = { image: "图片", video: "视频" };
 
+/** 撞名/撞来源时怎么办：先问、替换原来的、另存为新的。和后端 CONFLICT_MODES 一个口径。 */
+export type SkillConflictMode = "ask" | "replace" | "new";
+
+/** 一条在问「要替换还是另存」的冲突：existing_* 是库里那一条，报给人看的。 */
+export interface SkillImportConflict {
+  name: string;
+  source_dir: string;
+  existing_id: number;
+  existing_name: string;
+}
+
+/** 没进来的那一个来源和后端给的原因——被拒的拖放要能说出来为什么。 */
+export interface SkillImportSkipped {
+  path: string;
+  reason: string;
+}
+
+/** 一次导入的完整回执。进了几条、哪几条在问、哪些没进来，三份都得有人说话。 */
+export interface SkillImportResult {
+  imported: (PromptSkill & {
+    truncated?: boolean;
+    replaced?: boolean;
+    package?: PromptSkillPackage | null;
+  })[];
+  conflicts: SkillImportConflict[];
+  skipped: SkillImportSkipped[];
+}
+
+/** 「导入技能」那一个入口认的后缀：Rust 那颗筛子、后端那份名单、这里，同一个口径。 */
+export const SKILL_SOURCE_SUFFIXES = [".md", ".markdown", ".txt", ".zip"];
+
+/** 拖进来的路径值不值得把整块地描红。压缩包只认 .zip，其余交给后端说明原因。 */
+export function isSkillSourcePath(path: string): boolean {
+  const lower = String(path || "").toLowerCase();
+  return SKILL_SOURCE_SUFFIXES.some((suffix) => lower.endsWith(suffix));
+}
+
+/**
+ * 导入回执 → 一句给人看的话。
+ *
+ * 一句话要说清四件事：进了哪条/几条、参考资料带进几份、有没有被截断、什么没进来。
+ * 「包里没带参考资料」这句是故意说的：从技能包导进来的默认以为带了，
+ * 空着不报，人就会以为模型读到了作者其实没写的东西。
+ */
+export function describeImport(result: SkillImportResult): string {
+  const list = result.imported ?? [];
+  const skipped = result.skipped ?? [];
+  if (!list.length) {
+    return skipped.length ? "没能导入：" + skipped[0].reason : "没有可导入的技能";
+  }
+  const parts: string[] = [];
+  parts.push(list.length === 1 ? "已导入技能「" + list[0].name + "」" : "已导入 " + list.length + " 条技能");
+  const packed = list.filter((item) => item.package);
+  if (packed.length) {
+    const refs = packed.reduce(
+      (sum, item) => sum + (item.package?.files ?? []).filter((f) => f.role === "参考" && f.included).length,
+      0,
+    );
+    parts.push(refs ? "带进 " + refs + " 份参考资料" : "包里没带参考资料");
+  }
+  const replaced = list.filter((item) => item.replaced).length;
+  if (replaced === 1 && list.length === 1) parts.push("已替换原来那条");
+  else if (replaced) parts.push("其中 " + replaced + " 条替换了原来的");
+  if (list.some((item) => item.truncated)) parts.push("原文太长，超出的那截没进来");
+  const dropped = packed.reduce((sum, item) => sum + (item.package?.dropped?.length ?? 0), 0);
+  if (dropped) parts.push(dropped + " 个文件没进预算");
+  if (skipped.length) parts.push(skipped.length + " 个没进来：" + skipped[0].reason);
+  return parts.join("，");
+}
+
 const json = (method: string, body: unknown) => ({ method, body: JSON.stringify(body) });
 
 const skillPath = (id: number) => `/api/prompt-skills/${id}`;
@@ -123,20 +193,34 @@ export const promptSkillsApi = {
   remove: (id: number) => http<{ deleted: number }>(skillPath(id), { method: "DELETE" }),
   /** 内置那条回到出厂写法；自己建的那条没有默认可回，后端会顶 409 */
   restoreDefault: (id: number) => http<PromptSkill>(`${skillPath(id)}/restore-default`, json("POST", {})),
-  /** 导入的是读到的原文，截断规则只在后端一处 */
-  import: (filename: string, content: string) =>
-    http<PromptSkill & { truncated: boolean }>("/api/prompt-skills/import", json("POST", { filename, content })),
-  /** 桌面版：用户挑一个文件夹，后端按路径扫盘 */
-  importPackage: (path: string) =>
-    http<PromptSkill & { package: PromptSkillPackage }>(
-      "/api/prompt-skills/import-package",
-      json("POST", { path }),
+  /**
+   * 桌面版那一个入口：挑中的或拖进来的路径，md、.zip、一整个目录都从这儿走。
+   *
+   * 挑中的是 SKILL.md 时后端会连着它所在的整包一起收——那才是完整的一条技能。
+   */
+  importPaths: (paths: string[], onConflict: SkillConflictMode = "ask") =>
+    http<SkillImportResult>(
+      "/api/prompt-skills/import-path",
+      json("POST", { paths, on_conflict: onConflict }),
     ),
-  /** 浏览器版：前端读好的文件内容 */
-  importPackageUpload: (root: string, files: { path: string; content: string }[]) =>
-    http<PromptSkill & { package: PromptSkillPackage }>(
+  /** 浏览器版：读到的一份 md 原文。截断规则只在后端一处，这里不许先切一刀。 */
+  importMarkdown: (filename: string, content: string, onConflict: SkillConflictMode = "ask") =>
+    http<SkillImportResult>(
+      "/api/prompt-skills/import",
+      json("POST", { filename, content, on_conflict: onConflict }),
+    ),
+  /** 浏览器版上传的 .zip：multipart，后端从内存里读，不落临时文件 */
+  importArchive: (file: File | Blob, filename: string, onConflict: SkillConflictMode = "ask") => {
+    const form = new FormData();
+    form.append("file", file, filename);
+    form.append("on_conflict", onConflict);
+    return http<SkillImportResult>("/api/prompt-skills/import-archive", { method: "POST", body: form });
+  },
+  /** 浏览器版选文件夹：前端读好的文本内容（二进制读不成文字，进不来） */
+  importPackageUpload: (root: string, files: { path: string; content: string }[], onConflict: SkillConflictMode = "ask") =>
+    http<SkillImportResult>(
       "/api/prompt-skills/import-package/upload",
-      json("POST", { root, files }),
+      json("POST", { root, files, on_conflict: onConflict }),
     ),
   /** 一条技能背后的包：文件清单与元数据 */
   packageDetail: (id: number) =>

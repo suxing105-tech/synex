@@ -16,6 +16,8 @@ vi.mock("../lib/api", () => ({
 (globalThis as any).__http = http;
 
 const {
+  describeImport,
+  isSkillSourcePath,
   isTextFilePath,
   loadPromptSkills,
   missingMarks,
@@ -142,12 +144,12 @@ describe("接口拼装", () => {
     expect(init.signal).toBe(ctl.signal);
   });
 
-  it("导入交出去的是读到的原文，文件名一起带上", async () => {
-    http.mockResolvedValue({ ...skill(), truncated: false });
-    await promptSkillsApi.import("SKILL.md", "# 标题\n正文");
+  it("导入交出去的是读到的原文，文件名一起带上，头一次一律先问", async () => {
+    http.mockResolvedValue({ imported: [], conflicts: [], skipped: [] });
+    await promptSkillsApi.importMarkdown("SKILL.md", "# 标题\n正文");
     const [path, init] = http.mock.calls[0];
     expect(path).toBe("/api/prompt-skills/import");
-    expect(JSON.parse(String(init.body))).toEqual({ filename: "SKILL.md", content: "# 标题\n正文" });
+    expect(JSON.parse(String(init.body))).toEqual({ filename: "SKILL.md", content: "# 标题\n正文", on_conflict: "ask" });
   });
 
   it("store 里就是接口拉回来那一份，reset 清得干净", async () => {
@@ -170,19 +172,70 @@ describe("技能包", () => {
     expect(isTextFilePath("data.bin")).toBe(false);
   });
 
-  it("桌面版按路径导入：POST 打到 import-package，只带一个 path", async () => {
-    http.mockResolvedValue({});
-    await promptSkillsApi.importPackage("C:/skills/shop");
+  it("桌面版那一个入口：路径整批打到 import-path，md、.zip、目录都从这儿走", async () => {
+    http.mockResolvedValue({ imported: [], conflicts: [], skipped: [] });
+    await promptSkillsApi.importPaths(["C:/skills/shop", "C:/a.zip"]);
     const [path, init] = http.mock.calls[0];
-    expect(path).toBe("/api/prompt-skills/import-package");
-    expect(bodyOf(init)).toEqual({ path: "C:/skills/shop" });
+    expect(path).toBe("/api/prompt-skills/import-path");
+    expect(bodyOf(init)).toEqual({ paths: ["C:/skills/shop", "C:/a.zip"], on_conflict: "ask" });
   });
 
-  it("浏览器版上传：文件内容连相对路径一起交上去", async () => {
-    http.mockResolvedValue({});
+  it("重发时带上人挑的那个处理：替换", async () => {
+    http.mockResolvedValue({ imported: [], conflicts: [], skipped: [] });
+    await promptSkillsApi.importPaths(["C:/skills/shop"], "replace");
+    expect(bodyOf(http.mock.calls[0][1]).on_conflict).toBe("replace");
+  });
+
+  it("浏览器版上传 .zip：multipart，参数挂在 form 上", async () => {
+    http.mockResolvedValue({ imported: [], conflicts: [], skipped: [] });
+    const blob = new File([new Uint8Array([80, 75])], "pack.zip");
+    await promptSkillsApi.importArchive(blob, "pack.zip", "new");
+    const [path, init] = http.mock.calls[0];
+    expect(path).toBe("/api/prompt-skills/import-archive");
+    expect(init.method).toBe("POST");
+    const form = init.body as FormData;
+    expect(form).toBeInstanceOf(FormData);
+    expect(form.get("on_conflict")).toBe("new");
+    expect((form.get("file") as File).name).toBe("pack.zip");
+  });
+
+  it("浏览器版选文件夹：文件内容连相对路径一起交上去", async () => {
+    http.mockResolvedValue({ imported: [], conflicts: [], skipped: [] });
     await promptSkillsApi.importPackageUpload("shop", [{ path: "shop/SKILL.md", content: "# 写法" }]);
     const [path, init] = http.mock.calls[0];
     expect(path).toBe("/api/prompt-skills/import-package/upload");
-    expect(bodyOf(init)).toEqual({ root: "shop", files: [{ path: "shop/SKILL.md", content: "# 写法" }] });
+    expect(bodyOf(init)).toEqual({
+      root: "shop", files: [{ path: "shop/SKILL.md", content: "# 写法" }], on_conflict: "ask",
+    });
+  });
+
+  it("入口只认 md 和 zip：其余交给后端说明原因", () => {
+    expect(isSkillSourcePath("C:/技能包/SKILL.md")).toBe(true);
+    expect(isSkillSourcePath("C:/技能包.zip")).toBe(true);
+    expect(isSkillSourcePath("C:/a.MARKDOWN")).toBe(true);
+    expect(isSkillSourcePath("C:/a.7z")).toBe(false);
+    expect(isSkillSourcePath("C:/技能包")).toBe(false);
+    expect(isSkillSourcePath("")).toBe(false);
+  });
+
+  it("一句回执说清进了什么：条数、参考资料、替换、截断、没进来的", () => {
+    const packed = (over: any = {}) => ({ name: "电商视觉包", package: null, ...over });
+    const refs = (n: number) => ({
+      files: Array.from({ length: n }, (_x, i) => ({ role: "参考", included: true, path: "r" + i })),
+      dropped: [] as string[],
+    });
+    const done = (imported: any[], skipped: any[] = []) => ({ imported, conflicts: [], skipped });
+    expect(describeImport(done([packed({ name: "电商视觉包", package: refs(2) })]))).toBe(
+      "已导入技能「电商视觉包」，带进 2 份参考资料");
+    // 包里没带参考资料也要说：空着不报，人以为模型读到了作者其实没写的东西
+    expect(describeImport(done([packed({ package: refs(0) })]))).toBe(
+      "已导入技能「电商视觉包」，包里没带参考资料");
+    expect(describeImport(done([packed(), packed(), packed()]))).toBe("已导入 3 条技能");
+    expect(describeImport(done([packed({ replaced: true })]))).toBe("已导入技能「电商视觉包」，已替换原来那条");
+    expect(describeImport(done([packed({ truncated: true })]))).toBe(
+      "已导入技能「电商视觉包」，原文太长，超出的那截没进来");
+    expect(describeImport(done([packed()], [{ path: "C:/a.7z", reason: "得先解压" }]))).toBe(
+      "已导入技能「电商视觉包」，1 个没进来：得先解压");
+    expect(describeImport(done([], [{ path: "C:/a.7z", reason: "得先解压" }]))).toBe("没能导入：得先解压");
   });
 });

@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from pathlib import Path, PurePosixPath
@@ -27,6 +28,17 @@ MAX_NOTE = 200
 MAX_INSTRUCTION = 20000
 # 导入的是给 agent 看的 SKILL.md，长的是常态。截断比拒绝有用：截了还能改，拒了就是白跑一趟。
 MAX_IMPORT_CHARS = 12000
+# 一次导入最多几个来源：整摞技能拖进来的上限，超了就是选错了。
+MAX_IMPORT_SOURCES = 20
+# 撞名时的三种处理。默认先问——替换会覆盖人写过的东西。
+CONFLICT_MODES = ("ask", "replace", "new")
+MAX_MARKDOWN_BYTES = 2_000_000
+# 浏览器上传压缩包的字节上限。真正进门的闸在 skill_packages 那四条总量限制上，
+# 这一条只是别让一个几百 MB 的文件先进内存。
+MAX_ARCHIVE_BYTES = 64_000_000
+MARKDOWN_SUFFIXES = frozenset({".md", ".markdown", ".txt"})
+OTHER_ARCHIVE_HINT = "压缩包只支持 .zip：先把它解压出来，再挑里面的 SKILL.md 或技能包文件夹"
+SOURCE_HINT = "只认 .md/.markdown/.txt 和 .zip，或者一整个技能包文件夹"
 # 一次优化最多带几张参考图。再多既慢又贵，而提示词里的引用编号本来就到不了十几。
 MAX_REF_IMAGES = 16
 # 参考图 data URL 的总长度上限（base64 字符数，约等于 9MB 原图）。超了就按顺序少带后面的几张：
@@ -310,9 +322,21 @@ def parse_import(content: str, filename: str = "") -> dict:
     return {"name": (name or "导入的技能")[:MAX_NAME], "instruction": body, "truncated": truncated}
 
 
+def fit_name(value) -> str:
+    """名字长了截短，不拒收。
+
+    名字是从 frontmatter 的标题拿的，作者写的是文档标题不是输入框，长是常态。
+    拒了等于让人先改一遍自己的文件，再白跑一趟。
+    """
+    name = str(value or "").strip()
+    if len(name) > MAX_NAME:
+        name = name[:MAX_NAME].rstrip()
+    return clean_name(name)
+
+
 def unique_name(base: str) -> str:
     """撞名就加序号：撞名时报一句「已存在」等于让人先改名再白跑一趟。"""
-    base = clean_name(base)
+    base = fit_name(base)
     taken = {row["name"] for row in db.get_pool().main().execute("SELECT name FROM prompt_skills").fetchall()}
     name, suffix = base, 1
     while name in taken:
@@ -321,12 +345,52 @@ def unique_name(base: str) -> str:
     return name
 
 
-def import_skill(content: str, filename: str = ""):
-    """导入即落库，名字撞了就加序号。"""
+def _target_name(base: str, replace_skill_id: int | None) -> str:
+    """替换就沿用原来那个名字（不加序号），新建才避让。"""
+    return fit_name(base) if replace_skill_id is not None else unique_name(base)
+
+
+# ---------- 导入：一个入口，四种送法 ----------
+#
+# 四条送法（桌面挑文件或拖路径、浏览器挑文件、浏览器传压缩包、浏览器选文件夹）
+# 最后都汇到 _finish 一个口：先解析成「待导入」，再判撞名，最后才写。
+# 前面几步一律不碰库，「先问一句再动手」才做得到——
+# 一边写一边才发现撞名，就没有反悔的余地了。
+
+
+def _md_candidate(content: str, filename: str = "", source_dir: str = "") -> dict:
+    """一份 SKILL.md 文本 → 一条待导入的技能。"""
     parsed = parse_import(content, filename)
-    saved = save_skill({"name": unique_name(parsed["name"]), "note": "从文件导入",
-                        "instruction": parsed["instruction"], "source": "md"})
-    return {**saved, "truncated": parsed["truncated"]}
+    return {
+        "kind": "md",
+        "label": str(filename or parsed["name"]),
+        "source_dir": source_dir,
+        "name": parsed["name"],
+        "note": "从文件导入",
+        "instruction": parsed["instruction"],
+        "truncated": parsed["truncated"],
+    }
+
+
+def _commit_md(candidate: dict, replace_skill_id: int | None = None) -> dict:
+    """一份 md 落成一条技能：只带写法，不带包。"""
+    name = _target_name(candidate["name"], replace_skill_id)
+    values = {"name": name, "note": candidate["note"], "instruction": candidate["instruction"]}
+    if replace_skill_id is None:
+        skill_id = save_skill({**values, "source": "md"})["id"]
+    else:
+        old = get_skill(replace_skill_id)
+        save_skill(values, replace_skill_id)
+        skill_id = replace_skill_id
+        # 换成一份孤立的 md，上一版的包要一起带走：库里这条已经不会再读它了，
+        # 留在盘上就是没人认领、也没人删得掉的一堆文件
+        with db.transaction() as tx:
+            tx.execute("UPDATE prompt_skills SET source='md',package_dir=NULL,package_meta=NULL,"
+                       "package_refs=NULL,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?",
+                       (skill_id,))
+        remove_package_dir(_row_get(old, "package_dir"))
+    return {**public(get_skill(skill_id)), "truncated": bool(candidate["truncated"]),
+            "replaced": replace_skill_id is not None}
 
 
 # ---------- 技能包 ----------
@@ -387,59 +451,131 @@ def _package_manifest(entries: list[dict], files_meta: list[dict], skill_path: s
     return manifest
 
 
-def _ingest_package(root_name: str, entries: list[dict], source_dir: str = "") -> dict:
-    """把一份文件清单变成一条技能。
+def _package_candidates(root_name: str, entries: list[dict], source_dir: str) -> list[dict]:
+    """一份文件清单里有几条待导入的技能。只解析，一个字都不写。
 
-    顺序不能换：先解析出正文与资料，再落库（要拿 id 才知道往哪写文件），
-    落盘失败就把刚插进去的那行删掉——不留一条指向空目录的技能。
+    按「SKILL.md 在第几层」分三种情形：
+    - 根目录就有一份：整包就是这一条技能，里面再套的 SKILL.md 算参考资料
+      （老口径，不动——别人把一个技能套在 skills/ 下是常事）；
+    - 根目录没有、最浅那一层只有一份：那一条就是它，更深一层算参考资料；
+    - 最浅那一层有好几份：这是一摞技能打包在一起的合集，一次全导进来，一份一条。
+      挑一个 .zip 只进来一条、剩下的得在界面上一个个再导，谁都会以为包坏了。
     """
-    skill_md, entries = skill_packages.pick_skill_md(entries)
-    if skill_md is None:
-        raise HTTPException(422, "这个文件夹里没有 SKILL.md：技能包的根目录得放着 SKILL.md")
+    paths = skill_packages.skill_md_paths(entries)
+    if not paths:
+        raise HTTPException(422, "这里没有 SKILL.md：技能包或压缩包里得放着 SKILL.md")
+    shallowest = paths[0].count("/")
+    roots = [path for path in paths if path.count("/") == shallowest]
+    if shallowest == 0 or len(roots) == 1:
+        roots = roots[:1]
+    return [_package_candidate(root_name, entries, path, source_dir) for path in roots]
+
+
+def _package_candidate(root_name: str, entries: list[dict], skill_md_path: str, source_dir: str) -> dict:
+    """把清单里指定的那份 SKILL.md 和它自己的文件读成一条待导入的技能。"""
+    skill_md, own = skill_packages.package_at(entries, skill_md_path)
     fields, body = skill_packages.parse_frontmatter(skill_md.get("text") or "")
     body = (body or "").strip()
     if not body:
         raise HTTPException(422, "SKILL.md 里没有正文，换一份或直接新建一条技能")
+    # 一摞技能各自有自己的目录名；只有一条时还是用用户挑的那个文件夹/压缩包的名字
+    root = PurePosixPath(skill_md_path).parent.name or root_name
+    return {
+        "kind": "package",
+        "label": source_dir or root,
+        "root_name": root,
+        "source_dir": source_dir,
+        "name": str(fields.get("name") or root),
+        "note": str(fields.get("description") or "").strip()[:MAX_NOTE],
+        "body": body,
+        "fields": fields,
+        "entries": own,
+        "skill_path": skill_md.get("path") or "",
+    }
+
+
+def _write_package_dir(skill_id: int, entries: list[dict], *, replacing: bool) -> str:
+    """把包里的文件原样存一份到 skills/<id>/，返回那个目录。
+
+    替换时先写进 skills/<id>.new/，写成了才把旧的换掉：直接在原目录上写，
+    写到一半失败就是「库里还有这条技能，包却只剩半截」那种查不出来的脏状态。
+    二进制走 data（压缩包来的），目录来的走 abs 原路径复制。
+    """
+    root = skills_dir()
+    target = root / (str(skill_id) + ".new" if replacing else str(skill_id))
+    shutil.rmtree(target, ignore_errors=True)
+    target.mkdir(parents=True, exist_ok=True)
+    for item in entries:
+        rel = skill_packages.safe_rel_path(item.get("path") or "")
+        if not rel:
+            continue
+        dest = target / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if item.get("is_text") and item.get("text") is not None:
+            dest.write_text(item["text"], encoding="utf-8")
+        elif item.get("data") is not None:
+            dest.write_bytes(item["data"])
+        elif item.get("abs"):
+            try:
+                shutil.copy2(item["abs"], dest)
+            except OSError:
+                pass
+    if not replacing:
+        return str(target)
+    final = root / str(skill_id)
+    # 这里不 ignore_errors：旧目录被占着就该当场说话，
+    # 而不是把「删不掉旧目录」糊成后面那次 rename 的一句怪错
+    shutil.rmtree(final)
+    try:
+        target.rename(final)
+    except OSError:
+        shutil.rmtree(target, ignore_errors=True)
+        raise
+    return str(final)
+
+
+def _commit_package(candidate: dict, replace_skill_id: int | None = None) -> dict:
+    """一条待导入的技能包 → 库里的技能。
+
+    替换那一路的顺序是挑过的：文件先写成功，才动库里那条。
+    反过来做，落盘一失败就把人本来能用的写法改没了。
+    """
+    entries = candidate["entries"]
+    fields = candidate["fields"]
+    skill_path = candidate["skill_path"]
+    body = candidate["body"]
     truncated = len(body) > MAX_IMPORT_CHARS
     # 资料优先级要用**完整**正文来判断：作者在文档后半段点名的文件也算数，
     # 哪怕那半截没发给模型——不然截断会把「作者想让我们看什么」这件事切掉一半。
-    skill_path = skill_md.get("path") or ""
     refs_block, files_meta, refs_chars = skill_packages.compose_refs_block(entries, body, skill_path)
     if truncated:
         body = body[:MAX_IMPORT_CHARS].rstrip() + "\n\n（技能原文过长，到这里为止。）"
 
-    saved = save_skill({"name": unique_name(fields.get("name") or root_name or "导入的技能包"),
-                        "note": str(fields.get("description") or "").strip()[:MAX_NOTE],
-                        "instruction": body, "source": "package"})
-    skill_id = saved["id"]
-
-    package_dir = ""
+    old = get_skill(replace_skill_id) if replace_skill_id is not None else None
+    skill_id = replace_skill_id if old is not None else save_skill(
+        {"name": unique_name(candidate["name"]), "note": candidate["note"],
+         "instruction": body, "source": "package"})["id"]
     try:
-        target = skills_dir() / str(skill_id)
-        target.mkdir(parents=True, exist_ok=True)
-        for item in entries:
-            rel = skill_packages.safe_rel_path(item.get("path") or "")
-            if not rel:
-                continue
-            dest = target / rel
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            if item.get("is_text") and item.get("text") is not None:
-                dest.write_text(item["text"], encoding="utf-8")
-            elif item.get("abs"):
-                try:
-                    shutil.copy2(item["abs"], dest)
-                except OSError:
-                    pass
-        package_dir = str(target)
+        package_dir = _write_package_dir(skill_id, entries, replacing=old is not None)
     except OSError as exc:
-        with db.transaction() as tx:
-            tx.execute("DELETE FROM prompt_skills WHERE id=?", (skill_id,))
+        if old is None:
+            with db.transaction() as tx:
+                tx.execute("DELETE FROM prompt_skills WHERE id=?", (skill_id,))
         raise HTTPException(500, "技能包落盘失败：" + str(exc))
+    if old is not None:
+        save_skill({"name": _target_name(candidate["name"], skill_id), "note": candidate["note"],
+                    "instruction": body}, skill_id)
+        # 旧目录在上一步已经被 staging 顶掉了：换包时 rmtree(正主) + rename，
+        # 再按老值删一次，删的就是刚写好的那一份。只有旧值指向别处（老库存过旁路）
+        # 才需要另外清一次。
+        stale = _row_get(old, "package_dir")
+        if stale and _norm_path(stale) != _norm_path(package_dir):
+            remove_package_dir(stale)
 
     manifest = _package_manifest(entries, files_meta, skill_path)
     meta = {
-        "root": root_name,
-        "source_dir": source_dir,
+        "root": candidate["root_name"],
+        "source_dir": candidate["source_dir"],
         "description": str(fields.get("description") or ""),
         "license": str(fields.get("license") or ""),
         "allowed_tools": fields.get("allowed-tools", ""),
@@ -458,20 +594,199 @@ def _ingest_package(root_name: str, entries: list[dict], source_dir: str = "") -
             "updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?",
             (package_dir, json.dumps(meta, ensure_ascii=False), refs_block, skill_id),
         )
-    return {**public(get_skill(skill_id)), "package": meta}
+    return {**public(get_skill(skill_id)), "package": meta, "truncated": truncated,
+            "replaced": old is not None}
 
 
-def import_package_from_path(path: str) -> dict:
-    """桌面版：用户挑一个文件夹，后端按路径扫盘。"""
+def _commit_candidate(candidate: dict, replace_skill_id: int | None = None) -> dict:
+    commit = _commit_package if candidate["kind"] == "package" else _commit_md
+    return commit(candidate, replace_skill_id)
+
+
+# ---------- 撞名 ----------
+
+
+def _norm_path(value: str) -> str:
+    """路径比之前先统一大小写、斜杠和结尾分隔符：Windows 上路径不区分大小写。"""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        text = os.path.normpath(text)
+    except ValueError:
+        return ""
+    return os.path.normcase(text).rstrip("\\/")
+
+
+def _find_conflict(name: str, source_dir: str) -> dict | None:
+    """找「这条技能的上一版」。
+
+    认两种：来源路径一模一样（重导同一个文件夹、压缩包或 SKILL.md），
+    或者名字一模一样（浏览器上传没有路径可比，或者上一次那份已经挪走了）。
+    只认导入过的那两类（md/package）：内置技能和用户自己手写的经常也叫同一个名，
+    把它们当成「该被替换的旧版本」会直接吃掉用户写的东西。
+    """
+    want_dir = _norm_path(source_dir)
+    want_name = str(name or "").strip()
+    if not want_dir and not want_name:
+        return None
+    rows = db.get_pool().main().execute(
+        "SELECT id,name,package_meta FROM prompt_skills WHERE source IN ('md','package')"
+        " ORDER BY sort,id").fetchall()
+    for row in rows:
+        if want_dir and row["package_meta"]:
+            try:
+                meta = json.loads(row["package_meta"])
+            except (TypeError, ValueError):
+                meta = None
+            got = _norm_path(str((meta or {}).get("source_dir") or ""))
+            if got and got == want_dir:
+                return {"existing_id": row["id"], "existing_name": row["name"]}
+        if want_name and str(row["name"]).strip() == want_name:
+            return {"existing_id": row["id"], "existing_name": row["name"]}
+    return None
+
+
+def _finish(candidates: list[dict], skipped: list[dict], on_conflict: str) -> dict:
+    """待导入的技能 → 导入结果。这是唯一会写库的一步。
+
+    四条送法共用一个返回形状：imported / conflicts / skipped。
+    撞名又没拿到决定时整批一条都不写——只把撞名那条挂起来、其余先落库，
+    用户回一句「替换」就得重导一遍，重导的那几条会变成第二份。
+    """
+    if on_conflict not in CONFLICT_MODES:
+        raise HTTPException(422, "撞名时只能选先问、替换或另存新的")
+    if not candidates:
+        raise HTTPException(422, skipped[0]["reason"] if skipped else "没有读到可导入的技能")
+    conflicts: list[dict] = []
+    for candidate in candidates:
+        hit = _find_conflict(candidate["name"], candidate.get("source_dir") or "")
+        candidate["conflict"] = hit
+        if hit:
+            conflicts.append({"name": candidate["name"],
+                              "source_dir": candidate.get("source_dir") or "",
+                              "existing_id": hit["existing_id"], "existing_name": hit["existing_name"]})
+    if conflicts and on_conflict == "ask":
+        return {"imported": [], "conflicts": conflicts, "skipped": skipped}
+    imported: list[dict] = []
+    for candidate in candidates:
+        replace_id = candidate["conflict"]["existing_id"] if (
+            candidate.get("conflict") and on_conflict == "replace") else None
+        try:
+            imported.append(_commit_candidate(candidate, replace_id))
+        except HTTPException as exc:
+            # 一批里坏一条不该连累其余：报出来，剩下的照样进来
+            if int(exc.status_code) >= 500:
+                raise
+            skipped.append({"path": candidate.get("label") or candidate["name"],
+                            "reason": str(exc.detail)})
+    return {"imported": imported, "conflicts": [], "skipped": skipped}
+
+
+# ---------- 四个入口 ----------
+
+
+def _is_markdown(path: Path) -> bool:
+    return path.suffix.lower() in MARKDOWN_SUFFIXES
+
+
+def _plan_markdown(path: Path) -> dict:
+    try:
+        if path.stat().st_size > MAX_MARKDOWN_BYTES:
+            raise HTTPException(422, "这份文件太大了（上限 2 MB），先收一下再导：" + path.name)
+        blob = path.read_bytes()
+    except HTTPException:
+        raise
+    except OSError as exc:
+        raise HTTPException(422, "这份文件读不了：" + path.name + "（" + str(exc) + "）")
+    return _md_candidate(skill_packages.read_text_bytes(blob), path.name, str(path))
+
+
+def _plan_skill_md(path: Path) -> list[dict]:
+    """挑中的是 SKILL.md：按它所在的目录整包导。
+
+    入口文件就是技能包的那扇门，作者放在旁边的参考资料是这条技能的一部分。
+    只读进门那一句、把身后的东西全留下，界面上还看不出少了什么，
+    比直接报个错更坏。目录实在没能带进东西时退回单份 md，
+    至少用户自己写的那几条指令还在。
+    """
+    try:
+        return _plan_dir(path.parent)
+    except HTTPException:
+        return [_plan_markdown(path)]
+
+
+def _plan_dir(path: Path) -> list[dict]:
     entries = skill_packages.scan_package_dir(path)
     if not entries:
-        raise HTTPException(422, "这个文件夹里没有可用的文件，换一个技能包目录")
-    root_name = Path(str(path)).name or "技能包"
-    return _ingest_package(root_name, entries, source_dir=str(path))
+        raise HTTPException(422, "这个文件夹里没有可用的文件，换一个技能包目录：" + path.name)
+    return _package_candidates(path.name, entries, str(path))
 
 
-def import_package_from_upload(root: str, files: list[dict]) -> dict:
-    """浏览器开发模式：前端把读好的文件内容传上来。"""
+def _plan_archive(path: Path) -> list[dict]:
+    entries = skill_packages.scan_package_archive(path)
+    if not entries:
+        raise HTTPException(422, "这个压缩包里没有一个能读的文件：" + path.name)
+    return _package_candidates(path.stem or "技能包", entries, str(path))
+
+
+def import_from_paths(paths: list[str], on_conflict: str = "ask") -> dict:
+    """桌面版那一个入口：挑中的或拖进来的路径，可能是 md、.zip，也可能是一整个目录。
+
+    挑中 SKILL.md 会自动升级成整包导入：它是技能包的入口文件，
+    只把它当一份孤立的 md 导进来，等于把作者一起给的参考资料悄悄丢了，
+    而界面上看不出少了东西。
+    """
+    given = [str(item or "").strip() for item in list(paths or []) if str(item or "").strip()]
+    candidates: list[dict] = []
+    skipped: list[dict] = []
+    for text in given[:MAX_IMPORT_SOURCES]:
+        path = Path(text)
+        kind = skill_packages.archive_kind(text)
+        try:
+            if path.is_dir():
+                candidates += _plan_dir(path)
+            elif kind == "zip":
+                candidates += _plan_archive(path)
+            elif kind == "other":
+                skipped.append({"path": text, "reason": OTHER_ARCHIVE_HINT + "：" + path.name})
+            elif _is_markdown(path):
+                # SKILL.md 是技能包的入口，挑它就等于要那整个包
+                if path.name.lower() == "skill.md":
+                    candidates += _plan_skill_md(path)
+                else:
+                    candidates.append(_plan_markdown(path))
+            else:
+                skipped.append({"path": text, "reason": SOURCE_HINT + "：" + path.name})
+        except HTTPException as exc:
+            if int(exc.status_code) >= 500:
+                raise
+            skipped.append({"path": text, "reason": str(exc.detail)})
+    if len(given) > MAX_IMPORT_SOURCES:
+        skipped.append({"path": "一次最多导 " + str(MAX_IMPORT_SOURCES) + " 个来源",
+                        "reason": "多出来的没导，再挑一次"})
+    return _finish(candidates, skipped, on_conflict)
+
+
+def import_from_markdown(content: str, filename: str = "", on_conflict: str = "ask") -> dict:
+    """浏览器版：前端读到的一份 md 原文。截断规则仍只在 parse_import 一处。"""
+    return _finish([_md_candidate(content, filename)], [], on_conflict)
+
+
+def import_from_archive_bytes(blob: bytes, filename: str = "", on_conflict: str = "ask") -> dict:
+    """浏览器版上传的 .zip：从内存里读，不解压到盘上。"""
+    if len(blob or b"") > MAX_ARCHIVE_BYTES:
+        raise HTTPException(422, "这个压缩包太大了（上限 64 MB），只把要用的那条技能压进来")
+    name = str(filename or "技能包.zip").replace("\\", "/").rsplit("/", 1)[-1]
+    stem = re.sub(r"\.[^.]+$", "", name) or "技能包"
+    entries = skill_packages.scan_package_archive(blob, label=name)
+    if not entries:
+        raise HTTPException(422, "这个压缩包里没有一个能读的文件：" + name)
+    return _finish(_package_candidates(stem, entries, ""), [], on_conflict)
+
+
+def import_from_upload_dir(root: str, files: list[dict], on_conflict: str = "ask") -> dict:
+    """浏览器版选文件夹：前端读好的文本内容。二进制读不成文字，进不来。"""
     entries: list[dict] = []
     total = 0
     for item in files or []:
@@ -485,10 +800,11 @@ def import_package_from_upload(root: str, files: list[dict]) -> dict:
         total += size
         if total > skill_packages.MAX_PACKAGE_TOTAL_BYTES:
             break
-        entries.append({"path": rel, "abs": "", "size": size, "text": content, "is_text": True})
+        entries.append({"path": rel, "abs": "", "size": size, "text": content,
+                        "is_text": True, "data": None})
     if not entries:
         raise HTTPException(422, "没有读到任何文件，换一个技能包目录")
-    return _ingest_package(root or "技能包", entries)
+    return _finish(_package_candidates(root or "技能包", entries, ""), [], on_conflict)
 
 
 def package_detail(skill_id: int) -> dict:

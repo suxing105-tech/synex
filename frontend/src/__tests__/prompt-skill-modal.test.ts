@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render } from "@testing-library/svelte";
 import { get } from "svelte/store";
 import PromptSkillModal from "../components/PromptSkillModal.svelte";
 import { clearToasts, toasts } from "../lib/toast";
+import { subscribeFileDrop } from "../lib/native-drop";
 import { promptSkills, promptSkillSettings, resetPromptSkills, type PromptSkill } from "../lib/prompt-skills";
 
 /**
@@ -18,10 +19,10 @@ vi.mock("../lib/api", () => ({
 }));
 (globalThis as any).__http = http;
 
-// 桌面壳那层在这个文件里要能切换：导入技能包是走原生对话框还是走目录上传，就看 isTauri。
+// 桌面壳那层在这个文件里要能切换：同一颗「导入技能」是走原生文件框还是走浏览器文件框，看 isTauri。
 vi.mock("../lib/tauri", () => ({
   isTauri: () => (globalThis as any).__tauri.isTauri,
-  selectSkillPackageDir: () => (globalThis as any).__tauri.pickDir(),
+  selectSkillSourcePath: () => (globalThis as any).__tauri.pickDir(),
   selectImportDirectory: async () => null,
   selectTextPaths: async () => [],
   getSidecarStatus: async () => null,
@@ -30,6 +31,10 @@ vi.mock("../lib/tauri", () => ({
   restartSidecar: async () => null,
 }));
 (globalThis as any).__tauri = { isTauri: false, pickDir: async () => null };
+
+// 拖放事件本身由 native-drop 那把标尺管，这里有专门两条用例现拿它的回调，
+// 其余用例只要它别真去挂原生监听。
+vi.mock("../lib/native-drop", () => ({ subscribeFileDrop: vi.fn(() => () => {}) }));
 
 /** 按「METHOD 路径」预演，长的键先匹配：PATCH 与 POST 落在同一个前缀上。 */
 function routes(map: Record<string, unknown>) {
@@ -54,8 +59,21 @@ function skill(over: Partial<PromptSkill> = {}): PromptSkill {
 }
 
 const bodyOf = (init?: RequestInit) => JSON.parse(String(init?.body));
+const keyOf = (entry: unknown[]) =>
+  ((entry[1] as RequestInit | undefined)?.method ?? "GET") + " " + entry[0];
 const call = (method: string, path: string) =>
-  http.mock.calls.find((entry) => ((entry[1] as RequestInit | undefined)?.method ?? "GET") + " " + entry[0] === method + " " + path);
+  http.mock.calls.find((entry) => keyOf(entry) === method + " " + path);
+/** 同一个入口重发时看最后一次：第一次是「先问」，那一次的 body 不是结论。 */
+const lastCall = (method: string, path: string) => {
+  const hits = http.mock.calls.filter((entry) => keyOf(entry) === method + " " + path);
+  return hits[hits.length - 1];
+};
+
+/** 后端那个回执的形状：进了几条、哪几条在问、哪些没进来。 */
+const envelope = (item: unknown, skipped: { path: string; reason: string }[] = []) => ({
+  imported: [item], conflicts: [], skipped,
+});
+const CLASH = [{ name: "电商视觉包", source_dir: "C:/skills/shop", existing_id: 7, existing_name: "电商视觉包" }];
 
 const baseRoutes = () => ({
   // 脚下那句「现在吃的是哪家哪个模型」读的是反推那一份配置
@@ -68,6 +86,7 @@ const baseRoutes = () => ({
 
 beforeEach(() => {
   http.mockReset();
+  vi.mocked(subscribeFileDrop).mockImplementation(() => () => {});
   clearToasts();
   promptSkills.set([
     skill(),
@@ -166,13 +185,14 @@ describe("设默认 · 导入 · 删除", () => {
     expect((screen.getByRole("button", { name: "设为视频默认" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("导入 SKILL.md：交原文给后端，回来的那条直接进清单并被选中", async () => {
+  it("浏览器版挑 md：交原文给后端，回来的那条直接进清单并被选中", async () => {
     routes({
       ...baseRoutes(),
-      "POST /api/prompt-skills/import": (init?: RequestInit) => {
-        const sent = bodyOf(init);
-        return { ...skill({ id: 9, name: "导入的技能", kinds: ["image", "video"], instruction: sent.content }), truncated: false };
-      },
+      "POST /api/prompt-skills/import": (init?: RequestInit) =>
+        envelope({
+          ...skill({ id: 9, name: "导入的技能", kinds: ["image", "video"], instruction: bodyOf(init).content }),
+          truncated: false,
+        }),
     });
     const screen = await ready();
     const input = screen.container.querySelector(".psk-file") as HTMLInputElement;
@@ -181,9 +201,26 @@ describe("设默认 · 导入 · 删除", () => {
     Object.defineProperty(input, "files", { value: [file], configurable: true });
     await fireEvent.change(input);
     await vi.waitFor(() => expect(call("POST", "/api/prompt-skills/import")).toBeTruthy());
-    expect(bodyOf(call("POST", "/api/prompt-skills/import")?.[1] as RequestInit).filename).toBe("SKILL.md");
+    const sent = bodyOf(call("POST", "/api/prompt-skills/import")?.[1] as RequestInit);
+    expect(sent.filename).toBe("SKILL.md");
+    // 头一次一律「先问」：撞不撞名归后端判断，前端不许替人挑一个默认处理
+    expect(sent.on_conflict).toBe("ask");
     await vi.waitFor(() => expect((screen.getByLabelText("技能名字") as HTMLInputElement).value).toBe("导入的技能"));
     expect(get(promptSkills).map((item) => item.name)).toContain("导入的技能");
+  });
+
+  it("浏览器版挑 .zip：走 multipart，不在前端读成正文", async () => {
+    routes({ ...baseRoutes(), "POST /api/prompt-skills/import-archive": () => envelope(skill({ id: 8 })) });
+    const screen = await ready();
+    const input = screen.container.querySelector(".psk-file") as HTMLInputElement;
+    const zip = new File([new Uint8Array([80, 75, 3, 4])], "技能包.zip");
+    Object.defineProperty(input, "files", { value: [zip], configurable: true });
+    await fireEvent.change(input);
+    await vi.waitFor(() => expect(call("POST", "/api/prompt-skills/import-archive")).toBeTruthy());
+    const form = (call("POST", "/api/prompt-skills/import-archive")?.[1] as RequestInit).body as FormData;
+    expect(form).toBeInstanceOf(FormData);
+    expect((form.get("file") as File).name).toBe("技能包.zip");
+    expect(form.get("on_conflict")).toBe("ask");
   });
 
   it("内置那条只给恢复默认、不给删除；恢复之后编辑器里是出厂写法", async () => {
@@ -242,7 +279,7 @@ describe("版面口径", () => {
   });
 });
 
-describe("导入技能包", () => {
+describe("导入技能：一个入口", () => {
   const packageSkill = (over: Partial<PromptSkill> = {}) =>
     skill({
       id: 7,
@@ -269,28 +306,136 @@ describe("导入技能包", () => {
       ...over,
     });
 
-  it("桌面版：选文件夹后按路径交给后端，回来那条进清单并被选中", async () => {
+  it("桌面版：那颗「导入技能」走原生文件框，路径整条交给后端按路径扫", async () => {
     (globalThis as any).__tauri = { isTauri: true, pickDir: async () => "C:/skills/shop" };
-    routes({
-      ...baseRoutes(),
-      "POST /api/prompt-skills/import-package": () => packageSkill(),
-    });
+    routes({ ...baseRoutes(), "POST /api/prompt-skills/import-path": () => envelope(packageSkill()) });
     const screen = await ready();
-    await fireEvent.click(screen.getByRole("button", { name: "导入技能包" }));
-    await vi.waitFor(() => expect(call("POST", "/api/prompt-skills/import-package")).toBeTruthy());
-    expect(bodyOf(call("POST", "/api/prompt-skills/import-package")?.[1] as RequestInit)).toEqual({
-      path: "C:/skills/shop",
+    await fireEvent.click(screen.getByRole("button", { name: "导入技能" }));
+    await vi.waitFor(() => expect(call("POST", "/api/prompt-skills/import-path")).toBeTruthy());
+    expect(bodyOf(call("POST", "/api/prompt-skills/import-path")?.[1] as RequestInit)).toEqual({
+      paths: ["C:/skills/shop"], on_conflict: "ask",
     });
     await vi.waitFor(() => expect((screen.getByLabelText("技能名字") as HTMLInputElement).value).toBe("电商视觉包"));
     expect(get(promptSkills).map((item) => item.name)).toContain("电商视觉包");
+    // 一句回执把该说的都说了：进了哪条、参考资料带进几份、什么没进预算
+    await vi.waitFor(() =>
+      expect(get(toasts).map((item) => item.message)).toContain(
+        "已导入技能「电商视觉包」，带进 1 份参考资料，1 个文件没进预算"));
   });
 
-  it("浏览器版：目录上传只送能读成文字的文件，带相对路径", async () => {
-    (globalThis as any).__tauri = { isTauri: false, pickDir: async () => null };
+  it("桌面版不给「选文件夹」那颗：这里把目录直接拖进来", async () => {
+    (globalThis as any).__tauri = { isTauri: true, pickDir: async () => null };
+    routes(baseRoutes());
+    const screen = await ready();
+    expect(screen.queryByRole("button", { name: "选文件夹" })).toBeNull();
+    expect(screen.getByRole("button", { name: "导入技能" })).toBeTruthy();
+  });
+
+  it("拖进来的路径整批交给后端，被它拒的那条连原因一起报出来", async () => {
+    (globalThis as any).__tauri = { isTauri: true, pickDir: async () => null };
+    let drop!: (paths: string[], point: { x: number; y: number } | null) => Promise<void>;
+    vi.mocked(subscribeFileDrop).mockImplementation((_region, _hover, dropCb) => {
+      drop = dropCb;
+      return () => {};
+    });
     routes({
       ...baseRoutes(),
-      "POST /api/prompt-skills/import-package/upload": () => packageSkill(),
+      "POST /api/prompt-skills/import-path": () =>
+        envelope(packageSkill(), [{ path: "C:/技能包.7z", reason: "这种压缩包得先解压成文件夹再导" }]),
     });
+    const screen = await ready();
+    await drop(["C:/skills/shop.zip", "C:/技能包.7z"], null);
+    await vi.waitFor(() => expect(call("POST", "/api/prompt-skills/import-path")).toBeTruthy());
+    expect(bodyOf(call("POST", "/api/prompt-skills/import-path")?.[1] as RequestInit)).toEqual({
+      paths: ["C:/skills/shop.zip", "C:/技能包.7z"], on_conflict: "ask",
+    });
+    await vi.waitFor(() =>
+      expect(get(toasts).map((item) => item.message).join("")).toContain("1 个没进来："));
+    expect(get(toasts)[0].kind).toBe("error");
+    expect(screen.getByText("references/style.md")).toBeTruthy();
+  });
+
+  it("拖的东西像是技能才描红：.zip 点亮，一堆图片不点亮", async () => {
+    (globalThis as any).__tauri = { isTauri: true, pickDir: async () => null };
+    let hover!: (count: number, paths: string[]) => void;
+    vi.mocked(subscribeFileDrop).mockImplementation((_region, hoverCb, _dropCb) => {
+      hover = hoverCb;
+      return () => {};
+    });
+    routes(baseRoutes());
+    const screen = await ready();
+    const panel = screen.container.querySelector(".psk") as HTMLElement;
+    hover(1, ["C:/skills/shop.zip"]);
+    await vi.waitFor(() => expect(panel.className).toContain("is-dropping"));
+    hover(2, ["C:/图/一张.png", "C:/图/两张.jpg"]);
+    await vi.waitFor(() => expect(panel.className).not.toContain("is-dropping"));
+    hover(0, []);
+    expect(call("POST", "/api/prompt-skills/import-path")).toBeFalsy();
+  });
+
+  it("撞名时先问：问句挂着的时候库里一个字都没写", async () => {
+    (globalThis as any).__tauri = { isTauri: true, pickDir: async () => "C:/skills/shop" };
+    routes({
+      ...baseRoutes(),
+      "POST /api/prompt-skills/import-path": (init?: RequestInit) =>
+        bodyOf(init).on_conflict === "ask" ? { imported: [], conflicts: CLASH, skipped: [] } : envelope(packageSkill()),
+    });
+    const screen = await ready();
+    await fireEvent.click(screen.getByRole("button", { name: "导入技能" }));
+    const bar = await screen.findByRole("group", { name: "已有同名技能" });
+    expect(bar.textContent).toContain("已经有一条「电商视觉包」");
+    expect(bar.textContent).toContain("就是这一份");
+    expect(get(promptSkills).map((item) => item.id)).toEqual([1, 2]);
+    expect(get(toasts)).toHaveLength(0);
+    // 「先不动」只撤问句，不再打一次接口
+    await fireEvent.click(screen.getByRole("button", { name: "先不动" }));
+    await vi.waitFor(() => expect(screen.queryByRole("group", { name: "已有同名技能" })).toBeNull());
+    expect(http.mock.calls.filter((entry) => keyOf(entry) === "POST /api/prompt-skills/import-path")).toHaveLength(1);
+  });
+
+  it("点「替换原来的」原样重发，编辑器里换成新写法", async () => {
+    (globalThis as any).__tauri = { isTauri: true, pickDir: async () => "C:/skills/shop" };
+    routes({
+      ...baseRoutes(),
+      "POST /api/prompt-skills/import-path": (init?: RequestInit) =>
+        bodyOf(init).on_conflict === "ask"
+          ? { imported: [], conflicts: CLASH, skipped: [] }
+          : envelope(packageSkill({ instruction: "改过的写法" })),
+    });
+    const screen = await ready();
+    await fireEvent.click(screen.getByRole("button", { name: "导入技能" }));
+    await screen.findByRole("group", { name: "已有同名技能" });
+    await fireEvent.click(screen.getByRole("button", { name: "替换原来的" }));
+    await vi.waitFor(() =>
+      expect((screen.getByLabelText("技能写法") as HTMLTextAreaElement).value).toBe("改过的写法"));
+    // 重发的是原样那一次，只换了「怎么办」那一参
+    expect(bodyOf(lastCall("POST", "/api/prompt-skills/import-path")?.[1] as RequestInit)).toEqual({
+      paths: ["C:/skills/shop"], on_conflict: "replace",
+    });
+    expect(get(promptSkills).map((item) => item.id)).toEqual([1, 2, 7]);
+  });
+
+  it("点「另存为新的」按新条目落库，不动库里那条", async () => {
+    (globalThis as any).__tauri = { isTauri: true, pickDir: async () => "C:/skills/shop" };
+    routes({
+      ...baseRoutes(),
+      "POST /api/prompt-skills/import-path": (init?: RequestInit) =>
+        bodyOf(init).on_conflict === "ask"
+          ? { imported: [], conflicts: CLASH, skipped: [] }
+          : envelope(packageSkill({ id: 11, instruction: "另存的一份" })),
+    });
+    const screen = await ready();
+    await fireEvent.click(screen.getByRole("button", { name: "导入技能" }));
+    await screen.findByRole("group", { name: "已有同名技能" });
+    await fireEvent.click(screen.getByRole("button", { name: "另存为新的" }));
+    await vi.waitFor(() => expect(get(promptSkills).map((item) => item.id)).toEqual([1, 2, 11]));
+    expect(bodyOf(lastCall("POST", "/api/prompt-skills/import-path")?.[1] as RequestInit).on_conflict).toBe("new");
+    expect(get(promptSkills).find((item) => item.id === 11)?.instruction).toBe("另存的一份");
+  });
+
+  it("浏览器版「选文件夹」：只送能读成文字的文件，带相对路径", async () => {
+    (globalThis as any).__tauri = { isTauri: false, pickDir: async () => null };
+    routes({ ...baseRoutes(), "POST /api/prompt-skills/import-package/upload": () => envelope(packageSkill()) });
     const screen = await ready();
     const inputs = screen.container.querySelectorAll(".psk-file");
     const dirInput = inputs[inputs.length - 1] as HTMLInputElement;
@@ -301,11 +446,12 @@ describe("导入技能包", () => {
     Object.defineProperty(png, "webkitRelativePath", { value: "shop/assets/palette.png" });
     Object.defineProperty(png, "text", { value: async () => "binary" });
     Object.defineProperty(dirInput, "files", { value: [md, png], configurable: true });
-    await fireEvent.click(screen.getByRole("button", { name: "导入技能包" }));
+    await fireEvent.click(screen.getByRole("button", { name: "选文件夹" }));
     await fireEvent.change(dirInput);
     await vi.waitFor(() => expect(call("POST", "/api/prompt-skills/import-package/upload")).toBeTruthy());
     const sent = bodyOf(call("POST", "/api/prompt-skills/import-package/upload")?.[1] as RequestInit);
     expect(sent.root).toBe("shop");
+    expect(sent.on_conflict).toBe("ask");
     // 二进制发过去就是乱码，前端先筛掉
     expect(sent.files).toEqual([{ path: "shop/SKILL.md", content: "# 电商视觉包" }]);
   });

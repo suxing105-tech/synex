@@ -36,7 +36,9 @@
 ### 提示词优化技能
 - 在提示词框左键点那颗 ✨ 就能把刚写下的提示词**按一条技能重写一遍**，右键可以换一条技能；技能清单从**再次创作**弹窗里那颗 ✨ 的**右键菜单**进（菜单最后一项是「技能设置…」）
 - 技能就是一条**可编辑的写法**：原样交给模型，模型只回改好的提示词正文。内置两条（图片 / 视频各一条），能改能恢复默认、删不掉
-- **导入现成的技能**：可以导一份单个的 `SKILL.md`，也可以导**一整个技能包目录**——就是 Codex / Claude 那种技能的样子：`SKILL.md` 加 `references/`、`scripts/`、`assets/`
+- **导入现成的技能**：只有**一颗「导入技能」**，认 `SKILL.md` / `.md` / `.zip`；一整个技能包目录**直接拖进那个弹窗**就行。挑中 `SKILL.md` 会连着它旁边的 `references/`、`scripts/`、`assets/` 一起收，不会只留下孤零零一份写法（那等于把作者给的参考资料悄悄丢掉）
+  - 重名或同一来源再导一次会**先问**：换掉原来的还是另存一条新的。换内容只换内容——id、勾了哪一族、输出语言、默认指针一律不动，不用每次重导都重新勾一遍「只勾图片 + 英文」；一次导多个来源时先把冲突全报完再动手，不会只导一半
+  - 压缩包只认 `.zip`（不落地解压，读进内存就完），`.7z` / `.rar` 这些会直说要先解压
   - 包的 frontmatter 会认：`name` 当技能名、`description` 当一句话说明，`license` / `allowed-tools` / `version` 收进包信息里
   - **SKILL.md 正文是这条技能的写法**；附属的文本文件（references、scripts 等）会作为**参考资料**一起发给模型，总预算约 2 万字，**正文里点名过的文件优先**，装不下的会被舍弃并在弹窗里逐个标出来
   - **脚本不会执行**：这条链路没有工具调用循环，`scripts/` 里的代码只当参考文本发给模型
@@ -214,9 +216,11 @@ cd frontend && pnpm test -- --run
 | GET | `/api/clone/sources/{id}` | 这张成图当初用的参考图（库里记的那份优先，其次读成图自己的 workflow + hash 核对） |
 | POST | `/api/clone/generate` | 用这张图的配方再生成一张（进度走 WS 的 `clone_progress`，产物就地认领） |
 | POST | `/api/prompt-skills` · PATCH · DELETE | 提示词优化技能：增删改 |
-| POST | `/api/prompt-skills/import` | 导入单个 SKILL.md（剥 frontmatter，正文当写法） |
-| POST | `/api/prompt-skills/import-package` | 导入技能包（桌面版：给一个文件夹路径，后端扫盘） |
-| POST | `/api/prompt-skills/import-package/upload` | 导入技能包（浏览器版：上传文件内容） |
+| POST | `/api/prompt-skills/import` | 导入技能（浏览器版：一份 md 原文 + `on_conflict`） |
+| POST | `/api/prompt-skills/import-path` | 导入技能（桌面版那一个入口：`paths` 1~20 个，md / .zip / 目录混着给） |
+| POST | `/api/prompt-skills/import-archive` | 导入技能（浏览器版上传 .zip，multipart，不落临时文件） |
+| POST | `/api/prompt-skills/import-package/upload` | 导入技能（浏览器版选文件夹：上传读好的文本内容） |
+| 以上四条 | 同一个回执 | `{imported, conflicts, skipped}`：撞名先问，`on_conflict=replace/new` 时原样重发 |
 | GET | `/api/prompt-skills/{id}/package` | 这条技能背后的包：文件清单与元数据 |
 | POST | `/api/prompt-skills/{id}/optimize` | 按这条技能优化一次提示词 |
 | WS | `/ws/events` | 实时事件 |

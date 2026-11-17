@@ -5,7 +5,7 @@ SafeValidationRoute 沿用反推那一条：校验失败时 Pydantic 默认会�
 """
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, File, Form, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
@@ -46,13 +46,17 @@ class ImportInput(BaseModel):
     filename: str = Field(default="", max_length=400)
     # 给的是「读到的原文」而不是「截断后的正文」：截断规则只有一个真源，在 service 里。
     content: str = Field(min_length=1, max_length=2_000_000)
+    # 撞名了怎么办：ask=先问（默认）、replace=换掉原来那条、new=另存一条。
+    # 口径在 service 的 CONFLICT_MODES，这里不重复校验，免得两处说法不一致。
+    on_conflict: str = "ask"
 
 
-class PackageImportInput(BaseModel):
-    """桌面版导入：用户挑了一个文件夹，后端按路径扫盘。"""
+class PathImportInput(BaseModel):
+    """导入那一个入口：挑中或拖进来的路径，md、.zip、一整个目录都从这儿走。"""
 
     model_config = ConfigDict(str_strip_whitespace=True)
-    path: str = Field(min_length=1, max_length=2000)
+    paths: list[str] = Field(min_length=1, max_length=service.MAX_IMPORT_SOURCES)
+    on_conflict: str = "ask"
 
 
 class PackageFileInput(BaseModel):
@@ -61,11 +65,12 @@ class PackageFileInput(BaseModel):
 
 
 class PackageUploadInput(BaseModel):
-    """浏览器开发模式导入：前端把读到的文件内容传上来。"""
+    """浏览器开发模式选文件夹：前端把读到的文件内容传上来。"""
 
     model_config = ConfigDict(str_strip_whitespace=True)
     root: str = Field(default="", max_length=200)
     files: list[PackageFileInput] = Field(default_factory=list, max_length=500)
+    on_conflict: str = "ask"
 
 
 class SettingsInput(BaseModel):
@@ -99,19 +104,33 @@ def create_skill(payload: SkillInput):
 
 @router.post("/prompt-skills/import")
 def import_skill(payload: ImportInput):
-    return service.import_skill(payload.content, payload.filename)
+    """浏览器版的一份 md 原文。返回 imported / conflicts / skipped 四类导入结果共用的形状。"""
+    return service.import_from_markdown(payload.content, payload.filename,
+                                        on_conflict=payload.on_conflict)
 
 
-@router.post("/prompt-skills/import-package")
-async def import_package(payload: PackageImportInput):
-    # 扫盘是阻塞 IO：放线程池里，别把事件循环占住。
-    return await run_in_threadpool(service.import_package_from_path, payload.path)
+@router.post("/prompt-skills/import-path")
+async def import_path(payload: PathImportInput):
+    """桌面版那一个「导入技能」入口：md、.zip、一整个技能包文件夹都收在这儿。
+
+    扫盘、开压缩包都是阻塞 IO：放线程池里，别把事件循环占住。
+    """
+    return await run_in_threadpool(service.import_from_paths, payload.paths, payload.on_conflict)
+
+
+@router.post("/prompt-skills/import-archive")
+async def import_archive(file: UploadFile = File(...), on_conflict: str = Form("ask")):
+    """浏览器版没有磁盘路径可给，压缩包只能整份上传；后端在内存里读，不解压到盘上。"""
+    blob = await file.read()
+    return await run_in_threadpool(service.import_from_archive_bytes, blob,
+                                   file.filename or "技能包.zip", on_conflict)
 
 
 @router.post("/prompt-skills/import-package/upload")
 def import_package_upload(payload: PackageUploadInput):
-    return service.import_package_from_upload(payload.root,
-                                               [item.model_dump() for item in payload.files])
+    return service.import_from_upload_dir(payload.root,
+                                          [item.model_dump() for item in payload.files],
+                                          payload.on_conflict)
 
 
 @router.get("/prompt-skills/{skill_id}/package")

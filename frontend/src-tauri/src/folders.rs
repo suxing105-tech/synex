@@ -22,14 +22,33 @@ pub async fn select_text_paths(window: WebviewWindow, directory: bool) -> Result
             .into_os_string().into_string().map_err(|_| "无法识别路径".to_string())).collect()
 }
 
-/// 选一个技能包文件夹（Codex 那种一整个目录：SKILL.md + references/ + scripts/）。
+/// 「导入技能」那一个入口认的后缀。
 ///
-/// 只回路径，不在 Rust 这边读文件：扫盘、解析、落盘都是后端的事，
+/// 一整个文件夹不进这里：原生文件框挑不了文件夹，而技能包九成情况下点进目录
+/// 选那颗 SKILL.md 就够了（后端会连着整包一起收）。真要整目录，拖进来。
+const SKILL_SOURCE_FILTERS: &[&str] = &["md", "markdown", "txt", "zip"];
+
+/// 后缀在不在名单里。这里只做最粗的一道拦一下（原生框能输 `*.*` 绕过筛子），
+/// 是不是技能包、压缩包能不能读，判断在后端那一份，不在这里再写一遍。
+fn accepts_skill_source(path: &str) -> bool {
+    let name = path.trim().replace('\\', "/");
+    let name = name.rsplit('/').next().unwrap_or("");
+    match name.rfind('.') {
+        Some(dot) => SKILL_SOURCE_FILTERS
+            .iter()
+            .any(|ext| name[dot + 1..].eq_ignore_ascii_case(ext)),
+        None => false,
+    }
+}
+
+/// 导入技能那一个入口：挑一份 md 或一个 .zip，只回路径。
+///
+/// 不在 Rust 这边读文件：扫盘、解压、解析、落盘都是后端的事，
 /// 这里多读一遍等于把同一份内容搬两遍。
 #[tauri::command]
-pub async fn select_skill_package_dir(window: WebviewWindow) -> Result<Option<String>, String> {
+pub async fn select_skill_source(window: WebviewWindow) -> Result<Option<String>, String> {
     if window.label() != "main" {
-        return Err("请从主窗口选择技能包".into());
+        return Err("请从主窗口选择技能文件".into());
     }
     let _guard = PICKER.try_lock().map_err(|_| "文件选择窗口已打开")?;
     let (send, receive) = tokio::sync::oneshot::channel();
@@ -37,21 +56,28 @@ pub async fn select_skill_package_dir(window: WebviewWindow) -> Result<Option<St
         .app_handle()
         .dialog()
         .file()
-        .set_title("选择技能包文件夹")
+        .set_title("选择技能文件（SKILL.md / .md / .zip）")
         .set_parent(&window)
-        .pick_folder(move |folder| {
-            let _ = send.send(folder);
+        .add_filter("技能文件", SKILL_SOURCE_FILTERS)
+        .pick_files(move |files| {
+            // 原生框本来就只能单选；多选走的是拖进来的那条路（一次最多 20 个来源）
+            let _ = send.send(files.and_then(|list| list.into_iter().next()));
         });
     let result = receive
         .await
         .map_err(|_| "文件选择窗口未能返回结果，请重试")?;
     result
         .map(|file| {
-            file.into_path()
+            let path = file
+                .into_path()
                 .map_err(|_| "请选择本地路径".to_string())?
                 .into_os_string()
                 .into_string()
-                .map_err(|_| "无法识别路径".to_string())
+                .map_err(|_| "无法识别路径".to_string())?;
+            if !accepts_skill_source(&path) {
+                return Err("只能选 .md 或 .zip：一整个文件夹直接拖进这个窗口就行".to_string());
+            }
+            Ok(path)
         })
         .transpose()
 }
@@ -123,6 +149,20 @@ mod tests {
             Some(existing)
         );
         assert!(initial_directory(Some(".".into()), Some("".into())).is_none());
+    }
+    #[test]
+    fn skill_source_only_takes_md_and_zip_suffixes() {
+        assert!(accepts_skill_source("C:\\skills\\电商\\SKILL.md"));
+        assert!(accepts_skill_source("/tmp/pack/SKILL.MD"));
+        assert!(accepts_skill_source("C:\\a\\技能包.zip"));
+        assert!(accepts_skill_source("note.markdown"));
+        assert!(accepts_skill_source("plain.txt"));
+        // 后缀以外的东西不许进来：压缩包只认 .zip，文件夹走拖拽
+        assert!(!accepts_skill_source("C:\\a\\技能包.7z"));
+        assert!(!accepts_skill_source("C:\\a\\技能包.rar"));
+        assert!(!accepts_skill_source("C:\\a\\SKILL"));
+        assert!(!accepts_skill_source(""));
+        assert!(!accepts_skill_source("archive."));
     }
     #[test]
     fn rejects_a_file_as_initial_directory() {

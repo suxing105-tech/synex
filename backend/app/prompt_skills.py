@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -16,8 +17,10 @@ from pathlib import Path, PurePosixPath
 from fastapi import HTTPException
 from starlette.concurrency import run_in_threadpool
 
-from . import db, reverse_prompts, skill_packages
+from . import bundled_skills, db, reverse_prompts, skill_packages
 from .config import skills_dir
+
+logger = logging.getLogger(__name__)
 
 KINDS = ("image", "video")
 KIND_WORDS = {"image": "图片", "video": "视频"}
@@ -37,6 +40,10 @@ MAX_MARKDOWN_BYTES = 2_000_000
 # 浏览器上传压缩包的字节上限。真正进门的闸在 skill_packages 那四条总量限制上，
 # 这一条只是别让一个几百 MB 的文件先进内存。
 MAX_ARCHIVE_BYTES = 64_000_000
+# 从文件导入时没人写说明就落这一句。内置认领同名技能时只认这一句：换成内置那句说明，
+# 用户自己写过的说明一个字不动。
+IMPORT_NOTE_PLACEHOLDER = "从文件导入"
+
 MARKDOWN_SUFFIXES = frozenset({".md", ".markdown", ".txt"})
 OTHER_ARCHIVE_HINT = "压缩包只支持 .zip：先把它解压出来，再挑里面的 SKILL.md 或技能包文件夹"
 SOURCE_HINT = "只认 .md/.markdown/.txt 和 .zip，或者一整个技能包文件夹"
@@ -91,6 +98,25 @@ BUILTINS: tuple[dict, ...] = (
         "kinds": ("video",),
         "instruction": DEFAULT_VIDEO_INSTRUCTION,
     },
+    {
+        # 这两条「按模型改写」的内置写法来自 bundled_skills，随包走。谁都不是默认技能：
+        # 默认还是通用那两条，按模型挑是哪一族自己用的事。
+        "builtin_key": "qwen_image",
+        "name": "Qwen-Image-2.1 优化",
+        "note": "按 Qwen-Image-2.1 的官方改写器来：先判文生图还是改图，画幅与技术参数不进正文",
+        "kinds": ("image",),
+        "instruction": bundled_skills.QWEN_IMAGE_INSTRUCTION,
+    },
+    {
+        "builtin_key": "h3_image",
+        "name": "H3-Image 优化",
+        "note": "MiniMax-H3-Image 专用：无参考图走完整画面描述，带参考图走 Picture/Subject 编辑协议",
+        "kinds": ("image",),
+        "instruction": bundled_skills.H3_IMAGE_INSTRUCTION,
+        # 这条的正文末尾写着「下面附的是官方两份提示词指南原文」，两份指南因此跟着一起装：
+        # 只带正文不带资料，等于让模型以为后面有资料而它什么也没看见。
+        "package": bundled_skills.h3_package_payload,
+    },
 )
 
 # 引用标记是这个弹窗的硬通货：@图片N 与 <Picture N> 都指「第 N 格参考」。模型一旦把它们
@@ -132,17 +158,80 @@ def initialize(conn):
     if "package_refs" not in columns:
         conn.execute("ALTER TABLE prompt_skills ADD COLUMN package_refs TEXT")
     conn.execute("INSERT OR IGNORE INTO prompt_skill_settings(id) VALUES(1)")
-    # 按 builtin_key 补齐：老库升级、以及内置技能被改坏之外没有别的路径能造出内置技能。
-    # 已经在的一律不动——用户改过的写法比我们的默认值值钱。
+    # 一条一条装：已有 builtin_key 的原样不动，库里早有一条同名的先认领，缺的才新插。
     for index, seed in enumerate(BUILTINS):
-        if conn.execute("SELECT id FROM prompt_skills WHERE builtin_key=?", (seed["builtin_key"],)).fetchone():
-            continue
-        conn.execute(
+        _seed_builtin(conn, seed, index)
+
+
+def _seed_builtin(conn, seed, index):
+    """把一条内置技能装进库。已经在的一律不动内容——用户改过的写法比我们的默认值值钱。"""
+    row = conn.execute("SELECT * FROM prompt_skills WHERE builtin_key=?",
+                       (seed["builtin_key"],)).fetchone()
+    inserted = False
+    if row is None:
+        same_name = conn.execute(
+            "SELECT * FROM prompt_skills WHERE builtin_key IS NULL AND name=?", (seed["name"],)).fetchall()
+        if len(same_name) > 1:
+            # 同名有好几条时不猜哪一条才是：这一趟不装这条内置，也不顺手再插一条新的
+            logger.warning("内置技能 %s 没装：库里有 %d 条都叫「%s」，不替人挑哪一条是要认的那条",
+                           seed["builtin_key"], len(same_name), seed["name"])
+            return
+        if same_name:
+            row = _adopt_named_row(conn, same_name[0], seed)
+    if row is None:
+        cur = conn.execute(
             "INSERT INTO prompt_skills(name,note,kinds,instruction,language,with_refs,builtin_key,sort)"
             " VALUES(?,?,?,?,?,?,?,?)",
             (seed["name"], seed["note"], ",".join(seed["kinds"]), seed["instruction"], "auto", 1,
              seed["builtin_key"], (index + 1) * 10),
         )
+        row = conn.execute("SELECT * FROM prompt_skills WHERE id=?", (cur.lastrowid,)).fetchone()
+        inserted = True
+    # 内置自带的技能包只在两种时候补：这一趟刚插的那条，以及清单已写、资料块还空着的半条
+    # （装到一半断电靠下一趟补齐）。人自己写的一条普通技能不许被挂上一万九千多字资料——
+    # 那是每次优化都要多送出去的钱，也是他没要的东西。
+    if seed.get("package") and (inserted or _is_half_written_package(row)):
+        _seed_package(conn, seed, int(row["id"]))
+
+
+def _is_half_written_package(row):
+    """一条技能包记录只写了一半：清单已经写进去了，资料块还是空的。"""
+    return bool(_row_get(row, "package_meta", "")) and not _row_get(row, "package_refs", "")
+
+
+def _adopt_named_row(conn, row, seed):
+    """库里已经有一条同名技能：认下它当这条内置，不再造一条重名的。
+
+    为什么认领而不是另插一条：装完清单上出现「H3-Image 优化」和「H3-Image 优化 (2)」，
+    没人知道该用哪一条，而他那一份本来就是内置这一份的来源。
+    代价写在明处：认领之后这条不能删，只能改写法，或者恢复默认写法。
+    """
+    # 只有还挂着导入时那句占位说明才换成内置这一句；他自己写过的说明一个字不动。
+    upgrade_note = str(row["note"] or "") == IMPORT_NOTE_PLACEHOLDER
+    conn.execute("UPDATE prompt_skills SET builtin_key=?" + (",note=?" if upgrade_note else "")
+                 + " WHERE id=?",
+                 ((seed["builtin_key"], seed["note"], row["id"]) if upgrade_note
+                  else (seed["builtin_key"], row["id"])))
+    return conn.execute("SELECT * FROM prompt_skills WHERE id=?", (row["id"],)).fetchone()
+
+
+def _seed_package(conn, seed, skill_id):
+    """给一条内置技能补上自带的技能包：资料与清单进库，包不落盘。
+
+    和导入一个技能包只差一处——没有 package_dir。随包的东西在安装包里，不该在安装盘上
+    再长一份能被人改掉的副本；界面上那颗「在文件夹中显示」因此不出现。
+    """
+    payload = seed["package"]()
+    manifest = _package_manifest(payload["entries"], payload["files_meta"], "SKILL.md")
+    meta = {
+        "root": payload["root"], "source_dir": "", "description": "", "license": "",
+        "allowed_tools": "", "version": "", "extra_fields": {},
+        "files": manifest, "refs_chars": payload["refs_chars"],
+        "dropped": [item["path"] for item in manifest
+                    if item["role"] == "参考" and not item["included"]],
+    }
+    conn.execute("UPDATE prompt_skills SET source='package',package_meta=?,package_refs=?"
+                 " WHERE id=?", (json.dumps(meta, ensure_ascii=False), payload["block"], skill_id))
 
 
 def builtin_seed(builtin_key):
@@ -279,6 +368,8 @@ def restore_default(skill_id: int):
     seed = builtin_seed(row["builtin_key"]) if row["builtin_key"] else None
     if seed is None:
         raise HTTPException(409, "只有内置技能有默认写法可恢复")
+    # 只恢复「写法」，技能包里的资料不动：那要么是我们随包装的那一份，要么是人自己导进来的
+    # 那一份，都不属于「写法被改坏了」这一件事。要把资料换回去，重新导一次那个包。
     with db.transaction() as tx:
         tx.execute(
             "UPDATE prompt_skills SET name=?,note=?,kinds=?,instruction=?,language='auto',with_refs=1,"
@@ -364,7 +455,7 @@ def _md_candidate(content: str, filename: str = "", source_dir: str = "") -> dic
         "label": str(filename or parsed["name"]),
         "source_dir": source_dir,
         "name": parsed["name"],
-        "note": "从文件导入",
+        "note": IMPORT_NOTE_PLACEHOLDER,
         "instruction": parsed["instruction"],
     }
 

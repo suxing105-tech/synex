@@ -13,6 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from app import bundled_skills
 from app import prompt_skills as service
 from app import reverse_prompts
 from app import skill_packages
@@ -57,14 +58,19 @@ def builtin_id(client, key):
 # ---------- 内置技能：开箱可用，改得动，删不掉 ----------
 
 
-def test_new_db_gets_two_builtin_skills(client):
+def test_new_db_gets_four_builtin_skills(client):
     rows = client.get("/api/prompt-skills").json()
-    assert [row["builtin_key"] for row in rows] == ["image_default", "video_default"]
-    image, video = rows
+    assert [row["builtin_key"] for row in rows] == [
+        "image_default", "video_default", "qwen_image", "h3_image"]
+    image, video, qwen, h3 = rows
     assert image["kinds"] == ["image"] and image["with_refs"] is True
     assert video["kinds"] == ["video"]
     # 内置技能的写法得有真正的正事，否则等于给了条空技能
     assert "生图" in image["instruction"] and "镜头" in video["instruction"]
+    # 按模型那两条也各有自己的正事：一条讲先判模式，一条讲带图时的编辑协议
+    assert "文生图" in qwen["instruction"] and "负面提示词" in qwen["instruction"]
+    assert "Subject" in h3["instruction"]
+    # 默认指针还是空的：出厂默认是通用那两条，按模型挑是使用时的选择，不是出厂选择
     assert client.get("/api/prompt-skill-settings").json() == {"default_image_skill": None,
                                                               "default_video_skill": None}
 
@@ -76,8 +82,9 @@ def test_initialize_heals_missing_seed_and_keeps_user_edits(init_db, client):
     init_db.main().execute("DELETE FROM prompt_skills WHERE builtin_key='image_default'")
     service.initialize(init_db.main())
     rows = client.get("/api/prompt-skills").json()
-    # 补齐按 builtin_key 回到自己原来那一档，不 appended 到末尾：内置两族的先后顺序是定的
-    assert [row["builtin_key"] for row in rows] == ["image_default", "video_default"]
+    # 补齐按 builtin_key 回到自己原来那一档，不 appended 到末尾：内置那几条的先后顺序是定的
+    assert [row["builtin_key"] for row in rows] == [
+        "image_default", "video_default", "qwen_image", "h3_image"]
     healed = next(row for row in rows if row["builtin_key"] == "image_default")
     assert healed["instruction"] == service.DEFAULT_IMAGE_INSTRUCTION
     edited = next(row for row in rows if row["builtin_key"] == "video_default")
@@ -785,3 +792,119 @@ def test_builtin_skills_are_never_a_replacement_target(client, tmp_path):
 def test_unknown_conflict_mode_is_refused(client, tmp_path):
     root = make_package(tmp_path / "pack")
     assert import_paths(client, root, on_conflict="覆盖").status_code == 422
+
+
+# ---------- 内置的两条「按模型改写」技能：写法随包走，H3 那份还带着官方指南 ----------
+
+
+def seed_of(key):
+    return next(seed for seed in service.BUILTINS if seed["builtin_key"] == key)
+
+
+def builtin_row(client, key):
+    return next(item for item in client.get("/api/prompt-skills").json() if item["builtin_key"] == key)
+
+
+def test_builtin_qwen_is_a_plain_skill_with_no_package(client):
+    row = builtin_row(client, "qwen_image")
+    assert row["source"] == "manual" and row["package"] is None and row["package_dir"] is None
+
+
+def test_builtin_h3_ships_the_reference_guides_it_promises(client):
+    row = builtin_row(client, "h3_image")
+    # 正文那一节写着「下面附的是 MiniMax 官方两份提示词指南原文」：资料就得真的跟着走。
+    # 只带正文不带资料，模型以为后面有东西、却什么也没看见，这种缺法在界面上看不出来。
+    assert "官方两份提示词指南" in row["instruction"]
+    assert row["source"] == "package"
+    # 随包的东西在安装包里，不在数据目录里再长一份能被人改掉的副本
+    assert row["package_dir"] is None
+    files = row["package"]["files"]
+    assert [item["path"] for item in files] == ["SKILL.md", "references/edit-en.txt", "references/t2i-en.txt"]
+    assert [item["role"] for item in files] == ["写法", "参考", "参考"]
+    assert [item["included"] for item in files] == [False, True, True]
+    assert row["package"]["dropped"] == []
+
+
+def test_builtin_h3_references_are_all_there_and_none_is_cut():
+    payload = bundled_skills.h3_package_payload()
+    # 一个字都没被参考预算挤掉：挤掉就是界面上少一份资料、模型少读一截，很难查
+    assert payload["refs_chars"] == sum(len(text) for _, text in bundled_skills.H3_PACKAGE_REFS)
+    refs = [item for item in payload["files_meta"] if item["path"] != "SKILL.md"]
+    assert len(refs) == 2 and all(item["included"] and not item["truncated"] for item in refs)
+
+
+def test_builtin_h3_row_is_the_shipped_text_byte_for_byte(init_db, client):
+    row = init_db.main().execute(
+        "SELECT instruction,package_refs FROM prompt_skills WHERE builtin_key='h3_image'").fetchone()
+    assert row["instruction"] == bundled_skills.H3_IMAGE_INSTRUCTION
+    assert row["package_refs"] == bundled_skills.h3_package_payload()["block"]
+
+
+def test_builtin_h3_references_reach_the_model_after_the_body(init_db, client):
+    sid = builtin_id(client, "h3_image")
+    # 取库里的整行：public() 那份是给界面的，不带资料块正文
+    row = init_db.main().execute("SELECT * FROM prompt_skills WHERE id=?", (sid,)).fetchone()
+    prompt = service.system_prompt(row)
+    assert "--- references/edit-en.txt ---" in prompt and "--- references/t2i-en.txt ---" in prompt
+    # 顺序：正文在前、资料在中、谁都不许违反的硬规矩垫底
+    assert prompt.index("MiniMax") < prompt.index("--- references/edit-en.txt ---")
+    assert prompt.index("只返回优化后的提示词正文") > prompt.index("--- references/t2i-en.txt ---")
+
+
+def test_a_same_name_skill_is_adopted_instead_of_duplicated(init_db, client):
+    conn = init_db.main()
+    # 还原成「装内置之前」的库：只有他自己那一条同名的，身上没有 builtin_key
+    conn.execute("DELETE FROM prompt_skills WHERE builtin_key='qwen_image'")
+    mine = client.post("/api/prompt-skills", json={
+        "name": "Qwen-Image-2.1 优化", "note": service.IMPORT_NOTE_PLACEHOLDER,
+        "instruction": "我自己那份 Qwen 写法", "kinds": ["image"]}).json()
+    service.initialize(conn)
+    hits = [item for item in client.get("/api/prompt-skills").json() if item["name"] == "Qwen-Image-2.1 优化"]
+    assert [item["id"] for item in hits] == [mine["id"]], "认领那一条，不再造一条重名的"
+    assert hits[0]["builtin_key"] == "qwen_image"
+    assert hits[0]["instruction"] == "我自己那份 Qwen 写法", "认领只挂身份，不改内容"
+    # 还挂着导入时那句占位说明的，换成内置这一句
+    assert hits[0]["note"] == seed_of("qwen_image")["note"]
+    assert client.delete("/api/prompt-skills/" + str(mine["id"])).status_code == 409
+
+
+def test_an_adopted_skill_keeps_its_own_note_and_gets_no_references(init_db, client):
+    conn = init_db.main()
+    conn.execute("DELETE FROM prompt_skills WHERE builtin_key='h3_image'")
+    mine = client.post("/api/prompt-skills", json={
+        "name": "H3-Image 优化", "note": "我自己写的说明", "instruction": "我自己那份 H3 写法"}).json()
+    service.initialize(conn)
+    row = next(item for item in client.get("/api/prompt-skills").json() if item["id"] == mine["id"])
+    assert row["builtin_key"] == "h3_image"
+    assert row["note"] == "我自己写的说明", "他自己写过的说明一个字不动"
+    # 他那条本来不是技能包：内置的一万九千多字资料不许悄悄挂上去，那是每次优化都要多送的钱
+    assert row["source"] == "manual" and row["package"] is None
+
+
+def test_two_skills_with_the_same_name_are_left_alone(init_db, client):
+    conn = init_db.main()
+    conn.execute("DELETE FROM prompt_skills WHERE builtin_key='h3_image'")
+    first = client.post("/api/prompt-skills", json={"name": "H3-Image 优化", "instruction": "甲"}).json()
+    second = client.post("/api/prompt-skills", json={"name": "H3-Image 优化", "instruction": "乙"}).json()
+    service.initialize(conn)
+    names = [item for item in client.get("/api/prompt-skills").json() if item["name"] == "H3-Image 优化"]
+    assert [item["id"] for item in names] == [first["id"], second["id"]]
+    assert all(item["builtin_key"] is None for item in names), "同名有好几条时不替人挑哪条才是"
+
+
+def test_a_half_written_builtin_package_gets_its_refs_back(init_db, client):
+    skill_id = builtin_id(client, "h3_image")
+    # 装到一半断电的样子：清单写进去了，资料块还是空的
+    init_db.main().execute("UPDATE prompt_skills SET package_refs=NULL WHERE id=?", (skill_id,))
+    service.initialize(init_db.main())
+    assert init_db.main().execute(
+        "SELECT package_refs FROM prompt_skills WHERE id=?", (skill_id,)).fetchone()[0]
+
+
+def test_restoring_a_builtin_keeps_its_references(client, init_db):
+    skill_id = builtin_id(client, "h3_image")
+    client.patch("/api/prompt-skills/" + str(skill_id), json={"instruction": "换成我自己的短写法"})
+    restored = client.post("/api/prompt-skills/" + str(skill_id) + "/restore-default").json()
+    assert restored["instruction"] == bundled_skills.H3_IMAGE_INSTRUCTION
+    refs = init_db.main().execute("SELECT package_refs FROM prompt_skills WHERE id=?", (skill_id,)).fetchone()[0]
+    assert refs and "--- references/t2i-en.txt ---" in refs, "恢复的是写法，资料一个字不动"

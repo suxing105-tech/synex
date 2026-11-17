@@ -2372,16 +2372,16 @@ it('图片工作流挂图片卡时不摆这排按钮，哪怕库里躺着三条�
 });
 
 
-// ---------- 「切换工作流」清单：音频那三条收成一条「闪寻音频」 ----------
+// ---------- 「切换工作流」清单：音频那三条收成一条「闪寻音频生成」 ----------
 
-it("清单里音频只占一行「闪寻音频」：三种出声方式由弹窗顶上那排按钮负责", async () => {
+it("清单里音频只占一行「闪寻音频生成」：三种出声方式由弹窗顶上那排按钮负责", async () => {
   routes(modeRoutes());
   const screen = await ready({ image: AUDIO_CARD });
   await fireEvent.click(screen.getByRole('button', { name: '工作流' }));
   await screen.findByRole('menu', { name: '工作流' });
   const rows = [...document.querySelectorAll('.cm-wf-row > .cm-wf')];
   // 音频卡这一屏只有音频族：三条出声方式折成一行，不是三行流水账
-  expect(rows.map((r) => r.querySelector('.cm-wf-name')?.textContent)).toEqual(['闪寻音频']);
+  expect(rows.map((r) => r.querySelector('.cm-wf-name')?.textContent)).toEqual(['闪寻音频生成']);
   // 正在用参考音色 ⇒ 这一行就是「当前」
   expect(rows[0].querySelector('.cm-wf-tag')?.textContent).toBe('当前');
   expect(rows[0].getAttribute('aria-checked')).toBe('true');
@@ -2400,7 +2400,7 @@ it("清单里音频只占一行「闪寻音频」：三种出声方式由弹窗�
   expect(document.querySelector('.cm-wf-del')?.getAttribute('aria-label')).toBe('删除工作流 Qwen 多图编辑');
 });
 
-it("已经在出声音时再点「闪寻音频」：只收起弹层，不把人从当前那种模式踢回默认", async () => {
+it("已经在出声音时再点「闪寻音频生成」：只收起弹层，不把人从当前那种模式踢回默认", async () => {
   routes(modeRoutes());
   const screen = await ready({ image: AUDIO_CARD });
   const group = await screen.findByRole('radiogroup', { name: '音频模式' });
@@ -2445,7 +2445,7 @@ it("只有一条音频工作流时不折叠：那时候顶上根本没有模式�
   );
   await fireEvent.click(screen.getByRole('button', { name: '工作流' }));
   const rows = await screen.findAllByRole('menuitemradio');
-  // 这一族只有一条 → 按名字摆出来，不折成「闪寻音频」那种族名
+  // 这一族只有一条 → 按名字摆出来，不折成「闪寻音频生成」那种族名
   expect(rows.map((r) => r.querySelector('.cm-wf-name')?.textContent)).toEqual(['闪寻参考音色']);
 });
 
@@ -2487,11 +2487,11 @@ it("同族换卡：还留着用户挑的那种出声方式，不每次开弹窗�
   ]);
 });
 
-it("三种出声方式底下那颗都写「闪寻音频」：与切换清单那一行同一个叫法，全名进悬浮提示", async () => {
+it("三种出声方式底下那颗都写「闪寻音频生成」：与切换清单那一行同一个叫法，全名进悬浮提示", async () => {
   routes(modeRoutes());
   const screen = await ready({ image: AUDIO_CARD });
   const pill = () => screen.getByRole('button', { name: '工作流' });
-  expect(pill().textContent?.trim()).toBe('闪寻音频');
+  expect(pill().textContent?.trim()).toBe('闪寻音频生成');
   // 底部那颗报的是这一族的叫法，具体哪一条写在顶栏那行大字里（2026-11-10 放回来的那两行）
   expect(document.querySelector('.cm-title')?.textContent).toBe('闪寻参考音色');
   // 悬浮提示里也报到，设置页里也各占一行
@@ -2500,7 +2500,7 @@ it("三种出声方式底下那颗都写「闪寻音频」：与切换清单那�
   const group = await screen.findByRole('radiogroup', { name: '音频模式' });
   await fireEvent.click(group.querySelectorAll('button')[1]);
   await vi.waitFor(() => expect(pill().getAttribute('title')).toContain('音色描述'));
-  expect(pill().textContent?.trim()).toBe('闪寻音频');
+  expect(pill().textContent?.trim()).toBe('闪寻音频生成');
   expect(document.querySelector('.cm-title')?.textContent).toBe('闪寻音色描述');
 });
 
@@ -2912,7 +2912,7 @@ it('载入已经对齐了母语，之后手动改回自动，再点同一个人�
 });
 
 it('换到另一条工作流：语种按那条自己的默认音色重算，不留上一条的英文', async () => {
-  // 两条都是音频工作流，会折成「闪寻音频」一族，切换走弹窗顶上那排出声方式按钮。
+  // 两条都是音频工作流，会折成「闪寻音频生成」一族，切换走弹窗顶上那排出声方式按钮。
   const plan = (id: number, name: string, value: string) => audioTpl({
     id, name,
     slots: [
@@ -3591,8 +3591,9 @@ it('两栏还是竖列看面板自己的宽度：980 以下收进 is-stacked，�
   const line = src.match(/if \(box\.width\) stacked = box\.width < (\d+);/);
   expect(line, "两栏那道判断不在量面板宽度的那个 $effect 里").toBeTruthy();
   // 980 是从两栏都还够用反推的：右列定宽上限 524（底部那排三颗胶囊 + 生成那颗要 518）+ 缝 22 +
-  // 展示图那列至少 390 → 面板 980。1440x900（面板 792）实拍过踩这以下的样子：那颗「闪寻图片」被压成「闪…」。
-  expect(Number(line![1])).toBe(980);
+  // 展示图那列至少 390。1440x900（面板 792）实拍过踩这以下的样子：那颗名字被压成「闪寻图片生…」。
+  // 2026-11-16 三族改口成「闪寻××生成」，工作流那颗胶囊多两个字（13px 汉字 ×2 = 26）→ 门槛跟着抬到 1006。
+  expect(Number(line![1])).toBe(1006);
   // 量不到就别写：happy-dom 里 rect 全是 0，写一次就把整份单测摁成竖列
   routes(baseRoutes());
   const screen = await ready();

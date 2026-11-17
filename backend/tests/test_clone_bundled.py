@@ -25,6 +25,12 @@ DESIGN_KEY = "qwen3-tts-voice-design"
 CUSTOM_KEY = "qwen3-tts-custom-voice"
 ALL_KEYS = [IMAGE_KEY, MASK_KEY, VIDEO_KEY, AUDIO_KEY, DESIGN_KEY, CUSTOM_KEY]
 AUDIO_LABELS = {"闪寻参考音色", "闪寻音色描述", "闪寻指定音色"}
+# 2026-11-16 苏醒：三族并列时统一带「生成」，只写「闪寻图片」读着像左边那排的类型筛选。
+IMAGE_LABEL = "闪寻图片生成"
+VIDEO_LABEL = "闪寻视频生成"
+# 上一版随安装包的名字：改名后必须留在 legacy_labels 里，老库那条才认得出是自己
+OLD_IMAGE_LABEL = "闪寻图片"
+OLD_VIDEO_LABEL = "闪寻视频"
 # 局部编辑那条的参考位：图片1 是被改的图（吃遮罩），图片2～图片5 是额外参考图。
 MASK_CELLS = ["193.image", "400.image", "401.image", "402.image", "403.image"]
 MASK_CELL_LABELS = ["图片1", "图片2", "图片3", "图片4", "图片5"]
@@ -74,13 +80,13 @@ def test_ships_one_workflow_per_family():
     by_key = {e["key"]: e for e in clone_bundled.entries()}
     assert set(by_key) == set(ALL_KEYS)
     assert by_key[IMAGE_KEY]["media_kind"] == "image"
-    assert by_key[IMAGE_KEY]["label"] == "闪寻图片"
+    assert by_key[IMAGE_KEY]["label"] == IMAGE_LABEL
     # 图片族第二条：带遮罩的局部重绘／移除。它不是新的「当前」，见
     # test_the_mask_template_is_seeded_but_not_the_default
     assert by_key[MASK_KEY]["media_kind"] == "image"
     assert by_key[MASK_KEY]["label"] == MASK_LABEL
     assert by_key[VIDEO_KEY]["media_kind"] == "video"
-    assert by_key[VIDEO_KEY]["label"] == "闪寻视频"
+    assert by_key[VIDEO_KEY]["label"] == VIDEO_LABEL
     assert {by_key[k]["media_kind"] for k in (AUDIO_KEY, DESIGN_KEY, CUSTOM_KEY)} == {"audio"}
     assert {by_key[k]["label"] for k in (AUDIO_KEY, DESIGN_KEY, CUSTOM_KEY)} == AUDIO_LABELS
 
@@ -139,6 +145,9 @@ def test_builtins_know_their_old_names():
     assert "闪寻音频克隆" in by_key[AUDIO_KEY]["legacy_labels"]
     # 0.2.34 之后叫「闪寻局部编辑」：旧名留在包里，老库那条下次启动顺势改口，记录不换
     assert "闪寻遮罩编辑" in by_key[MASK_KEY]["legacy_labels"]
+    # 这一版改口成「闪寻××生成」：旧名同样得留在包里，否则老库里装成两条一模一样的
+    assert OLD_IMAGE_LABEL in by_key[IMAGE_KEY]["legacy_labels"]
+    assert OLD_VIDEO_LABEL in by_key[VIDEO_KEY]["legacy_labels"]
 
 
 def test_shipped_workflows_carry_the_two_real_machine_fixes():
@@ -184,7 +193,7 @@ def test_shipped_slots_can_report_the_real_output_size():
 
 def test_fresh_install_seeds_every_family(seeded):
     rows = clone_templates.list_templates()
-    assert {r["name"] for r in rows} == {"闪寻图片", MASK_LABEL, "闪寻视频"} | AUDIO_LABELS
+    assert {r["name"] for r in rows} == {IMAGE_LABEL, MASK_LABEL, VIDEO_LABEL} | AUDIO_LABELS
     assert all(r["is_builtin"] for r in rows)
     assert {r["media_kind"] for r in rows} == {"image", "video", "audio"}
     # 每族各自一个「当前」：声音三条也只能有一条是当前，弹窗开出来才有唯一默认
@@ -195,11 +204,11 @@ def test_fresh_install_seeds_every_family(seeded):
 
 
 def test_the_mask_template_is_seeded_but_not_the_default(seeded):
-    """多一条图片工作流可以，但默认那条不能换：老用户点开「再次创作」认的是闪寻图片。"""
+    """多一条图片工作流可以，但默认那条不能换：老用户点开「再次创作」认的是闪寻图片生成。"""
     rows = {r["name"]: r for r in clone_templates.list_templates()}
     image = [r for r in rows.values() if r["media_kind"] == "image"]
     assert len(image) == 2
-    assert [r["name"] for r in image if r["is_active"]] == ["闪寻图片"]
+    assert [r["name"] for r in image if r["is_active"]] == [IMAGE_LABEL]
     mask = rows[MASK_LABEL]
     assert [c["key"] for c in mask["reference_cells"]] == MASK_CELLS
     assert [c["label"] for c in mask["reference_cells"]] == MASK_CELL_LABELS
@@ -419,7 +428,7 @@ def test_a_same_named_template_is_adopted_not_duplicated(tmp_path: Path, monkeyp
     assert len(rows) == len(ALL_KEYS), "认领一条 + 装上另外四条"
     adopted = [r for r in rows if r["bundled_key"] == VIDEO_KEY][0]
     assert adopted["id"] == created["id"] and adopted["is_builtin"] is True
-    assert adopted["name"] == "闪寻视频"
+    assert adopted["name"] == VIDEO_LABEL
     row = _row_of_key(pool, VIDEO_KEY)
     assert clone_bundled.workflow_sha(json.loads(row["workflow"])) != row["bundled_sha"], \
         "他那份与包里的不同 → 记成改过，以后不覆盖"
@@ -443,7 +452,7 @@ def test_an_older_install_gets_renamed(seeded):
     result = clone_bundled.seed(conn)
     assert result["renamed"] == [VIDEO_KEY]
     again = _row_of_key(seeded, VIDEO_KEY)
-    assert again["name"] == "闪寻视频" and int(again["id"]) == int(row["id"])
+    assert again["name"] == VIDEO_LABEL and int(again["id"]) == int(row["id"])
 
 
 def test_the_names_shipped_last_version_get_renamed(seeded):
@@ -460,7 +469,26 @@ def test_the_names_shipped_last_version_get_renamed(seeded):
                  ("闪寻参考生视频", int(before[VIDEO_KEY]["id"])))
     result = clone_bundled.seed(conn)
     assert sorted(result["renamed"]) == sorted([IMAGE_KEY, VIDEO_KEY])
-    for key, label in ((IMAGE_KEY, "闪寻图片"), (VIDEO_KEY, "闪寻视频")):
+    for key, label in ((IMAGE_KEY, IMAGE_LABEL), (VIDEO_KEY, VIDEO_LABEL)):
+        after = _row_of_key(seeded, key)
+        assert after["name"] == label
+        assert int(after["id"]) == int(before[key]["id"]), "改名不该换一条记录"
+        assert int(after["is_active"]) == int(before[key]["is_active"]), "改名不该动「当前」"
+
+
+def test_this_versions_rename_follows_the_same_rule(seeded):
+    """这一版改口成「闪寻图片生成」「闪寻视频生成」：上一版装出去的库下次启动跟着改。
+
+    和上一条同一个机制——旧名留在 legacy_labels 里，seed 才认得出那条就是自己，改的只有名字。
+    """
+    conn = seeded.main()
+    before = {key: _row_of_key(seeded, key) for key in (IMAGE_KEY, VIDEO_KEY)}
+    for key, old in ((IMAGE_KEY, OLD_IMAGE_LABEL), (VIDEO_KEY, OLD_VIDEO_LABEL)):
+        conn.execute("UPDATE clone_templates SET name=? WHERE id=?",
+                     (old, int(before[key]["id"])))
+    result = clone_bundled.seed(conn)
+    assert sorted(result["renamed"]) == sorted([IMAGE_KEY, VIDEO_KEY])
+    for key, label in ((IMAGE_KEY, IMAGE_LABEL), (VIDEO_KEY, VIDEO_LABEL)):
         after = _row_of_key(seeded, key)
         assert after["name"] == label
         assert int(after["id"]) == int(before[key]["id"]), "改名不该换一条记录"
@@ -484,9 +512,9 @@ def test_deleting_the_active_one_promotes_a_sibling(seeded):
     clone_templates.delete_template(target["id"])
     rows = clone_templates.list_templates()
     assert {r["media_kind"] for r in rows} == {"image", "audio"}
-    # 图片族有两条（闪寻图片 + 闪寻局部编辑），删掉的正好是「当前」那条：顶上来的只能有一条
+    # 图片族有两条（闪寻图片生成 + 闪寻局部编辑），删掉的正好是「当前」那条：顶上来的只能有一条
     image = [r for r in rows if r["media_kind"] == "image"]
-    assert [r["name"] for r in image if r["is_active"]] == ["闪寻图片"], "图片族的当前不能跟着删视频那条一起变动"
+    assert [r["name"] for r in image if r["is_active"]] == [IMAGE_LABEL], "图片族的当前不能跟着删视频那条一起变动"
     audio = [r for r in rows if r["media_kind"] == "audio"]
     assert sum(1 for r in audio if r["is_active"]) == 1, "声音三条里仍只有一条是当前"
     assert len(audio) == 3, "删掉视频不会牵连声音那三条"
@@ -578,7 +606,7 @@ def test_switch_off_keeps_a_fresh_db_empty(tmp_path: Path, monkeypatch):
 def test_api_reports_builtin_templates(seeded):
     with TestClient(app) as client:
         items = client.get("/api/clone/templates").json()["items"]
-    assert {i["name"] for i in items} == {"闪寻图片", MASK_LABEL, "闪寻视频"} | AUDIO_LABELS
+    assert {i["name"] for i in items} == {IMAGE_LABEL, MASK_LABEL, VIDEO_LABEL} | AUDIO_LABELS
     assert all(i["is_builtin"] for i in items)
     assert {i["media_kind"] for i in items} == {"image", "video", "audio"}
 

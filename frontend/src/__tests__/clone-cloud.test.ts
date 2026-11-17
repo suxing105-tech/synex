@@ -31,7 +31,7 @@ const cloudTpl = (over: Partial<CloneTemplate> = {}): CloneTemplate => tpl([], {
 const image = (id: number, filename = `n${id}.png`) => ({ id, filename, kind: "image" } as any);
 
 describe("级联那一屏的数据：一家服务商一行，模型只落在自己那一行里", () => {
-  it("云端「音频API」不折进「闪寻音频」：付费通道不能在本机那三种模式里被藏掉", () => {
+  it("云端「音频API」不折进「闪寻音频生成」：付费通道不能在本机那三种模式里被藏掉", () => {
     const cloudAudio = tpl([], { id: 5, name: "音频API", media_kind: "audio", is_cloud: true, engine: "cloud" });
     expect(isCloudTemplate(cloudAudio)).toBe(true);
     const rows = workflowMenuRows([

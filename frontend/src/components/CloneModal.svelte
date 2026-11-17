@@ -311,7 +311,7 @@
    */
   const audioModes = $derived(isAudioTemplate(template) ? audioModeTemplates(templates) : []);
   /**
-   * 「切换工作流」那一列：图片、视频各列各的，音频那几条收成一条「闪寻音频」。
+   * 「切换工作流」那一列：图片、视频各列各的，音频那几条收成一条「闪寻音频生成」。
    * 三种出声方式已经有弹窗顶上那排按钮了，清单里再列三条就是让人在两个地方选同一件事。
    */
   const wfRows = $derived(workflowMenuRows(templates, templateId));
@@ -677,12 +677,13 @@
         "--cm-pop-left",
         `${Math.max(240, Math.round((paramsBox ? paramsBox.getBoundingClientRect().right : box.right) - box.left - 23))}px`,
       );
-      // 同一把尺顺手量「这一列放不放得下两栏」。980 是量出来的下限，不是凑的整数：
+      // 同一把尺顺手量「这一列放不放得下两栏」。1006 是量出来的下限，不是凑的整数：
       // 底部那一排要单行放得下：实测右列 524（净宽 498）时三颗胶囊 109+109+108 + 两颗间距 20 = 346，
       // 右边那颗 99 + 间隙 8 → 494 ≤ 498，三颗名字都不截。右列 524 + 缝 22 + 展示图那列至少 390 → 面板 980。
-      // 1440x900 实测过踩这以下的样子：面板 792、输入卡 399，那颗「闪寻图片」被压成「闪…」。
+      // 2026-11-16 三族改口成「闪寻××生成」，工作流那颗胶囊多了两个字：13px 的汉字一格就是 13px，+26 → 1006。
+      // 1440x900 实测过踩这以下的样子：面板 792、输入卡 399，那颗名字被压成「闪寻图片生…」。
       // happy-dom 里 rect 全是 0：量不到就别写，没有布局可判，写一次就把整份单测摁成竖列。
-      if (box.width) stacked = box.width < 980;
+      if (box.width) stacked = box.width < 1006;
     };
     writePopMax();
     if (typeof ResizeObserver !== "function") return; // 单测环境（happy-dom）没有 RO：写一次就够
@@ -709,7 +710,7 @@
   });
   /**
    * 弹窗标题与底部那颗胶囊上的名字：跟「切换工作流」清单里那一行同一个叫法。
-   * 三条音频工作流在清单里折成一条「闪寻音频」，这两处也跟着叫「闪寻音频」——一个弹窗里两种叫法，
+   * 三条音频工作流在清单里折成一条「闪寻音频生成」，这两处也跟着叫同一个名——一个弹窗里两种叫法，
    * 用户会以为清单那一行和底下这颗管的是两件事（2026-10-30 苏醒点名：三种模式底下都要同步显示）。
    * 具体是哪一种出声方式由顶上那排按钮的高亮说，全名在下面这两处的悬浮提示与设置页里都还在。
    */
@@ -1139,7 +1140,7 @@
   }
 
   /**
-   * 清单里点一行。折叠那行（闪寻音频）已经在用的话就只是把弹层收起来——
+   * 清单里点一行。折叠那行（闪寻音频生成）已经在用的话就只是把弹层收起来——
    * 三种出声方式靠顶上那排按钮换，点族名不该把用户从「音色描述」踢回默认那条。
    */
   function pickMenuRow(row: (typeof wfRows)[number]) {
@@ -2454,7 +2455,7 @@
                                 {#if isOn}<span class="cm-wf-tag">当前</span>{/if}
                               </button>
                               {#if !row.collapsed}
-                                <!-- 折叠那行不给删：一条「闪寻音频」背后是三条工作流，删哪条不该由这颗 X 临场决定。 -->
+                                <!-- 折叠那行不给删：一条「闪寻音频生成」背后是三条工作流，删哪条不该由这颗 X 临场决定。 -->
                                 <button class="cm-wf-del" aria-label={`删除工作流 ${row.label}`} title="删除这个工作流"
                                   disabled={busy || wfDeleting} onclick={() => void removeTemplate(row.targetId)}>
                                   <Icon name="x" size={14} />
@@ -3508,7 +3509,7 @@
 
   @media (max-width: 900px) {
     /* 只换竖排那一档：两栏那条 .cm-body:not(.is-stacked) 特异性高一级，本来就不受这条影响。
-     窄窗口也走不到两栏——面板最多 vw-84，够不着 980 那道门槛，走的就是这一档。 */
+     窄窗口也走不到两栏——面板最多 vw-84，够不着 1006 那道门槛，走的就是这一档。 */
   .cm-body { --cm-hero-h: min(34vh, 360px); }
     .cm-stage { width: min(100%, 480px); }
     .cm-pop { width: min(328px, 78vw); }

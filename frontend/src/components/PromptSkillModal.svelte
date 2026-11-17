@@ -275,7 +275,7 @@
       applyImported(result);
       pushToast(describeImport(result), {
         kind: result.imported.length && !result.skipped.length ? "success" : "error",
-        ttl: result.skipped.length || result.imported.some((item) => item.truncated) ? 6000 : 3000,
+        ttl: result.skipped.length ? 6000 : 3000,
       });
     } catch (e) {
       error = failText(e);
@@ -420,15 +420,19 @@
     <div class="psk" class:is-dropping={dropping} role="dialog" aria-modal="true"
       aria-label="提示词优化技能" tabindex="-1" use:modalFocus>
       <header class="psk-head">
-        <div>
-          <h2>提示词优化技能</h2>
-          <p class="psk-sub">左键点提示词框右下角那颗 <Icon name="sparkle" size={12} /> 用默认技能重写一句，右键换一条。</p>
-        </div>
+        <h2>提示词优化技能</h2>
         <button class="psk-x" aria-label="关闭" onclick={onClose}><Icon name="x" size={16} /></button>
       </header>
 
       <div class="psk-body">
         <div class="psk-side">
+          <div class="psk-side-actions">
+            <button class="psk-btn is-lead" disabled={busy} onclick={() => void create()}><Icon name="plus" size={12} />新建技能</button>
+            <button class="psk-btn is-lead" disabled={busy} onclick={() => void pickSkillSource()}><Icon name="folder" size={12} />导入技能</button>
+            {#if !isTauri()}
+              <button class="psk-btn is-lead" disabled={busy} onclick={() => dirEl?.click()}>选文件夹</button>
+            {/if}
+          </div>
           <div class="psk-list" role="listbox" aria-label="技能清单">
             {#each skills as skill (skill.id)}
               <button class="psk-item" class:is-on={skill.id === selectedId} role="option"
@@ -444,13 +448,6 @@
             {:else}
               <p class="psk-hint">还没有技能。新建一条，或者把 SKILL.md、.zip、一整个技能包文件夹拖到这个窗口里。</p>
             {/each}
-          </div>
-          <div class="psk-side-foot">
-            <button class="psk-btn" disabled={busy} onclick={() => void create()}><Icon name="plus" size={12} />新建技能</button>
-            <button class="psk-btn" disabled={busy} onclick={() => void pickSkillSource()}><Icon name="folder" size={12} />导入技能</button>
-            {#if !isTauri()}
-              <button class="psk-btn" disabled={busy} onclick={() => dirEl?.click()}>选文件夹</button>
-            {/if}
           </div>
         </div>
 
@@ -485,7 +482,7 @@
             </label>
 
             <label class="psk-field psk-field-grow">
-              <span class="psk-label">这条技能怎么写</span>
+              <span class="psk-label">这条技能怎么写<span class="psk-count">{instruction.length} 字</span></span>
               <textarea class="psk-text" rows="10" bind:value={instruction} aria-label="技能写法"
                 placeholder={"交给模型的指令，例如：\n· 保留原有主体与动作，补上景别、机位、镜头焦段\n· 材质与光影各写一句\n· 只输出提示词本身，不要解释"}></textarea>
             </label>
@@ -580,7 +577,6 @@
   }
   .psk-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
   .psk-head h2 { margin: 0; font-size: var(--fs-md); font-weight: 600; }
-  .psk-sub { margin: var(--sp-1) 0 0; color: var(--text-2); font-size: var(--fs-xs); }
   .psk-x {
     display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: none;
     padding: 0; border: 1px solid var(--line); border-radius: var(--r-1); background: transparent;
@@ -608,7 +604,7 @@
     color: var(--text-3); font-size: var(--fs-2xs); font-style: normal;
   }
   .psk-tag.is-default { background: rgb(var(--accent-rgb) / 16%); color: var(--accent-strong); }
-  .psk-side-foot { display: flex; flex-direction: column; gap: var(--sp-1); }
+  .psk-side-actions { display: flex; flex-direction: column; gap: var(--sp-1); }
 
   .psk-edit {
     display: flex; flex: 1; flex-direction: column; gap: var(--sp-2); min-width: 0; min-height: 0;
@@ -617,6 +613,8 @@
   .psk-field { display: flex; flex-direction: column; gap: var(--sp-1); }
   .psk-field-grow { flex: 1; min-height: 96px; }
   .psk-label { color: var(--text-2); font-size: var(--fs-xs); }
+  /* 原文一个字都不切，所以写了多少字要摆在标题边上——那是「完整加载」唯一的可见证据。 */
+  .psk-count { margin-left: var(--sp-1); color: var(--text-3); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
   .psk-label-inline { margin-left: var(--sp-2); }
   .psk-input, .psk-text {
     box-sizing: border-box; width: 100%; padding: var(--sp-2) var(--sp-2); border: 1px solid var(--line-strong);
@@ -639,6 +637,14 @@
   .psk-btn:hover:not(:disabled) { background: var(--ink-4); }
   .psk-btn:disabled { opacity: .45; cursor: default; }
   .psk-btn.is-primary { border-color: transparent; background: var(--accent); color: var(--accent-ink); }
+  /* 保存排在最右：左边那几颗是这条技能的辅助操作，主次一眼分得开。 */
+  .psk-edit-foot .psk-btn.is-primary { margin-left: auto; }
+  /* 新建 / 导入是这一页的入口，不该压在清单底下：描上 accent，一眼看见。 */
+  .psk-side-actions .psk-btn.is-lead {
+    border-color: rgb(var(--accent-rgb) / 42%); background: rgb(var(--accent-rgb) / 14%);
+    color: var(--accent-strong); font-weight: 600;
+  }
+  .psk-side-actions .psk-btn.is-lead:hover:not(:disabled) { background: rgb(var(--accent-rgb) / 24%); }
   .psk-btn.is-primary:hover:not(:disabled) { background: var(--accent-strong); }
   .psk-btn.is-danger { color: var(--danger); }
   .psk-btn.is-danger.is-armed { border-color: var(--danger); background: rgb(var(--danger-rgb) / 14%); }

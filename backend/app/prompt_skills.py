@@ -25,9 +25,10 @@ LANGUAGES = ("auto", "zh", "en")
 
 MAX_NAME = 60
 MAX_NOTE = 200
-MAX_INSTRUCTION = 20000
-# 导入的是给 agent 看的 SKILL.md，长的是常态。截断比拒绝有用：截了还能改，拒了就是白跑一趟。
-MAX_IMPORT_CHARS = 12000
+MAX_INSTRUCTION = 300000
+# 2026-11-16 苏醒：技能原文要完整加载，不许悄悄切一刀。这个上限只管「大到不像一条技能」，
+# 不管「模型一次读得完」——真长到模型装不下，那一次优化会当场报错，
+# 比在编辑器里少半篇原文好查得多。
 # 一次导入最多几个来源：整摞技能拖进来的上限，超了就是选错了。
 MAX_IMPORT_SOURCES = 20
 # 撞名时的三种处理。默认先问——替换会覆盖人写过的东西。
@@ -296,7 +297,7 @@ QUOTES = """'"“”「」"""
 
 
 def parse_import(content: str, filename: str = "") -> dict:
-    """把一份 SKILL.md 读成「名字 + 正文 + 是否被截断」。
+    """把一份 SKILL.md 读成「名字 + 完整正文」：原文一个字都不切。
 
     开头那坨 YAML frontmatter 是给 agent 装载器看的（name/description/license），
     发给生图模型只是噪音，而且第一行就是 --- 会让模型以为自己收到了文档结构。
@@ -314,12 +315,9 @@ def parse_import(content: str, filename: str = "") -> dict:
         stem = re.sub(r"\.(md|markdown|txt)$", "", str(filename).replace("\\", "/").rsplit("/", 1)[-1],
                       flags=re.IGNORECASE).strip()
         name = stem.strip(QUOTES).strip()
-    truncated = len(body) > MAX_IMPORT_CHARS
-    if truncated:
-        body = body[:MAX_IMPORT_CHARS].rstrip() + "\n\n（技能原文过长，到这里为止。）"
     if not body:
         raise HTTPException(422, "这份文件里没有可用的正文，换一份 SKILL.md 或直接新建一条技能")
-    return {"name": (name or "导入的技能")[:MAX_NAME], "instruction": body, "truncated": truncated}
+    return {"name": (name or "导入的技能")[:MAX_NAME], "instruction": body}
 
 
 def fit_name(value) -> str:
@@ -368,7 +366,6 @@ def _md_candidate(content: str, filename: str = "", source_dir: str = "") -> dic
         "name": parsed["name"],
         "note": "从文件导入",
         "instruction": parsed["instruction"],
-        "truncated": parsed["truncated"],
     }
 
 
@@ -389,8 +386,7 @@ def _commit_md(candidate: dict, replace_skill_id: int | None = None) -> dict:
                        "package_refs=NULL,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?",
                        (skill_id,))
         remove_package_dir(_row_get(old, "package_dir"))
-    return {**public(get_skill(skill_id)), "truncated": bool(candidate["truncated"]),
-            "replaced": replace_skill_id is not None}
+    return {**public(get_skill(skill_id)), "replaced": replace_skill_id is not None}
 
 
 # ---------- 技能包 ----------
@@ -544,12 +540,9 @@ def _commit_package(candidate: dict, replace_skill_id: int | None = None) -> dic
     fields = candidate["fields"]
     skill_path = candidate["skill_path"]
     body = candidate["body"]
-    truncated = len(body) > MAX_IMPORT_CHARS
-    # 资料优先级要用**完整**正文来判断：作者在文档后半段点名的文件也算数，
-    # 哪怕那半截没发给模型——不然截断会把「作者想让我们看什么」这件事切掉一半。
+    # 资料优先级按正文点名判断，所以正文得是完整的：切掉后半截，
+    # 「作者想让我们看什么」就被切掉一半（2026-11-16 起正文一律不切）。
     refs_block, files_meta, refs_chars = skill_packages.compose_refs_block(entries, body, skill_path)
-    if truncated:
-        body = body[:MAX_IMPORT_CHARS].rstrip() + "\n\n（技能原文过长，到这里为止。）"
 
     old = get_skill(replace_skill_id) if replace_skill_id is not None else None
     skill_id = replace_skill_id if old is not None else save_skill(
@@ -584,7 +577,6 @@ def _commit_package(candidate: dict, replace_skill_id: int | None = None) -> dic
                          if k not in ("name", "description", "license", "allowed-tools", "version")},
         "files": manifest,
         "refs_chars": refs_chars,
-        "truncated": truncated,
         "dropped": [item["path"] for item in manifest
                     if item["role"] == "参考" and not item["included"]],
     }
@@ -594,8 +586,7 @@ def _commit_package(candidate: dict, replace_skill_id: int | None = None) -> dic
             "updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?",
             (package_dir, json.dumps(meta, ensure_ascii=False), refs_block, skill_id),
         )
-    return {**public(get_skill(skill_id)), "package": meta, "truncated": truncated,
-            "replaced": old is not None}
+    return {**public(get_skill(skill_id)), "package": meta, "replaced": old is not None}
 
 
 def _commit_candidate(candidate: dict, replace_skill_id: int | None = None) -> dict:
@@ -769,7 +760,7 @@ def import_from_paths(paths: list[str], on_conflict: str = "ask") -> dict:
 
 
 def import_from_markdown(content: str, filename: str = "", on_conflict: str = "ask") -> dict:
-    """浏览器版：前端读到的一份 md 原文。截断规则仍只在 parse_import 一处。"""
+    """浏览器版：读到的一份 md 原文。名字与正文的口径只在 parse_import 一处。"""
     return _finish([_md_candidate(content, filename)], [], on_conflict)
 
 

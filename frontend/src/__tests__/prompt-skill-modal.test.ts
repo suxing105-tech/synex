@@ -191,7 +191,6 @@ describe("设默认 · 导入 · 删除", () => {
       "POST /api/prompt-skills/import": (init?: RequestInit) =>
         envelope({
           ...skill({ id: 9, name: "导入的技能", kinds: ["image", "video"], instruction: bodyOf(init).content }),
-          truncated: false,
         }),
     });
     const screen = await ready();
@@ -252,7 +251,7 @@ describe("设默认 · 导入 · 删除", () => {
     routes({
       ...baseRoutes(),
       "PATCH /api/prompt-skills/1": () => {
-        throw Object.assign(new Error("422"), { detail: "技能写法最长 20000 字，太长的指令模型记不住" });
+        throw Object.assign(new Error("422"), { detail: "技能写法最长 300000 字，太长的指令模型记不住" });
       },
     });
     const screen = await ready();
@@ -272,6 +271,48 @@ describe("设默认 · 导入 · 删除", () => {
 });
 
 describe("版面口径", () => {
+  it("标题下不再摆那句操作说明", async () => {
+    routes(baseRoutes());
+    const screen = await ready();
+    expect(screen.queryByText(/左键点提示词框右下角/)).toBeNull();
+    expect(readFileSync("src/components/PromptSkillModal.svelte", "utf8")).not.toMatch(/左键点提示词框右下角/);
+  });
+
+  it("新建 / 导入在清单顶上，且是描过 accent 的那颗，不是藏在清单底下的灰按钮", async () => {
+    routes(baseRoutes());
+    const screen = await ready();
+    const side = screen.container.querySelector(".psk-side") as HTMLElement;
+    expect(side.firstElementChild?.className).toContain("psk-side-actions");
+    expect(side.querySelector(".psk-list")).toBeTruthy();
+    for (const name of ["新建技能", "导入技能"]) {
+      const btn = screen.getByRole("button", { name });
+      expect(btn.classList.contains("is-lead")).toBe(true);
+      expect(side.querySelector(".psk-side-actions")?.contains(btn)).toBe(true);
+    }
+  });
+
+  it("保存排在最后一排的最右，不跟辅助操作挤在一起", async () => {
+    routes(baseRoutes());
+    const screen = await ready();
+    const foot = screen.container.querySelector(".psk-edit-foot") as HTMLElement;
+    const buttons = [...foot.querySelectorAll("button")];
+    expect(buttons[buttons.length - 1].textContent).toBe("保存");
+    // 右对齐写在样式里，DOM 层面只能确认它是这一排的最后一颗
+    expect(readFileSync("src/components/PromptSkillModal.svelte", "utf8"))
+      .toMatch(/\.psk-edit-foot \.psk-btn\.is-primary \{ margin-left: auto; \}/);
+  });
+
+  it("技能原文整篇摆在编辑区，标题边上跟着它的字数", async () => {
+    const long = "保留主体，补上景别。".repeat(3000);
+    promptSkills.set([skill({ instruction: long })]);
+    routes(baseRoutes());
+    const screen = await ready();
+    const text = screen.getByLabelText("技能写法") as HTMLTextAreaElement;
+    expect(text.value).toBe(long);
+    expect(text.value).not.toMatch(/技能原文过长/);
+    expect(screen.container.querySelector(".psk-count")?.textContent).toBe(long.length + " 字");
+  });
+
   it("字号只引 token、颜色不新增裸 hex：新组件一条 hex 都不许写", () => {
     const source = readFileSync("src/components/PromptSkillModal.svelte", "utf8");
     expect(source.match(/#[0-9a-fA-F]{3,8}\b/g) || []).toEqual([]);
@@ -300,7 +341,6 @@ describe("导入技能：一个入口", () => {
           { path: "assets/palette.png", size: 900, role: "资源", included: false, truncated: false, reason: "二进制文件，不发给模型", order: 0 },
         ],
         refs_chars: 80,
-        truncated: false,
         dropped: ["assets/palette.png"],
       },
       ...over,

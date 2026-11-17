@@ -39,8 +39,6 @@ export interface PromptSkillPackage {
   files: PromptSkillPackageFile[];
   /** 真正发给模型的资料字数（不含标题与分隔线） */
   refs_chars: number;
-  /** SKILL.md 正文是不是被截断了 */
-  truncated: boolean;
   /** 没进资料块的文件 */
   dropped: string[];
 }
@@ -132,7 +130,6 @@ export interface SkillImportSkipped {
 /** 一次导入的完整回执。进了几条、哪几条在问、哪些没进来，三份都得有人说话。 */
 export interface SkillImportResult {
   imported: (PromptSkill & {
-    truncated?: boolean;
     replaced?: boolean;
     package?: PromptSkillPackage | null;
   })[];
@@ -152,7 +149,7 @@ export function isSkillSourcePath(path: string): boolean {
 /**
  * 导入回执 → 一句给人看的话。
  *
- * 一句话要说清四件事：进了哪条/几条、参考资料带进几份、有没有被截断、什么没进来。
+ * 一句话要说清四件事：进了哪条/几条、参考资料带进几份、有没有替换掉旧的、什么没进来。
  * 「包里没带参考资料」这句是故意说的：从技能包导进来的默认以为带了，
  * 空着不报，人就会以为模型读到了作者其实没写的东西。
  */
@@ -175,7 +172,6 @@ export function describeImport(result: SkillImportResult): string {
   const replaced = list.filter((item) => item.replaced).length;
   if (replaced === 1 && list.length === 1) parts.push("已替换原来那条");
   else if (replaced) parts.push("其中 " + replaced + " 条替换了原来的");
-  if (list.some((item) => item.truncated)) parts.push("原文太长，超出的那截没进来");
   const dropped = packed.reduce((sum, item) => sum + (item.package?.dropped?.length ?? 0), 0);
   if (dropped) parts.push(dropped + " 个文件没进预算");
   if (skipped.length) parts.push(skipped.length + " 个没进来：" + skipped[0].reason);

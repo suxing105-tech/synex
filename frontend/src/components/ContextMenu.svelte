@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   export type ContextMenuItem =
-    | { kind?: "item"; label: string; danger?: boolean; onClick?: () => void | Promise<void>; disabled?: boolean; children?: ContextMenuItem[] }
+    | { kind?: "item"; label: string; danger?: boolean; active?: boolean; onClick?: () => void | Promise<void>; disabled?: boolean; children?: ContextMenuItem[] }
     | { kind: "sep" };
   let { open = $bindable(), x, y, items }: { open: boolean; x: number; y: number; items: ContextMenuItem[] } = $props();
   let host: HTMLDivElement = $state()!;
@@ -53,7 +53,7 @@
         {#each panel.items as it, i (i)}
           {#if it.kind === 'sep'}<div class="separator" role="separator"></div>
           {:else}
-            <button class="ctx-item" class:danger={it.danger} disabled={it.disabled} role="menuitem" title={it.label}
+            <button class="ctx-item" class:danger={it.danger} class:active={it.active} disabled={it.disabled} role="menuitem" title={it.label}
               aria-haspopup={it.children?.length ? 'menu' : undefined}
               aria-expanded={it.children?.length ? branches[level]?.label === it.label : undefined}
               onpointerenter={(e) => expand(it, level, e.currentTarget)}
@@ -73,5 +73,7 @@
   .ctx-item span:first-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .ctx-item:hover, .ctx-item:focus-visible, .ctx-item[aria-expanded="true"] { background: #38383d; outline: none; }
   .ctx-item:disabled { opacity: .45; cursor: default; }
+  /* 当前选中那一条：只把字点亮，不画勾——勾是菜单项前面的噪音，字色已经足够说「是这条」。 */
+  .ctx-item.active { color: var(--accent-strong); font-weight: 600; }
   .danger { color: var(--danger); } .separator { border-top: 1px solid #3b3b40; margin: var(--sp-1) var(--sp-05); }
 </style>

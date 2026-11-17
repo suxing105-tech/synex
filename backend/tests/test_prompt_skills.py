@@ -133,7 +133,6 @@ def test_import_strips_frontmatter_and_takes_name(client):
                                                             "content": content})
     skill = only_imported(result)
     assert skill["name"] == "商业产品视觉"
-    assert skill["truncated"] is False
     assert skill["replaced"] is False
     assert skill["instruction"].startswith("# 正文")
     assert "description:" not in skill["instruction"]
@@ -167,13 +166,29 @@ def test_import_asks_before_replacing_a_file_of_the_same_name(client):
     assert "第二版" in replaced["instruction"]
 
 
-def test_import_truncates_long_skill(client, monkeypatch):
-    monkeypatch.setattr(service, "MAX_IMPORT_CHARS", 60)
-    content = "---\nname: 长文档\n---\n" + ("内容段落。\n" * 100)
+def test_a_long_skill_imports_whole(client):
+    """长原文整篇进来：不切、不加「到这里为止」那句尾巴。
+
+    2026-11-16 苏醒「我希望技能包完整加载，不删技能原文」。以前超 12000 字就切一刀，
+    切完只在正文末尾留一句说明——界面上那一句被当成技能的一部分，改都改不掉。
+    """
+    unit = "内容段落。\n"
+    content = "---\nname: 长文档\n---\n" + (unit * 8000)
     skill = only_imported(client.post("/api/prompt-skills/import", json={"content": content}))
-    assert skill["truncated"] is True
-    assert skill["instruction"].endswith("（技能原文过长，到这里为止。）")
-    assert len(skill["instruction"]) <= 60 + len("\n\n（技能原文过长，到这里为止。）")
+    assert "技能原文过长" not in skill["instruction"]
+    assert skill["instruction"].endswith("内容段落。")
+    assert len(skill["instruction"]) == len(unit) * 8000 - 1  # 只有结尾那个换行被 strip
+
+
+def test_an_overlong_source_is_refused_by_name_not_quietly_cut(client, monkeypatch):
+    """真超上限（例如塞进来一份不是技能的大文件）：报名字拒收，而不是偷偷少一截。"""
+    monkeypatch.setattr(service, "MAX_INSTRUCTION", 200)
+    content = "---\nname: 超大\n---\n" + ("字" * 5000)
+    result = client.post("/api/prompt-skills/import",
+                         json={"filename": "big.md", "content": content}).json()
+    assert result["imported"] == []
+    assert result["skipped"][0]["path"] == "big.md"
+    assert "技能写法最长 200 字" in result["skipped"][0]["reason"]
 
 
 def test_import_rejects_bodyless_file(client):

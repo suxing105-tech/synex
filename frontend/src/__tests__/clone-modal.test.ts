@@ -3942,7 +3942,9 @@ it('右键那颗图标：列出这一族的技能、勾在默认那条上，点�
   const menu = await screen.findByRole('menu');
   const labels = [...menu.querySelectorAll('[role="menuitem"] span:first-child')].map((node) => node.textContent);
   // 只有图片那一族的两条，视频那条不许混进来
-  expect(labels).toEqual(['优化用哪条技能（图片）', '✓ 镜头补全', '电影感', '技能设置…']);
+  // 顶上那行灰标题按标注删了；当前用的那条不画勾，靠文字高亮认（active）
+  expect(labels).toEqual(['镜头补全', '电影感', '技能设置…']);
+  expect([...menu.querySelectorAll('[role="menuitem"].active')].map((node) => node.textContent)).toEqual(['镜头补全']);
   await fireEvent.click(screen.getByRole('menuitem', { name: '电影感' }));
   await vi.waitFor(() => expect(
     http.mock.calls.some(([path, init]) => path === '/api/prompt-skill-settings' && (init as RequestInit)?.method === 'PUT'),
@@ -3964,7 +3966,7 @@ it('清单还在路上时右键：菜单不许先开半截，等清单回来一�
   settle(SKILLS);
   const menu = await screen.findByRole('menu');
   expect([...menu.querySelectorAll('[role="menuitem"] span:first-child')].map((node) => node.textContent))
-    .toEqual(['优化用哪条技能（图片）', '✓ 镜头补全', '电影感', '技能设置…']);
+    .toEqual(['镜头补全', '电影感', '技能设置…']);
 });
 
 it('右键菜单里的「技能设置」开的是技能弹窗，脚下一句报的是反推那份模型', async () => {

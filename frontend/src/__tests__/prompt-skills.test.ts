@@ -218,7 +218,7 @@ describe("技能包", () => {
     expect(isSkillSourcePath("")).toBe(false);
   });
 
-  it("一句回执说清进了什么：条数、参考资料、替换、截断、没进来的", () => {
+  it("一句回执说清进了什么：条数、参考资料、替换、没进来的", () => {
     const packed = (over: any = {}) => ({ name: "电商视觉包", package: null, ...over });
     const refs = (n: number) => ({
       files: Array.from({ length: n }, (_x, i) => ({ role: "参考", included: true, path: "r" + i })),
@@ -232,8 +232,6 @@ describe("技能包", () => {
       "已导入技能「电商视觉包」，包里没带参考资料");
     expect(describeImport(done([packed(), packed(), packed()]))).toBe("已导入 3 条技能");
     expect(describeImport(done([packed({ replaced: true })]))).toBe("已导入技能「电商视觉包」，已替换原来那条");
-    expect(describeImport(done([packed({ truncated: true })]))).toBe(
-      "已导入技能「电商视觉包」，原文太长，超出的那截没进来");
     expect(describeImport(done([packed()], [{ path: "C:/a.7z", reason: "得先解压" }]))).toBe(
       "已导入技能「电商视觉包」，1 个没进来：得先解压");
     expect(describeImport(done([], [{ path: "C:/a.7z", reason: "得先解压" }]))).toBe("没能导入：得先解压");

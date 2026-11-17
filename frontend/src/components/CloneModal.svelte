@@ -1768,7 +1768,13 @@
   const skillKind = $derived<PromptSkillKind | null>(mediaKind === "audio" ? null : mediaKind);
   const offerWorkflowPrompt = $derived(shouldOfferWorkflowPrompt(prompt, workflowPrompt));
 
-  /** 右键菜单那几行：这一族的技能，勾子打在默认那条上。读 store 不读 lib 里那份快照——菜单是响应式的，勾子得跟着默认值走。 */
+  /**
+   * 右键菜单那几行：这一族的技能，正在用的那一条高亮文字。
+   *
+   * 2026-11-16 苏醒：不要「✓ 」那种勾，也不要顶上那行「优化用哪条技能（图片）」的灰标题——
+   * 菜单里整片都是技能，那句是给不看界面的人解释界面的。高亮走 ContextMenuItem.active，
+   * 读 store 不读 lib 里那份快照：菜单是响应式的，高亮得跟着默认值走。
+   */
   const skillRows = $derived.by(() => {
     const kind = skillKind;
     if (!kind) return [];
@@ -1781,15 +1787,15 @@
   const skillMenuItems = $derived.by<ContextMenuItem[]>(() => {
     const kind = skillKind;
     if (!kind) return [];
-    const head: ContextMenuItem[] = [{ label: "优化用哪条技能（" + KIND_WORDS[kind] + "）", disabled: true }];
     if (!skillRows.length) {
-      return [...head, { label: "还没有技能，去建一条", onClick: () => { skillModal = true; } }];
+      return [{ label: "还没有技能，去建一条", onClick: () => { skillModal = true; } }];
     }
     const picked: ContextMenuItem[] = skillRows.map(({ item, isDefault }) => ({
-      label: (isDefault ? "✓ " : "") + item.name,
+      label: item.name,
+      active: isDefault,
       onClick: () => void chooseSkill(item),
     }));
-    return [...head, ...picked, { kind: "sep" }, { label: "技能设置…", onClick: () => { skillModal = true; } }];
+    return [...picked, { kind: "sep" }, { label: "技能设置…", onClick: () => { skillModal = true; } }];
   });
 
   const skillTitle = $derived(

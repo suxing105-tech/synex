@@ -190,6 +190,19 @@ def test_the_image_workflow_moved_onto_the_goohai_ratio_node():
     assert mega["value"] == 2 and mega["min"] == 0.2 and mega["max"] == 50.0
 
 
+def test_the_mask_template_ships_the_fixed_clip_folder():
+    """局部编辑那条 2026-11-17 跟着图片那条一起重导：CLIP 的模型目录名不再是拼错的 Qwen-imgae-2.1。
+
+    那次重导只动了目录名、一个浮点的表示和各节点的版本戳——节点号与输入名一字未动，
+    所以槽位沿用旧那份；这里连这条一起钉住，防止再导资源时把拼错的那版导回来。
+    """
+    entry = [e for e in clone_bundled.entries() if e["key"] == MASK_KEY][0]
+    text = json.dumps(entry["workflow"], ensure_ascii=False)
+    assert "Qwen-imgae" not in text
+    clip = [n for n in entry["workflow"].values() if n["class_type"] == "CLIPLoader"][0]
+    assert str(clip["inputs"]["clip_name"]).startswith("Qwen-image-2.1\\")
+
+
 def test_shipped_slots_point_at_real_nodes():
     """内置 JSON 是生成出来的，槽位指到不存在的节点要在这里被拦住。"""
     for entry in clone_bundled.entries():

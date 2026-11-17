@@ -94,7 +94,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "加载VAE",
-    "ver": "0.37.0"
+    "ver": "0.45.0"
    },
    "class_type": "VAELoader",
    "inputs": {
@@ -105,7 +105,7 @@
    "_meta": {
     "aux_id": "goohai/Goohaitools-comfyui",
     "title": "Qwen Image 2.1 文本编码 GH",
-    "ver": "83abca47fa10d47a1ffd0c7cb62b7fa2a9dc0ddc"
+    "ver": "3beedd4d4bab28d941a1bdb0113d7800081455a8"
    },
    "class_type": "TextEncodeQwenImage21GH",
    "inputs": {
@@ -139,7 +139,7 @@
    "_meta": {
     "aux_id": "goohai/Goohaitools-comfyui",
     "title": "加载图像 孤海",
-    "ver": "83abca47fa10d47a1ffd0c7cb62b7fa2a9dc0ddc"
+    "ver": "3beedd4d4bab28d941a1bdb0113d7800081455a8"
    },
    "class_type": "LoadImageGoohai",
    "inputs": {
@@ -151,7 +151,7 @@
    "_meta": {
     "aux_id": "goohai/Goohaitools-comfyui",
     "title": "孤海-遮罩裁剪V2",
-    "ver": "83abca47fa10d47a1ffd0c7cb62b7fa2a9dc0ddc"
+    "ver": "3beedd4d4bab28d941a1bdb0113d7800081455a8"
    },
    "class_type": "GH_MaskCropV2",
    "inputs": {
@@ -178,7 +178,7 @@
    "_meta": {
     "aux_id": "goohai/Goohaitools-comfyui",
     "title": "孤海-图像合并（遮罩）",
-    "ver": "83abca47fa10d47a1ffd0c7cb62b7fa2a9dc0ddc"
+    "ver": "3beedd4d4bab28d941a1bdb0113d7800081455a8"
    },
    "class_type": "GulfSeaImageMergeMask",
    "inputs": {
@@ -192,7 +192,7 @@
      "205",
      0
     ],
-    "透明度": 0.4000000000000001,
+    "透明度": 0.4,
     "遮罩": [
      "201",
      2
@@ -204,7 +204,7 @@
    "_meta": {
     "cnr_id": "comfyui_layerstyle",
     "title": "图层工具：纯色图像",
-    "ver": "2.0.37"
+    "ver": "2.0.40"
    },
    "class_type": "LayerUtility: ColorImage",
    "inputs": {
@@ -217,7 +217,7 @@
    "_meta": {
     "aux_id": "goohai/Goohaitools-comfyui",
     "title": "图像缩放（范围）孤海",
-    "ver": "83abca47fa10d47a1ffd0c7cb62b7fa2a9dc0ddc"
+    "ver": "3beedd4d4bab28d941a1bdb0113d7800081455a8"
    },
    "class_type": "图像缩放范围孤海",
    "inputs": {
@@ -238,7 +238,7 @@
    "_meta": {
     "aux_id": "goohai/Goohaitools-comfyui",
     "title": "图像缩放V2 孤海",
-    "ver": "83abca47fa10d47a1ffd0c7cb62b7fa2a9dc0ddc"
+    "ver": "3beedd4d4bab28d941a1bdb0113d7800081455a8"
    },
    "class_type": "图像缩放V2_孤海",
    "inputs": {
@@ -272,7 +272,7 @@
    "_meta": {
     "aux_id": "goohai/Goohaitools-comfyui",
     "title": "孤海-裁剪恢复",
-    "ver": "83abca47fa10d47a1ffd0c7cb62b7fa2a9dc0ddc"
+    "ver": "3beedd4d4bab28d941a1bdb0113d7800081455a8"
    },
    "class_type": "GH_CropRestore",
    "inputs": {
@@ -293,7 +293,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "LoRA加载器（仅模型）",
-    "ver": "0.39.2"
+    "ver": "0.45.0"
    },
    "class_type": "LoraLoaderModelOnly",
    "inputs": {
@@ -309,7 +309,7 @@
    "_meta": {
     "aux_id": "goohai/Goohaitools-comfyui",
     "title": "图像缩放（范围）孤海",
-    "ver": "83abca47fa10d47a1ffd0c7cb62b7fa2a9dc0ddc"
+    "ver": "3beedd4d4bab28d941a1bdb0113d7800081455a8"
    },
    "class_type": "图像缩放范围孤海",
    "inputs": {
@@ -330,7 +330,7 @@
    "_meta": {
     "aux_id": "goohai/Goohaitools-comfyui",
     "title": "孤海-遮罩裁剪V2",
-    "ver": "83abca47fa10d47a1ffd0c7cb62b7fa2a9dc0ddc"
+    "ver": "3beedd4d4bab28d941a1bdb0113d7800081455a8"
    },
    "class_type": "GH_MaskCropV2",
    "inputs": {
@@ -357,7 +357,7 @@
    "_meta": {
     "aux_id": "goohai/Goohaitools-comfyui",
     "title": "图像缩放V2 孤海",
-    "ver": "83abca47fa10d47a1ffd0c7cb62b7fa2a9dc0ddc"
+    "ver": "3beedd4d4bab28d941a1bdb0113d7800081455a8"
    },
    "class_type": "图像缩放V2_孤海",
    "inputs": {
@@ -391,7 +391,7 @@
    "_meta": {
     "aux_id": "goohai/Goohaitools-comfyui",
     "title": "孤海-裁剪恢复",
-    "ver": "83abca47fa10d47a1ffd0c7cb62b7fa2a9dc0ddc"
+    "ver": "3beedd4d4bab28d941a1bdb0113d7800081455a8"
    },
    "class_type": "GH_CropRestore",
    "inputs": {
@@ -412,7 +412,7 @@
    "_meta": {
     "aux_id": "goohai/Goohaitools-comfyui",
     "title": "Qwen Image 2.1 文本编码 GH",
-    "ver": "83abca47fa10d47a1ffd0c7cb62b7fa2a9dc0ddc"
+    "ver": "3beedd4d4bab28d941a1bdb0113d7800081455a8"
    },
    "class_type": "TextEncodeQwenImage21GH",
    "inputs": {
@@ -465,7 +465,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "VAE解码",
-    "ver": "0.37.0"
+    "ver": "0.45.0"
    },
    "class_type": "VAEDecode",
    "inputs": {
@@ -483,7 +483,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "LoRA加载器（仅模型）",
-    "ver": "0.39.2"
+    "ver": "0.45.0"
    },
    "class_type": "LoraLoaderModelOnly",
    "inputs": {
@@ -499,7 +499,7 @@
    "_meta": {
     "aux_id": "goohai/Goohaitools-comfyui",
     "title": "万能是否存在(GH)",
-    "ver": "83abca47fa10d47a1ffd0c7cb62b7fa2a9dc0ddc"
+    "ver": "3beedd4d4bab28d941a1bdb0113d7800081455a8"
    },
    "class_type": "GoohaiAnyExists",
    "inputs": {
@@ -514,7 +514,7 @@
    "_meta": {
     "cnr_id": "comfyui-easy-use",
     "title": "是否判断",
-    "ver": "130c1b5796d9876a5f853fa0bea88e808cfda4ad"
+    "ver": "1.4.1"
    },
    "class_type": "easy ifElse",
    "inputs": {
@@ -536,7 +536,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "随机噪波",
-    "ver": "0.39.0"
+    "ver": "0.45.0"
    },
    "class_type": "RandomNoise",
    "inputs": {
@@ -547,7 +547,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "K采样器选择",
-    "ver": "0.39.0"
+    "ver": "0.45.0"
    },
    "class_type": "KSamplerSelect",
    "inputs": {
@@ -558,7 +558,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "基本引导器",
-    "ver": "0.39.0"
+    "ver": "0.45.0"
    },
    "class_type": "BasicGuider",
    "inputs": {
@@ -576,7 +576,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "自定义采样器（高级）",
-    "ver": "0.39.0"
+    "ver": "0.45.0"
    },
    "class_type": "SamplerCustomAdvanced",
    "inputs": {
@@ -606,7 +606,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "自定义Sigmas",
-    "ver": "0.39.0"
+    "ver": "0.45.0"
    },
    "class_type": "ManualSigmas",
    "inputs": {
@@ -617,7 +617,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "VAE解码",
-    "ver": "0.37.0"
+    "ver": "0.45.0"
    },
    "class_type": "VAEDecode",
    "inputs": {
@@ -635,7 +635,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "自定义采样器（高级）",
-    "ver": "0.39.0"
+    "ver": "0.45.0"
    },
    "class_type": "SamplerCustomAdvanced",
    "inputs": {
@@ -665,7 +665,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "基本引导器",
-    "ver": "0.39.0"
+    "ver": "0.45.0"
    },
    "class_type": "BasicGuider",
    "inputs": {
@@ -683,7 +683,7 @@
    "_meta": {
     "aux_id": "goohai/Goohaitools-comfyui",
     "title": "展示任意 GH",
-    "ver": "83abca47fa10d47a1ffd0c7cb62b7fa2a9dc0ddc"
+    "ver": "3beedd4d4bab28d941a1bdb0113d7800081455a8"
    },
    "class_type": "GoohaiDisplayAny",
    "inputs": {
@@ -698,7 +698,7 @@
    "_meta": {
     "aux_id": "goohai/Goohaitools-comfyui",
     "title": "最大采样尺寸（长边）",
-    "ver": "83abca47fa10d47a1ffd0c7cb62b7fa2a9dc0ddc"
+    "ver": "3beedd4d4bab28d941a1bdb0113d7800081455a8"
    },
    "class_type": "GoohaiUniversalSlider",
    "inputs": {
@@ -711,7 +711,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "获取图像尺寸",
-    "ver": "0.43.0"
+    "ver": "0.45.0"
    },
    "class_type": "GetImageSize",
    "inputs": {
@@ -725,7 +725,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "获取图像尺寸",
-    "ver": "0.43.0"
+    "ver": "0.45.0"
    },
    "class_type": "GetImageSize",
    "inputs": {
@@ -739,7 +739,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "清空提示词或禁用本节点为移除 ； 非空提示词为局部重绘",
-    "ver": "0.29.0"
+    "ver": "0.45.0"
    },
    "class_type": "PrimitiveStringMultiline",
    "inputs": {
@@ -750,7 +750,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "保存图像",
-    "ver": "0.37.0"
+    "ver": "0.45.0"
    },
    "class_type": "SaveImage",
    "inputs": {
@@ -765,7 +765,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "参考图2",
-    "ver": "0.3.64"
+    "ver": "0.45.0"
    },
    "class_type": "LoadImage",
    "inputs": {
@@ -776,7 +776,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "参考图3",
-    "ver": "0.3.64"
+    "ver": "0.45.0"
    },
    "class_type": "LoadImage",
    "inputs": {
@@ -787,7 +787,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "参考图4",
-    "ver": "0.3.64"
+    "ver": "0.45.0"
    },
    "class_type": "LoadImage",
    "inputs": {
@@ -798,7 +798,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "参考图5",
-    "ver": "0.3.64"
+    "ver": "0.45.0"
    },
    "class_type": "LoadImage",
    "inputs": {
@@ -809,7 +809,7 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "UNet加载器",
-    "ver": "0.37.0"
+    "ver": "0.45.0"
    },
    "class_type": "UNETLoader",
    "inputs": {
@@ -821,11 +821,11 @@
    "_meta": {
     "cnr_id": "comfy-core",
     "title": "加载CLIP",
-    "ver": "0.37.0"
+    "ver": "0.45.0"
    },
    "class_type": "CLIPLoader",
    "inputs": {
-    "clip_name": "Qwen-imgae-2.1\\qwen3vl_8b_int8_convrot.safetensors",
+    "clip_name": "Qwen-image-2.1\\qwen3vl_8b_int8_convrot.safetensors",
     "device": "default",
     "type": "qwen_image"
    }

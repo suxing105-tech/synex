@@ -191,6 +191,24 @@ def test_an_overlong_source_is_refused_by_name_not_quietly_cut(client, monkeypat
     assert "技能写法最长 200 字" in result["skipped"][0]["reason"]
 
 
+def test_replacing_with_an_overlong_package_leaves_the_old_one_intact(client, tmp_path, monkeypatch):
+    """换成一条超长的技能包：一个字都不许动，旧包还在盘上。
+
+    替换那一路是「新包先顶掉旧目录，再写库」。少了正文长度这道先验，
+    save_skill 拒收时旧包已经被人原来能用的那一份没了。
+    """
+    first = only_imported(import_paths(client, make_package(tmp_path / "first", name="甲",
+                                                            body="# 甲\n\n原来那一版。")))
+    monkeypatch.setattr(service, "MAX_INSTRUCTION", 200)
+    big = make_package(tmp_path / "big", name="甲", body="# 甲\n\n" + ("正文。" * 300))
+    data = import_paths(client, big, on_conflict="replace").json()
+    assert data["imported"] == [] and data["conflicts"] == []
+    assert "上限 200 字" in data["skipped"][0]["reason"]
+    kept = next(item for item in client.get("/api/prompt-skills").json() if item["id"] == first["id"])
+    assert "原来那一版" in kept["instruction"]
+    assert "原来那一版" in (Path(first["package_dir"]) / "SKILL.md").read_text(encoding="utf-8")
+
+
 def test_import_rejects_bodyless_file(client):
     assert client.post("/api/prompt-skills/import", json={"content": "---\nname: x\n---\n"}).status_code == 422
 

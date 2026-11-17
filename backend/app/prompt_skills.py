@@ -540,6 +540,11 @@ def _commit_package(candidate: dict, replace_skill_id: int | None = None) -> dic
     fields = candidate["fields"]
     skill_path = candidate["skill_path"]
     body = candidate["body"]
+    # 超长要在这儿就说，不能留给 save_skill 去拒：替换那一路是「新包先顶掉旧目录、再写库」，
+    # 晚一步就变成旧包没了、库里还留着旧写法，两头都对不上。
+    if len(body) > MAX_INSTRUCTION:
+        raise HTTPException(422, "这条技能的原文有 " + str(len(body)) + " 字，超过单条技能上限 "
+                                 + str(MAX_INSTRUCTION) + " 字，先把它拆成几条再导")
     # 资料优先级按正文点名判断，所以正文得是完整的：切掉后半截，
     # 「作者想让我们看什么」就被切掉一半（2026-11-16 起正文一律不切）。
     refs_block, files_meta, refs_chars = skill_packages.compose_refs_block(entries, body, skill_path)

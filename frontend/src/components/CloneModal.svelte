@@ -380,11 +380,11 @@
    * API 那一屏的左列：一家服务商一行，右列摆它报的那些模型（2026-11-04 苏醒给的图二版式）。
    * 只有后端标了 is_cloud 的条目会进来，所以这一屏不可能摆出一家假服务商。
    * 再筛一道 Key（2026-11-16 苏醒：「API key 清除时，这里不显示」）：Key 清掉的那一家从这一屏
-   * 消失，但它那条工作流没被删、Key 重新保存就回来——所以少了一家要在下面说一句。
+   * 消失，但它那条工作流没被删、Key 重新保存就回来。少了一家就是少了一家，不另外说一句
+   * （2026-11-17 苏醒：「任何厂商删掉了就删掉了，不要显示」）。
    */
   const apiGroupsAll = $derived(cloudMenuGroups(rowsForKind(wfRows, pickedKind).filter((row) => rowIsCloud(row)), templates));
   const apiGroups = $derived(apiGroupsAll.filter((group) => vendorKeyed(group.key)));
-  const apiHidden = $derived(apiGroupsAll.filter((group) => !vendorKeyed(group.key)));
   /** 「API」那颗后面的条数：只数现在真摆得出来的行，藏掉的那几家不该还算数。 */
   const cloudRowCount = $derived(apiGroups.reduce((sum, group) => sum + group.rows.length, 0));
   /** 指针停在哪家：悬停或点左列换它。没停过时回落到第一家；一家都没装时整块不画，走下面那句空态。 */
@@ -2553,19 +2553,11 @@
                           <p class="cm-pop-empty">云端这一屏还空着：模型 API Key 在设置 · 模型API配置里填。</p>
                         {/if}
                       {/if}
-                      {#if wfTab === "cloud" && apiActive && apiHidden.length}
-                        <!-- 清了 Key 的那几家不再摆在左列，但不能悄悄少一家：报出名字，再给一条回到那一页的路。
-                             样式沿用本机那屏末尾那一行，同一个位置、同一颗图标，一眼认得出点下去去哪儿。 -->
-                        <div class="cm-pop-sep"></div>
-                        {#if onOpenSettings}
-                          <button class="cm-wf cm-wf-add" role="menuitem" onclick={() => { closeWorkflowPop(); onOpenSettings("模型API配置"); }}>
-                            <span class="cm-wf-lead" aria-hidden="true"><Icon name="nav-model-api" size={14} /></span>
-                            <span class="cm-wf-name">{apiHidden.map((group) => group.label).join(" / ")} 的 Key 已清除 · 去设置重新保存</span>
-                          </button>
-                        {:else}
-                          <p class="cm-pop-empty">{apiHidden.map((group) => group.label).join(" / ")} 的 Key 已清除，这一屏先不摆它。</p>
-                        {/if}
-                      {/if}
+                      <!-- 清了 Key 的那一家从左边那一列消失之后，末尾不再补一行报它的名字。
+                           他自己去清的那把 Key，就是不用这一家了，这里再写一句「某某的 Key 已清除 ·
+                           去设置重新保存」等于把做完的事退回来问一遍（2026-11-17 苏醒：「任何厂商删掉了
+                           就删掉了，不要显示」）。这一屏整屏空着的时候，上面那条「去设置填云端模型的
+                           API Key」还在，要出路的时候路本来就通着。 -->
                       {#if wfTab === "local"}
                         <!-- 分隔线与底部这颗只属于本机这一屏：API 那屏到模型清单就结束（2026-11-04 苏醒圈掉了
                              「设置 RunningHub 的 API Key」那一行）。Key 在设置 -> 模型API配置里填——空态那句话、

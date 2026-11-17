@@ -3108,9 +3108,11 @@ const CLOUD_MINIMAX = {
   cloud: { model_label: 'MiniMax H3 Image', provider_label: 'MiniMax', verified: false, notes: [] },
 };
 
-it('Key 已清除的那一家不再出现在云端那一屏，末尾留一行去设置重新保存', async () => {
+it('Key 已清除的那一家从云端那一屏消失，末尾也不再报名字', async () => {
   // 2026-11-16 苏醒：「如果配置的是图像，视频，音频的 API key，删除后，再次创作处也不显示这家厂商」。
   // 两把 Key 家在不同表里，availability() 那一句说不出「这一家还能不能用」，得按家报。
+  // 2026-11-17 苏醒把末尾那行说明也一起圈掉了：「任何厂商删掉了就删掉了，不要显示」。
+  // 他自己去清的那把 Key 就是不用这一家了，这边再报一次名字等于把做完的事退回来问一遍。
   const onOpenSettings = vi.fn();
   routes({
     ...baseRoutes(),
@@ -3126,16 +3128,21 @@ it('Key 已清除的那一家不再出现在云端那一屏，末尾留一行去
   const screen = await ready({ onOpenSettings });
   await fireEvent.click(screen.getByRole('button', { name: '工作流' }));
   await fireEvent.click(await screen.findByRole('button', { name: /^云端API服务/ }));
+  await vi.waitFor(() => expect(screen.container.querySelectorAll('.cm-api-vendor').length).toBe(1));
   const labels = [...screen.container.querySelectorAll('.cm-api-vendor')]
     .map((v) => (v as HTMLElement).textContent ?? '');
   expect(labels.some((t) => t.includes('MiniMax'))).toBe(false);
   expect(labels.some((t) => t.includes('RunningHub'))).toBe(true);
   // tab 上那个数只数现在真摆得出来的行，藏掉的那一家不该还算数
   expect(screen.getByRole('button', { name: /^云端API服务/ }).textContent).toContain('1');
-  // 少了一家不能悄悄少：报出名字，并给一条回到那一页的路
-  const row = await screen.findByRole('menuitem', { name: /MiniMax 的 Key 已清除 · 去设置重新保存/ });
-  await fireEvent.click(row);
-  expect(onOpenSettings).toHaveBeenCalledWith('模型API配置');
+  // 整屏不许再出现被藏起来的那一家的名字，也不许有任何一句「已清除」
+  const pop = (screen.container.querySelector('.cm-pop-wf') as HTMLElement).textContent ?? '';
+  expect(pop).not.toContain('MiniMax');
+  expect(pop).not.toContain('已清除');
+  expect(screen.queryByRole('menuitem', { name: /去设置重新保存/ })).toBeNull();
+  expect(onOpenSettings).not.toHaveBeenCalled();
+  // 这一屏还摆得出模型，所以那条整屏空态的「去设置填 Key」也不该冒出来
+  expect(screen.queryByText(/去设置填云端模型的 API Key/)).toBeNull();
 });
 
 it('两家都清了 Key 时整屏落到空态那一行，不再摆两家点不动的厂商', async () => {

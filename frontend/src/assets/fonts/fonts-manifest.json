@@ -21,7 +21,7 @@
     "gb2312": 6763,
     "source": 1637
   },
-  "totalBytes": 5938876,
+  "totalBytes": 5935948,
   "licenseFile": "frontend/src-tauri/resources/OFL-SeekX-Sans.txt",
   "files": [
     {
@@ -29,40 +29,40 @@
       "family": "SeekX Sans",
       "subfamily": "Regular",
       "weight": 400,
-      "bytes": 1170792,
-      "sha256": "5d7b12712096516c8bb649ee955bf77183626a395dccab30a5c4e442ed7265b8"
+      "bytes": 1169164,
+      "sha256": "ce39a001d068a04d9fd8f0d3205ef49518599db13d36262bd9eaa75a03109b17"
     },
     {
       "file": "seekx-sans-medium.woff2",
       "family": "SeekX Sans",
       "subfamily": "Medium",
       "weight": 500,
-      "bytes": 1198824,
-      "sha256": "e3777e00a38a4667adc92338758dba049793b76f0595290c3b7c80e996a414e9"
+      "bytes": 1198272,
+      "sha256": "caa97e20455e492a5ff2c57e12731d7a747ea66a0450c3072956fe9009f50a87"
     },
     {
       "file": "seekx-sans-semibold.woff2",
       "family": "SeekX Sans",
       "subfamily": "SemiBold",
       "weight": 600,
-      "bytes": 1209852,
-      "sha256": "75ee88a5fce73f675d1f9b468a8a11e68803c1247ddcc9317c51396b7341d58a"
+      "bytes": 1209496,
+      "sha256": "f813377577446acb45262b7878cbec10bcf681a971d5ba0188530e457aea29fa"
     },
     {
       "file": "seekx-sans-bold.woff2",
       "family": "SeekX Sans",
       "subfamily": "Bold",
       "weight": 700,
-      "bytes": 1209484,
-      "sha256": "6884ebe5ec2e5277b6ad72ce5f6fe1554b2f5e0516d7326dcc0c99f9499c1bed"
+      "bytes": 1208744,
+      "sha256": "959116361e276ee561b85ce3a8880a3694aa2ebdca02349ede8940e6c2f33ccf"
     },
     {
       "file": "seekx-sans-condensed-regular.woff2",
       "family": "SeekX Sans Condensed",
       "subfamily": "Regular",
       "weight": 400,
-      "bytes": 1149924,
-      "sha256": "48a53812090439a2511bb6d1fd140f86c730cf6858ddfeb6092a45d7b217f949"
+      "bytes": 1150272,
+      "sha256": "6cc608bedc95149c8fac9e9184ead0ba7511c4df96b735a224381c984d3a9660"
     }
   ]
 }

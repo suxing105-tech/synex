@@ -19,9 +19,9 @@
   "charsetGroups": {
     "latin+punct": 2898,
     "gb2312": 6763,
-    "source": 1635
+    "source": 1636
   },
-  "totalBytes": 5937512,
+  "totalBytes": 5935968,
   "licenseFile": "frontend/src-tauri/resources/OFL-SeekX-Sans.txt",
   "files": [
     {
@@ -29,40 +29,40 @@
       "family": "SeekX Sans",
       "subfamily": "Regular",
       "weight": 400,
-      "bytes": 1169980,
-      "sha256": "321822641165b36d3f1ba596d7934db6e026351bd03735bf0681891cc2bd2ae2"
+      "bytes": 1169484,
+      "sha256": "9fe9296fdd088a6c7a1ee0ae7b1652f8919a6924fbcf7f667b7506f92501519c"
     },
     {
       "file": "seekx-sans-medium.woff2",
       "family": "SeekX Sans",
       "subfamily": "Medium",
       "weight": 500,
-      "bytes": 1199592,
-      "sha256": "ee98c391344fff4d690f408988b2bfa61578ebed823ce6aa264010f280a0ac35"
+      "bytes": 1199724,
+      "sha256": "1823edfe927bd63316e75e910cb42604a4b5b0330cfa657e10e5f3529cf0d667"
     },
     {
       "file": "seekx-sans-semibold.woff2",
       "family": "SeekX Sans",
       "subfamily": "SemiBold",
       "weight": 600,
-      "bytes": 1209536,
-      "sha256": "617eb3067ea1d4a87f226739fb01555fa0701c8256d9d27bfa14de206e7c8e8c"
+      "bytes": 1208684,
+      "sha256": "a10a7931d1cebe8b879843c216f2f05919be1f91a2f71468ac67878a7d29f858"
     },
     {
       "file": "seekx-sans-bold.woff2",
       "family": "SeekX Sans",
       "subfamily": "Bold",
       "weight": 700,
-      "bytes": 1209064,
-      "sha256": "a72412505ffbfcd7f9c19a0a3398252fc3d87865647336e712678eec414e7d19"
+      "bytes": 1208536,
+      "sha256": "8b168213bbfc56988ed38344664767b780d6ba7eb5aab34aa7b64aeb810ba422"
     },
     {
       "file": "seekx-sans-condensed-regular.woff2",
       "family": "SeekX Sans Condensed",
       "subfamily": "Regular",
       "weight": 400,
-      "bytes": 1149340,
-      "sha256": "da93664457ce62153c0699858c469d9a3920996d1c9c5e5a671bb47e6a8b8aaf"
+      "bytes": 1149540,
+      "sha256": "1726357f396de0f10c76ec26493a70fb58919426ff64ac8a38b8c37bd757e99a"
     }
   ]
 }

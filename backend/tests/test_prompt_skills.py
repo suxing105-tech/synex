@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import shutil
 import zipfile
 
 import pytest
@@ -908,3 +909,69 @@ def test_restoring_a_builtin_keeps_its_references(client, init_db):
     assert restored["instruction"] == bundled_skills.H3_IMAGE_INSTRUCTION
     refs = init_db.main().execute("SELECT package_refs FROM prompt_skills WHERE id=?", (skill_id,)).fetchone()[0]
     assert refs and "--- references/t2i-en.txt ---" in refs, "恢复的是写法，资料一个字不动"
+
+
+# ---------- 包目录被人在文件夹里删掉：直接从清单里消失，不弹提示 ----------
+
+
+def test_skill_whose_package_folder_was_deleted_disappears_from_the_list(client, tmp_path):
+    # 2026-11-17 苏醒：「当我在文件夹中删除这个 skill，不需要提示，直接删除显示即可。」
+    root = make_package(tmp_path / "pack")
+    imported = only_imported(import_paths(client, root))
+    folder = Path(imported["package_dir"])
+    assert folder.exists()
+    shutil.rmtree(folder)
+    rows = client.get("/api/prompt-skills").json()
+    assert imported["id"] not in [row["id"] for row in rows], (
+        "文件夹删了就是在删这条技能，清单里不该还摆着它")
+    # 库里那一行是真没了，写法留一份副本到 skills/_removed/，删错了人自己能捡回来
+    kept = list((service.skills_dir() / "_removed").glob("%s-*.md" % imported["id"]))
+    assert len(kept) == 1, kept
+    assert "先定光，再定镜头。" in kept[0].read_text(encoding="utf-8")
+
+
+def test_list_keeps_every_skill_whose_folder_is_still_there(client, tmp_path):
+    root = make_package(tmp_path / "pack")
+    imported = only_imported(import_paths(client, root))
+    before = client.get("/api/prompt-skills").json()
+    after = client.get("/api/prompt-skills").json()
+    assert [row["id"] for row in before] == [row["id"] for row in after], "拉两次清单不该少东西"
+    assert next(r for r in after if r["id"] == imported["id"])["package_dir"]
+
+
+def test_a_skill_root_that_is_not_readable_is_not_treated_as_deleted(client, tmp_path, monkeypatch):
+    # 盘没挂上（U 盘没插、数据目录在网盘还没落下来）和「他真删了」长得一样：分不清就一条都不动
+    root = make_package(tmp_path / "pack")
+    imported = only_imported(import_paths(client, root))
+    monkeypatch.setattr(service, "data_dir", lambda: tmp_path / "usb-drive-not-mounted")
+    rows = client.get("/api/prompt-skills").json()
+    assert imported["id"] in [row["id"] for row in rows], "读不到 skills 根目录时不许删任何东西"
+
+
+def test_builtin_with_a_missing_folder_only_loses_that_path(client, init_db, tmp_path):
+    service.skills_dir()  # 让 skills 根目录先存在，否则这一趟本来就该整趟跳过
+    bid = builtin_id(client, "qwen_image")
+    gone = str(service.skills_dir() / "999")  # 一个不存在的路径：他把它删了
+    init_db.main().execute("UPDATE prompt_skills SET package_dir=? WHERE id=?", (gone, bid))
+    stamped = init_db.main().execute("SELECT package_dir FROM prompt_skills WHERE id=?",
+                                     (bid,)).fetchone()[0]
+    assert stamped == gone, "先确认路径真的挂上去了，否则这条测不到东西"
+    # 第一次拉清单就会走一遍清理，所以「抹掉之前是什么」只能从库里取
+    row = next(r for r in client.get("/api/prompt-skills").json() if r["id"] == bid)
+    assert row["package_dir"] is None, "内置那条只抹掉失效路径，「在文件夹中显示」跟着消失"
+    assert row["builtin_key"] == "qwen_image", "内置那条不许被一起删掉（它本来就删不掉）"
+    assert row["instruction"] == service.builtin_seed("qwen_image")["instruction"], (
+        "内置那条的写法一个字都不许动")
+
+
+def test_pruned_skill_clears_the_default_pointer(client, tmp_path):
+    root = make_package(tmp_path / "pack")
+    imported = only_imported(import_paths(client, root))
+    client.put("/api/prompt-skill-settings",
+               json={"default_image_skill": imported["id"], "default_video_skill": None})
+    assert client.get("/api/prompt-skill-settings").json()["default_image_skill"] == imported["id"]
+    shutil.rmtree(Path(imported["package_dir"]))
+    rows = client.get("/api/prompt-skills").json()
+    assert imported["id"] not in [row["id"] for row in rows]
+    assert client.get("/api/prompt-skill-settings").json()["default_image_skill"] is None, (
+        "技能没了，默认指针不能还指着它（外键 ON DELETE SET NULL）")

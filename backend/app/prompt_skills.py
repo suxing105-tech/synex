@@ -12,13 +12,14 @@ import logging
 import os
 import re
 import shutil
+import time
 from pathlib import Path, PurePosixPath
 
 from fastapi import HTTPException
 from starlette.concurrency import run_in_threadpool
 
 from . import bundled_skills, db, reverse_prompts, skill_packages
-from .config import skills_dir
+from .config import data_dir, skills_dir
 
 logger = logging.getLogger(__name__)
 
@@ -265,6 +266,8 @@ def public(row):
 
 
 def list_skills():
+    """清单。顺手把「包目录已经被人在文件管理器里删掉」的那几条摘掉——不弹提示。"""
+    prune_missing_packages()
     rows = db.get_pool().main().execute("SELECT * FROM prompt_skills ORDER BY sort, id").fetchall()
     return [public(row) for row in rows]
 
@@ -507,6 +510,76 @@ def remove_package_dir(package_dir: str | None) -> None:
     if target == root or root not in target.parents:
         return
     shutil.rmtree(target, ignore_errors=True)
+
+
+# 删掉的技能在这儿留一份写法，界面上它消失了，人还能自己捡得回原文
+REMOVED_SKILLS_DIRNAME = "_removed"
+# Windows 不许出现在文件名里的字符（含斜杠与冒号），控制字符一起换掉
+INVALID_STEM = re.compile(r"[<>:\"/\\|?*\x00-\x1f]")
+
+
+def _archive_removed_skill(row) -> None:
+    """把即将消失的那条技能的写法存一份到 skills/_removed/。
+
+    直接从清单里去掉是苏醒要的效果，可库里那一行删掉是真没了：留这一份文件，
+    回头发现删错了还能自己把原文捡回来，不必回头求软件。写失败只是少一份副本，
+    不该拦着删除本身，所以这里不出声。
+    """
+    stem = INVALID_STEM.sub(" ", str(row["name"] or "")).strip().rstrip(".") or "未命名技能"
+    folder = skills_dir() / REMOVED_SKILLS_DIRNAME
+    path = folder / f'{row["id"]}-{time.strftime("%Y%m%d-%H%M%S")}-{stem[:40]}.md'
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        body = f'# {row["name"]}\n\n{row["note"] or ""}\n\n{row["instruction"]}\n'
+        path.write_text(body, encoding="utf-8")
+    except OSError:
+        logger.warning("删掉的技能「%s」没能留下副本", row["name"])
+
+
+def prune_missing_packages() -> list[int]:
+    """技能包目录被人在文件管理器里删掉了：这条直接从清单里消失，一句提示都不弹。
+
+    2026-11-17 苏醒：「当我在文件夹中删除这个 skill，不需要提示，直接删除显示即可。」
+    他去文件管理器里删那个文件夹，本来就是在删这条技能；这边再弹一句「文件已经不在
+    这个位置了」等于把同一个动作汇报两遍，还要他再回界面点一次删除。
+
+    三条边界，缺一条就宁可不删：
+    - `skills/` 根目录本身读不到 → 整趟什么都不做。盘没挂上（U 盘没插、数据目录在网盘
+      还没落下来）和「他真删了」在两处判断里长得一模一样，分不清就不动别人的技能；
+    - 内置那条不许被删（它本来就删不掉），只抹掉失效的 `package_dir`：随包那份资料在
+      安装包里、本来就不落盘，「在文件夹中显示」那颗跟着消失就够了；
+    - 真删的那条先把写法留一份副本（见 _archive_removed_skill）。
+
+    默认指针不用补：那两列是 `ON DELETE SET NULL` 的外键，而每条连接都开了
+    `PRAGMA foreign_keys=ON`，删行时自己置空。
+    """
+    root = data_dir() / "skills"
+    if not root.is_dir():
+        return []
+    pool = db.get_pool().main()
+    rows = pool.execute(
+        "SELECT id,name,note,instruction,builtin_key,package_dir FROM prompt_skills"
+        " WHERE package_dir IS NOT NULL AND package_dir<>''"
+    ).fetchall()
+    removed: list[int] = []
+    for row in rows:
+        try:
+            if Path(str(row["package_dir"])).exists():
+                continue
+        except OSError:
+            continue  # 路径写法本身读不动，同样不算「被删了」
+        if row["builtin_key"]:
+            pool.execute("UPDATE prompt_skills SET package_dir=NULL WHERE id=?", (row["id"],))
+            logger.info("内置技能 %s 的包目录已经不在了，只抹掉这个路径：%s",
+                        row["builtin_key"], row["package_dir"])
+            continue
+        _archive_removed_skill(row)
+        with db.transaction() as tx:
+            tx.execute("DELETE FROM prompt_skills WHERE id=?", (row["id"],))
+        removed.append(int(row["id"]))
+    if removed:
+        logger.info("技能包目录已不在，%d 条技能直接从清单里摘掉：%s", len(removed), removed)
+    return removed
 
 
 def _package_manifest(entries: list[dict], files_meta: list[dict], skill_path: str = "") -> list[dict]:

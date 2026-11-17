@@ -12,10 +12,13 @@
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 import tomllib
 from pathlib import Path
+
+from fontTools.ttLib import TTFont
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -75,3 +78,102 @@ def test_generated_faces_are_real_woff2():
     for face in _manifest()["files"]:
         head = (MANIFEST.parent / face["file"]).read_bytes()[:4]
         assert head == b"wOF2", f"{face['file']} 不是 woff2，重跑 frontend/scripts/fetch-fonts.ps1"
+
+# ---------------------------------------------------------------------------
+# 界面点名的字，字面里到底有没有（2026-11-16 补的闸）
+#
+# 前面几条守的是「产物可复现、授权链条没断」。这一条守整套字体规范里唯一还靠人记性的
+# 那一步：改了中文文案或新加符号，却忘了重跑 fetch-fonts.ps1。子集是「拉丁与标点整段
+# + GB2312 常用汉字 + 源码扫到的字」，常用中文不会掉，掉的是 GB2312 之外的生僻字和
+# 符号——掉下去就换 Microsoft YaHei 画，同一行里两种宽度两种脸，用户只当界面没对齐，
+# 不会有人当 bug 报。所以这条必须自动化，不能靠「记得重跑」。
+#
+# 口径直接复用生成脚本 subset_fonts.py 的同一套函数：请求集由它算，字面有没有去读真
+# woff2 的 cmap，中间不隔任何生成物——所以「manifest 说全了而字体其实缺」骗不过去。
+# 注意 build_charset() 里的两个源码路径是相对的（fetch-fonts.ps1 在仓库根跑），而 pytest
+# 的工作目录是 backend/，所以这里一律自己传绝对路径，否则源码那组会静默扫成空。
+# ---------------------------------------------------------------------------
+
+# 上游寒蝉德黑体本来就没有这些码位。按处置口径分四类登记，类别名就是结论。
+# 新字符不许往这里加：要么重跑 fetch-fonts.ps1 把它收进子集，要么别用那个字符。
+_BASELINE_EMOJI = {0x23F3, 0x1F4E5}  # 空态 emoji：彩色图元本来就该交给系统 emoji 字体
+_BASELINE_NOT_OUR_UI = {0x1F3A5, 0x1F165, 0x1F157, 0x1F162, 0xFE0F}  # 内置工作流 JSON 的节点标题，画在 ComfyUI 里
+_BASELINE_MAC_ONLY = {0x2303, 0x2325}  # 快捷键提示的 isMac 分支，本产品只发 Windows
+_BASELINE_COMMENT_ONLY = {0x2460, 0x2461, 0x2462, 0x25B8, 0x2699}  # 只出现在注释和测试文本里，不进界面
+# 这四个是真缺口，也确实显示在界面上：右栏「更多操作」的文字图标 ⋯、对比视图
+# 播放暂停按钮的 ⏸（同一条里和 ▶ 两种脸）、Markdown 任务列表的 ☐ ☑。
+# 前两个的正解是换成 <Icon>（AGENTS.md §3.1「图标只有一个入口」），换掉之后这条
+# 登记会因为源码里不再有该字符而自动失效，不需要手动删。
+_BASELINE_KNOWN_DEBT = {0x22EF, 0x23F8, 0x2610, 0x2611}
+_BASELINE = (_BASELINE_EMOJI | _BASELINE_NOT_OUR_UI | _BASELINE_MAC_ONLY
+             | _BASELINE_COMMENT_ONLY | _BASELINE_KNOWN_DEBT)
+
+_SOURCE_ROOTS = [REPO / "frontend" / "src", REPO / "backend" / "app"]
+_SF = None
+_FACES = None
+
+
+def _subsetter():
+    """按路径加载 frontend/scripts/subset_fonts.py，和生成产物时用的是同一份逻辑。"""
+    global _SF
+    if _SF is None:
+        spec = importlib.util.spec_from_file_location("seekx_subset", SUBSET_SCRIPT)
+        assert spec and spec.loader, f"加载不了 {SUBSET_SCRIPT}"
+        _SF = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_SF)
+    return _SF
+
+
+def _face_cmaps() -> dict[str, set[int]]:
+    """每只真字面的 cmap，一次读五只、缓存住（合计 5.9MB，别在每条用例里重来）。"""
+    global _FACES
+    if _FACES is None:
+        sf = _subsetter()
+        _FACES = {}
+        for face in _manifest()["files"]:
+            font = TTFont(MANIFEST.parent / face["file"], lazy=True)
+            try:
+                _FACES[face["file"]] = sf.font_chars(font)
+            finally:
+                font.close()
+    return _FACES
+
+
+def _fmt(cps) -> str:
+    return " ".join("U+%04X%s" % (cp, chr(cp)) for cp in sorted(cps))
+
+
+def test_shipped_faces_cover_every_character_the_source_asks_for():
+    sf = _subsetter()
+    requested = sf.source_codepoints(_SOURCE_ROOTS)
+    assert requested, "源码一个非 ASCII 字符都没扫到，八成是路径传错了"
+    for name, have in _face_cmaps().items():
+        missing = requested - have
+        unexpected = missing - _BASELINE
+        assert not unexpected, (
+            f"{name} 缺 {len(unexpected)} 个字：{_fmt(unexpected)}\n"
+            "源码用了子集里没有的字符，界面会掉回 Microsoft YaHei，一行里两种脸。\n"
+            "修法：跑 frontend/scripts/fetch-fonts.ps1 重新切子集（上游有字就能收进来）；\n"
+            "上游确实没有的字符，换成现成的 <Icon> 或普通字符，不要往登记表里塞。"
+        )
+        # 登记表要能自愈：上游哪天补了字、或者那处文字被换掉了，条目就该删
+        stale = (requested & _BASELINE) - missing
+        assert not stale, (
+            f"{name} 现在认得 {_fmt(stale)} 了，登记表还是当它缺。"
+            "重跑过 fetch-fonts.ps1 或改了文案，就把对应条目从登记表里删掉。"
+        )
+
+
+def test_manifest_charset_size_tracks_current_source():
+    # manifest 的 codepoints 是「生成那一刻请求了多少码位」。对不上说明源码里的
+    # 非 ASCII 字符变了而产物没重新生成——比上面那条更早报警，而且不需要读字体。
+    sf = _subsetter()
+    requested = (
+        sf.range_codepoints() | sf.gb2312_hanzi() | sf.source_codepoints(_SOURCE_ROOTS)
+    )
+    declared = _manifest()["codepoints"]
+    assert len(requested) == declared, (
+        f"当前源码请求 {len(requested)} 个码位，fonts-manifest.json 记的是 {declared}。"
+        "非 ASCII 文案变了就必须重跑 frontend/scripts/fetch-fonts.ps1 重新生成子集与清单。"
+    )
+

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from urllib.parse import urlsplit
 
 import pytest
 from fastapi import FastAPI
@@ -173,6 +174,28 @@ def test_providers_only_claim_capabilities_we_actually_wired(client):
     others = [pid for pid in presets if pid not in ("runninghub", "minimax")]
     assert others and all(presets[pid]["capabilities"] == ["text"] for pid in others)
     assert all(presets[pid]["workflow_key"] is False for pid in others)
+
+
+def test_every_preset_points_at_its_own_key_page(client):
+    """每一家内置厂商都得能一键跳到它自己的取 Key 页面。
+
+    原先只有 RunningHub 与 MiniMax 带了这条链接，其余八家等于把「去哪拿 Key」留给搜索引擎；
+    同一排按钮有的能点有的不能点，也说不通。地址要落在厂商自己的控制台（https），
+    不能是搜索引擎、文档站或第三方中转。
+    """
+    presets = client.get("/api/model-providers").json()
+    assert presets, "预设清单不该是空的"
+    for preset in presets:
+        url = preset["console_url"]
+        assert url.startswith("https://"), f"{preset['id']} 的取 Key 地址不是 https：{url!r}"
+        assert len(url) > len("https://x.y"), f"{preset['id']} 的取 Key 地址太短，不像一个页面：{url!r}"
+    # 这几家的域名各有历史包袱，写错了不会报错、只会把用户送到别人家，所以逐条钉住
+    hosts = {p["id"]: urlsplit(p["console_url"]).netloc for p in presets}
+    assert hosts["qwen"] == "bailian.console.aliyun.com", "通义千问的 Key 在阿里云百炼，不在 dashscope"
+    assert hosts["doubao"] == "ark.volcengine.com", "豆包的 Key 在火山方舟控制台"
+    assert hosts["zhipu"] == "open.bigmodel.cn", "智谱的平台是 bigmodel（open.bigmodel.cn 是它的正式域名）"
+    assert hosts["moonshot"] == "platform.kimi.com", "Moonshot 的开放平台现在挂在 kimi 域名下"
+    assert hosts["deepseek"] == "modelscope.cn", "这张卡用的是魔搭（ModelScope）的推理 Key，不是 deepseek 官网"
 
 
 def test_minimax_text_model_list_excludes_media_generation_models(client):

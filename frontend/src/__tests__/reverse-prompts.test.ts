@@ -269,14 +269,13 @@ describe("reverse prompts", () => {
   });
 
   it("非共用厂商点「清除」：即时删这条配置自己的 Key，不用先保存", async () => {
-    const qwenModel = { ...model, provider: "qwen" };
-    vi.spyOn(reverseApi, "models").mockResolvedValue([qwenModel]);
-    modelConfigs.set([qwenModel]);
+    // 走自己填的那一条：内置厂商那一侧已经没有地址格（见「不再摆高级设置」那条），
+    // 要验的「删的是这条配置自己的 Key、且不顺手点保存」和厂商是谁没关系。
     const clear = vi.spyOn(reverseApi, "clearModelKey").mockResolvedValue({ ...model, has_api_key: false });
     const save = vi.spyOn(reverseApi, "saveModel").mockResolvedValue(model);
     const panel = render(ModelApiSettings);
     await waitForReady(panel);
-    await pickProvider(panel, "qwen");
+    expect(pressedCard(panel)).toBe("custom");
     await fireEvent.input(panel.getByLabelText("Base URL"), { target: { value: "https://example.com/v1/chat/completions/" } });
     expect(panel.getByText("请求地址：https://example.com/v1/chat/completions")).toBeTruthy();
     await fireEvent.click(panel.getByRole("button", { name: "清除这把 Key" }));
@@ -600,6 +599,77 @@ describe("reverse prompts", () => {
     await waitForReady(panel);
     expect(panel.container.querySelector(".api-card[aria-pressed='true']")?.getAttribute("data-config-id")).toBe("11");
     expect(panel.container.querySelector(".api-provider-name")?.textContent).toBe("本地 Qwen");
+  });
+  it("每一家内置厂商都给一颗「获取 API Key」：跳到它自己的控制台，换厂商也跟着换地址", async () => {
+    // 这颗按钮原先只有 RunningHub 与 MiniMax 有，其余几家把「去哪拿 Key」留给了搜索引擎。
+    // 后端现在每家都带 console_url，这一条钉住「带了就画、换一家就换成那一家的地址」。
+    vi.mocked(reverseApi.providers).mockResolvedValue([
+      { ...preset, console_url: "https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key" },
+      { ...cloudPreset, console_url: "https://www.runninghub.cn" },
+    ]);
+    const panel = render(ModelApiSettings);
+    await waitForReady(panel);
+    await pickProvider(panel, "qwen");
+    const link = panel.container.querySelector("a.api-console") as HTMLAnchorElement;
+    expect(link?.textContent).toContain("获取 API Key");
+    expect(link?.getAttribute("target")).toBe("_blank");
+    expect(link?.href).toBe("https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key");
+    await pickProvider(panel, "runninghub");
+    expect((panel.container.querySelector("a.api-console") as HTMLAnchorElement).href).toBe("https://www.runninghub.cn/");
+  });
+  it("内置厂商不再摆「高级设置」：名称与地址不给改，只有「请求超时」留着", async () => {
+    const panel = render(ModelApiSettings);
+    await waitForReady(panel);
+    await pickProvider(panel, "qwen");
+    expect(panel.queryByText("高级设置")).toBeNull();
+    expect(panel.container.querySelector("details")).toBeNull();
+    // 那三样（配置名称 / Base URL / 请求地址）都在这一个分支里没了：内置厂商的地址归注册表管
+    expect(panel.queryByLabelText("配置名称")).toBeNull();
+    expect(panel.queryByLabelText("Base URL")).toBeNull();
+    expect(panel.queryByText(/请求地址：/)).toBeNull();
+    // 超时不分厂商留着：思考档的模型真会跑过 120 秒，没有这一格只能来问我们
+    expect((panel.getByLabelText("请求超时") as HTMLInputElement).value).toBe("120");
+  });
+  it("存过 Key 的这一格锁住：不能编辑、格子里不写中文；清除以后才重新打开", async () => {
+    const clear = vi.spyOn(reverseApi, "clearModelKey").mockResolvedValue({ ...model, has_api_key: false });
+    const panel = render(ModelApiSettings);
+    await waitForReady(panel);
+    // 默认落在已配 Key 的那条配置上，所以一进来这一格就该是锁着的
+    const box = panel.getByLabelText("API Key") as HTMLInputElement;
+    expect(box.disabled).toBe(true);
+    expect(box.value).toBe("");
+    expect(box.getAttribute("placeholder")).toBe("");
+    expect(panel.getByText(/这一格已锁住/)).toBeTruthy();
+    await fireEvent.click(panel.getByRole("button", { name: "清除这把 Key" }));
+    await waitFor(() => expect(clear).toHaveBeenCalled());
+    const again = panel.getByLabelText("API Key") as HTMLInputElement;
+    expect(again.disabled).toBe(false);
+    expect(again.getAttribute("placeholder")).toBe("粘贴 API Key");
+  });
+  it("「删除配置」只给手动填写那几条：内置厂商删不掉，这一侧不摆这颗按钮", async () => {
+    const qwenRow = { ...model, id: 3, name: "通义千问 Qwen", provider: "qwen", has_api_key: true };
+    const mine = { ...model, id: 11, name: "本地 Qwen", provider: null, has_api_key: true };
+    vi.mocked(reverseApi.models).mockResolvedValue([qwenRow, mine]);
+    modelConfigs.set([qwenRow, mine]);
+    const panel = render(ModelApiSettings);
+    await waitForReady(panel);
+    expect(pressedCard(panel)).toBe("qwen");
+    expect(panel.queryByText("删除配置")).toBeNull();
+    // 切到自己填的那一条，这颗才回来：那几条是真能删的
+    await fireEvent.click(panel.container.querySelector('[data-provider="custom"][data-config-id="11"]') as HTMLButtonElement);
+    expect(panel.getByText("删除配置")).toBeTruthy();
+  });
+  it("这一页的按钮与输入框同高：一律 --ctl-md，不留三种高度", async () => {
+    // 实测量出来的旧账：普通按钮 37、ghost 28、Key 那一格 41，同一排三种高度。
+    // 收在本组件的 <style> 里（app.css 的 .setting-button 别的设置页也在用），
+    // min-height 必须一起归零，否则全局那条 34 的下限还压着 height 不生效。
+    const source = readFileSync("src/components/ModelApiSettings.svelte", "utf8").replace(/\r\n/g, "\n");
+    const buttonRule = source.match(/\.model-settings \.setting-button\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(buttonRule).toContain("height: var(--ctl-md)");
+    expect(buttonRule).toContain("min-height: 0");
+    const fieldRule = source.match(/\.model-settings input:not\(\[type=checkbox\]\)\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(fieldRule).toContain("height: var(--ctl-md)");
+    expect(source).toMatch(/\.api-key-row input:disabled\s*\{[^}]*opacity/);
   });
   it("手动填写那一条在库里 provider 是 NULL：进 store 统一成 custom，设置页才认得它", async () => {
     vi.mocked(reverseApi.models).mockResolvedValue([{ ...model, provider: null }]);

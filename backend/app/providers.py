@@ -25,6 +25,7 @@ PRESETS: dict[str, dict] = {
         },
         "default_timeout": 120,
         "format": "openai",
+        "console_url": "https://platform.openai.com/api-keys",
     },
     "gemini": {
         "id": "gemini",
@@ -37,6 +38,7 @@ PRESETS: dict[str, dict] = {
         },
         "default_timeout": 120,
         "format": "openai",
+        "console_url": "https://aistudio.google.com/apikey",
     },
     "qwen": {
         "id": "qwen",
@@ -50,6 +52,7 @@ PRESETS: dict[str, dict] = {
         },
         "default_timeout": 120,
         "format": "openai",
+        "console_url": "https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key",
     },
     "doubao": {
         "id": "doubao",
@@ -63,6 +66,7 @@ PRESETS: dict[str, dict] = {
         "default_timeout": 120,
         "format": "openai",
         "note": "下拉为常见名称；若你的账号使用 endpoint id（ep-...），在反推面板的模型下拉里直接输入它。",
+        "console_url": "https://ark.volcengine.com/region:cn-beijing/apikey",
     },
     "zhipu": {
         "id": "zhipu",
@@ -88,6 +92,7 @@ PRESETS: dict[str, dict] = {
         "note": "反推只能用看得懂图的那几档：GLM-4.6V / GLM-4.6V Flash / GLM-5.3 Flash / GLM-5V Turbo。"
                 "GLM-5、GLM-5.1、GLM-5.2、GLM-5.3、GLM-4.7 这些是纯文本档，收不到图，反推会失败；"
                 "它们会出现在这家的模型清单里，但没列进反推这一列。",
+        "console_url": "https://open.bigmodel.cn/usercenter/apikeys",
     },
     "siliconflow": {
         "id": "siliconflow",
@@ -101,6 +106,7 @@ PRESETS: dict[str, dict] = {
         },
         "default_timeout": 120,
         "format": "openai",
+        "console_url": "https://cloud.siliconflow.cn/account/apikey",
     },
     "moonshot": {
         "id": "moonshot",
@@ -112,6 +118,7 @@ PRESETS: dict[str, dict] = {
         },
         "default_timeout": 120,
         "format": "openai",
+        "console_url": "https://platform.kimi.com/console/api-keys",
     },
     "deepseek": {
         "id": "deepseek",
@@ -123,6 +130,7 @@ PRESETS: dict[str, dict] = {
         "default_timeout": 120,
         "format": "openai",
         "note": "使用 ModelScope（魔搭）推理 API Key；模型支持图片识别。",
+        "console_url": "https://modelscope.cn/my/myaccesstoken",
     },
     # RunningHub：官方 LLM API 与 OpenAI 协议兼容，所以它和别家一样进这个下拉。
     # 但它有两处和别家不同，落在下面这两个字段上：

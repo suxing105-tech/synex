@@ -354,7 +354,7 @@
             <div class="api-key-row">
               <input class="secret" type="text" autocomplete="off" spellcheck="false"
                      aria-label="工作流 API Key" bind:value={workflowKeyInput}
-                     placeholder={workflowReady ? "已存过一把：留空就是不换" : "粘贴工作流 API 密钥"} />
+                     disabled={workflowReady} placeholder={workflowReady ? "" : "粘贴工作流 API 密钥"} />
               {#if workflowReady}
                 <button class="setting-button setting-button-ghost api-key-clear"
                         aria-label="清除工作流这把 Key" onclick={() => void clearKeyNow("workflow")}>清除</button>
@@ -373,29 +373,22 @@
             {:else}
               本地无认证服务可以留空。Windows 按当前用户加密保存密钥；其他系统仅在当前运行期间保存。
             {/if}
-            {keyReady ? "已配置：这一格留空就是不换，要删掉点右边的「清除」。" : ""}
+            {keyReady ? "已配置：这一格已锁住，要换先点右边的「清除」。" : ""}
           </p>
           <div class="api-key-row">
             <input class="secret" type="text" autocomplete="off" spellcheck="false"
                    aria-label="API Key" bind:value={keyInput}
-                   placeholder={keyReady ? "已存过一把：留空就是不换" : "粘贴 API Key"} />
+                   disabled={keyReady} placeholder={keyReady ? "" : "粘贴 API Key"} />
             {#if keyReady}
               <button class="setting-button setting-button-ghost api-key-clear"
                       aria-label="清除这把 Key" onclick={() => void clearKeyNow("model")}>清除</button>
             {/if}
           </div>
         </div>
-        {#if isPreset}
-          <details class="space-y-2">
-            <summary class="settings-hint model-summary">高级设置</summary>
-            <label>配置名称<input aria-label="配置名称" bind:value={draft.name} /></label>
-            <label>Base URL<input aria-label="Base URL" bind:value={draft.base_url} /></label>
-            <p class="settings-hint break-all">请求地址：{draft.base_url ? endpoint : "填写 Base URL 后显示"}</p>
-            <label>请求超时（秒）<input aria-label="请求超时" type="number" min="10" max="600" bind:value={draft.timeout} /></label>
-          </details>
-        {:else}
-          <label>请求超时（秒）<input aria-label="请求超时" type="number" min="10" max="600" bind:value={draft.timeout} /></label>
-        {/if}
+        <!-- 内置厂商这一侧不再有「高级设置」：那三样（配置名称 / Base URL / 请求地址）本来就不该由人改，
+             改了就和注册表里那个地址打架，出了错两边都查不到。只有「请求超时」不分厂商留着——
+             思考档的模型真会跑过 120 秒，没有这一格只能来问我们（智谱那家就是例子）。 -->
+        <label>请求超时（秒）<input aria-label="请求超时" type="number" min="10" max="600" bind:value={draft.timeout} /></label>
       </fieldset>
       {#if confirmDelete}
         <div class="model-confirm">
@@ -409,7 +402,9 @@
       <span class="settings-hint">{draft.provider === "minimax"
         ? "MiniMax API Key 会在再次创作生成时校验；这里不发试生成请求。"
         : "「检查」只读这家的模型清单，不产生模型调用费用。"}</span>
-      {#if editingId}<button class="setting-button setting-button-ghost" onclick={() => (confirmDelete = true)}>删除配置</button>{/if}
+      <!-- 内置厂商删不掉：注册表里就摆着这一家，删了这条配置，下次点它的卡又是一条新的。
+           只有人自己填的那几条才真需要「删掉」。 -->
+      {#if editingId && !isPreset}<button class="setting-button setting-button-ghost" onclick={() => (confirmDelete = true)}>删除配置</button>{/if}
       {#if draft.provider !== "minimax"}
         <button class="setting-button" disabled={!canSave || busy} onclick={() => void checkKey()}>检查 API Key</button>
       {/if}
@@ -466,7 +461,6 @@
      所以选择器里不留 textarea 和 select。 */
   input:not([type=checkbox]) { display: block; width: 100%; margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3); color: #e4e4e7; background: #18181b; border: 1px solid #3f3f46; border-radius: var(--r-1); }
   button:disabled { opacity: .5; }
-  .model-summary { cursor: pointer; }
   .model-confirm { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-4); font-size: var(--fs-sm); color: #b8b8c3; flex-wrap: wrap; }
   .model-error { margin-top: var(--sp-4); font-size: var(--fs-sm); color: #fb7185; }
   .model-notice { margin-top: var(--sp-4); font-size: var(--fs-sm); color: #a1a1aa; }
@@ -477,5 +471,14 @@
   .api-key-row { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); }
   .api-key-row input { flex: 1; min-width: 0; margin-top: 0; }
   .api-key-row .api-key-clear { flex: none; }
+  /* 这一页的按钮和输入框一律 --ctl-md 一档高（同一排控件必须同高，差 2px 就看着像没对齐）。
+     全局 .setting-button 的下限是 34、配上内边距实高 37，ghost 那颗是 28，Key 那一格是 41，
+     同一页三种高度。min-height 必须一起归零，不然全局那条 34 的下限还压着 height 不生效。
+     只写在本组件的 <style> 里：app.css 的 .setting-button 别的设置页也在用，不在这里动它。 */
+  .model-settings .setting-button { height: var(--ctl-md); min-height: 0; padding: 0 var(--sp-3); box-sizing: border-box; }
+  .model-settings input:not([type=checkbox]) { height: var(--ctl-md); padding: 0 var(--sp-3); box-sizing: border-box; }
+  /* 存过 Key 的这一格「暗下去、不能编辑」（disabled 挡住打字，opacity 给出暗下去的样子）：
+     格子里既不回显 Key 也不写中文，要换先点右边的「清除」。 */
+  .api-key-row input:disabled { opacity: .55; cursor: default; }
   .secret { -webkit-text-security: disc; }
 </style>

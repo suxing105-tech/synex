@@ -46,21 +46,20 @@
    * 去设置里重新保存就回来。
    */
   const keyed = $derived(configs.filter(item => item.has_api_key));
-  const chosen = $derived(configs.find(item => item.id === value) ?? null);
+  /** 选中的那一家只在还攥着 Key 时才算「选好了」：面板那边会自动回落到别家，这里不跟着摆一条点不动的选中态。 */
+  const chosen = $derived(configs.find(item => item.id === value && item.has_api_key) ?? null);
   const previewConfig = $derived(configs.find(item => item.id === preview) ?? null);
   const previewList = $derived(preview !== null ? lists[preview] : undefined);
   /**
-   * 按钮上那行字：挑好了只显模型名（跟参考里那个下拉一样），没挑就报「哪家 + 还差一步」。
-   * 选中的那一家 Key 被清了就说「Key 已清除」——这一条现在点下去只会失败，别装作还能反推。
+   * 按钮上那行字：挑好了只显模型名（跟参考里那个下拉一样），没挑就报「还差一步」。
+   * 几家的 Key 都清了就不报厂商名，直说「没有可用的服务商」：顶着一个点不动的厂商名，
+   * 比空着更让人以为还能反推。
    */
-  const text = $derived(chosen
-    ? (chosen.has_api_key ? (model || chosen.name + " · 自动识别") : chosen.name + " · Key 已清除")
-    : "选择模型");
+  const text = $derived(chosen ? (model || chosen.name + " · 自动识别")
+    : (keyed.length ? "选择模型" : "没有可用的服务商"));
   const title = $derived(chosen
-    ? (chosen.has_api_key
-      ? (model ? chosen.name + " · " + model : chosen.name + " · 正在自动识别语言模型")
-      : chosen.name + " 这把 Key 已清除，去设置里重新保存，或在这儿换一家")
-    : "自动识别这家的语言模型，点这儿可以换一家");
+    ? (model ? chosen.name + " · " + model : chosen.name + " · 正在自动识别语言模型")
+    : (keyed.length ? "自动识别这家的语言模型，点这儿可以换一家" : "这几家的 API Key 都清掉了，去设置里重新保存"));
   const popStyle = $derived("left:" + pos.left + "px; top:" + pos.top + "px; width:" + pos.width + "px;"
     + (pos.up ? " transform: translateY(-100%);" : ""));
 
@@ -99,10 +98,9 @@
     if (open) { open = false; return; }
     writeError = "";
     open = true;
-    // 落点只认还配着 Key 的那几家；一家都没配时仍停在原来那条上，
-    // 这样右列那句「去设置」的路还有得点。
-    const first = keyed.some(item => item.id === value) ? value
-      : (keyed[0]?.id ?? value ?? configs[0]?.id ?? null);
+    // 落点只认还配着 Key 的那几家。一家都不剩就停空：不拿没了 Key 的那家去敲清单接口
+    // （那一下必然失败，只会多一条读不懂的报错），右列只留下面那句「去设置」。
+    const first = keyed.some(item => item.id === value) ? value : (keyed[0]?.id ?? null);
     await enter(first);
     place();
   }
@@ -191,8 +189,9 @@
           {:else if previewConfig}
             <p class="mp-empty">这家没报回能用的语言模型，到设置里检查这把 Key，或换一家。</p>
           {/if}
-          {#if previewConfig && !previewConfig.has_api_key}
-            <button class="mp-goto" type="button" onclick={gotoSettings}>这把 Key 已清除或还没填，去设置里重新保存</button>
+          <!-- 左列一家都不剩（几家的 Key 都清掉了）：右列没得挑，只留这一条出路。 -->
+          {#if !keyed.length}
+            <button class="mp-goto" type="button" onclick={gotoSettings}>去设置里重新保存 API Key</button>
           {/if}
           {#if writeError}<p class="mp-error" role="alert">{writeError}</p>{/if}
         </div>

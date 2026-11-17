@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { autoPickModel, modelConfigs, promptModelConfigs, reverseSettings, reverseJobs, refreshReverseConfig, reverseApi, generateReverse, errorMessage } from "../lib/reverse-prompts";
+  import { autoPickModel, modelConfigs, promptModelConfigs, usableConfigId, reverseSettings, reverseJobs, refreshReverseConfig, reverseApi, generateReverse, errorMessage } from "../lib/reverse-prompts";
   import type { ReverseRecord } from "../lib/reverse-prompts";
   import { copyText, dateTimeLabel } from "../lib/ws";
   import { pushToast } from "../lib/toast";
@@ -31,10 +31,18 @@
   const shownPrompt = $derived(current ? (outputLanguage === "zh" ? current.prompt_zh : current.prompt_en) : "");
   const shownCopyLabel = $derived(outputLanguage === "zh" ? "复制中文提示词" : "复制英文提示词");
   const textConfigs = $derived(promptModelConfigs($modelConfigs));
+  // 落点只认还攥着 Key 的几家：这家的 Key 被清掉就自动换到别家（2026-11-16 苏醒：
+  // 「删除了，自动回落到别家」——别让人对着一家点不动的厂商反复按开始反推）。
+  // 他自己挑的那一家只要还能用就不动：那是他挑的，不该被全局默认顶掉。
   $effect(() => {
-    if (!modelId || !textConfigs.some(m => m.id === modelId)) {
-      const preferred = textConfigs.find(m => m.id === $reverseSettings?.default_model_id);
-      modelId = preferred?.id ?? textConfigs[0]?.id ?? null;
+    const chosen = textConfigs.find(m => m.id === modelId);
+    if (modelId !== null && chosen?.has_api_key) return;
+    const next = usableConfigId(textConfigs, $reverseSettings?.default_model_id);
+    if (next === modelId) return;
+    const fellBack = modelId !== null && next !== null;
+    modelId = next;
+    if (fellBack) {
+      pushToast("刚才那家的 API Key 已清除，反推模型换成「" + (textConfigs.find(m => m.id === next)?.name ?? "") + "」", { kind: "info" });
     }
   });
   // 模型跟着这条配置走：它记住哪个就用哪个；没记住就空着，让人先挑，绝不拿空串去发请求。

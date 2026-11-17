@@ -106,6 +106,16 @@ export const providerPresets = writable<ProviderPreset[]>([]);
 export function promptModelConfigs(configs: readonly ModelConfig[]): ModelConfig[] {
   return configs.filter(item => !item.capabilities || item.capabilities.includes("text"));
 }
+/**
+ * 反推面板该落在哪一家：只在还攥着 Key 的几家里挑——先默认那家（它同样得有 Key），
+ * 否则第一家有 Key 的；一家都不剩返回 null。
+ * 刚被清掉 Key 的那一家绝不当落点（2026-11-16 苏醒：删了这家的 Key，反推自动回落别家）。
+ * 只读默认值，不替人改它：默认那一家暂时没 Key，不代表以后不想用它。
+ */
+export function usableConfigId(configs: readonly ModelConfig[], preferredId: number | null | undefined): number | null {
+  const keyed = configs.filter(item => item.has_api_key);
+  return (keyed.find(item => item.id === preferredId) ?? keyed[0])?.id ?? null;
+}
 export async function refreshProviderPresets() {
   try {
     providerPresets.set(await reverseApi.providers());

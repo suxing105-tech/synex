@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { autoPickModel, modelConfigs, promptModelConfigs, refreshReverseConfig } from "../lib/reverse-prompts";
+  import { autoPickModel, modelConfigs, promptModelConfigs, usableConfigId, refreshReverseConfig } from "../lib/reverse-prompts";
   import {
     MODES_BY_TARGET, MODE_LABELS, MODE_HINTS, MODE_BADGES, TARGETS, TARGET_LABELS, TRANSLATION_LABELS,
     cjkCount, elapsedText, SEEDANCE_CHAR_GUIDE, slotLimitText,
@@ -70,9 +70,17 @@
   const secondsText = $derived(durationSeconds ? `时长 ${secondText(durationSeconds * 1000)} 秒` : "整段视频");
   const baseName = $derived(filename.replace(/\.[^.]+$/, "") || `视频${videoId}`);
 
+  // 落点只认还攥着 Key 的几家：Key 被清了自动回落别家（2026-11-16 苏醒，与图片反推面板同一口径）。
+  // 手动挑的那一家还能用就不动。
   $effect(() => {
-    if (modelId === null || !textConfigs.some(m => m.id === modelId)) {
-      modelId = textConfigs.find(m => m.id === prefs?.default_model_id)?.id ?? textConfigs[0]?.id ?? null;
+    const chosen = textConfigs.find(m => m.id === modelId);
+    if (modelId !== null && chosen?.has_api_key) return;
+    const next = usableConfigId(textConfigs, prefs?.default_model_id);
+    if (next === modelId) return;
+    const fellBack = modelId !== null && next !== null;
+    modelId = next;
+    if (fellBack) {
+      pushToast("刚才那家的 API Key 已清除，视频提示词模型换成「" + (textConfigs.find(m => m.id === next)?.name ?? "") + "」", { kind: "info" });
     }
   });
   // 模型跟着这条配置走：它记住哪个就用哪个，图片反推那边换了模型这边也一起跟上。

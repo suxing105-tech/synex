@@ -351,11 +351,8 @@
         <!-- 这一页不再摆「识别模型」那一格：Key 是这家的入场券，用哪个模型是用的时候挑。
              挑模型的入口在图片/视频反推面板那两列（先点服务商、再点它报回的模型），
              面板会报出认不出来的原因，不会让人以为模型在转圈。 -->
-        <!-- 「模型不用在这里选」那一句跟着上面那段一起删了（同一块被圈的说明文字）。
-             MiniMax 这一句留着：它说的是存完 Key 之后哪里会多出可选项，别家没有这件事。 -->
-        {#if draft.provider === "minimax"}
-          <p class="settings-hint">再次创作可用 MiniMax-H3-Image 图片、MiniMax-H3 视频与 Speech 2.8 HD 音频 API。保存 API Key 后，对应项目会出现在再次创作的云端 API 列表。</p>
-        {/if}
+        <!-- MiniMax 那一句也一起删了（2026-11-16 苏醒第二轮：一起删）。这一页除了填 Key 要用的
+             那几格，不再摆「存完之后哪里会多出什么」那类说明。 -->
         {#if workflowCapable}
           <div class="api-key-section">
             <p class="api-key-title">工作流 API 密钥（消费级-会员）</p>

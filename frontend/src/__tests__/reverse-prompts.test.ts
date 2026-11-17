@@ -6,6 +6,7 @@ import ReversePromptPanel from "../components/ReversePromptPanel.svelte";
 import ModelApiSettings from "../components/ModelApiSettings.svelte";
 import { autoPickModel, clearAutoModelCache, reverseApi, reverseJobs, modelConfigs, reverseSettings, generateReverse, refreshReverseConfig } from "../lib/reverse-prompts";
 import { copyText } from "../lib/ws";
+import { toasts, clearToasts } from "../lib/toast";
 import { cloudApi } from "../lib/clone";
 // 面板还要用 dateTimeLabel（第三刀 T4 之后日期只有一支笔）：整模块 mock 会把它抹成 undefined，
 // 所以铺开真实模块，只替换 copyText 这一颗
@@ -235,7 +236,8 @@ describe("reverse prompts", () => {
     expect(panel.getByRole("button", { name: /MiniMax/ })).toBeTruthy();
     await fireEvent.click(panel.getByRole("button", { name: "图像" }));
     await pickProvider(panel, "minimax");
-    expect(panel.getByText("再次创作可用 MiniMax-H3-Image 图片、MiniMax-H3 视频与 Speech 2.8 HD 音频 API。保存 API Key 后，对应项目会出现在再次创作的云端 API 列表。")).toBeTruthy();
+    // 2026-11-16 苏醒第二轮（MiniMax 那句一起删）：这一页除了填 Key 那几格，不再摆任何说明文字
+    expect(panel.queryByText(/再次创作可用 MiniMax-H3-Image/)).toBeNull();
     expect(panel.queryByRole("button", { name: "检查 API Key" })).toBeNull();
     expect(panel.getByText("MiniMax API Key 会在再次创作生成时校验；这里不发试生成请求。")).toBeTruthy();
     await fireEvent.input(panel.getByLabelText("API Key"), { target: { value: "sk-minimax-test" } });
@@ -824,12 +826,13 @@ describe("reverse prompts", () => {
     expect(await autoPickModel(8)).toBe("only-one");
     expect(again).toHaveBeenCalledTimes(2);
   });
-  it("Key 清除的那一家不再出现在模型下拉里，只留一句去设置重新保存的路", async () => {
+  it("几家的 Key 都清掉了：下拉里一家都不摆，只留一句去设置重新保存的路", async () => {
     // 2026-11-16 苏醒：「当我把已经配置过的 API KEY 删除后，希望 AI 反推选模型处不再显示这家厂商」。
     // 挂着「需配置」还占一行，等于让人在一条点不动的行上试；配置没删，Key 存回来它就自己回来。
     const cleared = { ...model, id: 2, name: "智谱", provider: "zhipu", has_api_key: false, model: "" };
     modelConfigs.set([cleared]);
     vi.mocked(reverseApi.models).mockResolvedValue([cleared]);
+    const list = vi.spyOn(reverseApi, "configModels");
     const panel = render(ReversePromptPanel, { imageId: 1 });
     await waitFor(() => expect((panel.getByText("开始反推") as HTMLButtonElement).hasAttribute("disabled")).toBe(true));
     await fireEvent.click(panel.getByLabelText("反推模型"));
@@ -838,11 +841,41 @@ describe("reverse prompts", () => {
     expect(panel.queryByText("需配置")).toBeNull();
     // 左列那句话说清是「Key 都清了」，不是「还没有服务商」——两件事出路不同
     expect(panel.getByText("这几家的 API Key 都清掉了，去设置里重新保存才能反推。")).toBeTruthy();
-    // 按钮上也得说实话：这一条现在点下去只会失败
-    expect(panel.getByLabelText("反推模型").getAttribute("title")).toContain("已清除");
+    // 按钮上也说实话：一家都没得用时不顶着厂商名，不装作点下去还能反推
+    const trigger = panel.getByLabelText("反推模型");
+    expect(trigger.textContent).toContain("没有可用的服务商");
+    expect(trigger.getAttribute("title")).toContain("API Key 都清掉了");
+    // 没了 Key 就别去敲那家的清单接口：那一下必然失败，只会多一条读不懂的报错
+    expect(list).not.toHaveBeenCalled();
     const listener = vi.fn(); window.addEventListener("open-model-settings", listener);
-    await fireEvent.click(panel.getByText("这把 Key 已清除或还没填，去设置里重新保存"));
+    await fireEvent.click(panel.getByText("去设置里重新保存 API Key"));
     expect(listener).toHaveBeenCalledOnce(); window.removeEventListener("open-model-settings", listener);
+  });
+  it("正在用的那一家 Key 被清掉：反推自动回落到还配着 Key 的那家", async () => {
+    // 2026-11-16 苏醒：「开始反推如果删除了，自动回落到别家」。清完 Key 回来还能一键反推，
+    // 不用先回这一页重新挑一家。回落只动这一页的选择，全局默认那一条不替人改。
+    clearToasts();
+    const zhipu = { ...model, id: 2, name: "智谱", provider: "zhipu", model: "" };
+    const qwen = { ...model, id: 1, name: "测试视觉", model: "vision" };
+    modelConfigs.set([zhipu]);
+    vi.mocked(reverseApi.models).mockResolvedValue([zhipu]);
+    vi.mocked(reverseApi.settings).mockResolvedValue({ ...settings, default_model_id: zhipu.id });
+    const generate = vi.spyOn(reverseApi, "generate").mockResolvedValue(record);
+    const panel = render(ReversePromptPanel, { imageId: 1 });
+    await waitFor(() => expect(panel.getByLabelText("反推模型").getAttribute("title")).toContain("智谱"));
+    // 在设置页点「清除」之后，全局那份配置就是这么变的（这一行的 has_api_key 掉成 false）
+    const cleared = [{ ...zhipu, has_api_key: false }, qwen];
+    vi.mocked(reverseApi.models).mockResolvedValue(cleared);
+    modelConfigs.set(cleared);
+    await waitFor(() => expect(panel.getByLabelText("反推模型").getAttribute("title")).toContain("测试视觉"));
+    // 换了哪家要说得出，不能让人以为模型自己会动
+    await waitFor(() => expect(get(toasts).some(t => t.message.includes("API Key 已清除") && t.message.includes("测试视觉"))).toBe(true));
+    // 默认那一条还指着原来那家：它只是暂时没 Key，不表示以后不想用
+    expect(get(reverseSettings)?.default_model_id).toBe(zhipu.id);
+    // 回落完就能直接按：这一家记得自己的模型
+    await waitFor(() => expect((panel.getByText("开始反推") as HTMLButtonElement).hasAttribute("disabled")).toBe(false));
+    await fireEvent.click(panel.getByText("开始反推"));
+    await waitFor(() => expect(generate).toHaveBeenCalledWith(1, qwen.id, "vision"));
   });
   it("配着 Key 的那几家照常列，清了 Key 的那一家不占行、也不再补一句「另有 N 家」", async () => {
     const keyedRow = { ...model, id: 1, name: "测试视觉", has_api_key: true };

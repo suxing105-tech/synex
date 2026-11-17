@@ -21,7 +21,8 @@ export interface ProviderPreset {
   /** 厂商控制台外链。没确认过的家留空，界面就不画那颗按钮。 */
   console_url?: string;
 }
-export interface ProviderModelList { models: ProviderModel[]; source: string; reason: string }
+/** 一家报回来的模型清单。hidden 是「这家还报了几个没列进反推这一列」——只有现拉那条会给。 */
+export interface ProviderModelList { models: ProviderModel[]; source: string; reason: string; hidden?: number }
 /**
  * 一条服务商配置 = 这一家的地址 + 这把 Key，仅此而已。
  * model 是「这一家当前用哪个模型」，空串＝还没挑过。挑模型的入口在反推面板的模型下拉里，
@@ -60,7 +61,7 @@ export const reverseApi = {
   clearProviderKey: (provider: string, kind: "model" | "workflow" = "model") =>
     http<{ shared_has_key: boolean; shared_has_workflow_key: boolean }>(
       `/api/model-providers/${encodeURIComponent(provider)}/key?kind=${kind}`, { method: "DELETE" }),
-  /** 这条配置能挑哪些模型：预设照注册表，自定义问它自己的 /models。 */
+  /** 这条配置能挑哪些模型：预设先问它自己（问不到回落注册表），自定义问它自己的 /models。 */
   configModels: (id: number) => http<ProviderModelList>(`/api/model-configs/${id}/models`),
   /** 这把 Key 能不能用，问它自己的模型清单——不挑模型，也不产生模型调用费用。 */
   checkKey: (draft: ModelDraft) =>

@@ -477,9 +477,13 @@ async def list_config_models(config_id: int) -> dict:
                     "reason": live.get("reason") or "这家没报回模型清单，先列内置的常用模型"}
         merged = merge_model_lists(curated, live["models"],
                                    exclude=media_model_ids(preset))
+        # 「这家还报了几个没列进来的」也带回界面：苏醒要的「5.3 怎么看不到」得在这儿答得清——
+        # 那几家把纯文本档也报回来，反推用不了，但不该让人以为清单没读到。
+        shown = {item["id"] for item in merged}
+        hidden = sum(1 for item in live["models"] if item["id"] not in shown)
         # 一个都认不出来（清单里全是纯文本模型，注册表那几个又被账号挡着）：照实原样列出来，
         # 比空着强，也比替它编一个强。
-        return {"models": merged or live["models"], "source": "live",
+        return {"models": merged or live["models"], "source": "live", "hidden": hidden,
                 "reason": "" if merged else "这家报回来的清单里认不出看得懂图的模型，先原样列出，反推可能需要换一家"}
     return await fetch_models(row["base_url"], key_for(row), f'config|{row["id"]}|{row["base_url"]}')
 

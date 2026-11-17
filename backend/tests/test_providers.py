@@ -607,13 +607,23 @@ ZHIPU_TEXT_ONLY = [{"id": "glm-5.2"}, {"id": "glm-4.7"}, {"id": "glm-4.5-air"}, 
 
 
 def test_zhipu_registry_lists_the_current_vision_models():
-    """注册表那张表现在只是「问不到时兜底」用的，它自己得先是最新的，而且只留看得懂图的。"""
+    """智谱的 GET /models 只报语言那一串，看得懂图的只能靠这张表写着——它必须跟着最新一代走。"""
     from app import providers
 
     ids = [item["id"] for item in service.curated_models(providers.PRESETS["zhipu"])]
     assert ids[0] == "glm-4.6v", "推荐位给当下这一代最强的视觉模型"
-    assert {"glm-5v-turbo", "glm-4.6v-flash", "glm-4.5v", "glm-4.1v-thinking-flash"} <= set(ids)
+    assert {"glm-5.3-flash", "glm-5.3-flashx", "glm-5v-turbo", "glm-4.6v-flash",
+            "glm-4.5v", "glm-4.1v-thinking-flash"} <= set(ids)
     assert "glm-4v" not in ids and "glm-4v-plus" not in ids, "2024 年那两张老模型别留在兜底表里"
+    assert not ({"glm-5", "glm-5.1", "glm-5.2", "glm-5.3", "glm-4.7"} & set(ids)), "纯文本档不能反推"
+
+
+def test_zhipu_note_says_which_generation_can_read_images():
+    """苏醒会问「5.3 怎么看不到」：这家的说明要当场答清——5.3 是纯文本，5.3 Flash 才收图。"""
+    from app import providers
+
+    note = providers.PRESETS["zhipu"]["note"]
+    assert "GLM-5.3 Flash" in note and "纯文本" in note and "GLM-4.6V" in note
 
 
 @pytest.mark.parametrize("model_id", [
@@ -643,11 +653,13 @@ def test_preset_config_list_shows_what_the_account_reports(client, monkeypatch):
     assert out["source"] == "live"
     # 顺序：注册表里且这家确实报回来的 → 这家新报回来的视觉模型 → 注册表有、这家没报回来的
     assert [item["id"] for item in out["models"]] == [
-        "glm-4.6v", "glm-5v-turbo", "glm-4v-flash", "glm-4.6v-flash", "glm-4.5v", "glm-4.1v-thinking-flash"]
+        "glm-4.6v", "glm-5v-turbo", "glm-4v-flash", "glm-5.3-flash", "glm-5.3-flashx",
+        "glm-4.6v-flash", "glm-4.5v", "glm-4.1v-thinking-flash"]
     assert out["models"][0]["label"] == "GLM-4.6V", "注册表里的展示名要跟着过来，别只剩一串 id"
     assert [item["id"] for item in out["models"] if item["recommended"]] == ["glm-4.6v"]
-    assert "glm-5.2" not in str(out) and "glm-4.7" not in str(out), "纯文本模型进不了反推这一列"
     assert "ZHIPU-KEY" not in str(out)
+    # 挡在外面的那几个也要说得出数：清单确实读到了，只是那些是纯文本档
+    assert out["hidden"] == 2, "glm-5.2 和 glm-4.7 被挡在反推这一列外面，要带回界面说明"
 
 
 def test_preset_config_list_keeps_the_registry_when_the_account_reports_only_text(client, monkeypatch):

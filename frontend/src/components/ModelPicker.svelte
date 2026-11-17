@@ -12,7 +12,7 @@
 import Icon from "./Icon.svelte";
   import type { ProviderModel } from "../lib/reverse-prompts";
 
-  type List = { items: ProviderModel[]; reason: string; error: string; loading: boolean };
+  type List = { items: ProviderModel[]; reason: string; error: string; loading: boolean; hidden: number };
 
   let {
     value = null,
@@ -65,12 +65,13 @@ import Icon from "./Icon.svelte";
 
   async function load(id: number) {
     if (lists[id]) return;
-    lists = { ...lists, [id]: { items: [], reason: "", error: "", loading: true } };
+    lists = { ...lists, [id]: { items: [], reason: "", error: "", loading: true, hidden: 0 } };
     try {
       const out = await reverseApi.configModels(id);
-      lists = { ...lists, [id]: { items: out.models, reason: out.reason ?? "", error: "", loading: false } };
+      lists = { ...lists, [id]: { items: out.models, reason: out.reason ?? "", error: "", loading: false,
+        hidden: out.hidden ?? 0 } };
     } catch (e) {
-      lists = { ...lists, [id]: { items: [], reason: "", error: errorMessage(e), loading: false } };
+      lists = { ...lists, [id]: { items: [], reason: "", error: errorMessage(e), loading: false, hidden: 0 } };
     }
   }
 
@@ -171,6 +172,10 @@ import Icon from "./Icon.svelte";
           {:else if previewConfig}
             <p class="mp-empty">这家没报回能用的语言模型，到设置里检查这把 Key，或换一家。</p>
           {/if}
+          {#if previewList?.items.length && previewList.hidden}
+            <!-- 这一家把纯文本档也报回来了，反推用不了，但要说清不是没读到：「5.3 怎么看不到」就答在这儿 -->
+            <p class="mp-empty mp-note">这家另外报了 {previewList.hidden} 个模型，认不出哪个能看图，没列进来（反推是把图发给模型看）。</p>
+          {/if}
           {#if previewConfig && !previewConfig.has_api_key}
             <button class="mp-goto" type="button" onclick={gotoSettings}>这把 Key 还没配，去设置</button>
           {/if}
@@ -214,6 +219,8 @@ import Icon from "./Icon.svelte";
   .mp-rec { color: #4ade80; border: 1px solid #14532d; }
   .mp-warn { color: #fbbf24; border: 1px solid #78350f; }
   .mp-empty { font-size: var(--fs-2xs); line-height: var(--lh-ui); color: #a1a1aa; padding: var(--sp-2); margin: 0; }
+  /* 这是一句成句的说明，不是词级标签，按尺度规矩提到 12px（--fs-2xs 只给徽标和计数用）。 */
+  .mp-note { font-size: var(--fs-xs); }
   .mp-goto { display: block; width: calc(100% - 8px); margin: var(--sp-1); padding: var(--sp-1) var(--sp-2); font-size: var(--fs-2xs); color: #fbbf24; border: 1px solid #3f3f46; border-radius: var(--r-1); background: #202024; }
   .mp-error { font-size: var(--fs-2xs); color: #f87171; padding: var(--sp-1) var(--sp-2); margin: 0; }
 </style>

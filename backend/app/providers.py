@@ -69,9 +69,14 @@ PRESETS: dict[str, dict] = {
         "name": "智谱 GLM",
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
         "models": {
-            # 这张表只是「问不到智谱自己时兜底的那几张」，界面上优先的是它自己报回来的清单
-            # （见 reverse_prompts.list_config_models）。所以只留看得懂图的，别把它当唯一真相。
+            # 这张表不只是「问不到智谱自己时兜底」——智谱的 GET /models 压根不报视觉模型，
+            # 只报语言那一串（glm-4.5…glm-5.2），所以看得懂图的这几张必须在这儿写着，
+            # 光靠现拉加字样猜是永远列不出来的（见 reverse_prompts.list_config_models）。
+            # 名字里带不带 v 不算数：glm-5.3 是纯文本，glm-5.3-flash 反倒是 GLM-5 系列里
+            # 第一个原生能读图/读视频的，别按字样把它筛掉。
             "glm-4.6v": {"label": "GLM-4.6V", "recommended": True},
+            "glm-5.3-flash": {"label": "GLM-5.3 Flash（读图）", "recommended": False},
+            "glm-5.3-flashx": {"label": "GLM-5.3 FlashX（读图）", "recommended": False},
             "glm-5v-turbo": {"label": "GLM-5V Turbo", "recommended": False},
             "glm-4.6v-flash": {"label": "GLM-4.6V Flash", "recommended": False},
             "glm-4.5v": {"label": "GLM-4.5V", "recommended": False},
@@ -79,6 +84,9 @@ PRESETS: dict[str, dict] = {
         },
         "default_timeout": 120,
         "format": "openai",
+        "note": "反推只能用看得懂图的那几档：GLM-4.6V / GLM-4.6V Flash / GLM-5.3 Flash / GLM-5V Turbo。"
+                "GLM-5、GLM-5.1、GLM-5.2、GLM-5.3、GLM-4.7 这些是纯文本档，收不到图，反推会失败；"
+                "它们会出现在这家的模型清单里，但没列进反推这一列。",
     },
     "siliconflow": {
         "id": "siliconflow",

@@ -22,6 +22,9 @@ const cloudPreset = {
   default_timeout: 120, note: "一把 Key 走天下：这里的 Key 与云端生成共用同一把", credential_scope: "cloud", models_dynamic: true,
 };
 const settings = { default_model_id: 1, instruction: "描述画面", default_instruction: "默认描述" };
+/** 模型下拉右列当前显示的那几个名字。 */
+const rows = (panel: { container: HTMLElement }) =>
+  Array.from(panel.container.querySelectorAll(".mp-mname")).map(n => n.textContent?.trim());
 /** 服务商选择页把下拉换成卡片网格了：点卡按 data-provider 拿，选中看 aria-pressed。 */
 const pickProvider = async (panel: { container: HTMLElement }, id: string) => {
   const card = panel.container.querySelector(`[data-provider="${id}"]`) as HTMLButtonElement;
@@ -563,8 +566,7 @@ describe("reverse prompts", () => {
     const panel = render(ReversePromptPanel, { imageId: 1 });
     await waitFor(() => expect(panel.getByText("反推提示词")).toBeTruthy());
     await fireEvent.click(panel.getByLabelText("反推模型"));
-    const rows = () => Array.from(panel.container.querySelectorAll(".mp-mname")).map(n => n.textContent?.trim());
-    await waitFor(() => expect(rows()).toEqual(["a/deepseek-v4.1-flash", "b/qwen2.5-vl"]));
+    await waitFor(() => expect(rows(panel)).toEqual(["a/deepseek-v4.1-flash", "b/qwen2.5-vl"]));
     expect(panel.container.querySelector(".mp-rec")?.textContent).toBe("推荐");
     await fireEvent.click(panel.container.querySelectorAll(".mp-model")[1]);
     await waitFor(() => expect(setModel).toHaveBeenCalledWith(1, "b/qwen2.5-vl"));
@@ -572,6 +574,33 @@ describe("reverse prompts", () => {
     await waitFor(() => expect((panel.getByText("开始反推") as HTMLButtonElement).hasAttribute("disabled")).toBe(false));
     await fireEvent.click(panel.getByText("开始反推"));
     await waitFor(() => expect(generate).toHaveBeenCalledWith(1, 1, "b/qwen2.5-vl"));
+  });
+  it("这家另外报了用不上的模型时说得清数量：「5.3 怎么看不到」要在下拉里当场答", async () => {
+    // 智谱的清单里 glm-5.3 这类是纯文本档，反推收不到图，所以没列进来——但得让人看见不是没读到。
+    modelConfigs.set([{ ...model, model: "glm-4.6v" }]);
+    vi.mocked(reverseApi.models).mockResolvedValue([{ ...model, model: "glm-4.6v" }]);
+    vi.spyOn(reverseApi, "configModels").mockResolvedValue({
+      models: [{ id: "glm-4.6v", label: "GLM-4.6V", recommended: true }],
+      source: "live", reason: "", hidden: 9,
+    });
+    const panel = render(ReversePromptPanel, { imageId: 1 });
+    await waitFor(() => expect(panel.getByText("反推提示词")).toBeTruthy());
+    await fireEvent.click(panel.getByLabelText("反推模型"));
+    await waitFor(() => expect(rows(panel)).toContain("GLM-4.6V"));
+    expect(panel.container.querySelector(".mp-models")?.textContent).toContain("另外报了 9 个模型");
+  });
+  it("一个模型都没挡住时不显示那句说明", async () => {
+    modelConfigs.set([{ ...model, model: "glm-4.6v" }]);
+    vi.mocked(reverseApi.models).mockResolvedValue([{ ...model, model: "glm-4.6v" }]);
+    vi.spyOn(reverseApi, "configModels").mockResolvedValue({
+      models: [{ id: "glm-4.6v", label: "GLM-4.6V", recommended: true }],
+      source: "live", reason: "", hidden: 0,
+    });
+    const panel = render(ReversePromptPanel, { imageId: 1 });
+    await waitFor(() => expect(panel.getByText("反推提示词")).toBeTruthy());
+    await fireEvent.click(panel.getByLabelText("反推模型"));
+    await waitFor(() => expect(rows(panel)).toContain("GLM-4.6V"));
+    expect(panel.container.querySelector(".mp-models")?.textContent).not.toContain("另外报了");
   });
   it("图片提示词反推的模型列表不显示 MiniMax 生图、视频和音频 API", async () => {
     const minimax = {

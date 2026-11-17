@@ -168,7 +168,8 @@
     busy = true; error = ""; notice = "";
     try { await action(); } catch (e) { error = errorMessage(e); } finally { busy = false; }
   }
-  /** 选中一家＝填它自己的地址与超时，名字就用服务商的名字。
+  /** 选中一家＝填它自己的地址，名字就用服务商的名字。超时那一格不给内置厂商看，
+      draft 里那个值也不用当真：发请求时后端按注册表算（providers.request_timeout）。
       模型不在这一页挑（那是反推面板那两列的事），所以新配置带着一个空模型进库。 */
   function applyProvider(id: string) {
     draft.provider = id;

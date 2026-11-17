@@ -87,14 +87,17 @@ DEFAULT_VIDEO_INSTRUCTION = """你是资深 AI 视频生成提示词工程师。
 BUILTINS: tuple[dict, ...] = (
     {
         "builtin_key": "image_default",
-        "name": "图片提示词增强",
+        "name": "图片通用优化",
+        # 旧名登记在这儿：老库里那条内置身上挂的还是旧名，光换上面那行它这辈子换不过来
+        "legacy_names": ("图片提示词增强",),
         "note": "补齐构图、光影、材质，不改原意",
         "kinds": ("image",),
         "instruction": DEFAULT_IMAGE_INSTRUCTION,
     },
     {
         "builtin_key": "video_default",
-        "name": "视频提示词增强",
+        "name": "视频通用优化",
+        "legacy_names": ("视频提示词增强",),
         "note": "写清动作与镜头运动，保留原有分段",
         "kinds": ("video",),
         "instruction": DEFAULT_VIDEO_INSTRUCTION,
@@ -170,12 +173,15 @@ def _seed_builtin(conn, seed, index):
                        (seed["builtin_key"],)).fetchone()
     inserted = False
     if row is None:
+        names = _default_names(seed)
+        marks = ",".join("?" * len(names))
         same_name = conn.execute(
-            "SELECT * FROM prompt_skills WHERE builtin_key IS NULL AND name=?", (seed["name"],)).fetchall()
+            f"SELECT * FROM prompt_skills WHERE builtin_key IS NULL AND name IN ({marks})",
+            names).fetchall()
         if len(same_name) > 1:
             # 同名有好几条时不猜哪一条才是：这一趟不装这条内置，也不顺手再插一条新的
             logger.warning("内置技能 %s 没装：库里有 %d 条都叫「%s」，不替人挑哪一条是要认的那条",
-                           seed["builtin_key"], len(same_name), seed["name"])
+                           seed["builtin_key"], len(same_name), "」「".join(names))
             return
         if same_name:
             row = _adopt_named_row(conn, same_name[0], seed)
@@ -188,11 +194,44 @@ def _seed_builtin(conn, seed, index):
         )
         row = conn.execute("SELECT * FROM prompt_skills WHERE id=?", (cur.lastrowid,)).fetchone()
         inserted = True
+    # 内置自己改过名：老库里那条还挂着旧名的顺着改过来（刚插的那条名字本来就是对的，这里空过）
+    row = _rename_legacy_builtin(conn, row, seed)
     # 内置自带的技能包只在两种时候补：这一趟刚插的那条，以及清单已写、资料块还空着的半条
     # （装到一半断电靠下一趟补齐）。人自己写的一条普通技能不许被挂上一万九千多字资料——
     # 那是每次优化都要多送出去的钱，也是他没要的东西。
     if seed.get("package") and (inserted or _is_half_written_package(row)):
         _seed_package(conn, seed, int(row["id"]))
+
+
+def _default_names(seed):
+    """这条内置叫过的名字，现在这个排第一。
+
+    改名不是把 BUILTINS 里的字符串换掉就完事：老库里那条内置身上挂的还是旧名，
+    而「已经在的一律不动内容」正好把它挡在外面，于是老用户永远看见旧名。旧名登记在
+    legacy_names 里，还没认领的普通技能要是正好叫旧名，也照样认下来当这条内置。
+    """
+    return (seed["name"],) + tuple(seed.get("legacy_names", ()))
+
+
+def _rename_legacy_builtin(conn, row, seed):
+    """已经是这条内置、名字却还停在旧名上：顺着改成现在这个名字。
+
+    这不算违「已经在的一律不动内容」——那条护栏护的是用户自己写的东西，而旧名是
+    我们自己起的名，不是他起的。他自己改过的名字（既不是新名也不是旧名）一个字不碰。
+    已经有别的技能占着新名时不改：改完清单上就出现两条一模一样的名字，
+    那比留一个旧名更难查，只能让他自己决定留哪条。
+    updated_at 不动：这是我们自己搬的一下，不是他改过这条技能。
+    """
+    if str(row["name"]) not in tuple(seed.get("legacy_names", ())):
+        return row
+    taken = conn.execute("SELECT id FROM prompt_skills WHERE name=? AND id<>?",
+                         (seed["name"], row["id"])).fetchone()
+    if taken is not None:
+        logger.warning("内置技能 %s 没改名成「%s」：库里已经有一条同名技能（id=%s），改完就是两条同名",
+                       seed["builtin_key"], seed["name"], taken["id"])
+        return row
+    conn.execute("UPDATE prompt_skills SET name=? WHERE id=?", (seed["name"], row["id"]))
+    return conn.execute("SELECT * FROM prompt_skills WHERE id=?", (row["id"],)).fetchone()
 
 
 def _is_half_written_package(row):

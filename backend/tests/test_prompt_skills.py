@@ -64,6 +64,9 @@ def test_new_db_gets_four_builtin_skills(client):
     assert [row["builtin_key"] for row in rows] == [
         "image_default", "video_default", "qwen_image", "h3_image"]
     image, video, qwen, h3 = rows
+    # 名字也是出厂口径：2026-11-17 苏醒把两条通用的改成「通用优化」，「增强」听着像加料
+    assert [row["name"] for row in rows] == [
+        "图片通用优化", "视频通用优化", "Qwen-Image-2.1 优化", "H3-Image 优化"]
     assert image["kinds"] == ["image"] and image["with_refs"] is True
     assert video["kinds"] == ["video"]
     # 内置技能的写法得有真正的正事，否则等于给了条空技能
@@ -775,7 +778,7 @@ def test_replacing_a_package_with_one_md_file_clears_its_folder(client, tmp_path
 
 
 def test_builtin_skills_are_never_a_replacement_target(client, tmp_path):
-    # 内置那条也叫「图片提示词增强」这类名字很正常：把它当成「该被替换的旧版本」
+    # 内置那条也叫「图片通用优化」这类名字很正常：把它当成「该被替换的旧版本」
     # 会直接把出厂写法吃掉，而那条是删不掉的，用户连还原都找不回
     bid = builtin_id(client, "image_default")
     client.patch("/api/prompt-skills/" + str(bid), json={"name": "电商视觉包"})
@@ -893,6 +896,60 @@ def test_two_skills_with_the_same_name_are_left_alone(init_db, client):
     assert all(item["builtin_key"] is None for item in names), "同名有好几条时不替人挑哪条才是"
 
 
+# ---------- 内置改过名：老库跟着换，他自己改过的一个字不碰 ----------
+
+
+def test_a_legacy_named_builtin_is_renamed_on_start(init_db, client):
+    conn = init_db.main()
+    skill_id = builtin_id(client, "image_default")
+    client.patch(f"/api/prompt-skills/{skill_id}", json={"instruction": "我自己那条的写法"})
+    # 升级前的样子：那条内置身上挂的还是旧名
+    conn.execute("UPDATE prompt_skills SET name='图片提示词增强' WHERE id=?", (skill_id,))
+    service.initialize(conn)
+    row = builtin_row(client, "image_default")
+    assert row["name"] == "图片通用优化", "旧名是我们自己起的名，顺着改成现在这个"
+    assert row["instruction"] == "我自己那条的写法", "改名只改名，写法是他的东西"
+
+
+def test_a_user_renamed_builtin_is_left_alone(init_db, client):
+    conn = init_db.main()
+    skill_id = builtin_id(client, "video_default")
+    # 名字既不是新名也不是旧名：那是他自己起的，不在「我们改过名」的范围里
+    client.patch(f"/api/prompt-skills/{skill_id}", json={"name": "我的视频写法"})
+    service.initialize(conn)
+    assert builtin_row(client, "video_default")["name"] == "我的视频写法"
+
+
+def test_a_legacy_named_skill_is_adopted_and_renamed(init_db, client):
+    conn = init_db.main()
+    conn.execute("DELETE FROM prompt_skills WHERE builtin_key='video_default'")
+    mine = client.post("/api/prompt-skills", json={
+        "name": "视频提示词增强", "instruction": "我自己那份视频写法"}).json()
+    service.initialize(conn)
+    hits = [item for item in client.get("/api/prompt-skills").json() if item["name"] == "视频通用优化"]
+    assert [item["id"] for item in hits] == [mine["id"]], "叫旧名的那条认下来当内置、跟着改名，不再造一条重名的"
+    assert hits[0]["builtin_key"] == "video_default"
+    assert hits[0]["instruction"] == "我自己那份视频写法", "认领只挂身份，不改内容"
+
+
+def test_the_rename_is_skipped_when_the_new_name_is_taken(init_db, client):
+    conn = init_db.main()
+    skill_id = builtin_id(client, "image_default")
+    other = client.post("/api/prompt-skills", json={"name": "图片通用优化", "instruction": "别人占的名"}).json()
+    conn.execute("UPDATE prompt_skills SET name='图片提示词增强' WHERE id=?", (skill_id,))
+    service.initialize(conn)
+    assert builtin_row(client, "image_default")["name"] == "图片提示词增强", "改完就是两条同名，宁可不改"
+    taken = [item for item in client.get("/api/prompt-skills").json() if item["name"] == "图片通用优化"]
+    assert [item["id"] for item in taken] == [other["id"]]
+
+
+def test_restore_default_brings_back_the_current_name(client):
+    skill_id = builtin_id(client, "image_default")
+    client.patch(f"/api/prompt-skills/{skill_id}", json={"name": "随便改的名"})
+    restored = client.post(f"/api/prompt-skills/{skill_id}/restore-default").json()
+    assert restored["name"] == "图片通用优化"
+
+
 def test_a_half_written_builtin_package_gets_its_refs_back(init_db, client):
     skill_id = builtin_id(client, "h3_image")
     # 装到一半断电的样子：清单写进去了，资料块还是空的
@@ -925,7 +982,7 @@ def test_skill_whose_package_folder_was_deleted_disappears_from_the_list(client,
     assert imported["id"] not in [row["id"] for row in rows], (
         "文件夹删了就是在删这条技能，清单里不该还摆着它")
     # 库里那一行是真没了，写法留一份副本到 skills/_removed/，删错了人自己能捡回来
-    kept = list((service.skills_dir() / "_removed").glob("%s-*.md" % imported["id"]))
+    kept = list((service.skills_dir() / "_removed").glob(f"{imported['id']}-*.md"))
     assert len(kept) == 1, kept
     assert "先定光，再定镜头。" in kept[0].read_text(encoding="utf-8")
 

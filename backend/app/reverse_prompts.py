@@ -104,6 +104,9 @@ def cloud_workflow_key(quiet: bool = True) -> str:
 
 
 def public_config(row):
+    # provider 这一列对「手动填写」那几条是 NULL（没有预设可认），不是字符串 "custom"。
+    # 界面在进 store 时把它统一成 "custom"（frontend/src/lib/reverse-prompts.ts）——
+    # 两边各叫各的曾经让设置页认不出已存的自定义配置：卡不画，点「自定义」只开一张空表单。
     result = {k: row[k] for k in ("id", "name", "base_url", "model", "timeout", "provider")}
     result["capabilities"] = providers.capabilities_for(row["provider"])
     if shares_cloud_key(row["provider"]):

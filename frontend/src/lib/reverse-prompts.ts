@@ -30,6 +30,7 @@ export interface ProviderModelList { models: ProviderModel[]; source: string; re
  */
 export interface ModelConfig {
   id: number; name: string; base_url: string; model: string; timeout: number;
+  /** 后端把「手动填写」那一条的 provider 存成 NULL；进 modelConfigs 时统一成 "custom"（见 CUSTOM_PROVIDER）。 */
   provider: string | null; has_api_key: boolean; key_persistence: "encrypted" | "session";
   /** 用于反推面板筛选：旧后端未返回时按文本/视觉配置兼容处理。 */
   capabilities?: string[];
@@ -79,7 +80,26 @@ export const reverseApi = {
   remove: (id: number, recordId: number) => http<{ deleted: number; current: number | null }>(
     `/api/images/${id}/reverse-prompts/${recordId}`, { method: "DELETE" }),
 };
-export const modelConfigs = writable<ModelConfig[]>([]);
+/**
+ * 「自定义（手动填写）」在库里是 provider 列留空（NULL），界面这一侧只认 "custom" 一个写法。
+ * 归一化放在进 store 这一刻：凡读 modelConfigs 的地方都不必再猜「null 算不算自定义」。
+ * 以前没归这一步——设置页那句 filter(c => c.provider === "custom") 一条都匹配不上，
+ * 已存的自定义配置在设置页就当不存在：卡也不画，点「自定义」永远只开一张空表单，
+ * 再保存就是第二条重复配置。反推下拉那侧不认这个键（它按配置名画行），所以一直没暴露。
+ */
+export const CUSTOM_PROVIDER = "custom";
+const withProvider = (item: ModelConfig): ModelConfig =>
+  (item.provider ? item : { ...item, provider: CUSTOM_PROVIDER });
+/** 普通 writable 换成这一颗：set/update 进来的清单一律先补上 provider 再存。 */
+function configStore() {
+  const inner = writable<ModelConfig[]>([]);
+  return {
+    subscribe: inner.subscribe,
+    set: (items: ModelConfig[]) => inner.set(items.map(withProvider)),
+    update: (fn: (items: ModelConfig[]) => ModelConfig[]) => inner.update(items => fn(items).map(withProvider)),
+  };
+}
+export const modelConfigs = configStore();
 export const reverseSettings = writable<ReverseSettings | null>(null);
 export const providerPresets = writable<ProviderPreset[]>([]);
 /** 文字反推面板只列出声明支持 text 的配置；手动填写的自定义服务按旧行为放行。 */

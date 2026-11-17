@@ -4,7 +4,7 @@ import { get } from "svelte/store";
 import { render, fireEvent, waitFor, cleanup } from "@testing-library/svelte";
 import ReversePromptPanel from "../components/ReversePromptPanel.svelte";
 import ModelApiSettings from "../components/ModelApiSettings.svelte";
-import { autoPickModel, clearAutoModelCache, reverseApi, reverseJobs, modelConfigs, reverseSettings, generateReverse } from "../lib/reverse-prompts";
+import { autoPickModel, clearAutoModelCache, reverseApi, reverseJobs, modelConfigs, reverseSettings, generateReverse, refreshReverseConfig } from "../lib/reverse-prompts";
 import { copyText } from "../lib/ws";
 import { cloudApi } from "../lib/clone";
 // 面板还要用 dateTimeLabel（第三刀 T4 之后日期只有一支笔）：整模块 mock 会把它抹成 undefined，
@@ -330,10 +330,14 @@ describe("reverse prompts", () => {
     const rh = panel.container.querySelector('[data-provider="runninghub"]');
     expect(rh?.querySelector(".brand-img")).toBeNull();
     expect(rh?.querySelector(".brand-mark")?.textContent?.trim()).toBe("RU");
-    // 自定义那张不给厂商标识，保留那颗加号
-    const custom = panel.container.querySelector('[data-provider="custom"]');
-    expect(custom?.querySelector(".brand-img")).toBeNull();
-    expect(custom?.querySelector(".brand-mark")?.textContent?.trim()).toBe("＋");
+    // ＋ 那张不给厂商标识，保留那颗加号
+    const plus = panel.container.querySelector('[data-provider="custom-new"]');
+    expect(plus?.querySelector(".brand-img")).toBeNull();
+    expect(plus?.querySelector(".brand-mark")?.textContent?.trim()).toBe("＋");
+    // 已存的那条手动填写配置：没厂商可认，用它自己的名字起字母块，不是空白也不是加号
+    const saved = panel.container.querySelector('[data-provider="custom"][data-config-id="1"]');
+    expect(saved?.querySelector(".brand-img")).toBeNull();
+    expect(saved?.querySelector(".brand-mark")?.textContent?.trim()).toBe("测试");
   });
   it("反推下拉左列那一家也认 LOGO：provider 认不得时退回字母，不留空格子", async () => {
     modelConfigs.set([{ ...model, provider: "zhipu", name: "智谱 GLM", model: "glm-4.6v" }]);
@@ -427,18 +431,20 @@ describe("reverse prompts", () => {
       .map(c => c.getAttribute("data-provider"));
     expect(cards()).toContain("qwen");
     await fireEvent.click(panel.getByRole("button", { name: "图像" }));
-    expect(cards()).toEqual(["runninghub", "custom"]);
+    // 手动填写那条排在自己那张卡上，＋ 跟在最后；两者都不按能力 tab 过滤
+    expect(cards()).toEqual(["runninghub", "custom", "custom-new"]);
     await fireEvent.click(panel.getByRole("button", { name: "音频" }));
-    expect(cards()).toEqual(["runninghub", "custom"]);
+    expect(cards()).toEqual(["runninghub", "custom", "custom-new"]);
     // 切到「文本」也不许把自定义藏起来：苏醒就是在这个 tab 下发现它「不见了」
     await fireEvent.click(panel.getByRole("button", { name: "文本" }));
     expect(cards()).toContain("custom");
     await fireEvent.click(panel.getByRole("button", { name: "全部" }));
     expect(cards()).toContain("qwen");
-    // 不想看见它的话有开关：勾上「只显示内置厂商」才收起来
+    // 不想看见它们的话有开关：勾上「只显示内置厂商」把已存那几条和 ＋ 一起收起来
     const only = panel.getByLabelText("只显示内置厂商") as HTMLInputElement;
     await fireEvent.click(only);
     expect(cards()).not.toContain("custom");
+    expect(cards()).not.toContain("custom-new");
     await fireEvent.click(only);
     expect(cards()).toContain("custom");
   });
@@ -538,11 +544,67 @@ describe("reverse prompts", () => {
   it("切到自定义：只问地址与名称，模型仍然不在这一页", async () => {
     const panel = render(ModelApiSettings);
     await waitForReady(panel);
-    await pickProvider(panel, "custom");
+    await pickProvider(panel, "custom-new");
     expect(panel.getByLabelText("配置名称")).toBeTruthy();
     expect(panel.getByLabelText("Base URL")).toBeTruthy();
     expect(panel.queryByLabelText("模型 ID")).toBeNull();
     expect(panel.queryByLabelText("识别模型")).toBeNull();
+  });
+  it("已存的手动填写配置在设置页有自己的卡：点它就是改这一条，不是又开一张空表单", async () => {
+    // 苏醒撞上的那一下：本地那条（库里 provider 是 NULL）在反推下拉里是一行，设置页却没有它的卡，
+    // 点「自定义」只会开一张空表单，再保存就是第二条重复配置。
+    const qwenRow = { ...model, id: 3, name: "通义千问 Qwen", provider: "qwen", has_api_key: true };
+    const mine = { ...model, id: 11, name: "本地 Qwen", base_url: "http://172.18.1.188:8000/v1", provider: null, has_api_key: true };
+    vi.mocked(reverseApi.models).mockResolvedValue([qwenRow, mine]);
+    modelConfigs.set([qwenRow, mine]);
+    const panel = render(ModelApiSettings);
+    await waitForReady(panel);
+    // 落点在已配 Key 的那家预设：下面这些回填只能是点这张卡点出来的
+    expect(pressedCard(panel)).toBe("qwen");
+    const card = panel.container.querySelector('[data-provider="custom"][data-config-id="11"]') as HTMLButtonElement;
+    expect(card.textContent).toContain("本地 Qwen");
+    expect(card.textContent).toContain("已配置");
+    await fireEvent.click(card);
+    expect(pressedCard(panel)).toBe("custom");
+    expect((panel.getByLabelText("配置名称") as HTMLInputElement).value).toBe("本地 Qwen");
+    expect((panel.getByLabelText("Base URL") as HTMLInputElement).value).toBe("http://172.18.1.188:8000/v1");
+    // 标题行报它自己的名字，和反推下拉里那一行对得上；这一条也能就地删
+    expect(panel.container.querySelector(".api-provider-name")?.textContent).toBe("本地 Qwen");
+    expect(panel.container.querySelector(".api-provider-badge")?.textContent).toBe("已配置 1/1");
+    expect(panel.getByText("删除配置")).toBeTruthy();
+  });
+  it("＋ 那张只管新开一条：不认领已存那条，保存也不带 id", async () => {
+    const mine = { ...model, id: 11, name: "本地 Qwen", provider: null, has_api_key: true };
+    vi.mocked(reverseApi.models).mockResolvedValue([mine]);
+    modelConfigs.set([mine]);
+    const save = vi.spyOn(reverseApi, "saveModel").mockResolvedValue({ ...mine, id: 12, name: "第二台机器" });
+    const panel = render(ModelApiSettings);
+    await waitForReady(panel);
+    // 已经有了一条，＋ 那张就说「再加一条」，别让人以为点它是回到旧的那条
+    expect(panel.container.textContent).toContain("再加一条自己的 Base URL");
+    await pickProvider(panel, "custom-new");
+    expect((panel.getByLabelText("配置名称") as HTMLInputElement).value).toBe("");
+    expect((panel.getByLabelText("Base URL") as HTMLInputElement).value).toBe("");
+    await fireEvent.input(panel.getByLabelText("配置名称"), { target: { value: "第二台机器" } });
+    await fireEvent.input(panel.getByLabelText("Base URL"), { target: { value: "http://127.0.0.1:1234/v1" } });
+    await fireEvent.click(panel.getByText("保存配置"));
+    await waitFor(() => expect(save).toHaveBeenCalled());
+    expect(save.mock.calls[0][1]).toBeUndefined();
+    expect(save.mock.calls[0][0]).toMatchObject({ provider: "custom", name: "第二台机器" });
+  });
+  it("内置厂商一家都没配 Key 时，进来落在已配好的那条手动填写配置上", async () => {
+    const mine = { ...model, id: 11, name: "本地 Qwen", provider: null, has_api_key: true };
+    vi.mocked(reverseApi.models).mockResolvedValue([mine]);
+    modelConfigs.set([mine]);
+    const panel = render(ModelApiSettings);
+    await waitForReady(panel);
+    expect(panel.container.querySelector(".api-card[aria-pressed='true']")?.getAttribute("data-config-id")).toBe("11");
+    expect(panel.container.querySelector(".api-provider-name")?.textContent).toBe("本地 Qwen");
+  });
+  it("手动填写那一条在库里 provider 是 NULL：进 store 统一成 custom，设置页才认得它", async () => {
+    vi.mocked(reverseApi.models).mockResolvedValue([{ ...model, provider: null }]);
+    await refreshReverseConfig();
+    expect(get(modelConfigs)[0].provider).toBe("custom");
   });
   it("底部那颗改叫「检查 API Key」：只问清单，一次模型调用都不产生", async () => {
     const check = vi.spyOn(reverseApi, "checkKey").mockResolvedValue({ ok: true, count: 2, models: ["a", "b"], source: "live" });

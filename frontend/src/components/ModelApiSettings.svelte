@@ -18,6 +18,11 @@
   const providers = $derived($providerPresets);
   const isPreset = $derived(!!draft.provider && draft.provider !== CUSTOM);
   const preset = $derived($providerPresets.find(p => p.id === draft.provider));
+  /** 标题行：编辑已存的那条手动填写配置时报它自己的名字——反推下拉里显示的就是这个名字，
+      两边对不上会让人以为进错了地方。还没名字（新填那条）才叫「自定义（手动填写）」。 */
+  const headName = $derived(preset ? preset.name
+    : (editingId ? (draft.name?.trim() || "自定义配置") : "自定义（手动填写）"));
+  const headGlyph = $derived(preset || editingId ? "" : "＋");
   /** RunningHub 这类服务商不一样：Key 的家在云端账号表（gen_accounts）那一行里，这条配置不另存一份。 */
   const sharedKey = $derived(preset?.credential_scope === "cloud");
   /** 新建那条配置自己还不知道 Key 在不在，这时照服务商清单带回的布尔说。 */
@@ -86,6 +91,14 @@
   }
   let workflowKeyInput = $state("");
   const configsFor = (id: string) => $modelConfigs.filter(c => c.provider === id);
+  /**
+   * 手动填写那几条（后端 provider 留空，进 store 时统一成 "custom"，见 lib/reverse-prompts.ts）。
+   * 反推下拉里一条配置就是一行，设置页也得到处有它的卡：没有卡就没人知道它还在、
+   * 也改不动它，点「自定义」只会新开一张表单，多存一条重复的。
+   */
+  const customConfigs = $derived($modelConfigs.filter(c => c.provider === CUSTOM));
+  /** 「只显示内置厂商」时这一串清空：卡片清单只有一处开关，别在模板里再套一层 {#if}。 */
+  const shownCustomConfigs = $derived(onlyBuiltin ? [] : customConfigs);
   const presetReady = (item: ProviderPreset) => item.credential_scope === "cloud"
     ? !!(item.shared_has_key || item.shared_has_workflow_key || configsFor(item.id).some(c => c.has_api_key))
     : configsFor(item.id).some(c => c.has_api_key);
@@ -98,6 +111,15 @@
       choose();
       applyProvider(id);
     }
+  }
+  /** 已存的那条手动填写配置：点它自己的卡就是改它。 */
+  function selectConfig(config: ModelConfig) {
+    choose(config);
+  }
+  /** ＋ 那张只管新开一条；认领已存的那条走上面那颗卡，两边不抢同一件事。 */
+  function newCustomConfig() {
+    choose();
+    applyProvider(CUSTOM);
   }
   const endpoint = $derived((draft.base_url || "").trim().replace(/\/+$/, "").replace(/\/chat\/completions$/, "") + "/chat/completions");
   // 存 Key 的门槛只剩「这家是谁、地址在哪」：模型不再是必填项，所以这里不看它。
@@ -112,7 +134,13 @@
       const ready = $providerPresets.find((item) => presetReady(item));
       const existing = ready ? configsFor(ready.id)[0] : undefined;
       if (existing) choose(existing);
-      else applyProvider((ready ?? $providerPresets[0]).id);
+      else if (!ready) {
+        // 内置厂商一家都没配 Key、只有一条手动填写的地址时，落点也该是那条：
+        // 摊开一张没配的 OpenAI 表单，等于让有本地模型的人每次进来重新找自己那家。
+        const mine = customConfigs.find((item) => item.has_api_key) ?? customConfigs[0];
+        if (mine) choose(mine);
+        else applyProvider($providerPresets[0].id);
+      } else applyProvider(ready.id);
     }
   }
   function loadAll() {
@@ -220,10 +248,10 @@
     <div class="settings-model-body">
       <fieldset disabled={busy} class="space-y-3">
         <!-- legend 只留给读屏；界面上的标题行是下面这一行（照苏醒贴的那张参考页）。 -->
-        <legend class="api-legend">当前服务商：{preset ? preset.name : "自定义（手动填写）"}</legend>
+        <legend class="api-legend">当前服务商：{headName}</legend>
         <div class="api-provider-head">
-          <BrandMark id={preset ? preset.id : "custom"} name={preset ? preset.name : ""} glyph={preset ? "" : "＋"} />
-          <span class="api-provider-name">{preset ? preset.name : "自定义（手动填写）"}</span>
+          <BrandMark id={preset ? preset.id : CUSTOM} name={preset ? preset.name : (draft.name ?? "")} glyph={headGlyph} />
+          <span class="api-provider-name">{headName}</span>
           <span class="api-provider-badge" class:api-provider-set={keyCount > 0} role="status">{keyCountLabel}</span>
           <span class="api-provider-actions">
             {#if sharedKey}
@@ -276,13 +304,27 @@
           <!-- 这张卡在每个能力 tab 下都要在。之前只在「全部」里露面的结果是：
                切到「文本」它直接消失，看起来像功能被删了。它也不替自己吹牛——
                状态那行只说「自己的 Base URL」，能不能出图由填进去的地址负责。 -->
+          <!-- 手动填写的每一条都有自己的卡，和内置厂商平起平坐：状态同样只看这把 Key 存了没有。
+               它们不按能力 tab 过滤——一个自己填的地址能服务哪一路，是我们猜的，不是它声明的。
+               「只显示内置厂商」把这几张和下面那颗加号一起收掉，开关做在清单这一侧：
+               模板里 if 套 each 在 happy-dom 下拆不干净（勾上开关，卡片还留在页上）。 -->
+          {#each shownCustomConfigs as item (item.id)}
+            <button class="api-card" data-provider="custom" data-config-id={item.id}
+              aria-pressed={editingId === item.id} disabled={busy} onclick={() => selectConfig(item)}>
+              <BrandMark id={CUSTOM} name={item.name} />
+              <span class="api-card-body">
+                <span class="api-card-name">{item.name}</span>
+                <span class="api-card-state" class:api-card-set={item.has_api_key}>{item.has_api_key ? "已配置" : "未配置"}</span>
+              </span>
+            </button>
+          {/each}
           {#if !onlyBuiltin}
-            <button class="api-card" data-provider="custom" aria-pressed={draft.provider === CUSTOM}
-              disabled={busy} onclick={() => selectProvider(CUSTOM)}>
-              <BrandMark id="custom" glyph="＋" />
+            <button class="api-card" data-provider="custom-new" aria-pressed={!editingId && draft.provider === CUSTOM}
+              disabled={busy} onclick={newCustomConfig}>
+              <BrandMark id={CUSTOM} glyph="＋" />
               <span class="api-card-body">
                 <span class="api-card-name">自定义（手动填写）</span>
-                <span class="api-card-state">自己的 Base URL</span>
+                <span class="api-card-state">{customConfigs.length ? "再加一条自己的 Base URL" : "自己的 Base URL"}</span>
               </span>
             </button>
           {/if}

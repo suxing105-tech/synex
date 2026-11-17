@@ -332,6 +332,14 @@ describe("版面口径", () => {
     expect(screen.container.querySelector(".psk-count")?.textContent).toBe(long.length + " 字");
   });
 
+  it("弹窗一开，背后那一屏直接模糊掉", () => {
+    const source = readFileSync("src/components/PromptSkillModal.svelte", "utf8");
+    const scrim = source.match(/\.psk-scrim \{[^}]*\}/)?.[0] ?? "";
+    expect(scrim, "遮罩层的样式没找到").not.toBe("");
+    expect(scrim, "遮罩要真的模糊背后，不是只压一层黑").toMatch(/backdrop-filter:\s*blur\(/);
+    expect(scrim, "仓库里每一处 backdrop-filter 都带 -webkit- 前缀").toMatch(/-webkit-backdrop-filter:\s*blur\(/);
+  });
+
   it("字号只引 token、颜色不新增裸 hex：新组件一条 hex 都不许写", () => {
     const source = readFileSync("src/components/PromptSkillModal.svelte", "utf8");
     expect(source.match(/#[0-9a-fA-F]{3,8}\b/g) || []).toEqual([]);

@@ -568,6 +568,8 @@
     position: fixed; inset: var(--desktop-titlebar-height, 0px) 0 0; z-index: 95;
     display: flex; align-items: center; justify-content: center; padding: var(--sp-6);
     background: var(--shade-2);
+    /* 弹窗一开，背后那一屏素材就不该再抢视线：压黑之外直接模糊掉，配方照 .mp-backdrop。 */
+    -webkit-backdrop-filter: blur(20px) saturate(110%); backdrop-filter: blur(20px) saturate(110%);
   }
   .psk {
     display: flex; flex-direction: column; gap: var(--sp-3); width: 880px; max-width: 96vw; max-height: 92vh;

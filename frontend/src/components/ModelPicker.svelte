@@ -5,7 +5,8 @@
    * 为什么不再是「一条配置＝一个模型」那种平铺下拉：Key 与模型分家之后，配置只保证
    * 「这一家能连上」，用哪个模型是发请求那一刻的选择。两列摆在一起，一眼就能看出
    * 「这家有哪些模型」，不用在两个页面之间来回跳。左列只摆还配着 Key 的那几家（2026-11-16
-   * 苏醒：Key 清掉就别再显示这家），少掉的那几家在下面说一句去哪儿能救回来。
+   * 苏醒：Key 清掉就别再显示这家）。清掉的那几家不再另行报名字——同日第二轮苏醒指着那句
+   * 「另有 N 家没配 Key」说很多余：少掉的就是少掉的，那句话说的是他刚自己干完的事。
    *
    * 模型也不用手输：清单里能对话的那几个由后端认出来，面板进来就先认一次，这一列只用来换一家/换一个。
    */
@@ -45,8 +46,6 @@
    * 去设置里重新保存就回来。
    */
   const keyed = $derived(configs.filter(item => item.has_api_key));
-  /** 被藏掉的几家：左列悄悄少一家会像软件吞了配置，所以得有个地方报到。 */
-  const keyless = $derived(configs.length - keyed.length);
   const chosen = $derived(configs.find(item => item.id === value) ?? null);
   const previewConfig = $derived(configs.find(item => item.id === preview) ?? null);
   const previewList = $derived(preview !== null ? lists[preview] : undefined);
@@ -194,9 +193,6 @@
           {/if}
           {#if previewConfig && !previewConfig.has_api_key}
             <button class="mp-goto" type="button" onclick={gotoSettings}>这把 Key 已清除或还没填，去设置里重新保存</button>
-          {:else if keyless}
-            <!-- 左列少的那几家在这儿报到：没删配置，只是 Key 清了 -->
-            <button class="mp-goto" type="button" onclick={gotoSettings}>另有 {keyless} 家没配 Key，不在这一列 · 去设置</button>
           {/if}
           {#if writeError}<p class="mp-error" role="alert">{writeError}</p>{/if}
         </div>

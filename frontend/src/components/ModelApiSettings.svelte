@@ -267,6 +267,9 @@
                 onclick={() => void setDefaultModel()}>{isDefaultModel ? "已是默认服务商" : "设为默认服务商"}</button>
             {/if}
             {#if preset?.console_url}
+              <!-- 这颗不在组件里自己开网页：APP 端是 WebView2，没有新窗口宿主，target="_blank" 会被吞掉
+                   （2026-11-16 苏醒：「APP端，这里不能用默认浏览器打开网页」）。文档级委托
+                   lib/external-links.ts 把跨源链接交给系统默认浏览器，浏览器版仍是开新标签。 -->
               <a class="setting-button setting-button-ghost api-console" href={preset.console_url}
                 target="_blank" rel="noreferrer">获取 API Key ↗</a>
             {/if}
@@ -336,20 +339,22 @@
         {#if !visiblePresets.length}
           <p class="settings-hint" role="status">这一类目前没有接进来的服务商，切回「全部」看其余几家。</p>
         {/if}
+        <!-- 注册表里那段各家说明（preset.note）不再摆在这一页：2026-11-16 苏醒在页上圈了整块
+             「这些说明文字不要在前端展示，直接删除」。能反推的是哪几档、这把 Key 归谁管，
+             反推面板和下面 Key 那一格各自都说过了，这儿再念一遍只把卡片撑长。
+             注册表里那个字段不动，只是这一页不展示它。 -->
         {#if !isPreset}
           <label>配置名称<input aria-label="配置名称" bind:value={draft.name} placeholder="例如：常用视觉模型" /></label>
           <label>Base URL<input aria-label="Base URL" bind:value={draft.base_url} placeholder="https://服务地址/v1" /></label>
           <p class="settings-hint break-all">请求地址：{draft.base_url ? endpoint : "填写 Base URL 后显示"}</p>
-        {:else if preset?.note}
-          <p class="settings-hint">{preset.note}</p>
         {/if}
         <!-- 这一页不再摆「识别模型」那一格：Key 是这家的入场券，用哪个模型是用的时候挑。
              挑模型的入口在图片/视频反推面板那两列（先点服务商、再点它报回的模型），
              面板会报出认不出来的原因，不会让人以为模型在转圈。 -->
+        <!-- 「模型不用在这里选」那一句跟着上面那段一起删了（同一块被圈的说明文字）。
+             MiniMax 这一句留着：它说的是存完 Key 之后哪里会多出可选项，别家没有这件事。 -->
         {#if draft.provider === "minimax"}
           <p class="settings-hint">再次创作可用 MiniMax-H3-Image 图片、MiniMax-H3 视频与 Speech 2.8 HD 音频 API。保存 API Key 后，对应项目会出现在再次创作的云端 API 列表。</p>
-        {:else}
-          <p class="settings-hint">模型不用在这里选：到图片详情页的反推面板里，先点服务商、再点它家的模型。</p>
         {/if}
         {#if workflowCapable}
           <div class="api-key-section">

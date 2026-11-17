@@ -311,7 +311,9 @@ describe("reverse prompts", () => {
     // Key 是入场券，用哪个模型是用的时候挑：这一页不该再留任何模型输入口
     expect(panel.queryByLabelText("识别模型")).toBeNull();
     expect(panel.queryByLabelText("模型 ID")).toBeNull();
-    expect(panel.getByText(/模型不用在这里选/)).toBeTruthy();
+    // 2026-11-16 第二轮（苏醒：这些说明文字不要在前端展示）：连「模型不用在这里选」这一句也不摆了，
+    // 上面两条「没有模型输入口」就是这句话本来要传达的意思
+    expect(panel.queryByText(/模型不用在这里选/)).toBeNull();
     await fireEvent.input(panel.getByLabelText("API Key"), { target: { value: "sk-123" } });
     await fireEvent.click(panel.getByText("保存配置"));
     await waitFor(() => expect(save).toHaveBeenCalled());
@@ -362,6 +364,21 @@ describe("reverse prompts", () => {
     expect(list).not.toHaveBeenCalled();
     expect(panel.queryByLabelText("识别模型")).toBeNull();
     expect(panel.queryByRole("button", { name: "展开模型清单" })).toBeNull();
+  });
+  it("注册表里那段各家说明（note）不再显示在这一页", async () => {
+    // 2026-11-16 苏醒在「模型API配置」页上圈了整块：「这些说明文字不要在前端展示，直接删除」。
+    // 后端照样把 note 带回来（注册表里的数据不动），这一页不再念它。
+    vi.mocked(reverseApi.providers).mockResolvedValue([
+      { ...preset, id: "zhipu", name: "智谱 GLM", note: "反推只能用看得懂图的那几档：GLM-4.6V / GLM-4.6V Flash / GLM-5.3 Flash" },
+    ]);
+    const panel = render(ModelApiSettings);
+    await waitForReady(panel);
+    await pickProvider(panel, "zhipu");
+    expect(panel.queryByText(/反推只能用看得懂图的那几档/)).toBeNull();
+    expect(panel.queryByText(/模型不用在这里选/)).toBeNull();
+    // 但该说的事仍在他该在的地方：Key 那一格自己会讲清这把 Key 存哪儿、锁没锁
+    expect(panel.getByLabelText("API Key")).toBeTruthy();
+    expect(panel.container.textContent).toContain("Windows 按当前用户加密保存密钥");
   });
   it("RunningHub 的 Key 只往接口交出去一次：请求体里带 api_key，界面上不留明文", async () => {
     vi.mocked(reverseApi.providers).mockResolvedValue([preset, cloudPreset]);
@@ -827,7 +844,7 @@ describe("reverse prompts", () => {
     await fireEvent.click(panel.getByText("这把 Key 已清除或还没填，去设置里重新保存"));
     expect(listener).toHaveBeenCalledOnce(); window.removeEventListener("open-model-settings", listener);
   });
-  it("配着 Key 的那几家照常列，清了 Key 的那一家不占行、只在末尾报到", async () => {
+  it("配着 Key 的那几家照常列，清了 Key 的那一家不占行、也不再补一句「另有 N 家」", async () => {
     const keyedRow = { ...model, id: 1, name: "测试视觉", has_api_key: true };
     const cleared = { ...model, id: 2, name: "智谱", provider: "zhipu", has_api_key: false };
     modelConfigs.set([keyedRow, cleared]);
@@ -836,9 +853,9 @@ describe("reverse prompts", () => {
     await fireEvent.click(panel.getByLabelText("反推模型"));
     await waitFor(() => expect(panel.container.querySelectorAll(".mp-pname").length).toBe(1));
     expect(Array.from(panel.container.querySelectorAll(".mp-pname")).map(n => n.textContent?.trim())).toEqual(["测试视觉"]);
-    // 少的那一家仍要报到：没删配置，只是 Key 清了，得给一条回到那一页的路
-    const listener = vi.fn(); window.addEventListener("open-model-settings", listener);
-    await fireEvent.click(panel.getByText("另有 1 家没配 Key，不在这一列 · 去设置"));
-    expect(listener).toHaveBeenCalledOnce(); window.removeEventListener("open-model-settings", listener);
+    // 2026-11-16 第二轮（苏醒指着那句说「很多余的显示，删掉」）：左列少一家就是少了，
+    // 不用再在末尾报一笔有几家没配 Key——那句话说的是他刚自己干完的事
+    expect(panel.queryByText(/没配 Key/)).toBeNull();
+    expect(panel.container.querySelector(".mp-goto")).toBeNull();
   });
 });

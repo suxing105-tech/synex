@@ -1,6 +1,11 @@
 import { mount } from "svelte";
 import App from "./App.svelte";
+import { installExternalLinkHandler } from "./lib/external-links";
 import "./app.css";
+
+// 外链在挂载之前先接管：APP 端（WebView2）没有新窗口宿主，页面里任何 target="_blank"
+// 或跨源链接点了都不会有反应，统一交给系统默认浏览器（见该模块顶上的说明）。
+installExternalLinkHandler();
 
 const target = document.getElementById("app");
 if (!target) throw new Error("#app not found");

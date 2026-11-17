@@ -807,15 +807,38 @@ describe("reverse prompts", () => {
     expect(await autoPickModel(8)).toBe("only-one");
     expect(again).toHaveBeenCalledTimes(2);
   });
-  it("没配 Key 的服务商在模型下拉里标「需配置」，并给一条去设置的路", async () => {
-    modelConfigs.set([{ ...model, has_api_key: false, model: "" }]);
-    vi.mocked(reverseApi.models).mockResolvedValue([{ ...model, has_api_key: false, model: "" }]);
+  it("Key 清除的那一家不再出现在模型下拉里，只留一句去设置重新保存的路", async () => {
+    // 2026-11-16 苏醒：「当我把已经配置过的 API KEY 删除后，希望 AI 反推选模型处不再显示这家厂商」。
+    // 挂着「需配置」还占一行，等于让人在一条点不动的行上试；配置没删，Key 存回来它就自己回来。
+    const cleared = { ...model, id: 2, name: "智谱", provider: "zhipu", has_api_key: false, model: "" };
+    modelConfigs.set([cleared]);
+    vi.mocked(reverseApi.models).mockResolvedValue([cleared]);
     const panel = render(ReversePromptPanel, { imageId: 1 });
     await waitFor(() => expect((panel.getByText("开始反推") as HTMLButtonElement).hasAttribute("disabled")).toBe(true));
     await fireEvent.click(panel.getByLabelText("反推模型"));
-    expect(await panel.findByText("需配置")).toBeTruthy();
+    await waitFor(() => expect(panel.container.querySelector(".mp-empty")).toBeTruthy());
+    expect(panel.container.querySelector(".mp-provider")).toBeNull();
+    expect(panel.queryByText("需配置")).toBeNull();
+    // 左列那句话说清是「Key 都清了」，不是「还没有服务商」——两件事出路不同
+    expect(panel.getByText("这几家的 API Key 都清掉了，去设置里重新保存才能反推。")).toBeTruthy();
+    // 按钮上也得说实话：这一条现在点下去只会失败
+    expect(panel.getByLabelText("反推模型").getAttribute("title")).toContain("已清除");
     const listener = vi.fn(); window.addEventListener("open-model-settings", listener);
-    await fireEvent.click(panel.getByText("这把 Key 还没配，去设置"));
+    await fireEvent.click(panel.getByText("这把 Key 已清除或还没填，去设置里重新保存"));
+    expect(listener).toHaveBeenCalledOnce(); window.removeEventListener("open-model-settings", listener);
+  });
+  it("配着 Key 的那几家照常列，清了 Key 的那一家不占行、只在末尾报到", async () => {
+    const keyedRow = { ...model, id: 1, name: "测试视觉", has_api_key: true };
+    const cleared = { ...model, id: 2, name: "智谱", provider: "zhipu", has_api_key: false };
+    modelConfigs.set([keyedRow, cleared]);
+    vi.mocked(reverseApi.models).mockResolvedValue([keyedRow, cleared]);
+    const panel = render(ReversePromptPanel, { imageId: 1 });
+    await fireEvent.click(panel.getByLabelText("反推模型"));
+    await waitFor(() => expect(panel.container.querySelectorAll(".mp-pname").length).toBe(1));
+    expect(Array.from(panel.container.querySelectorAll(".mp-pname")).map(n => n.textContent?.trim())).toEqual(["测试视觉"]);
+    // 少的那一家仍要报到：没删配置，只是 Key 清了，得给一条回到那一页的路
+    const listener = vi.fn(); window.addEventListener("open-model-settings", listener);
+    await fireEvent.click(panel.getByText("另有 1 家没配 Key，不在这一列 · 去设置"));
     expect(listener).toHaveBeenCalledOnce(); window.removeEventListener("open-model-settings", listener);
   });
 });

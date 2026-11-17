@@ -844,6 +844,37 @@ async def test_a_task_that_never_reached_the_cloud_is_not_refetchable(hub, accou
     assert cloud_tasks.get(task_id)["state"] == "failed"
 
 
+# ---------- 按家报的 Key 状态（弹窗照这个藏家） ----------
+
+
+def test_vendor_availability_follows_each_vendor_s_own_key(hub):
+    """两把 Key 家在不同表里，一家清了不该连带拖累另一家。
+
+    availability() 只有整片云端那一句：RH 那把在云端账号表、MiniMax 那把在
+    「模型API配置」的 MiniMax 那条上，一起点亮或一起灰都是在说假话。
+    """
+    def flags() -> dict:
+        return {item["provider"]: item["available"] for item in cloud_engine.vendor_availability()}
+
+    assert flags() == {cloud_spec.PROVIDER: False, cloud_spec.MINIMAX_PROVIDER: False}
+
+    saved = cloud_accounts.save_account({"name": "我的账号", "api_key": SECRET})
+    assert flags() == {cloud_spec.PROVIDER: True, cloud_spec.MINIMAX_PROVIDER: False}
+
+    # 把 RH 那把清掉：这一家跟着灭，MiniMax 一点不受影响
+    cloud_accounts.save_account({"api_key": ""}, saved["id"])
+    assert flags() == {cloud_spec.PROVIDER: False, cloud_spec.MINIMAX_PROVIDER: False}
+
+    # 只填 MiniMax：只有它亮着
+    reverse_prompts.save_config({"provider": "minimax", "api_key": "sk-minimax-test"})
+    assert flags() == {cloud_spec.PROVIDER: False, cloud_spec.MINIMAX_PROVIDER: True}
+
+    # 不亮的那几家必须带着「差哪一步」那句话，弹窗才知道怎么解释
+    hidden = [item for item in cloud_engine.vendor_availability() if not item["available"]]
+    assert hidden and all(item["reason"] for item in hidden)
+    assert SECRET not in json.dumps(hidden, ensure_ascii=False)
+
+
 # ---------- HTTP 层 ----------
 
 
@@ -860,6 +891,9 @@ def test_http_status_reports_everything_the_settings_page_needs(client, hub, acc
     assert SECRET not in json.dumps(body, ensure_ascii=False)
     assert body["availability"]["available"] is True
     assert body["pending"] == []
+    # 按家那一份：弹窗那一屏照它把清了 Key 的家藏起来，两家都得报到
+    assert {item["provider"] for item in body["vendors"]} == {cloud_spec.PROVIDER, cloud_spec.MINIMAX_PROVIDER}
+    assert [item["provider"] for item in body["vendors"] if item["available"]] == [cloud_spec.PROVIDER]
 
 
 def test_http_settings_round_trip(client, hub):

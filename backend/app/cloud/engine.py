@@ -94,6 +94,23 @@ def availability() -> dict:
     return {"available": True, "reason": "", "account_name": account["name"]}
 
 
+def vendor_availability() -> list[dict]:
+    """按家报「这一家的 Key 还在不在」——云端那一屏照这个把清了 Key 的家藏起来。
+
+    整片云端只有 availability() 那一句不够用：RunningHub 那把 Key 在云端账号表，
+    MiniMax 那把在「模型API配置」的 MiniMax 那条上，两把各有各的家。一家清了 Key
+    另一家照用，两家一起点亮或一起灰都是在说假话（2026-11-16 苏醒：Key 删了就别显示了）。
+    """
+    rh_ok = accounts.usable_account() is not None
+    mm_ok = minimax_config() is not None
+    return [
+        {"provider": cloud_spec.PROVIDER, "label": cloud_spec.PROVIDER_LABEL, "available": rh_ok,
+         "reason": "" if rh_ok else "RunningHub 的模型 API Key 已清除，或这条账号被停用；去设置 → 模型API配置 重新保存。"},
+        {"provider": cloud_spec.MINIMAX_PROVIDER, "label": cloud_spec.MINIMAX_LABEL, "available": mm_ok,
+         "reason": "" if mm_ok else "MiniMax 的 API Key 已清除；去设置 → 模型API配置 → MiniMax 重新保存。"},
+    ]
+
+
 def budget_check(estimated: float | None) -> str:
     """花钱闸门。超了回一句人话，调用方据此拦住，绝不把请求发出去。"""
     cfg = load_config()

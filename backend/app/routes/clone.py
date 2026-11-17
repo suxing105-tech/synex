@@ -411,6 +411,7 @@ def cloud_presets() -> dict:
 def cloud_status() -> dict:
     """弹窗那一眼：能不能用、差哪一步、账号、花费闸、待取回。"""
     return {**_cloud_settings(), "availability": cloud_engine.availability(),
+            "vendors": cloud_engine.vendor_availability(),
             "accounts": cloud_accounts.list_accounts(),
             "presets": cloud_spec.describe_all(),
             "spend": cloud_spend_payload(),

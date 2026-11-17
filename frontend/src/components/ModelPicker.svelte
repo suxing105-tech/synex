@@ -4,7 +4,8 @@
    *
    * 为什么不再是「一条配置＝一个模型」那种平铺下拉：Key 与模型分家之后，配置只保证
    * 「这一家能连上」，用哪个模型是发请求那一刻的选择。两列摆在一起，一眼就能看出
-   * 「哪家还没配 Key」「这家有哪些模型」，不用在两个页面之间来回跳。
+   * 「这家有哪些模型」，不用在两个页面之间来回跳。左列只摆还配着 Key 的那几家（2026-11-16
+   * 苏醒：Key 清掉就别再显示这家），少掉的那几家在下面说一句去哪儿能救回来。
    *
    * 模型也不用手输：清单里能对话的那几个由后端认出来，面板进来就先认一次，这一列只用来换一家/换一个。
    */
@@ -39,12 +40,28 @@
   let pos = $state({ left: 8, top: 8, width: 320, up: false });
 
   const configs = $derived(promptModelConfigs($modelConfigs));
+  /**
+   * Key 已清除的那一家不再摆进左列。配置行本身留着——Key 是他自己清的，不是删了配置，
+   * 去设置里重新保存就回来。
+   */
+  const keyed = $derived(configs.filter(item => item.has_api_key));
+  /** 被藏掉的几家：左列悄悄少一家会像软件吞了配置，所以得有个地方报到。 */
+  const keyless = $derived(configs.length - keyed.length);
   const chosen = $derived(configs.find(item => item.id === value) ?? null);
   const previewConfig = $derived(configs.find(item => item.id === preview) ?? null);
   const previewList = $derived(preview !== null ? lists[preview] : undefined);
-  /** 挑好了只显模型名（跟参考里那个下拉一样）；没挑就报「哪家 + 还差一步」。 */
-  const text = $derived(model || (chosen ? chosen.name + " · 自动识别" : "选择模型"));
-  const title = $derived(chosen ? (model ? chosen.name + " · " + model : chosen.name + " · 正在自动识别语言模型") : "自动识别这家的语言模型，点这儿可以换一家");
+  /**
+   * 按钮上那行字：挑好了只显模型名（跟参考里那个下拉一样），没挑就报「哪家 + 还差一步」。
+   * 选中的那一家 Key 被清了就说「Key 已清除」——这一条现在点下去只会失败，别装作还能反推。
+   */
+  const text = $derived(chosen
+    ? (chosen.has_api_key ? (model || chosen.name + " · 自动识别") : chosen.name + " · Key 已清除")
+    : "选择模型");
+  const title = $derived(chosen
+    ? (chosen.has_api_key
+      ? (model ? chosen.name + " · " + model : chosen.name + " · 正在自动识别语言模型")
+      : chosen.name + " 这把 Key 已清除，去设置里重新保存，或在这儿换一家")
+    : "自动识别这家的语言模型，点这儿可以换一家");
   const popStyle = $derived("left:" + pos.left + "px; top:" + pos.top + "px; width:" + pos.width + "px;"
     + (pos.up ? " transform: translateY(-100%);" : ""));
 
@@ -83,7 +100,10 @@
     if (open) { open = false; return; }
     writeError = "";
     open = true;
-    const first = value ?? configs.find(item => item.has_api_key)?.id ?? configs[0]?.id ?? null;
+    // 落点只认还配着 Key 的那几家；一家都没配时仍停在原来那条上，
+    // 这样右列那句「去设置」的路还有得点。
+    const first = keyed.some(item => item.id === value) ? value
+      : (keyed[0]?.id ?? value ?? configs[0]?.id ?? null);
     await enter(first);
     place();
   }
@@ -143,15 +163,16 @@
     <div class="mp-pop" role="dialog" aria-label="选择服务商与模型" style={popStyle}>
       <div class="mp-cols">
         <div class="mp-providers" aria-label="服务商">
-          {#each configs as item (item.id)}
+          {#each keyed as item (item.id)}
             <button class="mp-provider" class:mp-on={item.id === preview} type="button"
                     aria-current={item.id === preview} onclick={() => void enter(item.id)}>
               <BrandMark id={item.provider} name={item.name} compact />
               <span class="mp-pname">{item.name}</span>
-              {#if !item.has_api_key}<span class="mp-tag mp-warn">需配置</span>{/if}
             </button>
           {/each}
-          {#if !configs.length}<p class="mp-empty">还没有服务商，先去设置里配一把 Key。</p>{/if}
+          {#if !keyed.length}
+            <p class="mp-empty">{configs.length ? "这几家的 API Key 都清掉了，去设置里重新保存才能反推。" : "还没有服务商，先去设置里配一把 Key。"}</p>
+          {/if}
         </div>
         <div class="mp-models" aria-label="模型">
           {#if previewList?.loading}
@@ -172,7 +193,10 @@
             <p class="mp-empty">这家没报回能用的语言模型，到设置里检查这把 Key，或换一家。</p>
           {/if}
           {#if previewConfig && !previewConfig.has_api_key}
-            <button class="mp-goto" type="button" onclick={gotoSettings}>这把 Key 还没配，去设置</button>
+            <button class="mp-goto" type="button" onclick={gotoSettings}>这把 Key 已清除或还没填，去设置里重新保存</button>
+          {:else if keyless}
+            <!-- 左列少的那几家在这儿报到：没删配置，只是 Key 清了 -->
+            <button class="mp-goto" type="button" onclick={gotoSettings}>另有 {keyless} 家没配 Key，不在这一列 · 去设置</button>
           {/if}
           {#if writeError}<p class="mp-error" role="alert">{writeError}</p>{/if}
         </div>
@@ -208,7 +232,6 @@
   .mp-pname, .mp-mname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mp-tag { flex: none; font-size: var(--fs-2xs); padding: 1px var(--sp-1); border-radius: var(--r-0); background: #27272a; color: #a1a1aa; }
   .mp-rec { color: #4ade80; border: 1px solid #14532d; }
-  .mp-warn { color: #fbbf24; border: 1px solid #78350f; }
   .mp-empty { font-size: var(--fs-2xs); line-height: var(--lh-ui); color: #a1a1aa; padding: var(--sp-2); margin: 0; }
   .mp-goto { display: block; width: calc(100% - 8px); margin: var(--sp-1); padding: var(--sp-1) var(--sp-2); font-size: var(--fs-2xs); color: #fbbf24; border: 1px solid #3f3f46; border-radius: var(--r-1); background: #202024; }
   .mp-error { font-size: var(--fs-2xs); color: #f87171; padding: var(--sp-1) var(--sp-2); margin: 0; }

@@ -3098,6 +3098,79 @@ it('左列一家服务商一行：点另一家只换右列那份模型清单，�
   expect(screen.getByRole('button', { name: '工作流' }).textContent).toContain('Qwen 多图编辑');
 });
 
+/** MiniMax 那一家：它的 Key 家在「模型API配置」那条上，与 RunningHub 那把各清各的。 */
+const CLOUD_MINIMAX = {
+  id: 94, name: 'MiniMax 图片API', is_active: false, media_kind: 'image',
+  engine: 'cloud', is_cloud: true, provider: 'minimax', model: 'minimax-image',
+  created_at: '', updated_at: '', node_count: 0, prompt_count: 1, reference_count: 1, control_count: 0,
+  default_prompt: '',
+  slots: [{ kind: 'prompt', node: 'model', input: 'prompt', label: '完整提示词' }],
+  cloud: { model_label: 'MiniMax H3 Image', provider_label: 'MiniMax', verified: false, notes: [] },
+};
+
+it('Key 已清除的那一家不再出现在云端那一屏，末尾留一行去设置重新保存', async () => {
+  // 2026-11-16 苏醒：「如果配置的是图像，视频，音频的 API key，删除后，再次创作处也不显示这家厂商」。
+  // 两把 Key 家在不同表里，availability() 那一句说不出「这一家还能不能用」，得按家报。
+  const onOpenSettings = vi.fn();
+  routes({
+    ...baseRoutes(),
+    '/api/clone/cloud/status': cloudOn({
+      vendors: [
+        { provider: 'runninghub', label: 'RunningHub', available: true, reason: '' },
+        { provider: 'minimax', label: 'MiniMax', available: false, reason: 'MiniMax 的 API Key 已清除' },
+      ],
+    }),
+    '/api/clone/templates': { items: [TPL, CLOUD_IMG, CLOUD_MINIMAX] },
+    '/api/clone/cloud/estimate': { coins: 3, mode: 'image' },
+  });
+  const screen = await ready({ onOpenSettings });
+  await fireEvent.click(screen.getByRole('button', { name: '工作流' }));
+  await fireEvent.click(await screen.findByRole('button', { name: /^云端API服务/ }));
+  const labels = [...screen.container.querySelectorAll('.cm-api-vendor')]
+    .map((v) => (v as HTMLElement).textContent ?? '');
+  expect(labels.some((t) => t.includes('MiniMax'))).toBe(false);
+  expect(labels.some((t) => t.includes('RunningHub'))).toBe(true);
+  // tab 上那个数只数现在真摆得出来的行，藏掉的那一家不该还算数
+  expect(screen.getByRole('button', { name: /^云端API服务/ }).textContent).toContain('1');
+  // 少了一家不能悄悄少：报出名字，并给一条回到那一页的路
+  const row = await screen.findByRole('menuitem', { name: /MiniMax 的 Key 已清除 · 去设置重新保存/ });
+  await fireEvent.click(row);
+  expect(onOpenSettings).toHaveBeenCalledWith('模型API配置');
+});
+
+it('两家都清了 Key 时整屏落到空态那一行，不再摆两家点不动的厂商', async () => {
+  routes({
+    ...baseRoutes(),
+    '/api/clone/cloud/status': cloudOn({
+      availability: { available: false, reason: '还没有可用的云端账号' },
+      vendors: [
+        { provider: 'runninghub', label: 'RunningHub', available: false, reason: '已清除' },
+        { provider: 'minimax', label: 'MiniMax', available: false, reason: '已清除' },
+      ],
+    }),
+    '/api/clone/templates': { items: [TPL, CLOUD_IMG, CLOUD_MINIMAX] },
+  });
+  const screen = await ready({ onOpenSettings: vi.fn() });
+  await fireEvent.click(screen.getByRole('button', { name: '工作流' }));
+  await fireEvent.click(await screen.findByRole('button', { name: /^云端API服务/ }));
+  expect(screen.container.querySelector('.cm-api')).toBeNull();
+  expect(screen.container.querySelectorAll('.cm-api-vendor').length).toBe(0);
+  expect(await screen.findByRole('menuitem', { name: /去设置填云端模型的 API Key/ })).toBeTruthy();
+});
+
+it('后端没报按家那份 Key 状态时一家都不藏：藏错一家是切掉一条能用的路', async () => {
+  routes({
+    ...baseRoutes(), '/api/clone/cloud/status': cloudOn(),
+    '/api/clone/templates': { items: [TPL, CLOUD_IMG, CLOUD_MINIMAX] },
+    '/api/clone/cloud/estimate': { coins: 3, mode: 'image' },
+  });
+  const screen = await ready();
+  await fireEvent.click(screen.getByRole('button', { name: '工作流' }));
+  await fireEvent.click(await screen.findByRole('button', { name: /^云端API服务/ }));
+  await vi.waitFor(() => expect(screen.container.querySelectorAll('.cm-api-vendor').length).toBe(2));
+  expect(screen.queryByText(/的 Key 已清除/)).toBeNull();
+});
+
 it('行末三态说实话：没验过的挂「待实测」，后端明说验过的挂「已实测」，Key 齐了不再喊「需配置」', async () => {
   routes({
     ...baseRoutes(), '/api/clone/cloud/status': cloudOn(),

@@ -1907,6 +1907,19 @@ export interface CloudAvailability {
   reason: string;
 }
 
+/**
+ * 一家的 Key 家在自己的表里（RunningHub 在云端账号表，MiniMax 在「模型API配置」那张卡上），
+ * 整片云端那一句 availability 说不出「这一家现在还能不能用」。云端那一屏照这份把
+ * Key 已清除的那几家藏起来。
+ */
+export interface CloudVendor {
+  provider: string;
+  label: string;
+  available: boolean;
+  /** 不能用时的那句原因，只进说明/悬停提示，不占版面。 */
+  reason: string;
+}
+
 export interface CloudSpend {
   today_coins: number;
   month: string;
@@ -1941,6 +1954,8 @@ export interface CloudSettings {
 
 export interface CloudStatus extends CloudSettings {
   availability: CloudAvailability;
+  /** 一家一条。**没这个字段就当一家都不藏**（老后端/读失败时别切掉人能用的路）。 */
+  vendors?: CloudVendor[];
   accounts: CloudAccount[];
   presets: CloudPresetItem[];
   spend: CloudSpend;

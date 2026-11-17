@@ -19,6 +19,9 @@ from typing import Any
 
 PROVIDER = "runninghub"
 PROVIDER_LABEL = "RunningHub"
+# MiniMax 走它自己的官方接口：Key 的家在「模型API配置」那张卡上，不在云端账号表里。
+MINIMAX_PROVIDER = "minimax"
+MINIMAX_LABEL = "MiniMax"
 BASE_URL = "https://www.runninghub.cn"
 
 # 弹窗主输入框的标签，与 clone_templates.PRIMARY_PROMPT_LABEL 同值（测试钉住，不许分家）。
@@ -496,7 +499,7 @@ def template_name(spec: ModelSpec) -> str:
 
 def provider_for(spec: ModelSpec) -> tuple[str, str]:
     if spec.key.startswith("minimax-"):
-        return "minimax", "MiniMax"
+        return MINIMAX_PROVIDER, MINIMAX_LABEL
     return PROVIDER, PROVIDER_LABEL
 
 

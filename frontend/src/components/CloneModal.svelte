@@ -367,15 +367,26 @@
   const popRows = $derived(
     rowsForKind(wfRows, pickedKind).filter((row) => rowIsCloud(row) === (wfTab === "cloud")),
   );
-  /** 「API」那颗后面的条数：不用点进去也知道这条路铺了几条 API。 */
-  const cloudRowCount = $derived(rowsForKind(wfRows, pickedKind).filter((row) => rowIsCloud(row)).length);
+  /**
+   * 后端按家报的那份 Key 状态。查不到这一家时当作「还配着」：一家都不藏（老后端、或这一眼
+   * 没读到）。藏错一家是切掉一条其实能用的路，比多摆一家点不动的更糟。
+   */
+  const cloudVendors = $derived(cloudStatus?.vendors ?? []);
+  function vendorKeyed(key: string): boolean {
+    const hit = cloudVendors.find((item) => item.provider === key);
+    return hit ? hit.available : true;
+  }
   /**
    * API 那一屏的左列：一家服务商一行，右列摆它报的那些模型（2026-11-04 苏醒给的图二版式）。
-   * 只有后端标了 is_cloud 的条目会进来，所以这一屏不可能摆出一家点不动的假服务商。
+   * 只有后端标了 is_cloud 的条目会进来，所以这一屏不可能摆出一家假服务商。
+   * 再筛一道 Key（2026-11-16 苏醒：「API key 清除时，这里不显示」）：Key 清掉的那一家从这一屏
+   * 消失，但它那条工作流没被删、Key 重新保存就回来——所以少了一家要在下面说一句。
    */
-  const apiGroups = $derived(
-    cloudMenuGroups(rowsForKind(wfRows, pickedKind).filter((row) => rowIsCloud(row)), templates),
-  );
+  const apiGroupsAll = $derived(cloudMenuGroups(rowsForKind(wfRows, pickedKind).filter((row) => rowIsCloud(row)), templates));
+  const apiGroups = $derived(apiGroupsAll.filter((group) => vendorKeyed(group.key)));
+  const apiHidden = $derived(apiGroupsAll.filter((group) => !vendorKeyed(group.key)));
+  /** 「API」那颗后面的条数：只数现在真摆得出来的行，藏掉的那几家不该还算数。 */
+  const cloudRowCount = $derived(apiGroups.reduce((sum, group) => sum + group.rows.length, 0));
   /** 指针停在哪家：悬停或点左列换它。没停过时回落到第一家；一家都没装时整块不画，走下面那句空态。 */
   let apiVendor = $state("");
   const apiActive = $derived(apiGroups.find((group) => group.key === apiVendor) ?? apiGroups[0] ?? null);
@@ -2534,6 +2545,19 @@
                           </button>
                         {:else}
                           <p class="cm-pop-empty">云端这一屏还空着：模型 API Key 在设置 · 模型API配置里填。</p>
+                        {/if}
+                      {/if}
+                      {#if wfTab === "cloud" && apiActive && apiHidden.length}
+                        <!-- 清了 Key 的那几家不再摆在左列，但不能悄悄少一家：报出名字，再给一条回到那一页的路。
+                             样式沿用本机那屏末尾那一行，同一个位置、同一颗图标，一眼认得出点下去去哪儿。 -->
+                        <div class="cm-pop-sep"></div>
+                        {#if onOpenSettings}
+                          <button class="cm-wf cm-wf-add" role="menuitem" onclick={() => { closeWorkflowPop(); onOpenSettings("模型API配置"); }}>
+                            <span class="cm-wf-lead" aria-hidden="true"><Icon name="nav-model-api" size={14} /></span>
+                            <span class="cm-wf-name">{apiHidden.map((group) => group.label).join(" / ")} 的 Key 已清除 · 去设置重新保存</span>
+                          </button>
+                        {:else}
+                          <p class="cm-pop-empty">{apiHidden.map((group) => group.label).join(" / ")} 的 Key 已清除，这一屏先不摆它。</p>
                         {/if}
                       {/if}
                       {#if wfTab === "local"}

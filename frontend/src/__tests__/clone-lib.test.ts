@@ -801,6 +801,35 @@ describe("时长档位：视频工作流多出来的那颗控件", () => {
   });
 });
 
+describe("产出清单带真实宽高", () => {
+  // 弹窗主图下面那一行吃它（2026-11-17 苏醒：图片生成完毕，文件名旁边也要有尺寸）。
+  // 数必须是后端从库里回读的实测值，前端不许自己按挑的档位补一个。
+  it("后端给了宽高就照单收下", () => {
+    const job = applyCloneProgress({
+      state: "done", running: false,
+      outputs: [{ id: 3, kind: "image", filename: "a.png", thumbnail_url: "/api/images/3/file?max=256", width: 1536, height: 1088 }],
+    });
+    expect(job.outputs[0]).toEqual({
+      id: 3, kind: "image", filename: "a.png",
+      thumbnail_url: "/api/images/3/file?max=256", width: 1536, height: 1088,
+    });
+  });
+
+  it("缺字段 / 0 / null 一律当「不知道」，不许落成 0 像素", () => {
+    const job = applyCloneProgress({
+      state: "done", running: false,
+      outputs: [
+        { id: 1, kind: "image", filename: "a.png", thumbnail_url: "" },
+        { id: 2, kind: "image", filename: "b.png", thumbnail_url: "", width: 0, height: null },
+        { id: 3, kind: "image", filename: "c.png", thumbnail_url: "", width: "abc", height: "1088" },
+      ],
+    });
+    expect(job.outputs.map((o) => [o.width, o.height])).toEqual([
+      [null, null], [null, null], [null, 1088],
+    ]);
+  });
+});
+
 describe("生成中那一行说人话", () => {
   it("跑动中带上已经跑了多久：一条片子是十分钟级的，不报秒数像卡死了", () => {
     const job = applyCloneProgress({ active: true, job_id: "j", state: "running", running: true, media_kind: "video", message: "生成中…", elapsed: 192 });

@@ -863,16 +863,31 @@ def _record_sources(job: dict, image_ids: list[int]) -> None:
         log.warning("clone sources record failed: %s", exc)
 
 
+def _dim(value: object) -> int | None:
+    """宽高只认正整数，其余一律 None：0 / null / "abc" 都是「不知道」，不是「0 像素」。"""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    num = int(value)
+    return num if num > 0 else None
+
+
 def _output_summary(image_id: int, filename: str) -> dict:
-    """产出 chip 需要的四样：图库 id、是哪一类、叫什么、缩略图在哪。
+    """产出 chip 需要的几样：图库 id、是哪一类、叫什么、缩略图在哪，另加真实宽高。
 
     缩略图一律走图库口径：视频给首帧、音频给波形。前端自己去拼
     /api/images/{id}/file 就会在视频上画出坏图，把音频当图片缩略图更是画出一段波形噪点。
+
+    宽高是从库里回读的实际值，不是提交时挑的那个数：出图链路中间还有节点自己取整
+    （比例与分辨率按 32 对齐、放大按倍数放大），只有落盘之后才说得准。弹窗要在文件名
+    旁边报这一份到底多大（2026-11-17 苏醒）。音频那两列存的是波形画布尺寸，
+    报不报由前端按 kind 决定，这里只负责照实给。
     """
     summary = repository.image_summary(image_id=image_id) or {}
     return {"id": image_id, "kind": str(summary.get("kind") or "image"),
             "filename": str(summary.get("filename") or filename),
-            "thumbnail_url": str(summary.get("thumbnail_url") or "")}
+            "thumbnail_url": str(summary.get("thumbnail_url") or ""),
+            "width": _dim(summary.get("width")),
+            "height": _dim(summary.get("height"))}
 
 
 async def _collect_outputs(outputs: dict) -> tuple[list[int], list[str], list[dict]]:

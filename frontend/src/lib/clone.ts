@@ -521,6 +521,12 @@ export interface CloneOutput {
   kind: MediaKind | string;
   filename: string;
   thumbnail_url: string;
+  /**
+   * 这一份落盘之后的真实宽高（后端从库里回读，不是提交时挑的目标值）。
+   * 老后端不发、或库里认不出就是 null——宁可这行不排，也不报 0×0。
+   */
+  width?: number | null;
+  height?: number | null;
 }
 
 export const EMPTY_CLONE_JOB: CloneJob = {
@@ -539,6 +545,12 @@ function asCoins(value: unknown): number | null {
 
 /** 行 id：认不出的值一律当「没有这条任务」，不能拿 0 或 NaN 去调接口。 */
 function asRowId(value: unknown): number | null {
+  const num = Number(value);
+  return Number.isInteger(num) && num > 0 ? num : null;
+}
+
+/** 宽或高：只认正整数，其余（null / 0 / "abc"）都是「不知道」，不是「0 像素」。 */
+function asDim(value: unknown): number | null {
   const num = Number(value);
   return Number.isInteger(num) && num > 0 ? num : null;
 }
@@ -719,6 +731,8 @@ export function applyCloneProgress(payload: unknown, opts: { seal?: boolean } = 
           kind: String(item.kind ?? "image"),
           filename: String(item.filename ?? ""),
           thumbnail_url: String(item.thumbnail_url ?? ""),
+          width: asDim(item.width),
+          height: asDim(item.height),
         }))
         .filter((item) => Number.isInteger(item.id) && item.id > 0)
       : [],

@@ -202,6 +202,45 @@ async def test_full_run_registers_the_file_comfyui_already_wrote(fake, source_im
     assert [b for b in fake.bodies if "/view" in b] == []  # 没去 /view 再下载一遍
 
 
+async def test_outputs_carry_the_measured_pixel_size(fake, source_image, init_db, tmp_path):
+    """产出清单带的是落盘那张图实测的宽高，不是提交时挑的目标值。
+
+    弹窗主图下面那一行出片之后报的就是它（2026-11-17 苏醒圈的是文件名右侧）。
+    这里故意把交付物换成一张和档位毫无关系的图：只要报的还是 1536×1088，
+    就证明这数是从文件读出来的，不是从 controls 里回填的计划值。
+    """
+    fake.output_bytes(1, tmp_path / "comfyui_output")
+    make_png(tmp_path / "comfyui_output" / "Qwen_00001_.png", width=1536, height=1088)
+    tpl = template()
+    await start(tpl["id"], source_image)
+    state = await finish()
+    produced = state["outputs"][0]
+    assert produced["width"] == 1536 and produced["height"] == 1088, produced
+
+
+def test_output_dims_only_accept_a_positive_number():
+    """0 / null / 文字都是「不知道」：宁可界面那一行不排，也不能写出 0×1088。"""
+    assert clone_jobs._dim(1088) == 1088
+    assert clone_jobs._dim(1088.0) == 1088
+    assert clone_jobs._dim(0) is None
+    assert clone_jobs._dim(-8) is None
+    assert clone_jobs._dim(None) is None
+    assert clone_jobs._dim("") is None
+    assert clone_jobs._dim("abc") is None
+    assert clone_jobs._dim(True) is None
+
+
+def test_output_summary_falls_back_to_unknown_dims(init_db, source_image):
+    """库里查得到就报真数；查不到（那条已经不在库里）报 null，并保住文件名那份兜底。"""
+    known = clone_jobs._output_summary(source_image, "占位.png")
+    assert known["filename"] == "源图.png"
+    assert known["width"] == 8 and known["height"] == 8
+
+    gone = clone_jobs._output_summary(999999, "掉线的.png")
+    assert gone["filename"] == "掉线的.png"
+    assert gone["width"] is None and gone["height"] is None
+
+
 async def test_output_missing_from_watch_dirs_is_reported_not_fatal(fake, source_image, init_db):
     """图在监听目录之外（比如另开了一个 ComfyUI）：说清楚在哪，别把成功报成失败。"""
     fake.outputs = {"600": {"images": [{"filename": "在别处.png", "subfolder": "", "type": "output"}]}}

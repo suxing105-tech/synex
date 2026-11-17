@@ -217,7 +217,7 @@ export interface FooterMetaInput {
 export function footerMetaBits(input: FooterMetaInput): { folder: string | null; bits: string[] } {
   const bits: string[] = [];
   const wide = typeof input.columnWidth !== "number" || input.columnWidth >= FOOTER_BITS_DIMS_MIN_WIDTH;
-  const dims = input.width && input.height ? `${input.width}×${input.height}` : "";
+  const dims = pixelSizeLabel(input.width, input.height);
   const duration = formatDuration(input.durationSeconds ?? null);
   if (input.kind === "image") {
     if (wide && dims) bits.push(dims);
@@ -231,6 +231,14 @@ export function footerMetaBits(input: FooterMetaInput): { folder: string | null;
   const time = footerTimeLabel(input.mtime ?? null, input.now);
   if (time) bits.push(time);
   return { folder: parentFolderLabel(input.path ?? null), bits };
+}
+
+/**
+ * 像素尺寸全站只有一个写法：`1536×1088`（乘号 U+00D7，不留空格）。
+ * 任一边拿不准就整串不报——`0×1088`、`1536×` 都是把「不知道」写成答案。
+ */
+export function pixelSizeLabel(width: number | null | undefined, height: number | null | undefined): string {
+  return width && height ? `${width}×${height}` : "";
 }
 
 /** 时长统一写成 `m:ss`（超过一小时也继续累加分钟，和视频页/详情面板同一口径）。 */

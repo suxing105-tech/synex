@@ -2063,9 +2063,11 @@ it('产出是音频时那一格挂播放角标，点它就地播而不是进图�
   await fireEvent.click(go);
   applyCloneProgress({
     active: true, job_id: 'j1', state: 'done', running: false, template_id: 12, media_kind: 'audio',
-    outputs: [{ id: 88, kind: 'audio', filename: '闪寻音频克隆_00001.flac', thumbnail_url: '/api/audio/88/waveform' }],
+    outputs: [{ id: 88, kind: 'audio', filename: '闪寻音频克隆_00001.flac', thumbnail_url: '/api/audio/88/waveform', width: 840, height: 360 }],
   });
   await tick();
+  // 音频那一行不报尺寸：库里那两列存的是波形画布尺寸（840×360），照搬过去报成「这段音频 840×360」是骗人的
+  expect(document.querySelector('.cm-hero-dims')).toBeNull();
   const hero = screen.getByRole('button', { name: '在图库中打开刚生成的第 88 条' });
   expect(hero.querySelector('img')?.getAttribute('src')).toContain('/api/audio/88/waveform');
   // 产出是音频：那一格挂着播放角标，点下去交给父组件就地播，不是进图片对比
@@ -3489,7 +3491,7 @@ it('文件名旁边报「这一趟会出多大」：跟着比例与分辨率当�
   expect(css).toMatch(/.cm-body.is-stacked .cm-hero-meta { flex: none; }/);
 });
 
-it('这一行只在还没出片时报：生成中是等待台，跑完那一格摆的是真图', async () => {
+it('计划值只在「还没出片」时报：生成中是等待台，跑完这一行改吃真实宽高', async () => {
   routes({ ...baseRoutes(), '/api/clone/generate': { ...EMPTY_CLONE_JOB, active: true, job_id: 'j1', state: 'queued', running: true } });
   const screen = await ready();
   expect(document.querySelector('.cm-hero-dims')).toBeTruthy();
@@ -3502,9 +3504,57 @@ it('这一行只在还没出片时报：生成中是等待台，跑完那一格�
     outputs: [{ id: 41, kind: 'image', filename: 'a.png', thumbnail_url: '/api/images/41/file?max=256' }],
   });
   await tick();
-  // 出片之后计划值让位给真图：真尺寸在图库详情栏，拿算出来的数冒充实测出来的数是假话
+  // 出片之后计划值让位：这一格摆的已经是真图，报的只能是真图那一套账。
+  // 这条产出后端没带宽高（老后端 / 库里认不出），所以宁可整行不排，也不把 1208×1208 留下来冒充实测值。
   expect(document.querySelector('.cm-hero-name')?.textContent).toBe('a.png');
   expect(document.querySelector('.cm-hero-dims')).toBeNull();
+});
+
+it('跑完把真实宽高报在文件名右边：后端给多少报多少，音频不报', async () => {
+  // 2026-11-17 苏醒圈住文件名右侧那一格：「图片生成完毕，这里也要有图片尺寸信息」。
+  // 数不是前端拍的：后端 _output_summary 从库里回读落盘那一份的实测宽高，
+  // 和挑的档位无关（节点还要按倍数取整，计划值冒充实测值就是假话）。
+  routes({ ...baseRoutes(), '/api/clone/generate': { ...EMPTY_CLONE_JOB, active: true, job_id: 'j1', state: 'queued', running: true } });
+  const screen = await ready();
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '出一张' } });
+  await fireEvent.click(screen.getByRole('button', { name: '生成' }));
+  await tick();
+  // 界面上只许有数字：给读屏的那句在 .sr-only 里，不带「尺寸：」这类前缀
+  const shown = (sel: string) => {
+    const el = document.querySelector(sel);
+    if (!el) return null;
+    const lead = el.querySelector('.sr-only')?.textContent ?? '';
+    return (el.textContent ?? '').replace(lead, '').trim();
+  };
+
+  applyCloneProgress({
+    active: true, job_id: 'j1', state: 'done', running: false, template_id: 1, image_ids: [],
+    outputs: [{ id: 41, kind: 'image', filename: 'a.png', thumbnail_url: '/api/images/41/file?max=256', width: 1536, height: 1088 }],
+  });
+  await tick();
+  expect(shown('.cm-hero-dims')).toBe('1536×1088');
+  // 就得并在文件名同一行（同一格 cm-hero-meta），不是另起一行
+  const dims = document.querySelector('.cm-hero-dims');
+  expect(dims?.parentElement?.className).toContain('cm-hero-meta');
+  expect(dims?.parentElement?.querySelector('.cm-hero-name')?.textContent).toBe('a.png');
+
+  // 多份产出时跟着正在看的那一份走：翻到第二份，尺寸得跟着换
+  applyCloneProgress({
+    active: true, job_id: 'j1', state: 'done', running: false, template_id: 1, image_ids: [],
+    outputs: [
+      { id: 41, kind: 'image', filename: 'a.png', thumbnail_url: '/api/images/41/file?max=256', width: 1536, height: 1088 },
+      { id: 42, kind: 'image', filename: 'b.png', thumbnail_url: '/api/images/42/file?max=256', width: 1024, height: 1024 },
+    ],
+  });
+  await tick();
+  expect(shown('.cm-hero-dims')).toBe('1536×1088');
+  await fireEvent.click(screen.getByRole('button', { name: '看下一份产出' }));
+  await tick();
+  expect(document.querySelector('.cm-hero-name')?.textContent).toBe('b.png');
+  expect(shown('.cm-hero-dims')).toBe('1024×1024');
+
+  // 音频那一份不报尺寸，单独钉在「音色克隆出片」那条用例里：这个弹窗只认自己提交过的
+  // job_id，在这里换一条 j2 推进去本来就不会被接（那是对的，不是缺陷）。
 });
 
 it('生成中那一格是等待台：台阶条、已等多久、虚化的底图，不再摆一张静止的旧图', async () => {

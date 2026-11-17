@@ -6,6 +6,7 @@ import {
   footerTimeLabel,
   parentFolderLabel,
   parentFolderPath,
+  pixelSizeLabel,
 } from "../lib/media-format";
 
 /**
@@ -17,6 +18,18 @@ import {
 // 固定「现在」= 2026-11-11 15:00（本地时区），下面所有相对时间都对着它算
 const NOW = new Date(2026, 10, 11, 15, 0, 0).getTime() / 1000;
 const ago = (sec: number) => NOW - sec;
+
+describe("像素尺寸只有一个写法", () => {
+  it("乘号不留空格，任一边缺数就整串不报", () => {
+    expect(pixelSizeLabel(1536, 1088)).toBe("1536×1088");
+    // 「0×1088」「1536×」都是把「不知道」写成答案，宁可不排这一行
+    expect(pixelSizeLabel(0, 1088)).toBe("");
+    expect(pixelSizeLabel(1536, 0)).toBe("");
+    expect(pixelSizeLabel(null, 1088)).toBe("");
+    expect(pixelSizeLabel(1536, undefined)).toBe("");
+    expect(pixelSizeLabel(undefined, undefined)).toBe("");
+  });
+});
 
 describe("第一行的退回值：带扩展名的文件名", () => {
   it("扩展名原样留着——用户要看得出这是 .png 还是 .psd", () => {

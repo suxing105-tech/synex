@@ -13,7 +13,7 @@
   import { tick, untrack } from "svelte";
   import { comfyuiApi, imagesApi } from "../lib/api";
   import { backendUrl } from "../lib/backend-url";
-  import { basenameOnly } from "../lib/media-format";
+  import { basenameOnly, pixelSizeLabel } from "../lib/media-format";
   import { comfyuiStatus, stopAudio } from "../lib/stores";
   import { dismissToast, pushToast } from "../lib/toast";
   import { modalFocus } from "../lib/modal-focus";
@@ -649,9 +649,20 @@
     return image?.filename ?? "";
   });
   /** 还没出片时，文件名旁边顺带报一句「这么点下去会出多大」：算得出就报，算不出这行不排。
-     出片之后撤掉——那一格摆的是真图，真尺寸在图库详情栏里，拿计划值冒充实测值是假话。
-     生成中也撤掉，跟上面那行文件名同一条理由：等待台不报还没有的东西。 */
+     出片之后换成下面那行真数（拿计划值冒充实测值是假话），生成中也撤掉——
+     跟上面那行文件名同一条理由：等待台不报还没有的东西。 */
   const heroTargetSize = $derived(heroShowsOutput || busy ? "" : formatTargetSize(template, controls));
+  /**
+   * 出片之后文件名旁边报的是这一份的真实宽高（2026-11-17 苏醒圈着文件名右侧：
+   * 「图片生成完毕，这里也要有图片尺寸信息」）。为什么非得从后端拿、不吃上面那个计划值：
+   * 出图链路里节点自己还要按倍数取整、放大链还会再乘一次，挑的 1500 出来可能是 1536——
+   * 这一格摆的已经是真图，只能报真图那一套账。多份产出时跟着正在看的那一份走。
+   * 音频不报：库里那两列存的是波形画布尺寸（840×360），报出来是骗人的。
+   */
+  const heroOutputSize = $derived.by(() => {
+    if (!heroShowsOutput || !heroOutput || heroOutput.kind === "audio") return "";
+    return pixelSizeLabel(heroOutput.width, heroOutput.height);
+  });
   /** 参数弹层最下面那行吃的是同一个数：弹层本来就开着在挑比例和 MP，得跟着手上的选择实时走。 */
   const targetSize = $derived(formatTargetSize(template, controls));
   /* 提示词那一格的小标题用工作流给的槽位名（台词 / 正向提示词…），没名字才退回「完整提示词」。 */
@@ -2151,13 +2162,18 @@
                 <div class="cm-hero cm-hero-empty">没有预览</div>
               {/if}
           {/if}
-          {#if heroCaption || heroTargetSize}
+          {#if heroCaption || heroTargetSize || heroOutputSize}
             <div class="cm-hero-meta">
               {#if heroCaption}
                 <!-- 文件名回到展示图下面（旧图那一版有）：一次出几份、或者从这一格跳回图库时，认的就是它。 -->
                 <p class="cm-hero-name" title={heroCaption}>{heroCaption}</p>
               {/if}
-              {#if heroTargetSize}
+              {#if heroOutputSize}
+                <!-- 出片之后报的是这一份实际出图的尺寸，和文件名并排在同一行。 -->
+                <p class="cm-hero-dims" title="这一份实际出图的尺寸">
+                  <span class="sr-only">实际尺寸</span>{heroOutputSize}
+                </p>
+              {:else if heroTargetSize}
                 <!-- 这一趟会出多大：公式和 ComfyUI 那台 ResolutionSelector 同一份，挑完比例与分辨率就落地，
                      不用等跑完才发现尺寸不对。认不出这两个数的工作流（云端、局部重绘）不会走到这里。 -->
                 <p class="cm-hero-dims" title="按当前比例与分辨率，这一趟会出这么大的图">

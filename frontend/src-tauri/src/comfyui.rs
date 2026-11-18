@@ -658,6 +658,33 @@ mod tests {
         raw.parse().expect("测试用 URL 必须合法")
     }
 
+    /// 2026-11-17「获取 API Key 点了没反应」查到最后的那一层：tauri-plugin-shell 会往页面
+    /// 注入一段挂在 body 上的 click 监听，专吃 `target="_blank"` 的 http/https 链接——它先把
+    /// 默认行为摁掉（preventDefault），再去 invoke `plugin:shell|open`。那条命令从 2.1 起就该
+    /// 换成 opener 插件，而我们的 capabilities 里根本没给 shell 任何权限，于是那次 invoke 必然
+    /// 被 ACL 拒掉，而注入的脚本连 catch 都没有：链接被摁死了，却什么都没发生，也没人报错。
+    /// 前端自己的文档级委托排在 body 后面，看到的永远是 defaultPrevented=true，只好让路——
+    /// 「点了没反应、界面上连一句提示都没有」就是这么来的（本机实测：注入脚本先跑，
+    /// 我们那层的委托监听读到 prevented=true 直接 return）。
+    ///
+    /// 这个插件在本项目里没有任何人用：sidecar 走 tokio::process::Command 直接起，
+    /// 起浏览器走上面那条自己按注册表关联 spawn 的路（见 open_in_default_browser 的实测记录），
+    /// 前端也没 import 过 @tauri-apps/plugin-shell。留着它只剩一个作用——把站内每一个外链吃掉。
+    /// 所以依赖表和注册处两处都钉住「不许有它」，谁请回来测试就红。
+    #[test]
+    fn shell_plugin_stays_out_because_its_init_script_swallows_external_links() {
+        let registry = include_str!("lib.rs");
+        let manifest = include_str!("../Cargo.toml");
+        assert!(
+            !registry.contains("tauri_plugin_shell"),
+            "lib.rs 里不许再注册 tauri_plugin_shell：它的 init script 会在 body 上 preventDefault 吃掉 target=\"_blank\" 外链，"
+        );
+        assert!(
+            !manifest.contains("tauri-plugin-shell"),
+            "Cargo.toml 里不许再加 tauri-plugin-shell 依赖，理由同上；要起外部程序请用 comfyui.rs::open_in_default_browser"
+        );
+    }
+
     #[test]
     fn same_origin_popup_becomes_in_window_panel() {
         // LoRA 管理器普通点击：window.open('/loras 全地址', '_blank')，无窗口尺寸

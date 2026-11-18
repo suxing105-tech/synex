@@ -168,7 +168,23 @@ def test_missing_default_model_says_where_to_fix_it(client, monkeypatch):
     assert "反推提示词" in result.json()["detail"]
 
 
-def test_helpers_agree_with_the_backend_language_call():
-    assert video_prompts.dominant_language("一个女人走进雨里。") == "zh"
-    assert video_prompts.dominant_language("A woman walks into the rain.") == "en"
+def test_labels_do_not_outvote_a_chinese_body():
+    """真机踩到的那条：六段提示词的键名是英文的，按字母数比会把整段中文判成英文。
+
+    判错方向不是「翻得难看」，是这颗按钮按下去毫无反应——模型照着「译成中文」
+    把中文原文原样退回来。所以这里按词比：一个汉字算一个词。
+    """
+    body = ("subject_definitions:\n<Subject 1>: 苏晚，黑色长发湿透。\nsummary:\n"
+            "苏晚在深夜的巷口等一辆不会来的车。\ndetailed_description:\n[Shot 1] 0-3 秒：特写。")
+    assert sum(ch.isascii() and ch.isalpha() for ch in body) > sum("\u4e00" <= ch <= "\u9fff" for ch in body), \
+        "这条样例的拉丁字母确实比汉字多——正是按字母数判会翻车的那种正文"
+    assert prompt_translate.dominant_language(body) == "zh"
+    assert prompt_translate.target_language(body) == "en"
+
+
+def test_the_language_rule_still_reads_a_plain_english_body():
+    assert prompt_translate.dominant_language("A woman walks into the rain.") == "en"
+    assert prompt_translate.target_language("A woman walks into the rain.") == "zh"
+    # 只有段名、没有正文那种：字母占住场子，判成英文，别硬翻一句中文出来
+    assert prompt_translate.dominant_language("summary:\ndetailed_description:") == "en"
     assert prompt_translate.TARGET_WORDS == {"zh": "中文", "en": "英文"}

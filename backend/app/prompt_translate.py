@@ -13,9 +13,30 @@
 """
 from __future__ import annotations
 
+import re
+
 from fastapi import HTTPException
 
 from . import prompt_skills, reverse_prompts, video_prompts
+
+# 主体语言怎么判：中日韩字的个数 对 拉丁单词的个数，不是一个字母一个字母地数。
+# 为什么不照抄 video_prompts.dominant_language（那边按字母数比）：提示词的结构部分天生是英文的——
+# 六段段名、<Subject 1>、[Shot 1]、@图片1 加起来就近一百个字母，正文却全是中文。
+# 2026-11-18 真机实测：按字母数比，一段 96 个汉字的六段提示词被判成英文，那颗按钮按下去翻出来
+# 还是原来那一句（模型照着「译成中文」把中文原文退回来），等于这颗白装。
+# 按「词」比才是人眼看到的那件事：一个汉字本身就是一个词，一段中文散文不该输给几个键名。
+CJK_CHARS = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]")
+LATIN_WORDS = re.compile(r"[A-Za-z]+")
+
+
+def dominant_language(text) -> str:
+    """正文主体语言：中日韩字数不少于拉丁单词数就算中文（打平时站中文这边，产品是中文优先）。"""
+    return "zh" if len(CJK_CHARS.findall(text or "")) >= len(LATIN_WORDS.findall(text or "")) else "en"
+
+
+def target_language(text) -> str:
+    """要翻成哪一种：与正文主体相反的那一种。"""
+    return "en" if dominant_language(text) == "zh" else "zh"
 
 # 目标语言在指令里出现两次（开头一次、第五条一次），写成占位符再换。
 # 不用 str.format：指令里本来就带大括号（Seedance 的台词就是花括号包的），format 会撞上。
@@ -52,8 +73,8 @@ async def translate(text: str) -> dict:
     body = str(text or "").strip()
     if not body:
         raise HTTPException(422, "提示词是空的，没什么可翻译")
-    source = video_prompts.dominant_language(body)
-    target = video_prompts.translation_language(body)
+    source = dominant_language(body)
+    target = target_language(body)
     config, key = prompt_skills.resolve_model()
     # 这条指令是死的常量，用户能打字的只有正文，而正文走的是 content 不是 system，
     # 所以这里不存在「把密钥拼进系统提示」那条路（测试钉着这个不变量）。

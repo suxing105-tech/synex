@@ -268,12 +268,14 @@ describe("提示词框那颗中英互译", () => {
     expect(init?.signal).toBe(ctl.signal);
   });
 
-  it("方向按正文主体语言判，和后端 video_prompts 同一个算法", () => {
+  it("方向按词判：英文段名压不过中文正文，两边算法一字不差", () => {
     expect(dominantLanguage("一个女人在雨里慢慢往前走。")).toBe("zh");
     expect(dominantLanguage("A woman walks slowly in the rain.")).toBe("en");
-    // 六段提示词的段名是英文的，靠的是正文够长把天平压回中文那边；判法两边同源，
-    // 所以悬停写的方向和后端真翻的方向不会各说各话（正文短到只剩段名时两边一起判成英文）
-    expect(dominantLanguage("subject_definitions:\nsummary:\n" + "一个女人在雨里慢慢往前走，裙摆湿透了贴在腿上。".repeat(4))).toBe("zh");
+    // 真机踩过的那条：六段提示词的键名是英文的，按字母数比会把整段中文判成英文，
+    // 那颗按钮按下去就翻不动（模型照着「译成中文」把原文退回来）。按词比才对人眼公平。
+    expect(dominantLanguage("subject_definitions:\nsummary:\n一个女人在雨里慢慢往前走。")).toBe("zh");
+    // 只有段名、没有正文那种才判成英文：没有中文正文可翻
+    expect(dominantLanguage("summary:\ndetailed_description:")).toBe("en");
     expect(targetLanguage("一个女人在雨里走")).toBe("en");
     expect(targetLanguage("A woman walks in the rain")).toBe("zh");
   });

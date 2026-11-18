@@ -373,16 +373,18 @@ export function missingMarks(original: string, result: string): string[] {
 }
 
 /**
- * 正文主体语言：中日韩字符比拉丁字母多就算中文。
+ * 正文主体语言：中日韩字的个数 对 拉丁单词的个数，按「词」不按「字母」。
  *
- * 判法与后端 video_prompts.dominant_language 同源（连字符区间一起抄），两边各判一次就会
- * 出现「悬停写着译成英文、点下去翻成中文」。
+ * 与后端 prompt_translate.dominant_language 一字不差（连字符区间一起抄），两边各判一次就会
+ * 出现「悬停写着译成英文、点下去翻成中文」。为什么不照抄 video_prompts 那边按字母数的老判法：
+ * 提示词的段名和标签天生是英文的，一段全中文的六段提示词按字母数会被判成英文——真机实测过，
+ * 那颗按钮按下去翻出来的还是原来那一句。
  */
 const CJK_CHARS = /[\u3400-\u4dbf\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/g;
-const LATIN_LETTERS = /[A-Za-z]/g;
+const LATIN_WORDS = /[A-Za-z]+/g;
 
 export function dominantLanguage(text: string): TranslateLanguage {
-  return (text.match(CJK_CHARS)?.length ?? 0) > (text.match(LATIN_LETTERS)?.length ?? 0) ? "zh" : "en";
+  return (text.match(CJK_CHARS)?.length ?? 0) >= (text.match(LATIN_WORDS)?.length ?? 0) ? "zh" : "en";
 }
 
 /** 要翻成哪一种：与正文主体相反的那一种。 */

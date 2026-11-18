@@ -222,6 +222,20 @@ def test_shipped_slots_point_at_real_nodes():
             assert str(slot.get("node")) in nodes, (entry["key"], slot)
 
 
+def test_shipped_reference_slots_follow_the_wiring():
+    """内置文件的参考位顺序必须和接线一格不差。
+
+    弹窗里的「图片3 / 视频2」、提示词里的 <Picture 3>、后端「同一族要从第 1 格连着填」
+    全都按 slots 里这份顺序说话，作者手写歪一格就全体错位（老 H3 那份就是这么错的：
+    按节点号数的结果是 188 号当图片1，而它接的是 ref_image_1，模型看到的 <Picture 2>）。
+    detect_slots 现在也按接线排，这条等于顺手替内置文件把关。
+    """
+    for entry in clone_bundled.entries():
+        nodes, slots = clone_bundled._prepare(entry)
+        refs = [s for s in slots if str(s.get("kind")) in clone_templates.REFERENCE_KINDS]
+        assert clone_templates.sort_reference_slots(nodes, refs) == refs, entry["key"]
+
+
 def test_shipped_slots_can_report_the_real_output_size():
     """带比例/百万像素旋钮的内置模板必须说得出对齐步长：弹窗靠它报「这一趟会出多大」。
 

@@ -64,7 +64,7 @@
    "input": "image",
    "kind": "image",
    "label": "加载图像",
-   "node": "188"
+   "node": "199"
   },
   {
    "grow": {
@@ -84,7 +84,7 @@
    "input": "image",
    "kind": "image",
    "label": "加载图像",
-   "node": "199"
+   "node": "188"
   },
   {
    "input": "value",

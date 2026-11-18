@@ -66,7 +66,7 @@ cd frontend; pnpm add -D @tauri-apps/cli      # 得到 node_modules\.bin\tauri.c
 
 ```powershell
 git tag v0.2.21
-git push origin HEAD:main
+git push origin main
 git push origin v0.2.21
 
 python frontend\scripts\publish-release.py plan    --version 0.2.21 --dir outputs\release-0.2.21  # 不联网，只核对资产

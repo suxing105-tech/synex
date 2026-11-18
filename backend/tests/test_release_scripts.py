@@ -235,3 +235,25 @@ class TestWorktreeMustBeCommitted:
         build = (SCRIPTS / "build-update.ps1").read_text(encoding="utf-8")
         assert "check-worktree-committed.py" in verify
         assert "check-worktree-committed.py" in build
+
+
+class TestSingleBranchFlow:
+    """仓库 2026-11-18 起只有 `main` 一条分支，发布文档不许把双轨流程写回来。
+
+    以前是 codex/tauri-app 干活、发布时再推一份到 main：两条分支在发布点必然同
+    一个 commit，平时却会长差（本地 main 一度落后 236 个提交，看不清发布的是哪个）。
+    每个版本都有 tag 锚定，分支不再承载信息，所以工作分支归一到 main。
+    """
+
+    def test_release_doc_pushes_straight_to_main(self) -> None:
+        doc = (REPO / "docs" / "release-process.md").read_text(encoding="utf-8")
+        assert "git push origin main" in doc
+
+    def test_release_doc_has_no_second_branch(self) -> None:
+        # `HEAD:main` 是「在另一条分支上干活」的产物，单分支之后它出现就是流程漂移。
+        doc = (REPO / "docs" / "release-process.md").read_text(encoding="utf-8")
+        pushes = [ln.strip() for ln in doc.splitlines() if ln.strip().startswith("git push")]
+        assert pushes, "发布文档里找不到 git push 命令，锚点变了"
+        for line in pushes:
+            assert "HEAD:main" not in line, line
+            assert "codex/" not in line, line

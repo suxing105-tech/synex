@@ -54,9 +54,9 @@
   import type { ImageSummary, ImportResponse, MediaFeedItem } from "../lib/types";
   import { errorMessage } from "../lib/reverse-prompts";
   import {
-    KIND_WORDS, loadPromptSkills, missingMarks, pickSkillFor, promptSkills, promptSkillsApi,
-    promptSkillSettings, setDefaultSkill, type OptimizeRef, type OptimizeResult,
-    type PromptSkill, type PromptSkillKind,
+    KIND_WORDS, loadPromptSkills, missingMarks, missingStructure, pickSkillFor, promptSkills,
+    promptSkillsApi, promptSkillSettings, setDefaultSkill, targetLanguage, TRANSLATE_WORDS,
+    type OptimizeRef, type OptimizeResult, type PromptSkill, type PromptSkillKind, type TranslateResult,
   } from "../lib/prompt-skills";
 
   interface Props {
@@ -1481,6 +1481,7 @@
     reversePrompt = "";
     promptTouched = false;
     promptUndo = null;
+    promptTranslated = null;
     void loadTemplates();
     void loadCloudStatus();
     void loadPrompt(id);
@@ -1823,16 +1824,23 @@
   let skillModal = $state(false);
   let optimizing = $state(false);
   let optimizeAbort: AbortController | null = null;
+  /* 翻译和优化各留一把旗子、各留一个 AbortController，不共用一个「忙」：
+     亮着的那颗得说清自己取消的是哪一次，共用一个 flag 就只剩下「两个都想要回来」。 */
+  let translating = $state(false);
+  let translateAbort: AbortController | null = null;
   /**
    * 提示词锁（2026-11-16 苏醒：「提示词在优化状态和生成状态的时候，应该暗下去，不能修改」）。
-   * 两个状态合成一把锁：优化中改字，模型回来的那一版会把刚敲的冲掉；
+   * 三个状态合成一把锁：优化中或翻译中改字，模型回来的那一版会把刚敲的冲掉；
    * 生成中改字，提交出去的那一份和框里看见的那一句就不是同一份了。
-   * 只锁这一句提示词和那两颗会改写它的图标；右下角那颗优化图标仍要点得动——它是唯一的取消入口。
+   * 只锁这一句提示词和那几颗会改写它的图标；正在跑的那一颗仍要点得动——它是那次请求唯一的取消入口。
+   * 两颗各管各的：翻译中按不动优化，优化中也按不动翻译，同一次不会有两句要写回这个框。
    */
-  const promptLocked = $derived(optimizing || busy);
+  const promptLocked = $derived(optimizing || translating || busy);
   const promptLockNote = $derived(optimizing
     ? "正在按技能优化提示词：优化回来之前不能改（再点一下那颗图标可以取消）"
-    : "正在生成：这一句要等这一轮跑完才改");
+    : translating
+      ? "正在翻译提示词：译文回来之前不能改（再点一下那颗图标可以取消）"
+      : "正在生成：这一句要等这一轮跑完才改");
   /**
    * 被技能改写掉的那一版提示词（2026-11-12 苏醒：「优化之后我希望旁边还有一个撤销按钮，
    * 点击可以回到原来手动输入的提示词」）。null = 这一轮没被改写过，那颗撤销就不画。
@@ -1840,6 +1848,25 @@
    * touched 跟着各自那一版一起存——退回「没动过框」那一版时，反推那条路才照旧允许填进来。
    */
   let promptUndo = $state<{ text: string; touched: boolean } | null>(null);
+  /**
+   * 翻成另一种语言之前的那一句（2026-11-18 苏醒：「翻译之后，再次点击是返回原文，再次点击是重新翻译」）。
+   * 有值＝框里现在摆的是译文，那颗图标的意思跟着变成「换回原文」；点下去就清空它，
+   * 所以第三下是真发一次请求，而不是把旧译文再扣回来——两句之间人是会在框里改字的。
+   */
+  let promptTranslated = $state<{ text: string; touched: boolean; written: string } | null>(null);
+
+  /** 悬停提示按框里现在这句的主体语言写：中文正文说「译成英文」，不用人先想方向。 */
+  const translateTarget = $derived(targetLanguage(prompt));
+  const translateLabel = $derived(
+    promptTranslated ? "换回翻译前的原文" : "把提示词译成" + TRANSLATE_WORDS[translateTarget],
+  );
+  const translateTitle = $derived(
+    translating
+      ? "正在翻译：点一下取消这次翻译"
+      : promptTranslated
+        ? "换回翻译前的原文\n（再点一次会重新翻一遍）"
+        : "译成" + TRANSLATE_WORDS[translateTarget] + "：只翻描述文字，段名、编号、时间、台词一律照抄",
+  );
 
   /** MediaKind 三种里只有图片和视频有对应的技能族：音频那一族不给优化（后端也拒收）。 */
   const skillKind = $derived<PromptSkillKind | null>(mediaKind === "audio" ? null : mediaKind);
@@ -1945,6 +1972,9 @@
     // 只在第一次改写时留快照，连着优化第二句时不动它：撤销要回的是最早手打那句。
     // 一个字都没改就别留——那样点了撤销什么也不发生，看着像坏了。
     if (promptUndo === null && next !== before) promptUndo = { text: before, touched: wasTouched };
+    // 技能重写覆盖的是框里现在这一句，翻译那份快照跟着它一起作废：
+    // 留着它，下一颗「换回原文」会把译文底下那一句甩进来，三句搅成一团。
+    promptTranslated = null;
     prompt = next;
     promptTouched = true;
     await tick();
@@ -1969,6 +1999,8 @@
   function undoPrompt() {
     const prev = promptUndo;
     if (!prev) return;
+    // 同一条理由：撤销要回的是技能改写前后那两句，路上不该再夹一份译文快照
+    promptTranslated = null;
     promptUndo = { text: prompt, touched: promptTouched };
     prompt = prev.text;
     promptTouched = prev.touched;
@@ -2027,6 +2059,89 @@
       if (toastId) dismissToast(toastId);
       optimizeAbort = null;
       optimizing = false;
+    }
+  }
+
+  /**
+   * 从中英互译切回原文。
+   *
+   * 手上这一版（中途手改过的字也在里面）交给撤销那颗保管，和 undoPrompt 同一个对调口径：
+   * 来回切一句字都不丢。快照顺手清掉——所以再点那颗是重新翻一遍，不是读旧译文，
+   * 这是苏醒点名要的第三下语义。
+   */
+  function backToOriginal() {
+    const prev = promptTranslated;
+    if (!prev) return;
+    promptTranslated = null;
+    // 只有人在译文上动过手，才把这一版交给撤销那颗保管：没动过的话，这里丢掉的只是一句随时能
+    // 重翻一遍的译文，而撤销那颗保管着的往往是手打的原句——那才是回不来的东西。
+    if (prompt !== prev.written) promptUndo = { text: prompt, touched: promptTouched };
+    prompt = prev.text;
+    promptTouched = prev.touched;
+    void tick().then(() => autosizePrompt());
+  }
+
+  /** 译文写回框里，并留下原文那份快照——那颗图标跟着从「译成英文」翻成「换回原文」。 */
+  async function writeTranslation(original: string, next: string, res: TranslateResult) {
+    promptTranslated = { text: original, touched: promptTouched, written: next };
+    prompt = next;
+    promptTouched = true;
+    await tick();
+    autosizePrompt();
+    pushToast("已译成" + TRANSLATE_WORDS[res.target_language] + " · " + res.model_name, {
+      kind: "success",
+      ttl: 10000,
+      // 小条上这颗和框里那颗同一件事、同一个函数：各存一份原文的话，先点框里那颗再点小条那颗，
+      // 会把早就过期那一句甩回来（撤销那颗当初就是为这个才合并的）。
+      actions: [{ label: "换回原文", primary: true, onClick: () => backToOriginal() }],
+    });
+  }
+
+  /**
+   * 提示词框那颗中英互译（2026-11-18 苏醒：「增加一个中英文互译的图标按钮……点击可以对提示词框的文本
+   * 进行翻译，不多加其他的内容。并且翻译之后，再次点击是返回原文，再次点击是重新翻译」）。
+   *
+   * 点下去那一刻分三条路：正在翻＝取消这一次；框里是译文＝换回原文；其余＝真发一次请求。
+   * 它不进技能清单、也不给挑模型的口子：吃的就是反推那一份默认配置，和优化是同一具脑子。
+   */
+  async function translatePrompt() {
+    const original = prompt;
+    if (!original.trim() || busy || optimizing || translating) return;
+    let toastId = 0;
+    translating = true;
+    try {
+      const ctl = new AbortController();
+      translateAbort = ctl;
+      toastId = pushToast("正在翻译…", {
+        kind: "progress",
+        ttl: 0,
+        actions: [{ label: "取消", onClick: () => ctl.abort() }],
+      });
+      const res = await promptSkillsApi.translate(original, ctl.signal);
+      const lost = [...missingMarks(original, res.text), ...missingStructure(original, res.text)];
+      if (lost.length) {
+        // 参考编号、段名、镜头标号或台词块被译没了：写回去那格参考就静默失效、那个节点就吃不到词。
+        // 默认不写，让人自己决定——和「仍然写入」那颗按钮当初为的是同一件事。
+        pushToast("译文把 " + lost.join("、") + " 弄丢了，没有写回", {
+          kind: "error",
+          ttl: 9000,
+          actions: [{ label: "仍然写入", onClick: () => void writeTranslation(original, res.text, res) }],
+        });
+        return;
+      }
+      if (res.text.trim() === original.trim()) {
+        // 模型原样退回来：不写、也不记快照。记了就会多一颗「换回原文」，点下去两句一模一样，看着像坏了。
+        pushToast("模型一句都没翻，请再点一次或换一家模型", { kind: "error", ttl: 6000 });
+        return;
+      }
+      await writeTranslation(original, res.text, res);
+    } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError") pushToast("已取消这次翻译", { kind: "info" });
+      else pushToast(errorMessage(err), { kind: "error", ttl: 6000 });
+    } finally {
+      if (toastId) dismissToast(toastId);
+      translateAbort = null;
+      translating = false;
     }
   }
 
@@ -2401,8 +2516,9 @@
                       {#if skillKind || offerWorkflowPrompt}
                         <!-- 提示词框右下角这一排（2026-11-12 苏醒：「这个图标（即载入工作流内置提示词图标）也去掉圆框描边，
                                 放在优化提示词图标左侧」+「优化之后旁边还有一个撤销按钮」）：
-                                左「载入工作流内置的提示词」、中「换回上一版提示词」、右「按技能优化」。
-                                谁的条件不成立谁不在，最右边那颗永远贴在同一格上；三颗都是裸图标——静止压暗，滑过或聚焦才亮。 -->
+                                左「载入工作流内置的提示词」、中「换回上一版提示词」、再往右「译成另一种语言」、
+                                最右「按技能优化」。谁的条件不成立谁不在，最右边那颗永远贴在同一格上；
+                                这几颗都是裸图标——静止压暗，滑过或聚焦才亮。 -->
                         <div class="cm-prompt-tools">
                           {#if offerWorkflowPrompt}
                             <button class="cm-wand" type="button"
@@ -2421,10 +2537,23 @@
                               onclick={undoPrompt}><Icon name="undo" size={14} /></button>
                           {/if}
                           {#if skillKind}
+                            <!-- 中英互译那颗（2026-11-18 苏醒：「提示词优化技能图标左侧，我希望增加一个中英文互译的图标按钮，
+                                 同步调用提示词反推的 API……翻译之后，再次点击是返回原文，再次点击是重新翻译」）。
+                                 紧贴优化那颗左边：这俩是同一件事的两步——先翻成人话，再按技能重写。
+                                 只翻描述文字，段名、参考编号、时间、台词一律照抄，这条口径写死在后端那条指令里，
+                                 不开放成一条能改的技能：改一行就能把台词和编号一起翻掉。
+                                 和右边那颗同进同退：音频工作流不画它，念出来的台词翻成另一种语言等于换个人说话。 -->
+                            <button class="cm-translate" class:is-busy={translating} type="button"
+                              disabled={!prompt.trim() || busy || optimizing} aria-busy={translating}
+                              aria-label={translateLabel} title={translateTitle}
+                              onclick={() => (translating ? translateAbort?.abort() : promptTranslated ? backToOriginal() : void translatePrompt())}
+                            ><Icon name="translate" size={14} /></button>
+                          {/if}
+                          {#if skillKind}
                             <!-- 左键＝拿这一族的默认技能重写一句；右键＝换技能、进设置。音频工作流不画它：台词是念出来的
                                  东西，重写一遍等于换个人说话，后端那一族也拒收。 -->
                             <button class="cm-skill" class:is-busy={optimizing} type="button"
-                              disabled={!prompt.trim() || busy} aria-busy={optimizing}
+                              disabled={!prompt.trim() || busy || translating} aria-busy={optimizing}
                               aria-label={optimizing ? "正在优化提示词，点一下取消" : "用技能优化提示词"}
                               title={skillTitle}
                               onclick={() => (optimizing ? optimizeAbort?.abort() : void optimizePrompt())}
@@ -3295,9 +3424,9 @@
     position: absolute; right: 24px; bottom: 4px; z-index: 4;
     display: flex; align-items: center; gap: var(--sp-05);
   }
-  /* 那一排三颗共用一张脸（2026-11-12 苏醒：「图标不要圆框描边」）：裸图标——不画圆框、不铺底、
+  /* 那一排共用一张脸（2026-11-12 苏醒：「图标不要圆框描边」）：裸图标——不画圆框、不铺底、
      不毛玻璃，静止压暗，滑过或键盘聚焦才亮，反馈只剩透明度和颜色。
-     规则挂在容器的直接子 button 上，不再一颗抄一份：三颗本来就是同款，将来再加第四颗也不用重抄
+     规则挂在容器的直接子 button 上，不再一颗抄一份：这一排本来就是同款，一颗颗进来也不用重抄
      这六行，更不会各改各的跑偏（载入那颗先是从卡右上角的圆框挪进来、再和这颗统一成裸图标，
      两张脸分开写的阶段就是它每次都要被点名一遍的原因）。
      border: 0 / background: none 是清 <button> 的 UA 默认样式，不能省；颜色一律引 token；
@@ -3338,11 +3467,13 @@
   /* 禁用态也挂在那一排上：共用的悬停规则比 .cm-skill:disabled 更具体（多了 :hover 那一级），
      不一起挂的话，disabled 的那颗滑过去照样会亮起来。同一条规则写在悬停之后，同权重后来者胜。 */
   .cm-prompt-tools > button:disabled { opacity: .28; cursor: default; }
-  .cm-skill.is-busy { opacity: 1; color: var(--accent-strong); animation: cm-skill-pulse 1.2s ease-in-out infinite; }
+  /* 正在跑的那颗：不压暗、点亮、慢慢闪。挂在整排上而不是挂在某一颗上——优化和翻译两颗是同一张脸，
+     将来谁再进来也不用再抄一遍，也不会各改各的跑偏。 */
+  .cm-prompt-tools > button.is-busy { opacity: 1; color: var(--accent-strong); animation: cm-skill-pulse 1.2s ease-in-out infinite; }
   @keyframes cm-skill-pulse { 50% { opacity: .45; } }
   /* 关掉动效的人照样看得出它在跑：只是不再闪 */
   @media (prefers-reduced-motion: reduce) {
-    .cm-skill.is-busy { animation: none; }
+    .cm-prompt-tools > button.is-busy { animation: none; }
   }
   .cm-note { margin: 0; font-size: var(--fs-xs); color: #71717a; }
   .cm-empty { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); font-size: var(--fs-sm); color: #a1a1aa; background: #1b1b1f; border: 1px dashed #33333a; border-radius: var(--r-2); }

@@ -21,6 +21,8 @@ const {
   isTextFilePath,
   loadPromptSkills,
   missingMarks,
+  missingStructure,
+  dominantLanguage,
   pickSkillFor,
   promptMarks,
   promptSkills,
@@ -29,6 +31,7 @@ const {
   resetPromptSkills,
   setDefaultSkill,
   skillsForKind,
+  targetLanguage,
 } = await import("../lib/prompt-skills");
 
 function skill(over: Partial<PromptSkill> = {}): PromptSkill {
@@ -250,5 +253,45 @@ describe("技能包", () => {
     expect(describeImport(done([packed()], [{ path: "C:/a.7z", reason: "得先解压" }]))).toBe(
       "已导入技能「电商视觉包」，1 个没进来：得先解压");
     expect(describeImport(done([], [{ path: "C:/a.7z", reason: "得先解压" }]))).toBe("没能导入：得先解压");
+  });
+});
+
+describe("提示词框那颗中英互译", () => {
+  it("互译只送正文、走那一条新接口，signal 一路带到 fetch", async () => {
+    http.mockResolvedValue({ text: "A woman walks.", source_language: "zh", target_language: "en", model_name: "魔搭", model: "deepseek" });
+    const ctl = new AbortController();
+    await promptSkillsApi.translate("一个女人在雨里走", ctl.signal);
+    const [path, init] = http.mock.calls[0];
+    expect(path).toBe("/api/translate-prompt");
+    expect(init?.method).toBe("POST");
+    expect(bodyOf(init)).toEqual({ text: "一个女人在雨里走" });
+    expect(init?.signal).toBe(ctl.signal);
+  });
+
+  it("方向按正文主体语言判，和后端 video_prompts 同一个算法", () => {
+    expect(dominantLanguage("一个女人在雨里慢慢往前走。")).toBe("zh");
+    expect(dominantLanguage("A woman walks slowly in the rain.")).toBe("en");
+    // 六段提示词的段名是英文的，靠的是正文够长把天平压回中文那边；判法两边同源，
+    // 所以悬停写的方向和后端真翻的方向不会各说各话（正文短到只剩段名时两边一起判成英文）
+    expect(dominantLanguage("subject_definitions:\nsummary:\n" + "一个女人在雨里慢慢往前走，裙摆湿透了贴在腿上。".repeat(4))).toBe("zh");
+    expect(targetLanguage("一个女人在雨里走")).toBe("en");
+    expect(targetLanguage("A woman walks in the rain")).toBe("zh");
+  });
+
+  it("段名、镜头标号、台词块少一个就报出来", () => {
+    const base = "subject_definitions:\nsummary:\n[Shot 1]\n<d>[Chinese] 走吧 </d>\n一个女人在雨里走";
+    expect(missingStructure(base, base)).toEqual([]);
+    expect(missingStructure(base, base.replace("summary:", "详细描述："))).toEqual(["summary:"]);
+    expect(missingStructure(base, base.replace("[Shot 1]", ""))).toEqual(["镜头标号"]);
+    expect(missingStructure(base, base.replace("<d>[Chinese] 走吧 </d>", ""))).toEqual(["<d> 台词块"]);
+    // 四类一起丢就一次报全，别让人一句一句试；顺序照段名表→镜头→台词，报出来稳定
+    expect(missingStructure(base, "一个女人在雨里走")).toEqual([
+      "subject_definitions:", "summary:", "镜头标号", "<d> 台词块",
+    ]);
+  });
+
+  it("只查变少不查变多：多写一个镜头标号不算事故", () => {
+    const base = "summary:\n[Shot 1]\n正文";
+    expect(missingStructure(base, base + "\n[Shot 2]\n再来一段")).toEqual([]);
   });
 });

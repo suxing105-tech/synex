@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
 from .. import prompt_skills as service
+from .. import prompt_translate
 from .reverse_prompts import SafeValidationRoute
 
 router = APIRouter(prefix="/api", tags=["prompt-skills"], route_class=SafeValidationRoute)
@@ -167,8 +168,24 @@ def update_settings(payload: SettingsInput):
                                  default_video_skill=payload.default_video_skill)
 
 
+class TranslateInput(BaseModel):
+    """提示词框那颗中英互译要的正文。上限和优化那一条对齐：框里最长就这么长。"""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+    text: str = Field(min_length=1, max_length=50000)
+
+
 @router.post("/prompt-skills/{skill_id}/optimize")
 async def optimize(skill_id: int, payload: OptimizeInput):
     return await service.optimize(skill=service.get_skill(skill_id), prompt=payload.prompt,
                                  kind=payload.kind, refs=[item.model_dump() for item in payload.refs],
                                  context=payload.context)
+
+
+@router.post("/translate-prompt")
+async def translate_prompt(payload: TranslateInput):
+    """提示词框右下角那颗中英互译：正文翻成另一种语言，方向按正文主体语言判，不问人。
+
+    不写库、不缓存——第二下要回原文、第三下要重新翻，缓存只会把旧译文扣在新原文上。
+    """
+    return await prompt_translate.translate(payload.text)

@@ -91,6 +91,15 @@ export interface OptimizeResult {
   degraded_refs: { sent: number; dropped: number[] } | null;
 }
 
+/** 一次中英互译的结果。方向是后端按正文主体语言判出来的，界面照着写悬停提示。 */
+export interface TranslateResult {
+  text: string;
+  source_language: TranslateLanguage;
+  target_language: TranslateLanguage;
+  model_name: string;
+  model: string;
+}
+
 /**
  * 浏览器版目录上传时只送这些扩展名：其余是二进制，读成文字就是一堆乱码，
  * 塞进系统提示只会浪费 token。后端还会再筛一遍，这里先筛是为了少传。
@@ -109,6 +118,10 @@ export function isTextFilePath(path: string): boolean {
 
 export const LANGUAGE_WORDS: Record<PromptSkillLanguage, string> = { auto: "跟随原文", zh: "中文", en: "英文" };
 export const KIND_WORDS: Record<PromptSkillKind, string> = { image: "图片", video: "视频" };
+
+/** 中英互译只在两种语言之间来回，没有「跟随原文」这一档——那是优化那一条的事。 */
+export type TranslateLanguage = "zh" | "en";
+export const TRANSLATE_WORDS: Record<TranslateLanguage, string> = { zh: "中文", en: "英文" };
 
 /**
  * 「带进模型多少字」到这一步就该给人提个醒。
@@ -244,6 +257,14 @@ export const promptSkillsApi = {
     body: { prompt: string; kind: PromptSkillKind; refs: OptimizeRef[]; context?: string },
     signal?: AbortSignal,
   ) => http<OptimizeResult>(`${skillPath(id)}/optimize`, { ...json("POST", body), signal }),
+  /**
+   * 提示词框右下角那颗中英互译：一次调用换一种语言，不带技能、不落库。
+   *
+   * 为什么不缓存译文：那颗按钮是「译文 ↔ 原文」来回切，第三下要重新翻。人在中间是会改字的，
+   * 读缓存等于把旧译文扣在新原文上。
+   */
+  translate: (text: string, signal?: AbortSignal) =>
+    http<TranslateResult>("/api/translate-prompt", { ...json("POST", { text }), signal }),
 };
 
 export const promptSkills = writable<PromptSkill[]>([]);
@@ -349,4 +370,50 @@ export function promptMarks(text: string): string[] {
 export function missingMarks(original: string, result: string): string[] {
   const got = new Set(promptMarks(result).map(markKey));
   return promptMarks(original).filter((mark) => !got.has(markKey(mark)));
+}
+
+/**
+ * 正文主体语言：中日韩字符比拉丁字母多就算中文。
+ *
+ * 判法与后端 video_prompts.dominant_language 同源（连字符区间一起抄），两边各判一次就会
+ * 出现「悬停写着译成英文、点下去翻成中文」。
+ */
+const CJK_CHARS = /[\u3400-\u4dbf\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/g;
+const LATIN_LETTERS = /[A-Za-z]/g;
+
+export function dominantLanguage(text: string): TranslateLanguage {
+  return (text.match(CJK_CHARS)?.length ?? 0) > (text.match(LATIN_LETTERS)?.length ?? 0) ? "zh" : "en";
+}
+
+/** 要翻成哪一种：与正文主体相反的那一种。 */
+export function targetLanguage(text: string): TranslateLanguage {
+  return dominantLanguage(text) === "zh" ? "en" : "zh";
+}
+
+/**
+ * 六段段名：本地工作流是按这些名字往节点里填词的，被译成「详细描述：」就等于那一格没吃到东西。
+ * 大小写照后端原样比——段名就是键名，不是给人读的句子。
+ */
+const SECTION_NAMES = [
+  "subject_definitions:", "summary:", "retention_analysis:",
+  "detailed_description:", "overall_soundscape:", "non_diegetic_music:",
+];
+
+/**
+ * 译文把哪几处结构弄丢了，报给人看的名字。
+ *
+ * 翻译比优化更容易犯的错在这儿：missingMarks 管的是参考编号（丢了＝参考静默失效），
+ * 而把段名一起译了、把 <d> 那一整块台词删了、少了 [Shot 3]，模型照样回得漂漂亮亮。
+ * 只查「有没有变少」不查变多：多一个标号是废话，少一段是缺料，两边后果不对等。
+ */
+export function missingStructure(original: string, result: string): string[] {
+  const lost = SECTION_NAMES.filter((name) => result.split(name).length < original.split(name).length);
+  const counting: Array<[RegExp, string]> = [
+    [/\[\s*(?:shot|镜头)\s*\d+\s*\]/gi, "镜头标号"],
+    [/<d>/gi, "<d> 台词块"],
+  ];
+  for (const [re, label] of counting) {
+    if ((result.match(re)?.length ?? 0) < (original.match(re)?.length ?? 0)) lost.push(label);
+  }
+  return lost;
 }

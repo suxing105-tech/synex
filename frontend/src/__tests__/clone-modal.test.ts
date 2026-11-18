@@ -913,15 +913,18 @@ it('载入模板收成提示词框右下角那颗裸图标（优化那颗左侧�
   expect(rule).toMatch(/border: 0; background: none;/);
   expect(rule).not.toMatch(/position:|border-radius|backdrop-filter|1px solid/);
   expect(css).toMatch(/\.cm-prompt-tools > button:hover, \.cm-prompt-tools > button:focus-visible \{ opacity: 1; color: var\(--accent-strong\); \}/);
-  // 一条 flex 行，DOM 顺序就是左右顺序：载入在左、撤销居中、优化在右
+  // 一条 flex 行，DOM 顺序就是左右顺序：载入在左、撤销、翻译、优化在右
+  // （翻译那颗必须永远紧贴优化那颗左边——2026-11-18 苏醒点名要的位置）
   const toolsAt = css.indexOf('class="cm-prompt-tools"');
   const wandAt = css.indexOf('class="cm-wand"');
   const undoAt = css.indexOf('class="cm-undo"');
+  const translateAt = css.indexOf('class="cm-translate"');
   const skillAt = css.indexOf('class="cm-skill"');
   expect(toolsAt).toBeGreaterThan(0);
   expect(wandAt).toBeGreaterThan(toolsAt);
   expect(undoAt).toBeGreaterThan(wandAt);
-  expect(skillAt).toBeGreaterThan(undoAt);
+  expect(translateAt).toBeGreaterThan(undoAt);
+  expect(skillAt).toBeGreaterThan(translateAt);
   // 层级：压过镜像层 0 和输入框 1，仍让 mention 弹层盖在上面
   const zt = Number((tools.match(/z-index:\s*(\d+)/) ?? [0, '0'])[1]);
   const zm = Number((css.slice(css.indexOf('.cm-mention {')).match(/z-index:\s*(\d+)/) ?? [0, '0'])[1]);
@@ -4129,6 +4132,8 @@ it('音频工作流不画这颗优化图标：台词重写一遍等于换个人�
   const tools = screen.container.querySelector('.cm-prompt-tools');
   expect(tools, '音频那条工作流有内置提示词，载入那颗照旧要出现').not.toBeNull();
   expect(tools?.querySelector('.cm-wand')).not.toBeNull();
+  // 中英互译和它是同进同退的：念出来的台词翻成另一种语言，等于换个人说话
+  expect(screen.container.querySelector('.cm-translate')).toBeNull();
   expect(screen.container.querySelector('.cm-prompt-wrap')?.className).toContain('has-tools');
 });
 
@@ -4168,11 +4173,206 @@ it('那颗图标的版面：让开拉高手柄、命中区 24、清单只在点�
   const disabledAt = css.indexOf('.cm-prompt-tools > button:disabled');
   expect(disabledAt).toBeGreaterThan(css.indexOf('.cm-prompt-tools > button:hover'));
   expect(css.slice(disabledAt, disabledAt + 90)).toMatch(/opacity: \.28; cursor: default;/);
-  const rowStates = css.slice(disabledAt).match(/\.cm-prompt-tools > button:disabled[^}]*\}|\.cm-skill\.is-busy \{[^}]*\}/g)?.join("") ?? "";
+  const rowStates = css.slice(disabledAt).match(/\.cm-prompt-tools > button:disabled[^}]*\}|\.cm-prompt-tools > button\.is-busy \{[^}]*\}/g)?.join("") ?? "";
   expect(rowStates).not.toMatch(/border-color|background:|border-radius/);
   // 只有两处会拉清单：点左键、点右键。别混进打开弹窗的那条路
   expect(css.match(/loadPromptSkills\(\)/g)?.length).toBe(2);
   expect(css).toMatch(/\{#if skillKind\}/);
+});
+
+/* ── 提示词框那颗中英互译（2026-11-18 苏醒）───────────────────────────────────
+   三下点法是他点名要的：翻 → 回原文 → 重新翻。下面钉的就是这三下各发了什么请求、
+   翻译期间那把锁怎么落，以及「译文把结构弄丢了就不写回」这道护栏。 */
+const translateBtn = (screen: any) => screen.container.querySelector('.cm-translate') as HTMLButtonElement;
+const TRANSLATED = {
+  text: 'A woman walks into the rain.', source_language: 'zh', target_language: 'en',
+  model_name: '魔搭', model: 'deepseek',
+};
+const translateCalls = () => http.mock.calls.filter(([path]) => String(path) === '/api/translate-prompt');
+/** 翻译收工的信号就是那颗不亮进度了：等它比等输入框更靠后，不会抢在 finally 之前点下去 */
+const translateIdle = (screen: any) => vi.waitFor(() => expect(translateBtn(screen).getAttribute('aria-busy')).toBe('false'));
+
+it('中英互译那颗紧贴在优化左侧：空提示词点不动，悬停按现在这句的主体语言说方向', async () => {
+  routes(skillRoutes());
+  const screen = await ready();
+  const btn = translateBtn(screen);
+  expect(btn.disabled).toBe(true);
+  // 一条 flex 行，DOM 顺序就是左右顺序：载入内置、撤销（被改写过才有）、翻译、优化
+  expect([...screen.container.querySelectorAll('.cm-prompt-tools > button')]
+    .map((el) => el.className.split(' ')[0])).toEqual(['cm-wand', 'cm-translate', 'cm-skill']);
+  const ta = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  await fireEvent.input(ta, { target: { value: '一个女人在雨里慢慢往前走' } });
+  expect(translateBtn(screen).disabled).toBe(false);
+  expect(translateBtn(screen).title).toContain('译成英文');
+  // 换成英文正文，方向跟着反过来：不用人先想「我现在要点的是往哪边翻」
+  await fireEvent.input(ta, { target: { value: 'A woman walks slowly in the rain' } });
+  expect(translateBtn(screen).title).toContain('译成中文');
+  // 悬停里那句口径是给「会不会顺手改我写的东西」这个回答的
+  expect(translateBtn(screen).title).toContain('照抄');
+});
+
+it('第一下翻成英文写回、第二下回原文不再花一次调用、第三下真的一次重新翻', async () => {
+  let n = 0;
+  routes(skillRoutes({
+    '/api/translate-prompt': () => {
+      n += 1;
+      return { ...TRANSLATED, text: `译文第${n}版` };
+    },
+  }));
+  const screen = await ready();
+  const ta = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  await fireEvent.input(ta, { target: { value: '一个女人在雨里走' } });
+  await fireEvent.click(translateBtn(screen));
+  await translateIdle(screen);
+  expect(ta.value).toBe('译文第1版');
+  expect(translateCalls().length).toBe(1);
+  // 请求体里只有正文：方向、技能、参考图一概不送，翻出来的东西才对得上「不多加其他的内容」
+  expect(JSON.parse(String(translateCalls()[0][1]?.body))).toEqual({ text: '一个女人在雨里走' });
+  expect(translateBtn(screen).getAttribute('aria-label')).toBe('换回翻译前的原文');
+  // 第二下：回原文，一次请求都不该再发
+  await fireEvent.click(translateBtn(screen));
+  expect(ta.value).toBe('一个女人在雨里走');
+  expect(translateCalls().length).toBe(1);
+  // 第三下：真翻。读缓存等于把「译文第1版」扣在可能被改过的这句上
+  await fireEvent.click(translateBtn(screen));
+  await translateIdle(screen);
+  expect(ta.value).toBe('译文第2版');
+  expect(translateCalls().length).toBe(2);
+});
+
+it('翻译中那一句锁住、那颗亮着；再点一下是取消，不发第二次请求', async () => {
+  routes(skillRoutes({
+    '/api/translate-prompt': (init?: RequestInit) => new Promise((_resolve, reject) => {
+      // 照 fetch 的样子来：信号一响就抛 AbortError，界面靠这个名区分「取消」和「失败」
+      init?.signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+    }),
+  }));
+  const screen = await ready();
+  const ta = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  await fireEvent.input(ta, { target: { value: '一个女人在雨里走' } });
+  await fireEvent.click(translateBtn(screen));
+  await vi.waitFor(() => expect(translateBtn(screen).getAttribute('aria-busy')).toBe('true'));
+  expect(ta.readOnly).toBe(true);
+  expect(promptWrap(screen).className).toContain('is-locked');
+  expect(ta.title).toContain('正在翻译');
+  // 取消入口自己不能被这把锁按住
+  expect(translateBtn(screen).disabled).toBe(false);
+  // 优化那颗在翻译期间按不动：同一次不该有两句等着写回这个框
+  expect(skillBtn(screen).disabled).toBe(true);
+  await fireEvent.click(translateBtn(screen));
+  await vi.waitFor(() => expect(get(toasts).some((item) => item.message.includes('已取消这次翻译'))).toBe(true));
+  expect(translateCalls().length).toBe(1);
+  expect(ta.value).toBe('一个女人在雨里走');
+  expect(ta.readOnly).toBe(false);
+  expect(translateBtn(screen).getAttribute('aria-label')).toBe('把提示词译成英文');
+});
+
+it('译文把段名弄丢了就不写回，仍然写入才落进框里', async () => {
+  routes(skillRoutes({
+    '/api/translate-prompt': {
+      ...TRANSLATED,
+      text: 'subject_definitions:\nSummary 段：\nA woman walks into the rain',
+    },
+  }));
+  const screen = await ready();
+  const ta = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  await fireEvent.input(ta, { target: { value: 'subject_definitions:\nsummary:\n一个女人在雨里走' } });
+  await fireEvent.click(translateBtn(screen));
+  await vi.waitFor(() => expect(get(toasts).some((item) => item.message.includes('弄丢了'))).toBe(true));
+  // summary: 是本地工作流往节点里填词的键，译成「Summary 段」那一格就吃不到东西，默认不写
+  expect(get(toasts).some((item) => item.message.includes('summary:'))).toBe(true);
+  expect(ta.value).toBe('subject_definitions:\nsummary:\n一个女人在雨里走');
+  actionOf('仍然写入')!.onClick();
+  await vi.waitFor(() => expect(ta.value).toBe('subject_definitions:\nSummary 段：\nA woman walks into the rain'));
+  expect(translateBtn(screen).getAttribute('aria-label')).toBe('换回翻译前的原文');
+});
+
+it('模型原样退回来时不写回，也不多一颗点了没反应的「换回原文」', async () => {
+  routes(skillRoutes({ '/api/translate-prompt': { ...TRANSLATED, text: '一个女人在雨里走' } }));
+  const screen = await ready();
+  const ta = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  await fireEvent.input(ta, { target: { value: '一个女人在雨里走' } });
+  await fireEvent.click(translateBtn(screen));
+  await translateIdle(screen);
+  expect(ta.value).toBe('一个女人在雨里走');
+  expect(get(toasts).some((item) => item.message.includes('一句都没翻'))).toBe(true);
+  expect(translateBtn(screen).getAttribute('aria-label')).toBe('把提示词译成英文');
+});
+
+it('换回原文时手上这一版交给撤销那颗保管：来回切不丢字', async () => {
+  routes(skillRoutes({ '/api/translate-prompt': TRANSLATED }));
+  const screen = await ready();
+  const ta = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  await fireEvent.input(ta, { target: { value: '一个女人在雨里走' } });
+  await fireEvent.click(translateBtn(screen));
+  await translateIdle(screen);
+  // 译文回来之后先手改一笔，再点回原文：改的那几个字不该在路上掉
+  await fireEvent.input(ta, { target: { value: 'A woman walks into the rain, at dusk' } });
+  await fireEvent.click(translateBtn(screen));
+  expect(ta.value).toBe('一个女人在雨里走');
+  // 手上那版被撤销那颗接住了，点一下还能回到改过的译文
+  expect(undoBtn(screen)).not.toBeNull();
+  await fireEvent.click(undoBtn(screen)!);
+  expect(ta.value).toBe('A woman walks into the rain, at dusk');
+});
+
+it('按技能重写把译文快照作废：不多一颗「换回原文」，下一颗翻的是重写那句', async () => {
+  routes(skillRoutes({
+    // 回一句「译:＋送来的正文」，这样能一眼看出第二下翻的到底是哪一句
+    '/api/translate-prompt': (init?: RequestInit) => ({
+      ...TRANSLATED, text: '译:' + JSON.parse(String(init?.body)).text,
+    }),
+    '/api/prompt-skills/1/optimize': { prompt: '重写后：中景、柔光', model_name: '智谱', model: 'glm-4v', degraded_refs: null },
+  }));
+  const screen = await ready();
+  const ta = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  await fireEvent.input(ta, { target: { value: '一个女人在雨里走' } });
+  await fireEvent.click(translateBtn(screen));
+  await translateIdle(screen);
+  expect(ta.value).toBe('译:一个女人在雨里走');
+  expect(translateBtn(screen).getAttribute('aria-label')).toBe('换回翻译前的原文');
+  await fireEvent.click(skillBtn(screen));
+  await vi.waitFor(() => expect(ta.value).toBe('重写后：中景、柔光'));
+  // 快照要是留着，下一颗「换回原文」会把译文底下那句甩进来，三句搅成一团
+  expect(translateBtn(screen).getAttribute('aria-label')).toContain('把提示词译成');
+  await fireEvent.click(translateBtn(screen));
+  await translateIdle(screen);
+  expect(ta.value).toBe('译:重写后：中景、柔光');
+  expect(translateCalls().length).toBe(2);
+});
+
+it('优化过再翻译：换回原文不许把更早那份手打的顶掉（译文随时能重翻，手打的回不来）', async () => {
+  routes(skillRoutes({
+    '/api/translate-prompt': TRANSLATED,
+    '/api/prompt-skills/1/optimize': { prompt: '重写后：中景、柔光', model_name: '智谱', model: 'glm-4v', degraded_refs: null },
+  }));
+  const screen = await ready();
+  const ta = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  await fireEvent.input(ta, { target: { value: '我手打的那句' } });
+  await fireEvent.click(skillBtn(screen));
+  await vi.waitFor(() => expect(ta.value).toBe('重写后：中景、柔光'));
+  await fireEvent.click(translateBtn(screen));
+  await translateIdle(screen);
+  expect(ta.value).toBe('A woman walks into the rain.');
+  await fireEvent.click(translateBtn(screen));
+  expect(ta.value).toBe('重写后：中景、柔光');
+  // 手上没被改过，就不该把「我手打的那句」挤掉：撤销那颗还要能回到它
+  await fireEvent.click(undoBtn(screen)!);
+  expect(ta.value).toBe('我手打的那句');
+});
+
+it('后端那句「还没配好模型」原样报出来，不另挑一句官话', async () => {
+  routes(skillRoutes({
+    '/api/translate-prompt': () => {
+      throw Object.assign(new Error('422'), { detail: '还没配好模型：先在设置的「反推提示词」里加一家服务商并选一个默认模型' });
+    },
+  }));
+  const screen = await ready();
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '一句' } });
+  await fireEvent.click(translateBtn(screen));
+  await vi.waitFor(() => expect(
+    get(toasts).some((item) => item.message.includes('先在设置的「反推提示词」里')),
+  ).toBe(true));
 });
 
 /* ── 遮罩编辑 ──────────────────────────────────────────────────────────────

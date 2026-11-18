@@ -171,6 +171,24 @@ CONTEXT_NOTE = (
 )
 
 
+
+# 这次到底有没有把参考素材发给模型，模型自己在 system 里看不出来：参考图是走 content 里
+# 「图N」那串标签送出去的，system 这头一句都没提。2026-11-18 真机跑随包那条 H3 视频技能，
+# 一张图都没发的情况下，模型照着正文里满是 <Picture N> 的格式范例，凭空造出
+# <Picture 1>..<Picture 3> 和三条 fully_preserved，交回去的提示词指向三张不存在的图。
+# 正文第 3 条明明写了「一个编号都没有时绝对不要自己编」——八千字里的一条规矩拦不住，
+# 和界面参数那一段同一个道理：这类「这次具体是什么情况」得说得晚、说得硬。
+#
+# 但只能禁「新增」，不能禁「出现」：用户可能手打了 @图片1 又关掉「一起发参考」，
+# 那句 @图片1 真提交时是有图的，被模型吞掉才是静默坏事（前端 missingMarks 那条闸就是为它设的）。
+REF_SCOPE_NOTE = (
+    "\n\n参考素材范围：这次没有把任何参考素材发给模型（可能没挂，也可能关了「一起发参考」）。"
+    "原文里已经有的 @图片N、<Picture N>、<Video N>、<Audio N> 照原样保留、一个都不许删；"
+    "但原文里没有的编号一个都不许新写出来——手上没有素材，新写的编号指向不存在的东西，"
+    "这种主体改用自然语言描述（例如 the woman in the grey coat）。"
+)
+
+
 REF_NOTE = (
     "参考素材按编号依次附在下面（图 N 就是提示词里的第 N 格参考，@图片N 与 <Picture N> 指的是它）。"
     "看图只为了核对画面里到底有什么，别照着图另写一份画面描述。\n\n"
@@ -1198,18 +1216,23 @@ def save_settings(*, default_image_skill, default_video_skill):
     return settings()
 
 
-def system_prompt(skill, context: str = "") -> str:
-    """一条技能 = 一句写法 +（是包的话）一叠资料 +（这次界面上选定的参数）+ 两条硬规矩。
+def system_prompt(skill, context: str = "", ref_count: int | None = None) -> str:
+    """一条技能 = 一句写法 +（是包的话）一叠资料 +（这次界面上选定的参数）
+    +（这次一张参考都没发时的一句提醒）+ 两条硬规矩。
 
     顺序有讲究：资料在正文之后（正文是主干，资料是补充），这次选定的参数再往后，
     硬规矩永远垫底——它得离「输出」最近，才不会被前面那三万字冲淡。
     硬规矩拼在这儿而不是写进技能正文：技能可以被用户改成一句话，
     规矩要是跟着正文一起被改没，优化就会开始吞 @图片N。
+
+    ref_count 是这次真的发出去几份参考（掉过之后的数，不是用户挂了几张），
+    只有明确为 0 才加那句提醒；传 None 表示调用方没这个信息，别替它下结论。
     """
     language = skill["language"] if skill["language"] in LANGUAGE_RULES else "auto"
     refs = _row_get(skill, "package_refs", "")
     knobs = str(context or "").strip()
-    return (skill["instruction"].strip() + refs + ((CONTEXT_NOTE + knobs) if knobs else "") + "\n"
+    return (skill["instruction"].strip() + refs + ((CONTEXT_NOTE + knobs) if knobs else "")
+            + (REF_SCOPE_NOTE if ref_count == 0 else "") + "\n"
             + OUTPUT_RULE.replace("{language}", LANGUAGE_RULES[language]))
 
 
@@ -1304,8 +1327,8 @@ async def optimize(*, skill, prompt: str, kind: str, refs: list[dict],
     config, key = resolve_model()
     prepared, degraded = (await prepare_refs(refs)) if (skill["with_refs"] and refs) else ([], None)
     answer = await reverse_prompts.request_model(
-        config, key, build_content(prompt, prepared), system_prompt(skill, context),
-        output_rule="")
+        config, key, build_content(prompt, prepared),
+        system_prompt(skill, context, len(prepared)), output_rule="")
     result = clean_output(answer)
     if not result:
         raise HTTPException(502, "模型只回了一层壳，没回提示词内容，请重试或换一条技能")

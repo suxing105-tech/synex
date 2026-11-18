@@ -1092,6 +1092,57 @@ def test_optimize_puts_the_selected_knobs_before_the_output_rule(client, model, 
     assert instruction.index("--- references/camera-spec.md ---") < instruction.index(knobs)
 
 
+def test_a_run_with_no_reference_images_bans_inventing_reference_marks(client, model, monkeypatch):
+    """一张参考都没发时，系统提示里得有一句明说「这次没有参考素材」。
+
+    真机撞出来的：随包那条 H3 视频技能在 refs 为空时，模型照正文里满是 <Picture N> 的
+    格式范例凭空造出 <Picture 1>..<Picture 3>，交回去的提示词指向三张不存在的图。
+    正文第 3 条写了「不许自己编号」，八千字里的一条规矩拦不住，得有一句说得晚的。
+    """
+    capture = Capture()
+    monkeypatch.setattr(reverse_prompts, "request_model", capture)
+    sid = builtin_id(client, "h3_video")
+    assert optimize(client, sid, prompt="天台上两个人对打", kind="video").status_code == 200
+    instruction = capture.calls[0]["instruction"]
+    assert "这次没有把任何参考素材发给模型" in instruction
+    # 说得晚才算数：得排在技能正文和四份资料之后，紧挨着垫底的输出规矩
+    assert instruction.index("--- references/combat-moves.md ---") < instruction.index("这次没有把任何参考素材")
+    assert instruction.index("这次没有把任何参考素材") < instruction.index("只返回优化后的提示词正文")
+
+
+def test_the_no_reference_note_protects_marks_the_user_wrote_himself(client, model, monkeypatch):
+    """那句提醒只能禁「新增」，不能禁「出现」。
+
+    用户手打了 @图片1 又关掉「一起发参考」是真会发生的：那句 @图片1 在真提交时是有图的，
+    模型要是照「不许有编号」把它删了，参考就静默失效——那是比措辞难看得多的坏事。
+    """
+    capture = Capture()
+    monkeypatch.setattr(reverse_prompts, "request_model", capture)
+    sid = builtin_id(client, "h3_video")
+    optimize(client, sid, prompt="照 <Picture 1> 拍两个人对打", kind="video")
+    note = capture.calls[0]["instruction"]
+    line = note[note.index("参考素材范围"):]
+    assert "照原样保留" in line and "一个都不许删" in line
+    assert "原文里没有的编号" in line
+
+
+def test_sending_reference_images_does_not_claim_there_are_none(client, model, init_db, tmp_path,
+                                                                monkeypatch):
+    capture = Capture()
+    monkeypatch.setattr(reverse_prompts, "request_model", capture)
+    sid = builtin_id(client, "h3_video")
+    image_id = make_image(init_db, tmp_path, "ref.png")
+    result = optimize(client, sid, prompt="照 <Picture 1> 拍", kind="video",
+                      refs=[{"ordinal": 1, "image_id": image_id}])
+    assert result.status_code == 200, result.text
+    instruction = capture.calls[0]["instruction"]
+    # 真发了图却说「没有参考素材」是谎报，模型会开始删用户自己写的编号
+    assert "这次没有把任何参考素材发给模型" not in instruction
+    # 参考素材那句说明在 content 那一侧（图就挂在那儿），别到 system 里找
+    texts = [part["text"] for part in capture.calls[0]["content"] if part["type"] == "text"]
+    assert any("参考素材按编号依次附在下面" in text for text in texts)
+
+
 def test_the_knob_block_is_named_the_way_the_shipped_skill_calls_it():
     """送出去那一段的标题，必须是技能正文用来指它的那三个字。
 

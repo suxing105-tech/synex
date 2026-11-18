@@ -270,3 +270,15 @@ it("格式徽标不再借朱红当常驻装饰，焦点环也与选中同白（2
   // 选中环与焦点环同一条：文本卡也不许再单独冒出第二种颜色
   expect(feed).toMatch(/\.text-card\.is-selected::after \{[\r\n]+\s*box-shadow: inset 0 0 0 1px var\(--thumb-ring\)/);
 });
+
+it("队列那句「耗时」用品牌色，且压在它自己那块面板底上够 4.5:1", () => {
+  // 2026-11-17 苏醒第二轮批注：「耗时：34S 文字用品牌色」。这是全站唯一一处品牌红文字，
+  // 落点写死在那条规则里——品牌色当正文色用的地方每多一处，它就便宜一处。
+  const panel = readFileSync("src/components/CloneQueuePanel.svelte", "utf8");
+  expect(decl(panel, ".queue-row-cost", "color")).toBe("var(--accent)");
+  // 对比度是压在这条规则自己的底上算的：同一句换到 --ink-3 控件底上只剩 4.17:1
+  expect(decl(panel, ".queue-row", "background")).toBe("var(--ink-2)");
+  expect(contrast(tokenValue("--accent"), tokenValue("--ink-2"))).toBeGreaterThanOrEqual(4.5);
+  // 只认那颗 token，不许现场挑一颗红
+  expect(panel).not.toMatch(/color:\s*#f24e4e/);
+});

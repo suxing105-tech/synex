@@ -207,7 +207,11 @@ describe("本次运行的那几批", () => {
       },
     ]);
     const ui = render(CloneQueuePanel, { active: false });
-    expect(ui.getByText("耗时：40S")).toBeTruthy();
+    const cost = ui.getByText("耗时：40S");
+    expect(cost.classList.contains("queue-row-cost")).toBe(true);
+    // 那一格的颜色按 2026-11-17 第二轮批注走品牌色，口径与对比度钉在
+    // __tests__/target-size-contrast.test.ts（happy-dom 不套 scoped CSS，这里只钉落点）
+    expect(cost.classList.contains("queue-row-sub")).toBe(false);
     // 第二条没测出时长：那一格整个不排，不写「耗时：0S」骗人
     expect(ui.getAllByText("耗时：40S")).toHaveLength(1);
     expect(ui.queryByText(/耗时：0S/)).toBeNull();

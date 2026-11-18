@@ -343,10 +343,13 @@
   .queue-row-main { display: flex; flex-direction: column; gap: var(--sp-05); min-width: 0; flex: 1; }
   .queue-row-title { font-size: var(--fs-xs); color: var(--text-1); }
   .queue-row-sub { font-size: var(--fs-2xs); color: var(--text-3); }
-  /* 这一批跑了多久：右侧那一格读的是数，所以等宽数字；它是这一行的第二个事实，
-     用 --text-2 压过「几分前」那层灰，但不到 --text-1（那是「几张·本机/云端」那行的位置）。 */
+  /* 这一批跑了多久：右侧那一格读的是数，所以等宽数字。
+     颜色按 2026-11-17 苏醒第二轮批注走品牌色（「耗时：34S 文字用品牌色」）：这一格要跳出来
+     回答的是「这批快不快」，全站唯一一处品牌红文字，落点是登记过的——不是「看着淡就换个亮点的灰」。
+     --accent 压在 .queue-row 的 --ink-2 底上是 4.78:1，够正文 4.5:1 的线（同一算法钉在
+     __tests__/target-size-contrast.test.ts；换到 --ink-3 底上只剩 4.17，那一层不许用）。 */
   .queue-row-cost {
-    flex: none; font-size: var(--fs-2xs); color: var(--text-2);
+    flex: none; font-size: var(--fs-2xs); color: var(--accent);
     font-variant-numeric: tabular-nums; white-space: nowrap;
   }
   .queue-empty {

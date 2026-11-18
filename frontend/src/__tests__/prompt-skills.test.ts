@@ -144,6 +144,21 @@ describe("接口拼装", () => {
     expect(init.signal).toBe(ctl.signal);
   });
 
+  it("界面参数那一行原样跟着走：优化那条技能靠它知道用户挑了文戏还是武戏", async () => {
+    http.mockResolvedValue({ prompt: "x", model_name: "A", model: "m", degraded_refs: null });
+    await promptSkillsApi.optimize(17, {
+      prompt: "一句", kind: "video", refs: [], context: "戏种：武戏｜武打速度：5档",
+    });
+    expect(JSON.parse(String(http.mock.calls[0][1].body)))
+      .toEqual({ prompt: "一句", kind: "video", refs: [], context: "戏种：武戏｜武打速度：5档" });
+  });
+
+  it("没有旋钮的工作流不必带一个空 context 过去", async () => {
+    http.mockResolvedValue({ prompt: "x", model_name: "A", model: "m", degraded_refs: null });
+    await promptSkillsApi.optimize(1, { prompt: "一句", kind: "image", refs: [] });
+    expect(http.mock.calls[0][1].body).not.toContain("context");
+  });
+
   it("导入交出去的是读到的原文，文件名一起带上，头一次一律先问", async () => {
     http.mockResolvedValue({ imported: [], conflicts: [], skipped: [] });
     await promptSkillsApi.importMarkdown("SKILL.md", "# 标题\n正文");

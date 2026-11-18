@@ -27,7 +27,7 @@
   import type { CanvasEscape } from "../lib/clone-canvas";
   import {
     applyCloneProgress, buildGenerateRequest, cloneApi, cloneError, cloneJob, cloneStatusLabel,
-    allowsTextMode, cleanNodeTitle, controlSlots, controlSummary, defaultControlValues, defaultReferences, formatTargetSize, latestReversePrompt,
+    allowsTextMode, cleanNodeTitle, controlContextLine, controlSlots, controlSummary, defaultControlValues, defaultReferences, formatTargetSize, latestReversePrompt,
     pickedRatioOption,
     promptGroupValues, modeFromRefCount, modeLabel, numberPresets, numberUnit,
     primaryPromptGroup, promptGroupHint, promptPlaceholder, promptSlots, promptSourceLabel, secondaryPromptGroups,
@@ -1998,7 +1998,14 @@
       });
       const res = await promptSkillsApi.optimize(
         skill.id,
-        { prompt: original, kind, refs: skill.with_refs ? skillRefs : [] },
+        {
+          prompt: original,
+          kind,
+          refs: skill.with_refs ? skillRefs : [],
+          // 把弹窗上选的戏种、武打速度、时长、比例一起送过去：技能正文里那些
+          // 「按界面上选的戏种写」否则全是空话，模型只看得到这段文字
+          context: controlContextLine(template, controls),
+        },
         ctl.signal,
       );
       const lost = missingMarks(original, res.prompt);

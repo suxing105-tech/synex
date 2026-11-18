@@ -1863,6 +1863,50 @@ export function controlSummary(
     .join(" / ");
 }
 
+
+/**
+ * 一行送进提示词优化的「界面上选定了什么」。
+ *
+ * 为什么非送不可：技能正文写着「按弹窗上选的戏种写武戏或文戏」，可优化请求里只有提示词
+ * 原文——模型看不见那个弹窗。不送就只能让它从文字里猜这次要武戏还是文戏，猜错了整条
+ * 六段提示词白写，用户还得重按一次（那次调用是真花钱的）。
+ *
+ * 只报看得见的旋钮，顺序和弹窗一致：选文戏时不会报出武打速度，报了等于教模型自己加一段
+ * 打斗。自定义宽高那一对合成一件（「1536×1088」），不报成两条孤零零的 px——同一个道理。
+ *
+ * 500 字是接口那层 max_length，超了整条请求 422，所以从尾部丢。戏种、比例、时长在槽位
+ * 最前面，被丢掉的只会是尾巴上的种子、步数这类不影响画面性质的参数。
+ * 宁可整行空着也不硬截断：截一半会送出「戏种：武」这种半截值，比不送更容易误导模型。
+ */
+export const CONTEXT_LINE_LIMIT = 500;
+
+export function controlContextLine(
+  template: CloneTemplate | null | undefined,
+  controls: Record<string, string | number>,
+): string {
+  if (!template) return "";
+  const pair = customSizeSlots(template);
+  const sizeText = customPixelSize(template, controls);
+  const parts = visibleControlSlots(template, controls)
+    .map((slot) => {
+      const label = String(slot.label ?? "").trim() || slotKey(slot);
+      if (pair && slotKey(slot) === slotKey(pair.h)) return "";
+      if (pair && slotKey(slot) === slotKey(pair.w)) {
+        // 宽高合成一条报「出图尺寸」，不跟着宽度那颗控件的节点名走：
+        // 模型看不懂「自定宽度」是什么，但看得懂这次要出多大一张图。
+        return sizeText ? "出图尺寸：" + sizeText.w + "×" + sizeText.h : "";
+      }
+      const value = formatControlValue(slot, controls[slotKey(slot)]);
+      return value ? label + "：" + value : "";
+    })
+    .filter(Boolean);
+  let picked = parts;
+  while (picked.length && picked.join("｜").length > CONTEXT_LINE_LIMIT) {
+    picked = picked.slice(0, -1);
+  }
+  return picked.join("｜");
+}
+
 /**
  * 槽位带不上对齐步长时的兜底：8 就是 ComfyUI 那台节点自己的默认值
  * （comfy_extras/nodes_resolution.py 里 `multiple` 是 default 8、min 8、max 128、step 4）。

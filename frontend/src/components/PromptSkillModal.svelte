@@ -19,6 +19,7 @@
   import Icon from "./Icon.svelte";
   import {
     describeImport,
+    HEAVY_REFS_CHARS,
     isSkillSourcePath,
     isTextFilePath,
     KIND_WORDS,
@@ -505,6 +506,9 @@
                   <span class="psk-hint">
                     {selected.package.root} · {selected.package.files.length} 个文件 · 带进模型 {selected.package.refs_chars} 字
                   </span>
+                  {#if selected.package.refs_chars > HEAVY_REFS_CHARS}
+                    <i class="psk-tag is-default">偏厚</i>
+                  {/if}
                 </div>
                 <ul class="psk-pkg-list">
                   {#each packageFiles as file (file.path)}
@@ -526,6 +530,9 @@
                 </ul>
                 <p class="psk-hint">
                   附属文件只作参考文本发给模型，里面的脚本不会执行。
+                  {#if selected.package.refs_chars > HEAVY_REFS_CHARS}
+                    带进去的字多，每次优化都会更慢、更贵，模型也更容易抓不住重点。
+                  {/if}
                   {#if selected.package.license}授权：{selected.package.license}。{/if}
                 </p>
                 {#if isTauri() && selected.package_dir}

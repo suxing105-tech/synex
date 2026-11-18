@@ -110,6 +110,16 @@ export function isTextFilePath(path: string): boolean {
 export const LANGUAGE_WORDS: Record<PromptSkillLanguage, string> = { auto: "跟随原文", zh: "中文", en: "英文" };
 export const KIND_WORDS: Record<PromptSkillKind, string> = { image: "图片", video: "视频" };
 
+/**
+ * 「带进模型多少字」到这一步就该给人提个醒。
+ *
+ * 技能包的附属文件是整份塞进同一次请求的，字数直接等于每次优化要送进模型的输入：
+ * 出词更慢、更贵，而且资料厚到一定份上，模型抓重点的能力反而下降。后端把预算闸放在
+ * 6 万字（skill_packages.MAX_REFS_CHARS），够放随包的 H3 视频技能那份四合一资料；
+ * 这里报的是「已经吃掉大半预算」，不是「超了」，所以数取得比它低一档。
+ */
+export const HEAVY_REFS_CHARS = 40_000;
+
 /** 撞名/撞来源时怎么办：先问、替换原来的、另存为新的。和后端 CONFLICT_MODES 一个口径。 */
 export type SkillConflictMode = "ask" | "replace" | "new";
 
@@ -229,7 +239,9 @@ export const promptSkillsApi = {
   /** signal 是给「取消」用的：只断前端这一头的等待，服务端那次调用该跑完还是跑完 */
   optimize: (
     id: number,
-    body: { prompt: string; kind: PromptSkillKind; refs: OptimizeRef[] },
+    // context 是弹窗上选定的旋钮（戏种、武打速度、时长、比例），见 clone.ts 的 controlContextLine。
+    // 可选：技能管理弹窗那条不经过工作流弹窗，本来就没有这些东西可选
+    body: { prompt: string; kind: PromptSkillKind; refs: OptimizeRef[]; context?: string },
     signal?: AbortSignal,
   ) => http<OptimizeResult>(`${skillPath(id)}/optimize`, { ...json("POST", body), signal }),
 };

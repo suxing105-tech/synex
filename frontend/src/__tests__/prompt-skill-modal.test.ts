@@ -5,7 +5,10 @@ import { get } from "svelte/store";
 import PromptSkillModal from "../components/PromptSkillModal.svelte";
 import { clearToasts, toasts } from "../lib/toast";
 import { subscribeFileDrop } from "../lib/native-drop";
-import { promptSkills, promptSkillSettings, resetPromptSkills, type PromptSkill } from "../lib/prompt-skills";
+import {
+  HEAVY_REFS_CHARS, promptSkills, promptSkillSettings, resetPromptSkills,
+  type PromptSkill,
+} from "../lib/prompt-skills";
 import { skillModalOpen } from "../lib/stores";
 
 /**
@@ -389,6 +392,29 @@ describe("导入技能：一个入口", () => {
     await vi.waitFor(() =>
       expect(get(toasts).map((item) => item.message)).toContain(
         "已导入技能「电商视觉包」，带进 1 份参考资料，1 个文件没进预算"));
+  });
+
+  /** 直接端出这条技能：这里只测「带进模型多少字」那一行的说法，不必再走一遍导入。 */
+  const showPackage = async (over: Partial<PromptSkill> = {}) => {
+    promptSkills.set([packageSkill(over), skill({ id: 2, name: "分镜脚本", kinds: ["video"] })]);
+    routes(baseRoutes());
+    const screen = render(PromptSkillModal, { open: true, onClose: () => {} });
+    await screen.findByRole("option", { name: /电商视觉包/ });
+    return screen;
+  };
+
+  it("参考资料厚到会拖慢每一次优化：标出来，也把代价说清楚", async () => {
+    const screen = await showPackage({
+      package: { ...(packageSkill().package as any), refs_chars: HEAVY_REFS_CHARS + 1 },
+    });
+    expect(screen.getByText("偏厚")).toBeTruthy();
+    expect(screen.getByText(/更慢、更贵/)).toBeTruthy();
+  });
+
+  it("只带一份资料的普通技能不该被这句吓到", async () => {
+    const screen = await showPackage();
+    expect(screen.queryByText("偏厚")).toBeNull();
+    expect(screen.queryByText(/更慢、更贵/)).toBeNull();
   });
 
   it("桌面版不给「选文件夹」那颗：这里把目录直接拖进来", async () => {

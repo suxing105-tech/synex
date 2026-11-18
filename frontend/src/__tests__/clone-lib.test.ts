@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   EMPTY_CLONE_JOB, applyCloneProgress, buildGenerateRequest, cloneError, cloneStatusLabel,
-  allowsTextMode, controlSlots, controlSummary, defaultControlValues, defaultReferences, formatControlValue, modesFor,
+  allowsTextMode, controlContextLine, controlSlots, controlSummary, CONTEXT_LINE_LIMIT, defaultControlValues, defaultReferences, formatControlValue, modesFor,
   formatTargetSize, pickedRatioOption, slotVisible, targetPixelSize, visibleControlSlots,
   imageSlots, jobForTemplate, latestReversePrompt, modeFromRefCount, numberPresets, numberUnit,
   modeLabel, optionLabel, promptSourceLabel, promptSlots, ratioShape, referenceCells, referenceIssues, visibleRefCells,
@@ -1586,5 +1586,93 @@ describe("一台 Lora 管理器上的两颗控件（戏种 + 武打速度）", (
       .toBe("文戏");
     expect(controlSummary(withDrama, { "407.loras#@": "武戏", "407.loras#H3_speed_slider_1.1": 5 }))
       .toBe("武戏 / 5档");
+  });
+});
+
+
+describe("送进提示词优化的「界面参数」那一行", () => {
+  // 这条线是「闪寻视频生成H3优化」唯一能知道用户挑了文戏还是武戏的通道：
+  // 优化接口只收提示词原文，模型看不见弹窗，不报过去就只能两条都写、或者靠猜。
+  const drama: CloneSlot = {
+    kind: "select", node: "407", input: "loras", label: "戏种",
+    options: ["文戏", "武戏"], value: "文戏",
+    lora_group: ["MinimaxH3/H3_Combat_V2", "MinimaxH3/H3_speed_slider_1.1"],
+    lora_on: "武戏",
+  };
+  const speed: CloneSlot = {
+    kind: "number", node: "407", input: "loras", label: "武打速度",
+    lora: "MinimaxH3/H3_speed_slider_1.1", min: 1, max: 6, step: 1, value: 3, unit: "档", slider: true,
+    show_when: { input: "407.loras#@", equals: "武戏" },
+  };
+  const seconds: CloneSlot = {
+    kind: "number", node: "9", input: "duration", label: "时长", value: 8, min: 4, max: 15, step: 1, unit: "秒",
+  };
+  const ratio: CloneSlot = {
+    kind: "select", node: "13", input: "aspect_ratio", label: "比例",
+    options: ["16:9（横屏 1920×1080）", "9:16（竖屏 1080×1920）"], value: "16:9（横屏 1920×1080）",
+  };
+  const withPanel = tpl([promptSlot, imageSlot, drama, speed, seconds, ratio]);
+
+  it("文戏只报戏种，那颗被隐藏的武打速度不许跟着进去", () => {
+    expect(controlContextLine(withPanel, {
+      "407.loras#@": "文戏", "407.loras#H3_speed_slider_1.1": 5,
+      "9.duration": 8, "13.aspect_ratio": "16:9（横屏 1920×1080）",
+    })).toBe("戏种：文戏｜时长：8秒｜比例：16:9");
+  });
+
+  it("武戏把武打速度一起报过去，档位带单位（模型要照这个密度写节拍）", () => {
+    expect(controlContextLine(withPanel, {
+      "407.loras#@": "武戏", "407.loras#H3_speed_slider_1.1": 5,
+      "9.duration": 8, "13.aspect_ratio": "9:16（竖屏 1080×1920）",
+    })).toBe("戏种：武戏｜武打速度：5档｜时长：8秒｜比例：9:16");
+  });
+
+  it("面板上一个控件都没有：给空串，不硬凑一句「无参数」", () => {
+    expect(controlContextLine(tpl([promptSlot, imageSlot]), {})).toBe("");
+    expect(controlContextLine(null, {})).toBe("");
+    expect(controlContextLine(undefined, { "407.loras#@": "武戏" })).toBe("");
+  });
+
+  it("工作流没给那台节点起名（label 是空的）时退回槽位键，至少让模型知道这是哪一颗", () => {
+    // 真实会遇到的形状：ComfyUI 那台节点没有标题，后端只能把 label 落成空串
+    const bare: CloneSlot = { kind: "select", node: "31", input: "style", label: "", options: ["写实", "动画"], value: "写实" };
+    expect(controlContextLine(tpl([promptSlot, bare]), { "31.style": "动画" })).toBe("31.style：动画");
+  });
+
+  it("值为空的控件不进这一行（没填的档位不该被当成用户的选择）", () => {
+    const blank: CloneSlot = { kind: "number", node: "9", input: "duration", label: "时长", min: 4, max: 15, step: 1 };
+    expect(controlContextLine(tpl([promptSlot, blank]), { "9.duration": "" })).toBe("");
+  });
+
+  it("自定义宽高那两颗合成一条出图尺寸，不各报一遍 px", () => {
+    const w: CloneSlot = { kind: "number", node: "13", input: "自定宽度", label: "自定宽度", value: 1536, unit: "px", multiple: 32 };
+    const h: CloneSlot = { kind: "number", node: "13", input: "自定高度", label: "自定高度", value: 1088, unit: "px", multiple: 32 };
+    expect(controlContextLine(tpl([promptSlot, w, h]), { "13.自定宽度": 1500, "13.自定高度": 1080 }))
+      .toBe("出图尺寸：1504×1088");
+  });
+
+  it("超长时从尾巴整条丢掉，宁可少报几颗也不交出半截值", () => {
+    const wide: CloneSlot = {
+      kind: "select", node: "21", input: "preset", label: "预设",
+      options: ["甲".repeat(300)], value: "甲".repeat(300),
+    };
+    const many: CloneSlot[] = [];
+    for (let i = 0; i < 8; i += 1) {
+      many.push({ kind: "select", node: String(100 + i), input: "k" + i, label: "参数" + i, options: ["一".repeat(60)], value: "一".repeat(60) });
+    }
+    const values: Record<string, string> = { "21.preset": "甲".repeat(300) };
+    for (const slot of many) values[slotKey(slot)] = "一".repeat(60);
+    const line = controlContextLine(tpl([promptSlot, wide, ...many]), values);
+    expect(line.length).toBeLessThanOrEqual(CONTEXT_LINE_LIMIT);
+    expect(line.startsWith("预设：甲")).toBe(true);
+    // 断在半截值上会让模型读到「一一一」这种没有意义的东西，所以整条丢
+    expect(line).not.toMatch(/参数7：/);
+    expect(line.split("｜").length).toBeGreaterThan(1);
+  });
+
+  it("光第一条就超预算：整行不发，而不是发一条截断的", () => {
+    const value = "甲".repeat(CONTEXT_LINE_LIMIT + 10);
+    const monster: CloneSlot = { kind: "select", node: "21", input: "preset", label: "预设", options: [value], value };
+    expect(controlContextLine(tpl([promptSlot, monster]), { "21.preset": value })).toBe("");
   });
 });

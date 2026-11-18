@@ -1655,6 +1655,26 @@ const H3 = {
     { kind: 'number', node: '227', input: 'value', label: '视频时长（秒）', value: 8, min: 1, max: 60, unit: '秒', presets: [5, 8, 10, 12, 15] },
   ],
 };
+
+/**
+ * 真机那份 H3 的开关形状：一台 Lora 管理器 = 戏种（整组开关）+ 武打速度（其中一颗的强度）。
+ * 摆在模块层，是因为下面两件事都要它：面板画不画那颗滑块、优化请求带不带这一档。
+ */
+const H3_DRAMA = {
+  ...H3, control_count: 2,
+  slots: [
+    { kind: 'prompt', node: '404', input: 'value', label: '完整提示词' },
+    { kind: 'image', node: '188', input: 'image', label: '参考图片',
+      grow: { node: '136', group: 'ref_images', names: ['ref_image_1'], type: 'IMAGE' } },
+    { kind: 'video', node: '185', input: 'video', label: '参考视频' },
+    { kind: 'select', node: '252', input: 'aspect_ratio', label: '比例', options: ['16:9', '9:16'], value: '16:9' },
+    { kind: 'select', node: '407', input: 'loras', label: '戏种', options: ['文戏', '武戏'], value: '文戏',
+      lora_group: ['MinimaxH3/H3_Combat_V2', 'MinimaxH3/H3_speed_slider_1.1'], lora_on: '武戏' },
+    { kind: 'number', node: '407', input: 'loras', label: '武打速度', lora: 'MinimaxH3/H3_speed_slider_1.1',
+      min: 1, max: 6, step: 1, value: 3, unit: '档', slider: true,
+      show_when: { input: '407.loras#@', equals: '武戏' } },
+  ],
+};
 const VIDEO_CARD = {
   id: 31, item_type: 'media', kind: 'video', filename: 'shot.mp4', path: 'D:/shot.mp4',
   original_url: null, thumbnail_url: '/api/videos/31/thumb', play_url: '/api/videos/31/file',
@@ -3881,7 +3901,11 @@ it('左键用这一族的默认技能重写、写回输入框，撤销退回原�
   await fireEvent.click(skillBtn(screen));
   await vi.waitFor(() => expect(ta.value).toBe('重写后：中景、柔光'));
   // 参考位默认先放被点的这张成图自己，所以第一次优化就带着它，编号是那一格自己的
-  expect(sent).toEqual({ prompt: '原文一句', kind: 'image', refs: [{ ordinal: 1, image_id: 7 }] });
+  expect(sent).toEqual({
+    prompt: '原文一句', kind: 'image', refs: [{ ordinal: 1, image_id: 7 }],
+    // 面板上挑的生成档位现在跟着一起进优化请求：这条工作流是比例 + 百万像素
+    context: '比例：1:1｜百万像素：1.4MP',
+  });
   const undo = actionOf('撤销');
   expect(undo).toBeTruthy();
   undo!.onClick();
@@ -3987,7 +4011,10 @@ it('参考图只送图片那一族，编号用格子自己的、不按送过去�
   await fireEvent.click(skillBtn(screen));
   await vi.waitFor(() => expect(ta.value).toBe('按 <Picture 1> 拍成'));
   // 只有图片那格进请求，编号还是它自己的 1：接口只认 image_id，把视频那格塞进去会拿错素材
-  expect(sent).toEqual({ prompt: '照 <Picture 1> 拍', kind: 'video', refs: [{ ordinal: 1, image_id: 40 }] });
+  expect(sent).toEqual({
+    prompt: '照 <Picture 1> 拍', kind: 'video', refs: [{ ordinal: 1, image_id: 40 }],
+    context: '比例：1:1｜百万像素：1.4MP',
+  });
 });
 
 it('技能勾了不带参考图，就不白搭那几多模态的流量', async () => {
@@ -4408,22 +4435,6 @@ it('选「自定义宽高」就把宽高两个框换进来、百万像素换出�
 });
 
 it('戏种默认文戏＝不加载 lora：武打速度不出现；切到武戏才出来，量程只认工作流写的 1–6 档', async () => {
-  // 真机那份 H3 的开关形状：一台 Lora 管理器 = 戏种（整组开关）+ 武打速度（其中一颗的强度）
-  const H3_DRAMA = {
-    ...H3, control_count: 2,
-    slots: [
-      { kind: 'prompt', node: '404', input: 'value', label: '完整提示词' },
-      { kind: 'image', node: '188', input: 'image', label: '参考图片',
-        grow: { node: '136', group: 'ref_images', names: ['ref_image_1'], type: 'IMAGE' } },
-      { kind: 'video', node: '185', input: 'video', label: '参考视频' },
-      { kind: 'select', node: '252', input: 'aspect_ratio', label: '比例', options: ['16:9', '9:16'], value: '16:9' },
-      { kind: 'select', node: '407', input: 'loras', label: '戏种', options: ['文戏', '武戏'], value: '文戏',
-        lora_group: ['MinimaxH3/H3_Combat_V2', 'MinimaxH3/H3_speed_slider_1.1'], lora_on: '武戏' },
-      { kind: 'number', node: '407', input: 'loras', label: '武打速度', lora: 'MinimaxH3/H3_speed_slider_1.1',
-        min: 1, max: 6, step: 1, value: 3, unit: '档', slider: true,
-        show_when: { input: '407.loras#@', equals: '武戏' } },
-    ],
-  };
   routes({ ...videoRoutes(), '/api/clone/templates': { items: [H3_DRAMA] } });
   const screen = await ready({ image: VIDEO_CARD });
   await fireEvent.click(screen.getByRole('button', { name: /^(画面参数|音频参数)$/ }));
@@ -4453,4 +4464,38 @@ it('戏种默认文戏＝不加载 lora：武打速度不出现；切到武戏�
   await fireEvent.click(within(pop).getByRole('button', { name: '文戏' }));
   expect(screen.queryByLabelText('武打速度滑块')).toBeNull();
   expect(pill().textContent).not.toContain('档');
+});
+
+it('优化请求把戏种和武打速度一起送过去：技能正文才知道该写文戏还是武戏', async () => {
+  // 「闪寻视频生成H3优化」那条技能写得再细，模型也只看得见这段文字——
+  // 面板上挑的戏种不跟着发过去，它就只能文戏武戏各写一半，或者干脆猜。
+  const sent: any[] = [];
+  routes(skillRoutes({
+    ...videoRoutes(),
+    '/api/clone/templates': { items: [H3_DRAMA] },
+    '/api/prompt-skills/2/optimize': (init?: RequestInit) => {
+      sent.push(JSON.parse(String(init?.body)));
+      return { prompt: 'REWRITTEN', model_name: '智谱', model: 'glm-4v', degraded_refs: null };
+    },
+  }));
+  const screen = await ready({ image: VIDEO_CARD });
+  const ta = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  await fireEvent.input(ta, { target: { value: '两个人在雨里说话' } });
+  await fireEvent.click(skillBtn(screen));
+  await vi.waitFor(() => expect(sent.length).toBe(1));
+  // 文戏：那颗被隐藏的武打速度不许混进去，报了就等于叫模型按武戏写
+  expect(sent[0].context).toBe('比例：16:9｜戏种：文戏');
+
+  // 切武戏、拖到 5 档再优化一次：那一档得跟着走，节拍密度全靠它
+  await fireEvent.click(screen.getByRole('button', { name: /^(画面参数|音频参数)$/ }));
+  const pop = await screen.findByRole('dialog', { name: /^(画面参数|音频参数)$/ });
+  await fireEvent.click(within(pop).getByRole('button', { name: '武戏' }));
+  const slider = screen.getByLabelText('武打速度滑块') as HTMLInputElement;
+  slider.value = '5';
+  await fireEvent.input(slider);
+  await tick();
+  await fireEvent.input(ta, { target: { value: '两个人在雨里打起来' } });
+  await fireEvent.click(skillBtn(screen));
+  await vi.waitFor(() => expect(sent.length).toBe(2));
+  expect(sent[1].context).toBe('比例：16:9｜戏种：武戏｜武打速度：5档');
 });

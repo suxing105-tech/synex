@@ -27,7 +27,7 @@
   import type { CanvasEscape } from "../lib/clone-canvas";
   import {
     applyCloneProgress, buildGenerateRequest, cloneApi, cloneError, cloneJob, cloneStatusLabel,
-    allowsTextMode, controlSlots, controlSummary, defaultControlValues, defaultReferences, formatTargetSize, latestReversePrompt,
+    allowsTextMode, cleanNodeTitle, controlSlots, controlSummary, defaultControlValues, defaultReferences, formatTargetSize, latestReversePrompt,
     pickedRatioOption,
     promptGroupValues, modeFromRefCount, modeLabel, numberPresets, numberUnit,
     primaryPromptGroup, promptGroupHint, promptPlaceholder, promptSlots, promptSourceLabel, secondaryPromptGroups,
@@ -2444,7 +2444,7 @@
               {/if}
 
               {#each secondaryGroups as group (group.label)}
-                <p class="cm-block-title cm-sub-prompt-title">{group.label}</p>
+                <p class="cm-block-title cm-sub-prompt-title">{cleanNodeTitle(group.label)}</p>
                 <textarea class="cm-textarea cm-textarea-sub" rows="3" aria-label={group.label} title={promptGroupHint(group.label)}
                   placeholder={promptGroupPlaceholder(group.label)} value={extraPrompts[group.keys[0]] ?? ""}
                   oninput={(e) => setPromptGroup(group, (e.target as HTMLTextAreaElement).value)}></textarea>
@@ -2647,7 +2647,7 @@
                       <div class="cm-pop cm-pop-params" role="dialog" aria-label={paramsLabel}>
                         {#each selectSlots as slot (slotKey(slot))}
                           {@const key = slotKey(slot)}
-                          <p class="cm-pop-title">{slot.label}</p>
+                          <p class="cm-pop-title">{cleanNodeTitle(slot.label)}</p>
                           <div class="cm-ratio-grid" role="group" aria-label={`${slot.label}选项`}>
                             {#each slot.options ?? [] as option (option)}
                               {@const optionLabel = slot.option_labels?.[option] ?? option}
@@ -2688,7 +2688,7 @@
                           {@const key = slotKey(slot)}
                           {@const range = durationRange(slot)}
                           {@const steps = numberPresets(slot)}
-                          <p class="cm-pop-title">{slot.label}</p>
+                          <p class="cm-pop-title">{cleanNodeTitle(slot.label)}</p>
                           {#if isDurationSlot(slot)}
                             <!-- 时长是连续量：档位按钮点起来像在猜，拖滑块到几秒就是几秒（3–15 秒，
                                  也不越过工作流自己给的上下限）。右边留个数字框，要几秒直接敲。 -->
@@ -2743,7 +2743,7 @@
                             <!-- 后端没给档位的那一颗（自定义宽高那两个像素框就是）：直接一个带名字的框。
                                  这时候它不是「自定义」，它就是这一项本身，所以帽子写它的名字不写「自定义」。 -->
                             <label class="cm-custom" for={`clone-${key}`}>
-                              <span>{slot.label}{numberUnit(slot) ? `（${numberUnit(slot)}）` : ""}</span>
+                              <span>{cleanNodeTitle(slot.label)}{numberUnit(slot) ? `（${numberUnit(slot)}）` : ""}</span>
                               <input
                                 id={`clone-${key}`}
                                 type="number"

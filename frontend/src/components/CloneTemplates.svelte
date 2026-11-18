@@ -14,7 +14,7 @@
   import SettingsRow from "./SettingsRow.svelte";
   import Icon from "./Icon.svelte";
   import {
-    cloneApi, cloneError, promptSlots, imageSlots, controlSlots, referenceCells, slotKey, templateDisplayName,
+    cloneApi, cloneError, promptSlots, imageSlots, controlSlots, referenceCells, slotKey, templateDisplayName, chipLabels,
     familyCells, isAudioTemplate, isVideoTemplate, referenceFamilies, REF_KIND_NAMES,
     templateMediaKind, WF_KIND_WORDS, WF_OUTPUT_WORDS,
     type CloneHiddenBuiltin, type CloneInspect, type CloneSlot, type CloneTemplate,
@@ -115,6 +115,18 @@
     for (const slot of group.items) next[slotKey(slot)] = on;
     picked = next;
   }
+
+  /**
+   * chip 的显示名，按「整组」算而不是按「过滤后剩下的」算：过滤一下就换号，
+   * 同一条槽位在上一次确认里叫 X·3、这次叫 X·2，反而更说不清。
+   */
+  const slotNames = $derived.by(() => {
+    const map: Record<string, string> = {};
+    for (const group of groups) {
+      chipLabels(group.items).forEach((name, i) => { map[slotKey(group.items[i])] = name; });
+    }
+    return map;
+  });
 
   /** 导入完成后报的各族格数；只有图片一族时不罗嗦。 */
   function refSummary(tpl: CloneTemplate): string {
@@ -477,7 +489,10 @@
                     <input type="checkbox" checked={picked[slotKey(slot)] ?? false}
                       onchange={(e) => (picked = { ...picked, [slotKey(slot)]: (e.target as HTMLInputElement).checked })} />
                     <span class="clone-slot-body">
-                      <span class="clone-slot-name">{slot.label || slotKey(slot)}</span>
+                      <!-- 显示名洗过（剥 emoji、同组撞名编号）；title 留原文，认节点时要用 -->
+                      <span class="clone-slot-name" title={slot.label || slotKey(slot)}>
+                        {slotNames[slotKey(slot)] || slotKey(slot)}
+                      </span>
                       <code>{slotKey(slot)}</code>
                     </span>
                   </label>

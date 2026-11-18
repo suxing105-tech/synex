@@ -5,7 +5,7 @@ import {
   formatTargetSize, pickedRatioOption, slotVisible, targetPixelSize, visibleControlSlots,
   imageSlots, jobForTemplate, latestReversePrompt, modeFromRefCount, numberPresets, numberUnit,
   modeLabel, optionLabel, promptSourceLabel, promptSlots, ratioShape, referenceCells, referenceIssues, visibleRefCells,
-  resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, templateDisplayName,
+  chipLabels, cleanNodeTitle, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, templateDisplayName,
   applyMention, comparePair, matchMention, mentionAddLabel, mentionChunks, mentionItems, mentionToken,
   elapsedCostLabel, familyCells, formatElapsed, inspectAsTemplate, isAudioOnlyRefs, isAudioTemplate, isImageOnlyRefs, isVideoTemplate,
   mentionInsertText, refTag, templateMediaKind, WF_KIND_WORDS, WF_OUTPUT_WORDS,
@@ -1491,5 +1491,42 @@ describe("nativeLanguageOverride：载入与点人共用的那条母语规矩", 
     const seed: CloneSlot = { kind: "number", node: "37", input: "seed", label: "种子", value: 42 };
     const language = lang(["Auto", "Chinese", "English"]);
     expect(nativeLanguageOverride([seed, language], { "37.seed": 42, "37.language": "Auto" })).toEqual({});
+  });
+});
+
+describe("槽位显示名", () => {
+  /**
+   * 节点标题的显示清洗。ComfyUI 的自定义节点爱在 _meta.title 里塞 emoji
+   * （Load Video (Upload) 后面跟一排摄影机、方框字母），随包字体的子集里没有那些
+   * 码位，界面上是一排空块方框。测试里的记号一律写转义：源码里真写一个 emoji，
+   * 字体子集闸就多一个要登记的码位。
+   */
+  it("剥掉装饰记号，尾巴上的分隔符和多余空格一起收干净", () => {
+    expect(cleanNodeTitle("Load Video (Upload) \u{1F3A5}\u{1F165}\u{1F167}\u{1F162}")).toBe("Load Video (Upload)");
+    expect(cleanNodeTitle("CLIP Text Encode \u2728 -")).toBe("CLIP Text Encode");
+    expect(cleanNodeTitle("Save   Image \u{1F4BE}")).toBe("Save Image");
+    // 正常标题一个字符都不许多动
+    expect(cleanNodeTitle("完整提示词")).toBe("完整提示词");
+    expect(cleanNodeTitle("参考音频的文本")).toBe("参考音频的文本");
+    expect(cleanNodeTitle("")).toBe("");
+    expect(cleanNodeTitle(undefined)).toBe("");
+  });
+
+  it("清洗后撞名的按节点号加序号，号最小的留本名", () => {
+    const dup = (node: string): CloneSlot =>
+      ({ kind: "prompt", node, input: "text", label: "CLIP Text Encode (Prompt)" });
+    const solo: CloneSlot = { kind: "image", node: "188", input: "image", label: "人物参考 \u{1F5BC}" };
+    const blank: CloneSlot = { kind: "prompt", node: "77", input: "value", label: "\u2728" };
+    // 传进来的顺序故意打乱：号按节点号排，返回的数组仍按传入顺序一一对应
+    expect(chipLabels([dup("9"), dup("120"), dup("11"), dup("12"), dup("8"), solo, blank])).toEqual([
+      "CLIP Text Encode (Prompt)\u00B72",
+      "CLIP Text Encode (Prompt)\u00B75",
+      "CLIP Text Encode (Prompt)\u00B73",
+      "CLIP Text Encode (Prompt)\u00B74",
+      "CLIP Text Encode (Prompt)",
+      "人物参考",
+      // 标题整个被擦掉之后什么都不剩，退回「节点.输入」，不许显示成空白格
+      "77.value",
+    ]);
   });
 });

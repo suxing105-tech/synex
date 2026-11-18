@@ -663,6 +663,31 @@ describe('槽位确认的长列表', () => {
     expect(style).not.toContain('overscroll-behavior');
   });
 
+  it('chip 上是清洗加编号后的名字，交给后端的 label 还是工作流里那一份', async () => {
+    const note = 'CLIP Text Encode (Prompt)\u{1F4DD}';
+    const imageLabel = '人物参考 \u{1F5BC}';
+    const created = saveRoutes({
+      slots: [
+        { kind: 'prompt', node: '9', input: 'text', label: note },
+        { kind: 'prompt', node: '12', input: 'text', label: note },
+        { kind: 'image', node: '188', input: 'image', label: imageLabel },
+      ],
+      candidates: [], nodes: [], default_prompt: '', warnings: [], suggested_name: '多图编辑',
+    });
+    const screen = render(CloneTemplates, {});
+    await screen.findByText('旧的同款');
+    await importJson(screen);
+    // 六台同名节点里号最小的留本名，第二台挂 ·2；带 emoji 的那条洗干净了
+    expect(screen.getByText('CLIP Text Encode (Prompt)')).toBeTruthy();
+    expect(screen.getByText('CLIP Text Encode (Prompt)\u00B72')).toBeTruthy();
+    expect(screen.getByText('人物参考').getAttribute('title')).toBe(imageLabel);
+    await fireEvent.click(screen.getByRole('button', { name: '保存模板' }));
+    await tick();
+    await tick();
+    // 提交出去的还是工作流原文：label 是后端认主提示词框的凭据，动一下就填不进字
+    expect(created().slots.map((s: { label: string }) => s.label)).toEqual([note, note, imageLabel]);
+  });
+
   it('组头报「本组已勾 / 本组总数」，那颗「全不选」只清自己这一组', async () => {
     saveRoutes(bigInspectBody());
     const screen = render(CloneTemplates, {});

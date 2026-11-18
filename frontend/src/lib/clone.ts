@@ -860,6 +860,60 @@ export function slotKey(slot: Pick<CloneSlot, "node" | "input">): string {
   return `${slot.node}.${slot.input}`;
 }
 
+/* 装饰记号：emoji、杂项符号与 Dingbats、变体选择符（摄影机、闪光灯、方框字母那一类）。
+   这些码位不在随包的中文子集里，留在界面上是一串空块方框，比不写还乱。
+   分隔符那一串里的短横、长横写成转义：源码里多一个生僻码位，字体子集闸就多一个要登记的。 */
+const DECORATIVE = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu;
+const TRAILING_SEP = /(?:\s*[-:|,/\u2013\u2014\u00B7])+$/;
+
+/**
+ * 槽位的显示名：剥掉装饰记号，收掉多余空格和尾巴上那截分隔符。
+ *
+ * 只改显示，不动 slot.label。label 是后端的对账凭据——提示词那几处按
+ * label == 「完整提示词」认主框，动一个字节那条工作流就在弹窗里填不进字。
+ * 所以清洗只能在渲染出来的这一刻做，提交回去的还是工作流里那一份。
+ */
+export function cleanNodeTitle(text: string | null | undefined): string {
+  return String(text ?? "")
+    .replace(DECORATIVE, "")
+    .replace(/\s+/g, " ")
+    .replace(TRAILING_SEP, "")
+    .trim();
+}
+
+/** 节点号排序：不是数字的排到最后，彼此之间保持原顺序。 */
+function nodeOrder(node: string): number {
+  const n = Number.parseInt(node, 10);
+  return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
+}
+
+/**
+ * 一组槽位的显示名，数组与传进来的槽位一一对应。
+ *
+ * 为什么要编号：一条多图工作流里常常六台一模一样的 CLIPTextEncode，标题全是
+ * 「CLIP Text Encode (Prompt)」——六行同样的字，谁也分不清勾掉的是哪一台。
+ * 清洗之后撞名的按节点号排开：号最小的那台留本名，往后 ·2、·3。
+ * 同一个节点每次拿到同一个名字，不因为这次少了几条就换号。
+ */
+export function chipLabels(slots: Pick<CloneSlot, "node" | "input" | "label">[]): string[] {
+  const keys = slots.map((slot) => slotKey(slot));
+  const names = slots.map((slot, i) => cleanNodeTitle(slot.label) || keys[i]);
+  const rows = new Map<string, number[]>();
+  names.forEach((name, i) => {
+    const list = rows.get(name);
+    if (list) list.push(i);
+    else rows.set(name, [i]);
+  });
+  for (const [name, index] of rows) {
+    if (index.length < 2) continue;
+    index
+      .sort((a, b) => nodeOrder(slots[a].node) - nodeOrder(slots[b].node) || keys[a].localeCompare(keys[b]))
+      .slice(1)
+      .forEach((i, n) => { names[i] = `${name}\u00B7${n + 2}`; });
+  }
+  return names;
+}
+
 export function promptSlots(template: CloneTemplate | null | undefined): CloneSlot[] {
   return (template?.slots ?? []).filter((s) => s.kind === "prompt");
 }

@@ -1907,6 +1907,33 @@ export function controlContextLine(
   return picked.join("｜");
 }
 
+/** 这一次弹窗上是武戏还是文戏；"" 表示这份工作流根本没有那个开关，或者值还没落定。 */
+export type SceneType = "combat" | "drama" | "";
+
+/**
+ * 从「整组开关那颗控件」现在的值算出这次是武戏还是文戏。
+ *
+ * 为什么不从 controlContextLine 那行字里抓「戏种：武戏」：那行里「戏种」两个字是槽位标签，
+ * 而标签是用户在控件面板上改得动的东西（clone.ts 的 label 一路走的是 slot.label）。
+ * 抓法一改就静默失效，失效的方向还是「悄悄退回整份塞资料」——最难查的那种坏。
+ *
+ * 判据照抄后端 clone_templates._apply_lora_group 那一条式子：值等于 lora_on 就是那几颗
+ * lora 活着，也就是武戏。同一条式子，两边对「这次是不是武戏」永远不会有两种说法；
+ * 标签改名、选项换成别的词都不影响，认的是开关自己的口径，不是中文词。
+ */
+export function sceneTypeOf(
+  template: CloneTemplate | null | undefined,
+  controls: Record<string, string | number>,
+): SceneType {
+  const slot = (template?.slots ?? []).find(
+    (item) => item.kind === "select" && item.lora_group?.length && item.lora_on,
+  );
+  if (!slot) return "";
+  const value = controls[slotKey(slot)];
+  if (value === undefined || value === null || String(value).trim() === "") return "";
+  return String(value) === String(slot.lora_on) ? "combat" : "drama";
+}
+
 /**
  * 槽位带不上对齐步长时的兜底：8 就是 ComfyUI 那台节点自己的默认值
  * （comfy_extras/nodes_resolution.py 里 `multiple` 是 default 8、min 8、max 128、step 4）。

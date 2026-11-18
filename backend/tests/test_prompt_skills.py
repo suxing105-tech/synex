@@ -263,10 +263,12 @@ class Capture:
 
 
 def optimize(client, skill_id, prompt="一张猫 @图片1 坐在 @图片3 上", kind="image", refs=None,
-             send_context=None):
+             send_context=None, send_scene=None):
     body = {"prompt": prompt, "kind": kind, "refs": refs or []}
     if send_context is not None:
         body["context"] = send_context
+    if send_scene is not None:
+        body["scene_type"] = send_scene
     return client.post(f"/api/prompt-skills/{skill_id}/optimize", json=body)
 
 
@@ -278,8 +280,9 @@ def test_optimize_sends_mark_rule_and_image_ordinals(client, model, init_db, tmp
     result = optimize(client, skill_id, refs=[{"ordinal": 3, "image_id": third},
                                               {"ordinal": 1, "image_id": first}])
     assert result.status_code == 200, result.text
+    # omitted_refs 是 None：这条不是认戏种的那条内置，资料一块都没少带（要求 2 的口径）
     assert result.json() == {"prompt": "优化后的正文", "model_name": "视觉模型", "model": "vision-pro",
-                             "degraded_refs": None}
+                             "degraded_refs": None, "omitted_refs": None}
     call = capture.calls[0]
     # 模型继续吃反推那套配置，不另开一份
     assert call["config"]["model"] == "vision-pro" and call["key"] == ""
@@ -1360,3 +1363,150 @@ def test_pruned_skill_clears_the_default_pointer(client, tmp_path):
     assert imported["id"] not in [row["id"] for row in rows]
     assert client.get("/api/prompt-skill-settings").json()["default_image_skill"] is None, (
         "技能没了，默认指针不能还指着它（外键 ON DELETE SET NULL）")
+
+
+# ---------- 戏种开关决定这一次带哪几份资料 ----------
+
+def all_package_refs() -> dict[str, str]:
+    """随包那条 H3 视频技能的每份附属资料原文。库里那份就是拿这些拼的（同一进程同源）。"""
+    return {item["path"]: item["text"] for item in bundled_skills.h3_video_package_entries()
+            if item["path"] != bundled_skills.H3_VIDEO_SKILL_PATH}
+
+
+def combat_probes() -> dict[str, str]:
+    """每份武戏资料里截一小段正文当探针。
+
+    只断言「分隔线不在了」不够——分隔线是拼装的壳，正文才是真发给模型的东西。
+    截中段是避开开头那几行标题与 frontmatter，那里可能只有路径名本身。
+    """
+    return {path: text[500:560] for path, text in all_package_refs().items()
+            if bundled_skills.is_h3_video_combat_ref(path)}
+
+
+def test_the_prefix_rule_catches_exactly_the_combat_files():
+    """前缀那条规矩认出来的就是这三份。
+
+    以后往 references/ 里加第四份 combat-*，它会跟着进名单，这条会红——那是提醒
+    「你加了一份新的武戏资料，记得确认文戏确实不该带它」，不是拦路。反过来，谁改了
+    文件名让前缀认不出，这条同样红：那时文戏又开始白背它，正是这一轮要修的事。
+    """
+    assert sorted(combat_probes()) == [
+        "references/combat-beats.md", "references/combat-impact.md", "references/combat-moves.md"]
+    assert "references/camera-spec.md" not in combat_probes(), "镜头规格文戏也要用，不许算进武戏"
+
+
+def test_drama_request_sends_no_combat_reference(client, model, init_db, monkeypatch):
+    capture = Capture()
+    monkeypatch.setattr(reverse_prompts, "request_model", capture)
+    skill_id = builtin_id(client, "h3_video")
+    drama = optimize(client, skill_id, prompt="苏晚在深夜的巷口等车", kind="video", send_scene="drama")
+    combat = optimize(client, skill_id, prompt="苏晚在深夜的巷口等车", kind="video", send_scene="combat")
+    assert drama.status_code == 200, drama.text
+    sent = capture.calls[0]["instruction"]
+    full = capture.calls[1]["instruction"]
+    for path, probe in combat_probes().items():
+        assert probe not in sent, path + " 的正文还是发出去了"
+    # 逐字核账：少掉的字数必须正好等于那三份的字数加上它们各自的分隔线，一个字都不许多少。
+    # 不拿「路径名不许出现在 system 里」当判据——技能正文自己就点名了这三份在哪，
+    # 那三行是该在的，被切掉的只有资料本身。
+    missing = sum(len(text) + len(skill_packages.refs_separator(path))
+                  for path, text in all_package_refs().items()
+                  if bundled_skills.is_h3_video_combat_ref(path))
+    assert len(full) - len(sent) == missing, (len(full), len(sent), missing)
+    # 镜头规格不是武戏专用，文戏同样要它，不许被连坐删掉
+    assert "references/camera-spec.md" in sent
+    assert full.split("技能包参考资料")[0] == sent.split("技能包参考资料")[0], (
+        "正文与那四份之外的部分必须逐字相等：筛只发生在资料块这一层")
+    omitted = drama.json()["omitted_refs"]
+    assert combat.json()["omitted_refs"] is None
+    assert sorted(omitted["paths"]) == sorted(combat_probes())
+    assert "文戏" in omitted["reason"] and "预算" not in omitted["reason"], (
+        "丢了要看得见，而且说的得是真原因，不能蹭「超出参考预算」那句")
+
+
+def test_combat_request_sends_every_reference_it_always_sent(client, model, init_db, monkeypatch):
+    capture = Capture()
+    monkeypatch.setattr(reverse_prompts, "request_model", capture)
+    skill_id = builtin_id(client, "h3_video")
+    result = optimize(client, skill_id, prompt="苏晚在巷口拔刀", kind="video", send_scene="combat")
+    assert result.status_code == 200, result.text
+    sent = capture.calls[0]["instruction"]
+    for path, text in all_package_refs().items():
+        assert text[500:560] in sent, path + " 该在的，武戏全带"
+    assert result.json()["omitted_refs"] is None
+
+
+def test_unknown_scene_carries_the_package_exactly_as_before(client, model, init_db, monkeypatch):
+    """不送这个字段、送空串、送一个认不出的值：三种「不知道」都和改动之前一模一样。
+
+    判据不是「也带了三份」，是拼出去的整条 system 逐字相等——连顺序、壳、字数都不许变。
+    """
+    capture = Capture()
+    monkeypatch.setattr(reverse_prompts, "request_model", capture)
+    skill_id = builtin_id(client, "h3_video")
+    optimize(client, skill_id, prompt="苏晚", kind="video")
+    whole = capture.calls[0]["instruction"]
+    for blind in ("", "武戏", "COMBAT", "anything-else"):
+        optimize(client, skill_id, prompt="苏晚", kind="video", send_scene=blind)
+        assert capture.calls[-1]["instruction"] == whole, "不知道戏种时不许改内容: " + repr(blind)
+    # 而明确报了武戏的那一次，也和不报的逐字相等（武戏本来就该全带）
+    optimize(client, skill_id, prompt="苏晚", kind="video", send_scene="combat")
+    assert capture.calls[-1]["instruction"] == whole
+
+
+def test_other_skills_are_not_touched_by_the_scene_switch(client, model, init_db, monkeypatch):
+    """本轮只动认戏种的那一条。其他技能包的资料照旧整份塞，行为一个字不许变。"""
+    capture = Capture()
+    monkeypatch.setattr(reverse_prompts, "request_model", capture)
+    skill_id = builtin_id(client, "h3_image")
+    optimize(client, skill_id, prompt="一只猫", kind="image")
+    whole = capture.calls[0]["instruction"]
+    optimize(client, skill_id, prompt="一只猫", kind="image", send_scene="drama")
+    assert capture.calls[0]["instruction"] == capture.calls[1]["instruction"]
+    assert capture.calls[1]["instruction"] == whole
+    assert client.post(f"/api/prompt-skills/{skill_id}/optimize",
+                       json={"prompt": "一只猫", "kind": "image", "refs": [],
+                             "scene_type": "drama"}).json()["omitted_refs"] is None
+
+
+# ---------- 切资料块那颗函数自己 ----------
+
+def test_filtering_a_refs_block_round_trips_when_nothing_is_dropped():
+    paths = ["references/a.md", "references/b.md"]
+    block, meta, _ = skill_packages.compose_refs_block(
+        [{"path": "SKILL.md", "text": "正文", "size": 6, "is_text": True},
+         {"path": paths[0], "text": "第一份", "size": 9, "is_text": True},
+         {"path": paths[1], "text": "第二份", "size": 9, "is_text": True}],
+        "正文", "SKILL.md")
+    assert [item["path"] for item in meta if item["included"]] == paths
+    kept, dropped = skill_packages.filter_refs_block(block, paths, set())
+    assert dropped == [] and kept == block, "什么都不摘时必须逐字原样，拼回去的那颗不能改格式"
+    cut, dropped = skill_packages.filter_refs_block(block, paths, {paths[0]})
+    assert dropped == [paths[0]]
+    assert "第一份" not in cut and "第二份" in cut
+    # 留下的那一段必须连自己那行分隔线一起留下：只截正文会让清单和块各说各话
+    assert skill_packages.refs_separator(paths[1]) in cut
+    # 少掉的正好是「那一段的分隔线 + 它的正文」，一分不多一分不少
+    assert len(block) - len(cut) == len(skill_packages.refs_separator(paths[0])) + len("第一份")
+
+
+def test_filtering_a_refs_block_refuses_when_the_table_does_not_match():
+    """清单和块对不上时宁可整份带：切一半送进模型比多带几份坏得多。"""
+    block, _, _ = skill_packages.compose_refs_block(
+        [{"path": "SKILL.md", "text": "正文", "size": 6, "is_text": True},
+         {"path": "references/a.md", "text": "第一份", "size": 9, "is_text": True}],
+        "正文", "SKILL.md")
+    assert skill_packages.filter_refs_block(block, ["references/nope.md"], {"references/nope.md"}) is None
+    assert skill_packages.filter_refs_block("没有标题的一块东西", ["references/a.md"],
+                                            {"references/a.md"}) is None
+    assert skill_packages.filter_refs_block("", [], set()) == ("", [])
+
+
+def test_dropping_every_reference_leaves_no_dangling_header():
+    """全摘完要连那句「技能包参考资料」的标题一起没，否则模型看到一句指向空的话。"""
+    block, _, _ = skill_packages.compose_refs_block(
+        [{"path": "SKILL.md", "text": "正文", "size": 6, "is_text": True},
+         {"path": "references/a.md", "text": "第一份", "size": 9, "is_text": True}],
+        "正文", "SKILL.md")
+    cut, dropped = skill_packages.filter_refs_block(block, ["references/a.md"], {"references/a.md"})
+    assert dropped == ["references/a.md"] and cut == ""

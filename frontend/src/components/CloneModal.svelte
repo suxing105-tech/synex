@@ -27,7 +27,7 @@
   import type { CanvasEscape } from "../lib/clone-canvas";
   import {
     applyCloneProgress, buildGenerateRequest, cloneApi, cloneError, cloneJob, cloneStatusLabel,
-    allowsTextMode, cleanNodeTitle, controlContextLine, controlSlots, controlSummary, defaultControlValues, defaultReferences, formatTargetSize, latestReversePrompt,
+    allowsTextMode, cleanNodeTitle, controlContextLine, controlSlots, controlSummary, defaultControlValues, defaultReferences, formatTargetSize, latestReversePrompt, sceneTypeOf,
     pickedRatioOption,
     promptGroupValues, modeFromRefCount, modeLabel, numberPresets, numberUnit,
     primaryPromptGroup, promptGroupHint, promptPlaceholder, promptSlots, promptSourceLabel, secondaryPromptGroups,
@@ -1980,7 +1980,10 @@
     await tick();
     autosizePrompt();
     const thin = res?.degraded_refs ? "，参考图只带上 " + res.degraded_refs.sent + " 张" : "";
-    pushToast("已按「" + skillName + "」重写" + thin, {
+    // 少带了资料要在小条上说一句：默认那条「丢了要看得见」的规矩。
+    // 后端给的reason就是本次的真原因（文戏不带武戏资料），不许在这儿换成别种说法。
+    const light = res?.omitted_refs ? "，" + res.omitted_refs.reason : "";
+    pushToast("已按「" + skillName + "」重写" + thin + light, {
       kind: "success",
       ttl: 10000,
       // 小条上这颗和框右下角那颗是同一件事，走同一个函数：各存一份「原文」的话，
@@ -2037,6 +2040,10 @@
           // 把弹窗上选的戏种、武打速度、时长、比例一起送过去：技能正文里那些
           // 「按界面上选的戏种写」否则全是空话，模型只看得到这段文字
           context: controlContextLine(template, controls),
+          // 戏种另外走一个结构化字段：上面那行是给模型读的话，这一条是给服务端用来
+          // 决定这次带哪几份资料（文戏不带武戏那三份）。标签会被用户改，话会被截短，
+          // 只有这一个字段是稳的。
+          scene_type: sceneTypeOf(template, controls),
         },
         ctl.signal,
       );

@@ -1216,7 +1216,59 @@ def save_settings(*, default_image_skill, default_video_skill):
     return settings()
 
 
-def system_prompt(skill, context: str = "", ref_count: int | None = None) -> str:
+# 只认这一条内置技能身上的戏种开关（BUILTINS 里那条 h3_video）。其余技能包的资料照旧整份塞——
+# 不是没考虑到，是不让一次改动同时改掉五条技能的行为。
+SCENE_FILTER_BUILTIN_KEY = "h3_video"
+# 接口上认的两个戏种值。送别的值（包括空）当「这次不知道」，整份带：
+# 不知道还去猜，猜错的代价是模型少看了它正需要的资料，而那不会报错。
+SCENE_TYPES = ("combat", "drama")
+# 丢了要看得见，但这句不许蹭预算那条文案：把「本次是文戏，武戏资料没带」说成
+# 「超出参考预算」，人就跑去删参考资料了，而真正的事实是这一次用不上它。
+SCENE_OMIT_REASON = "本次是文戏，{count} 份武戏资料没有带上"
+SCENE_SPLIT_FAIL_REASON = "技能包那份资料没能按戏种拆开，这一次整份带了"
+
+
+def _package_ref_order(skill) -> list[str]:
+    """库里那份资料块里，每份参考资料的先后路径（照清单里的 order 排）。"""
+    try:
+        meta = json.loads(_row_get(skill, "package_meta", "") or "{}")
+    except (TypeError, ValueError):
+        return []
+    files = meta.get("files") if isinstance(meta, dict) else None
+    if not isinstance(files, list):
+        return []
+    refs = [item for item in files
+            if isinstance(item, dict) and item.get("role") == "参考" and item.get("included")]
+    return [str(item.get("path") or "") for item in sorted(refs, key=lambda item: item.get("order", 0))]
+
+
+def package_refs_for(skill, scene_type: str = "") -> tuple[str, dict | None]:
+    """这一次优化真带的资料块，外加（真有东西没带时）没带哪几份、为什么。
+
+    只有那条认戏种的内置会被切：它包里三份是写武戏才用得上的节奏、招式、力道，
+    写文戏时模型一句都用不上，每次优化却照送一万七千多字——更慢、更贵，还稀释正文本身。
+
+    切的是库里已经拼好的那一份，不是从盘上重拼，理由写在 skill_packages.filter_refs_block
+    的 docstring 里：资料块只在技能第一次进库时拼一次，重拼会让一次优化里两套资料打架。
+    """
+    block = _row_get(skill, "package_refs", "")
+    if not block or str(_row_get(skill, "builtin_key", "") or "") != SCENE_FILTER_BUILTIN_KEY:
+        return block, None
+    if str(scene_type or "") != "drama":
+        return block, None            # 武戏本来就该全带，「不知道」也全带
+    paths = _package_ref_order(skill)
+    cut = skill_packages.filter_refs_block(
+        block, paths, {path for path in paths if bundled_skills.is_h3_video_combat_ref(path)})
+    if cut is None:
+        return block, {"paths": [], "reason": SCENE_SPLIT_FAIL_REASON}
+    rest, dropped = cut
+    if not dropped:
+        return block, None
+    return rest, {"paths": dropped, "reason": SCENE_OMIT_REASON.format(count=len(dropped))}
+
+
+def system_prompt(skill, context: str = "", ref_count: int | None = None,
+                  refs_block: str | None = None) -> str:
     """一条技能 = 一句写法 +（是包的话）一叠资料 +（这次界面上选定的参数）
     +（这次一张参考都没发时的一句提醒）+ 两条硬规矩。
 
@@ -1227,9 +1279,12 @@ def system_prompt(skill, context: str = "", ref_count: int | None = None) -> str
 
     ref_count 是这次真的发出去几份参考（掉过之后的数，不是用户挂了几张），
     只有明确为 0 才加那句提醒；传 None 表示调用方没这个信息，别替它下结论。
+
+    refs_block 是调用方已经按这一次戏种筛过的资料块；不传就读库里那份完整的。
+    筛只发生在资料块这一层，下面这个拼装顺序一个字不动。
     """
     language = skill["language"] if skill["language"] in LANGUAGE_RULES else "auto"
-    refs = _row_get(skill, "package_refs", "")
+    refs = _row_get(skill, "package_refs", "") if refs_block is None else refs_block
     knobs = str(context or "").strip()
     return (skill["instruction"].strip() + refs + ((CONTEXT_NOTE + knobs) if knobs else "")
             + (REF_SCOPE_NOTE if ref_count == 0 else "") + "\n"
@@ -1318,18 +1373,24 @@ def resolve_model():
 
 
 async def optimize(*, skill, prompt: str, kind: str, refs: list[dict],
-                   context: str = "") -> dict:
-    """跑一次优化。这个方法一行都不写库：优化是给建议，历史留在会话里的撤销就够。"""
+                   context: str = "", scene_type: str = "") -> dict:
+    """跑一次优化。这个方法一行都不写库：优化是给建议，历史留在会话里的撤销就够。
+
+    scene_type 是弹窗上那颗戏种开关的这一次取值（"combat" / "drama" / "" 不知道）。
+    它只能由界面报进来：库里没有模板，服务端自己无从知道这次选的是哪一档。
+    """
     if kind not in kinds_of(skill["kinds"]):
         raise HTTPException(422, "「" + skill["name"] + "」不适用于" + KIND_WORDS.get(kind, kind) + "提示词")
     if not prompt.strip():
         raise HTTPException(422, "提示词是空的，没什么可优化")
     config, key = resolve_model()
     prepared, degraded = (await prepare_refs(refs)) if (skill["with_refs"] and refs) else ([], None)
+    refs_block, omitted = package_refs_for(skill, scene_type)
     answer = await reverse_prompts.request_model(
         config, key, build_content(prompt, prepared),
-        system_prompt(skill, context, len(prepared)), output_rule="")
+        system_prompt(skill, context, len(prepared), refs_block), output_rule="")
     result = clean_output(answer)
     if not result:
         raise HTTPException(502, "模型只回了一层壳，没回提示词内容，请重试或换一条技能")
-    return {"prompt": result, "model_name": config["name"], "model": config["model"], "degraded_refs": degraded}
+    return {"prompt": result, "model_name": config["name"], "model": config["model"],
+            "degraded_refs": degraded, "omitted_refs": omitted}

@@ -335,6 +335,54 @@ def compose_refs_block(entries: list[dict], body: str, skill_path: str = "") -> 
     return block, meta, used
 
 
+def refs_separator(path: str) -> str:
+    """一份资料在资料块里那一条分隔线。上面那样拼、下面这样切，两边只能有这一颗。"""
+    return "\n--- " + str(path) + " ---\n"
+
+
+def filter_refs_block(block: str, paths: list[str], drop: set[str]) -> tuple[str, list[str]] | None:
+    """从一份已经拼好的资料块里摘掉点名的几份，回（剩下的块, 真摘掉的路径）；切不动回 None。
+
+    为什么要能摘「库里拼好的那一份」，而不是按戏种从盘上重拼一遍：资料块只在技能第一次
+    进库时拼一次（_seed_builtin 只补新插的那条和清单写了、资料块还空着的半条），升级之后
+    盘上的资料换了、库里那份没换。重拼会让武戏发库里那版、文戏发盘上那版，一次优化里
+    两套资料，正是本文件开头明令要防的那种缺法。
+
+    切点只认 paths 这张先后表上点名的路径（清单里的 order），不拿 "--- " 满块找：
+    资料本身是 Markdown，--- 是水平线，泛着找会切在正文中间。表与块对不上（切点找不到、
+    路径重名）时回 None 让调用方原样带——宁可多带几份，也不能把一份资料切一半送进模型。
+    """
+    if not block:
+        return "", []
+    if not block.startswith(REFS_HEADER):
+        return None
+    marks: list[tuple[int, str]] = []             # (分隔线起点, 路径)
+    cursor = len(REFS_HEADER)
+    for path in paths:
+        sep = refs_separator(path)
+        at = block.find(sep, cursor)
+        if at < 0:
+            return None
+        marks.append((at, str(path)))
+        cursor = at + len(sep)
+    if not marks or len(marks) != len({item[1] for item in marks}):
+        return None                               # 表是空的或者写了重名：认不出谁是谁，别切
+    kept: list[str] = []
+    dropped: list[str] = []
+    for index, (start, path) in enumerate(marks):
+        # 一段资料是「分隔线 + 正文」整块算的：留下它就得连分隔线一起留。
+        # 第一版在这里只截了正文，留下那份少了自己那行标题，整块字数对不上——
+        # 是 tests 里「少掉的字数必须正好等于摘掉那几份」那条算术断言抓出来的。
+        stop = marks[index + 1][0] if index + 1 < len(marks) else len(block)
+        if path in drop:
+            dropped.append(path)
+            continue
+        kept.append(block[start:stop])
+    if not dropped:
+        return block, []
+    return (REFS_HEADER + "".join(kept)) if kept else "", dropped
+
+
 # ---------- 技能压缩包 ----------
 
 

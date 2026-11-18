@@ -93,6 +93,13 @@ class OptimizeInput(BaseModel):
     # 弹窗上选定的参数（戏种、武打速度、时长、比例）压成一行送进来。
     # 500 是上限不是目标：它拼在系统提示尾部，太长会开始稀释技能正文本身。
     context: str = Field(default="", max_length=500)
+    # 这一次弹窗上选的是武戏还是文戏，只有认戏种的那条技能会拿它决定带哪几份资料。
+    # 它是结构化字段而不是从上面那行 context 里抓出来的：context 里「戏种」那两个字是
+    # 槽位标签，用户在控件面板上改得动，而抓不到时的下场是悄悄退回整份塞——最难查那种。
+    # 值由界面拿整组开关那颗控件的当前值和它自己的 lora_on 比出来，口径同后端
+    # clone_templates._apply_lora_group。空串 = 这次不知道；认不出的值也当不知道，
+    # 不在这儿 422：一个戏种值不该把整次优化拦死。
+    scene_type: str = Field(default="", max_length=16)
     refs: list[RefInput] = Field(default_factory=list, max_length=service.MAX_REF_IMAGES)
 
 
@@ -179,7 +186,7 @@ class TranslateInput(BaseModel):
 async def optimize(skill_id: int, payload: OptimizeInput):
     return await service.optimize(skill=service.get_skill(skill_id), prompt=payload.prompt,
                                  kind=payload.kind, refs=[item.model_dump() for item in payload.refs],
-                                 context=payload.context)
+                                 context=payload.context, scene_type=payload.scene_type)
 
 
 @router.post("/translate-prompt")

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   EMPTY_CLONE_JOB, applyCloneProgress, buildGenerateRequest, cloneError, cloneStatusLabel,
-  allowsTextMode, controlContextLine, controlSlots, controlSummary, CONTEXT_LINE_LIMIT, defaultControlValues, defaultReferences, formatControlValue, modesFor,
+  allowsTextMode, controlContextLine, controlSlots, controlSummary, CONTEXT_LINE_LIMIT, defaultControlValues, defaultReferences, formatControlValue, modesFor, sceneTypeOf,
   formatTargetSize, pickedRatioOption, slotVisible, targetPixelSize, visibleControlSlots,
   imageSlots, jobForTemplate, latestReversePrompt, modeFromRefCount, numberPresets, numberUnit,
   modeLabel, optionLabel, promptSourceLabel, promptSlots, ratioShape, referenceCells, referenceIssues, visibleRefCells,
@@ -1674,5 +1674,54 @@ describe("送进提示词优化的「界面参数」那一行", () => {
     const value = "甲".repeat(CONTEXT_LINE_LIMIT + 10);
     const monster: CloneSlot = { kind: "select", node: "21", input: "preset", label: "预设", options: [value], value };
     expect(controlContextLine(tpl([promptSlot, monster]), { "21.preset": value })).toBe("");
+  });
+});
+
+
+describe("这一次是武戏还是文戏（带哪几份资料就照这个走）", () => {
+  // 随包那条 H3 视频工作流上真实的那颗整组开关，原样抄一份当样品
+  const scene: CloneSlot = {
+    kind: "select", node: "407", input: "loras", label: "戏种",
+    options: ["文戏", "武戏"], value: "文戏",
+    lora_group: ["MinimaxH3/H3_Combat_V2", "MinimaxH3/Motion_Repair_V2", "MinimaxH3/H3_Fight_Flow_V1"],
+    lora_on: "武戏",
+  };
+  const withSwitch = tpl([promptSlot, scene]);
+
+  it("选到 lora_on 那一档是武戏，其余一律文戏", () => {
+    expect(sceneTypeOf(withSwitch, { "407.loras#@": "武戏" })).toBe("combat");
+    expect(sceneTypeOf(withSwitch, { "407.loras#@": "文戏" })).toBe("drama");
+  });
+
+  it("认的是那颗开关自己的 lora_on，不是标签也不是中文词：标签是用户在面板上改得动的", () => {
+    // 把标签改成「类型」——controlContextLine 会跟着变，这一条不许变。
+    // 这就是本轮不拿那行自由文字判戏种的全部理由：改名是用户权利，判据不能跟着塌。
+    const renamed: CloneSlot = { ...scene, label: "类型" };
+    expect(sceneTypeOf(tpl([promptSlot, renamed]), { "407.loras#@": "武戏" })).toBe("combat");
+    expect(sceneTypeOf(tpl([promptSlot, renamed]), { "407.loras#@": "静戏" })).toBe("drama");
+    // 换一条工作流，选项根本不叫文武戏，只要「开」那一档还是那几颗 lora，语义照样对得上
+    const other: CloneSlot = { ...scene, options: ["静戏", "打斗"], value: "静戏", lora_on: "打斗" };
+    expect(sceneTypeOf(tpl([promptSlot, other]), { "407.loras#@": "打斗" })).toBe("combat");
+    expect(sceneTypeOf(tpl([promptSlot, other]), { "407.loras#@": "静戏" })).toBe("drama");
+  });
+
+  it("这份工作流没有整组开关、或者值还没落定：报不知道，后端照旧整份带", () => {
+    expect(sceneTypeOf(tpl([promptSlot]), { "407.loras#@": "武戏" })).toBe("");
+    expect(sceneTypeOf(withSwitch, {})).toBe("");
+    expect(sceneTypeOf(withSwitch, { "407.loras#@": "" })).toBe("");
+    expect(sceneTypeOf(null, {})).toBe("");
+    expect(sceneTypeOf(undefined, { "407.loras#@": "武戏" })).toBe("");
+    // 有 lora_group 却没写 lora_on：不知道该认哪一档是「开」，不敢替人猜
+    const blind: CloneSlot = { kind: "select", node: "407", input: "loras", label: "戏种", options: ["文戏", "武戏"], value: "文戏", lora_group: ["a/b"] };
+    expect(sceneTypeOf(tpl([promptSlot, blind]), { "407.loras#@": "武戏" })).toBe("");
+  });
+
+  it("一个面板上有好几颗整组开关时认第一颗，报出来的永远是那三档之一", () => {
+    const second: CloneSlot = { ...scene, node: "408", lora_on: "开" };
+    const two = tpl([promptSlot, scene, second]);
+    expect(["combat", "drama", ""].includes(sceneTypeOf(two, { "407.loras#@": "武戏", "408.loras#@": "关" }))).toBe(true);
+    // 第一颗说了算：它是随包那条模板的戏种开关，后端也只在认戏种那条技能上才用它
+    expect(sceneTypeOf(two, { "407.loras#@": "武戏", "408.loras#@": "开" })).toBe("combat");
+    expect(sceneTypeOf(two, { "407.loras#@": "文戏", "408.loras#@": "开" })).toBe("drama");
   });
 });

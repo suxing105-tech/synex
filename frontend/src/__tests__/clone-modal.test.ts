@@ -3908,6 +3908,8 @@ it('左键用这一族的默认技能重写、写回输入框，撤销退回原�
     prompt: '原文一句', kind: 'image', refs: [{ ordinal: 1, image_id: 7 }],
     // 面板上挑的生成档位现在跟着一起进优化请求：这条工作流是比例 + 百万像素
     context: '比例：1:1｜百万像素：1.4MP',
+    // 这条模板上没有整组开关那颗控件，戏种只能报「不知道」，后端于是整份带资料
+    scene_type: '',
   });
   const undo = actionOf('撤销');
   expect(undo).toBeTruthy();
@@ -4017,6 +4019,7 @@ it('参考图只送图片那一族，编号用格子自己的、不按送过去�
   expect(sent).toEqual({
     prompt: '照 <Picture 1> 拍', kind: 'video', refs: [{ ordinal: 1, image_id: 40 }],
     context: '比例：1:1｜百万像素：1.4MP',
+    scene_type: '',  // 同上：这条模板没有戏种开关
   });
 });
 
@@ -4685,6 +4688,9 @@ it('优化请求把戏种和武打速度一起送过去：技能正文才知道�
   await vi.waitFor(() => expect(sent.length).toBe(1));
   // 文戏：那颗被隐藏的武打速度不许混进去，报了就等于叫模型按武戏写
   expect(sent[0].context).toBe('比例：16:9｜戏种：文戏');
+  // 同一件事还得再给一个机器读得懂的字段：面板上那两个字是给人看的标签，
+  // 后端要靠它决定这次带不带武戏资料，靠抓字面失手只会悄悄退回整份塞。
+  expect(sent[0].scene_type).toBe('drama');
 
   // 切武戏、拖到 5 档再优化一次：那一档得跟着走，节拍密度全靠它
   await fireEvent.click(screen.getByRole('button', { name: /^(画面参数|音频参数)$/ }));
@@ -4698,4 +4704,36 @@ it('优化请求把戏种和武打速度一起送过去：技能正文才知道�
   await fireEvent.click(skillBtn(screen));
   await vi.waitFor(() => expect(sent.length).toBe(2));
   expect(sent[1].context).toBe('比例：16:9｜戏种：武戏｜武打速度：5档');
+  expect(sent[1].scene_type).toBe('combat');
+});
+
+it('少带了资料，小条上说的是真原因：文戏不带武戏资料，不写「超出参考预算」', async () => {
+  // 「丢了要看得见」之外还有半句：理由得是真的。写成预算不够，
+  // 人会去压缩提示词，而那三帧武戏资料本来就不该出现在文戏里。
+  routes(skillRoutes({
+    ...videoRoutes(),
+    '/api/clone/templates': { items: [H3_DRAMA] },
+    '/api/prompt-skills/2/optimize': {
+      prompt: '重写后：中景、两个人在雨里说话',
+      model_name: '智谱',
+      model: 'glm-4v',
+      degraded_refs: null,
+      omitted_refs: {
+        paths: [
+          'references/combat-beats.md',
+          'references/combat-impact.md',
+          'references/combat-moves.md',
+        ],
+        reason: '本次是文戏，3 份武戏资料没有带上',
+      },
+    },
+  }));
+  const screen = await ready({ image: VIDEO_CARD });
+  const ta = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  await fireEvent.input(ta, { target: { value: '两个人在雨里说话' } });
+  await fireEvent.click(skillBtn(screen));
+  await vi.waitFor(() => expect(ta.value).toBe('重写后：中景、两个人在雨里说话'));
+  const said = get(toasts).map((item) => item.message).join('｜');
+  expect(said).toContain('本次是文戏，3 份武戏资料没有带上');
+  expect(said).not.toContain('预算');
 });

@@ -89,6 +89,11 @@ export interface OptimizeResult {
   model: string;
   /** 参考图被少带了才非空：sent 是真发出去的张数，dropped 是被跳过的格子编号 */
   degraded_refs: { sent: number; dropped: number[] } | null;
+  /**
+   * 技能包里有资料这次没带才非空。只有认戏种开关的那条技能会给：文戏不带武戏资料。
+   * reason 是后端写好的那一句真原因，界面原样念——不许换成「超出参考预算」那种说法。
+   */
+  omitted_refs: { paths: string[]; reason: string } | null;
 }
 
 /** 一次中英互译的结果。方向是后端按正文主体语言判出来的，界面照着写悬停提示。 */
@@ -254,7 +259,9 @@ export const promptSkillsApi = {
     id: number,
     // context 是弹窗上选定的旋钮（戏种、武打速度、时长、比例），见 clone.ts 的 controlContextLine。
     // 可选：技能管理弹窗那条不经过工作流弹窗，本来就没有这些东西可选
-    body: { prompt: string; kind: PromptSkillKind; refs: OptimizeRef[]; context?: string },
+    // scene_type 走结构化字段，不混进上面那行 context 的自由文字：那条给模型读，
+    // 这一条给服务端决定带哪几份资料。见 clone.ts 的 sceneTypeOf。
+    body: { prompt: string; kind: PromptSkillKind; refs: OptimizeRef[]; context?: string; scene_type?: string },
     signal?: AbortSignal,
   ) => http<OptimizeResult>(`${skillPath(id)}/optimize`, { ...json("POST", body), signal }),
   /**

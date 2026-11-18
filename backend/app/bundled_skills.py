@@ -399,6 +399,17 @@ H3_VIDEO_PACKAGE_SUBDIR = "h3-video"
 H3_VIDEO_PACKAGE_ROOT = "seekx-h3-video-prompt"
 H3_VIDEO_SKILL_PATH = "SKILL.md"
 
+# 哪几份是武戏专用资料，按文件名前缀认，不抄三个文件名成一张名单：以后往 references/ 里
+# 再加一份 combat-xxx.md，它自动跟着走。抄名单那种做法漏一份，就是文戏又白背一份武戏资料
+# ——正是这一轮要修的事，不该由它的修法再犯一遍。
+H3_VIDEO_COMBAT_REF_PREFIX = "references/combat-"
+
+
+def is_h3_video_combat_ref(path) -> bool:
+    """这一份资料是写武戏才用得上的吗。"""
+    return str(path or "").startswith(H3_VIDEO_COMBAT_REF_PREFIX)
+
+
 logger = logging.getLogger(__name__)
 
 

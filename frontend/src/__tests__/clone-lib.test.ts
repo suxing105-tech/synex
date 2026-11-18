@@ -5,7 +5,7 @@ import {
   formatTargetSize, pickedRatioOption, slotVisible, targetPixelSize, visibleControlSlots,
   imageSlots, jobForTemplate, latestReversePrompt, modeFromRefCount, numberPresets, numberUnit,
   modeLabel, optionLabel, promptSourceLabel, promptSlots, ratioShape, referenceCells, referenceIssues, visibleRefCells,
-  chipLabels, cleanNodeTitle, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, templateDisplayName,
+  chipLabels, cleanNodeTitle, loraShortName, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, templateDisplayName,
   applyMention, comparePair, matchMention, mentionAddLabel, mentionChunks, mentionItems, mentionToken,
   elapsedCostLabel, familyCells, formatElapsed, inspectAsTemplate, isAudioOnlyRefs, isAudioTemplate, isImageOnlyRefs, isVideoTemplate,
   mentionInsertText, refTag, templateMediaKind, WF_KIND_WORDS, WF_OUTPUT_WORDS,
@@ -1528,5 +1528,63 @@ describe("槽位显示名", () => {
       // 标题整个被擦掉之后什么都不剩，退回「节点.输入」，不许显示成空白格
       "77.value",
     ]);
+  });
+});
+
+
+describe("一台 Lora 管理器上的两颗控件（戏种 + 武打速度）", () => {
+  // 真机那份 H3 的形状：一台 Lora Loader (LoraManager) 上挂两颗控件，
+  // 一颗管整组 lora 的开关（文戏＝四颗全灭），一颗管其中一颗的强度。
+  // 它们写的是同一个 407.loras，键必须分开，不然提交时后一颗盖掉前一颗。
+  const drama: CloneSlot = {
+    kind: "select", node: "407", input: "loras", label: "戏种",
+    options: ["文戏", "武戏"], value: "文戏",
+    lora_group: ["MinimaxH3/H3_Combat_V2", "MinimaxH3/H3_speed_slider_1.1"],
+    lora_on: "武戏",
+  };
+  const speed: CloneSlot = {
+    kind: "number", node: "407", input: "loras", label: "武打速度",
+    lora: "MinimaxH3/H3_speed_slider_1.1", min: 1, max: 6, step: 1, value: 3, unit: "档", slider: true,
+    show_when: { input: "407.loras#@", equals: "武戏" },
+  };
+  const withDrama = tpl([promptSlot, imageSlot, drama, speed]);
+
+  it("lora 名只取最后那一段，斜杠和反斜杠都算分隔", () => {
+    expect(loraShortName("MinimaxH3/H3_speed_slider_1.1")).toBe("H3_speed_slider_1.1");
+    expect(loraShortName("MinimaxH3\\子目录\\H3_speed_slider_1.1")).toBe("H3_speed_slider_1.1");
+    expect(loraShortName("")).toBe("");
+  });
+
+  it("两颗粒键不撞：整组那根固定 #@，速度那根带 lora 名；普通槽位一个字节没变", () => {
+    expect(slotKey(drama)).toBe("407.loras#@");
+    expect(slotKey(speed)).toBe("407.loras#H3_speed_slider_1.1");
+    expect(slotKey(ratioSlot)).toBe("13.aspect_ratio");
+    expect(slotKey({ node: "407", input: "loras" })).toBe("407.loras");
+    // 这两颗都是控件，提交体里各占一键（后端 plan_request 比的是同一套键名）
+    expect(controlSlots(withDrama).map(slotKey))
+      .toEqual(["407.loras#@", "407.loras#H3_speed_slider_1.1"]);
+    expect(defaultControlValues(withDrama))
+      .toEqual({ "407.loras#@": "文戏", "407.loras#H3_speed_slider_1.1": 3 });
+  });
+
+  it("武打速度只在武戏出现；条件认的是整组那根的完整键", () => {
+    expect(slotVisible(withDrama, speed, { "407.loras#@": "文戏" })).toBe(false);
+    expect(slotVisible(withDrama, speed, { "407.loras#@": "武戏" })).toBe(true);
+    // 一次都没点过：按槽位自带的默认值（文戏）算，新弹窗不该先摆一颗不生效的速度
+    expect(slotVisible(withDrama, speed, {})).toBe(false);
+    expect(visibleControlSlots(withDrama, { "407.loras#@": "文戏" }).map((s) => s.label))
+      .toEqual(["戏种"]);
+    expect(visibleControlSlots(withDrama, { "407.loras#@": "武戏" }).map((s) => s.label))
+      .toEqual(["戏种", "武打速度"]);
+    // 戏种那颗不在槽位里（用户自己删了、或导了别的工作流）：按出现处理，绝不藏死
+    const orphan = tpl([promptSlot, imageSlot, speed]);
+    expect(slotVisible(orphan, speed, {})).toBe(true);
+  });
+
+  it("文戏时胶囊不报武打速度，武戏才报那一档", () => {
+    expect(controlSummary(withDrama, { "407.loras#@": "文戏", "407.loras#H3_speed_slider_1.1": 5 }))
+      .toBe("文戏");
+    expect(controlSummary(withDrama, { "407.loras#@": "武戏", "407.loras#H3_speed_slider_1.1": 5 }))
+      .toBe("武戏 / 5档");
   });
 });

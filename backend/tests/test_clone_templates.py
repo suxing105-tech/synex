@@ -689,3 +689,178 @@ def test_an_empty_prompt_reaches_the_node_as_empty():
         nodes, mask_slots(), prompt="",
         references={"9.image": "a.png", "10.image": "b.png"}, randomize_seed=False)
     assert workflow["20"]["inputs"]["value"] == ""
+
+
+# ---------- Lora 管理器：戏种开关与武打速度 ----------
+# 一台 Lora 管理器挂两颗控件：整组开关（文戏／武戏）和其中一颗 lora 的强度。
+# 它们的值都不是某个 node.input 的字面量，而是 loras 清单里的条目，
+# 所以「撞键」「写错字段」「认错 lora」这三类错都只在我们这一侧会发生。
+# 节点图与槽位两份样本在 conftest（提交给 ComfyUI 的那条链路也共用它）。
+
+from .conftest import LORA_COMBAT, LORA_SPEED, lora_keys, lora_nodes, lora_slots
+
+
+def loras_of(nodes: dict) -> list[dict]:
+    return ct.lora_slot_entries(nodes, {"node": "407", "input": "loras"})
+
+
+def test_the_lora_name_in_a_key_is_trimmed_the_same_way_on_both_sides():
+    """键里那段 lora 名两端算法必须一致：前端算出键、后端按同一口径比，差一点就是「不是这份工作流声明的控件」。"""
+    assert ct.lora_short_name("MinimaxH3/H3_speed_slider_1.1") == "H3_speed_slider_1.1"
+    assert ct.lora_short_name(r"MinimaxH3\子目录\H3_speed_slider_1.1") == "H3_speed_slider_1.1"
+    assert ct.lora_short_name("") == ""
+
+
+def test_the_two_lora_controls_do_not_share_a_key():
+    """同一个 node.input 上的两颗粒键必须分开：撞了就是一根悄悄盖掉另一根。"""
+    nodes = lora_nodes()
+    slots = ct.normalize_slots(lora_slots(), nodes)
+    keys = [ct.slot_key(s) for s in slots]
+    assert len(keys) == len(set(keys)), keys
+    group, speed = lora_keys()
+    assert group == "407.loras#@"
+    # 单颗那根带 lora 名的最后一段：日志里一眼看得出是哪一颗
+    assert speed == "407.loras#H3_speed_slider_1.1"
+    # 普通槽位一个字节都不许变：:: 与 . 的口径已经有好几处在依赖它
+    assert ct.slot_key({"node": "261", "input": "steps"}) == "261.steps"
+
+
+def test_combat_switches_the_loras_on_and_adds_the_extra_steps():
+    nodes, slots = lora_nodes(), ct.normalize_slots(lora_slots(), lora_nodes())
+    group, speed = lora_keys()
+    wf, _ = ct.build_workflow(nodes, slots, prompt="打一套", randomize_seed=False,
+                              controls={group: "武戏", speed: 3})
+    assert all(e["active"] is True for e in loras_of(wf))
+    assert wf["261"]["inputs"]["steps"] == 12, "武戏动作快，多两步才收得干净"
+    assert wf["404"]["inputs"]["value"] == "打一套"
+
+
+def test_quiet_drama_turns_every_lora_off_and_gives_the_node_back():
+    """文戏要的是这台节点变直通：点名的几颗一颗都不进模型，步数也退回 10。"""
+    nodes, slots = lora_nodes(), ct.normalize_slots(lora_slots(), lora_nodes())
+    group, speed = lora_keys()
+    wf, _ = ct.build_workflow(nodes, slots, prompt="静一点", randomize_seed=False,
+                              controls={group: "文戏", speed: 5})
+    assert [e["active"] for e in loras_of(wf)] == [False, False]
+    assert wf["261"]["inputs"]["steps"] == 10
+    # 关着的 lora 不写强度：运行时根本跳过它，留着原作者那份数更好核对
+    assert [e["strength"] for e in loras_of(wf)] == ["0.65", "3.00"]
+
+
+def test_the_speed_writes_both_strength_fields():
+    """clipStrength 缺省才回落到 strength，而清单里两份都写着数：只改一份就是半新半旧。"""
+    nodes, slots = lora_nodes(), ct.normalize_slots(lora_slots(), lora_nodes())
+    group, speed = lora_keys()
+    wf, _ = ct.build_workflow(nodes, slots, prompt="打", randomize_seed=False,
+                              controls={group: "武戏", speed: 6})
+    target = [e for e in loras_of(wf) if e["name"] == LORA_SPEED][0]
+    other = [e for e in loras_of(wf) if e["name"] == LORA_COMBAT][0]
+    assert (target["strength"], target["clipStrength"]) == ("6.00", "6.00")
+    assert (other["strength"], other["clipStrength"]) == ("0.65", "0.65"), "别碰没点名的那颗"
+
+
+def test_the_two_controls_work_in_any_submission_order():
+    """强度只能写给活着的那几颗，所以顺序必须由代码定死，不能吃 JSON 的键序。"""
+    nodes, slots = lora_nodes(), ct.normalize_slots(lora_slots(), lora_nodes())
+    group, speed = lora_keys()
+    a, _ = ct.build_workflow(nodes, slots, prompt="打", randomize_seed=False,
+                             controls={group: "武戏", speed: 5})
+    b, _ = ct.build_workflow(nodes, slots, prompt="打", randomize_seed=False,
+                             controls={speed: 5, group: "武戏"})
+    assert a["407"]["inputs"]["loras"] == b["407"]["inputs"]["loras"]
+    assert a["261"]["inputs"]["steps"] == b["261"]["inputs"]["steps"] == 12
+
+
+def test_the_switch_never_writes_its_text_into_the_lora_list():
+    """「武戏」这两个字是给我们看的，写进 loras 输入里 ComfyUI 当场读不出来。"""
+    nodes, slots = lora_nodes(), ct.normalize_slots(lora_slots(), lora_nodes())
+    group, speed = lora_keys()
+    wf, _ = ct.build_workflow(nodes, slots, prompt="打", randomize_seed=False,
+                              controls={group: "武戏", speed: 4})
+    assert isinstance(wf["407"]["inputs"]["loras"], dict)
+    assert wf["407"]["inputs"]["text"] == lora_nodes()["407"]["inputs"]["text"]
+
+
+def test_the_speed_respects_its_own_range():
+    nodes, slots = lora_nodes(), ct.normalize_slots(lora_slots(), lora_nodes())
+    group, speed = lora_keys()
+    with pytest.raises(ValueError, match="武打速度"):
+        ct.build_workflow(nodes, slots, prompt="打", controls={group: "武戏", speed: 9})
+
+
+def test_a_slot_naming_a_lora_that_is_not_in_the_workflow_is_refused():
+    """绑了一颗图里没有的 lora：导入这一刻就要吵，别留到生成时甩一句英文报错。"""
+    slots = ct.normalize_slots(lora_slots(), lora_nodes())
+    for slot in slots:
+        if slot.get("lora"):
+            slot["lora"] = "MinimaxH3/不存在的lora"
+    with pytest.raises(ValueError, match="不存在的lora"):
+        ct.normalize_slots(slots, lora_nodes())
+    group = [{"kind": "prompt", "node": "404", "input": "value", "label": "完整提示词"},
+             {"kind": "select", "node": "407", "input": "loras", "label": "戏种",
+              "options": ["文戏", "武戏"], "value": "文戏",
+              "lora_group": ["MinimaxH3/H3_Fight_Flow_V1"], "lora_on": "武戏"}]
+    with pytest.raises(ValueError, match="H3_Fight_Flow_V1"):
+        ct.normalize_slots(group, lora_nodes())
+
+
+def test_the_combat_switch_must_say_which_option_means_on():
+    bad = [{"kind": "prompt", "node": "404", "input": "value", "label": "完整提示词"},
+           {"kind": "select", "node": "407", "input": "loras", "label": "戏种",
+            "options": ["文戏", "武戏"], "value": "文戏",
+            "lora_group": [LORA_COMBAT], "lora_on": "打戏"}]
+    with pytest.raises(ValueError, match="哪一档"):
+        ct.normalize_slots(bad, lora_nodes())
+
+
+def test_an_option_write_must_point_at_a_real_input():
+    bad = [{"kind": "prompt", "node": "404", "input": "value", "label": "完整提示词"},
+           {"kind": "select", "node": "407", "input": "loras", "label": "戏种",
+            "options": ["文戏", "武戏"], "value": "文戏", "lora_group": [LORA_COMBAT],
+            "lora_on": "武戏",
+            "option_writes": {"武戏": [{"node": "999", "input": "steps", "value": 12}]}}]
+    with pytest.raises(ValueError, match="999"):
+        ct.normalize_slots(bad, lora_nodes())
+
+
+def test_the_speed_only_shows_up_under_the_option_it_names():
+    """show_when 指另一颗控件的完整键：一台节点上两颗控件只有整颗键分得开。"""
+    slots = ct.normalize_slots(lora_slots(), lora_nodes())
+    speed = next(s for s in slots if s.get("lora"))
+    assert speed["show_when"] == {"input": "407.loras#@", "equals": "武戏"}
+    assert speed["slider"] is True and (speed["min"], speed["max"]) == (1, 6)
+
+
+def test_a_show_when_pointing_at_nothing_is_dropped_not_obeyed():
+    """认不出的条件宁可当作没有：凭空藏掉一颗控件比多显示一颗更糟。"""
+    slots = [dict(s) for s in ct.normalize_slots(lora_slots(), lora_nodes())]
+    speed = next(s for s in slots if s.get("lora"))
+    speed["show_when"] = {"input": "407.loras#不存在的", "equals": "武戏"}
+    again = ct.normalize_slots(slots, lora_nodes())
+    assert "show_when" not in next(s for s in again if s.get("lora"))
+
+
+def test_the_lora_managers_own_prompt_text_is_not_a_prompt_box():
+    """节点自带那段 <lora:...> 文字运行时会被丢掉，认成提示词框就是凭空多一个假框。"""
+    detected = ct.detect_slots(lora_nodes())["slots"]
+    prompts = [s for s in detected if s.get("kind") == "prompt"]
+    assert [(s["node"], s["input"]) for s in prompts] == [("404", "value")]
+
+
+def test_redetect_keeps_the_lora_controls_it_cannot_see():
+    """重新检测永远认不出 lora 控件；照检测结果的键来一遍就会把它们整个抹掉。"""
+    authored = ct.normalize_slots(lora_slots(), lora_nodes())
+    detected = ct.detect_slots(lora_nodes())["slots"]
+    assert not [s for s in detected if s.get("lora") or s.get("lora_group")]
+    kept = ct.keep_authored_contract(authored, detected)
+    assert [s.get("label") for s in kept if s.get("lora") or s.get("lora_group")] == ["戏种", "武打速度"]
+    group = next(s for s in kept if s.get("lora_group"))
+    assert group["option_writes"]["武戏"] == [{"node": "261", "input": "steps", "value": 12}]
+
+
+def test_redetect_does_not_duplicate_a_control_detection_already_found():
+    """检测认得出的那颗不许被作者那份顶出第二份。"""
+    authored = ct.normalize_slots(lora_slots(), lora_nodes())
+    detected = ct.detect_slots(lora_nodes())["slots"]
+    kept = ct.keep_authored_contract(authored, detected)
+    assert [ct.slot_key(s) for s in kept].count("404.value") == 1

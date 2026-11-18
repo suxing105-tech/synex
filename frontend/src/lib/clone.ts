@@ -69,6 +69,19 @@ export interface CloneSlot {
    * 而百万像素在这条分支里被节点整个忽略——留着它，用户改的是一个不会生效的数。
    */
   show_when?: { input: string; equals?: string; not_equals?: string } | null;
+  /**
+   * select 专用（Lora 管理器）：这一档管的是清单里点名的那几颗 lora。
+   * 选到 lora_on 那一档就把它们全开，其余选项一律全关——「武戏／文戏」就是这么实现的：
+   * 关掉之后那台节点等于直通，什么 lora 都不进模型。
+   * option_writes 是换档顺带要写的别的参数（武戏多两步采样），由后端落进工作流。
+   */
+  lora_group?: string[];
+  lora_on?: string;
+  option_writes?: Record<string, { node: string; input: string; value: string | number }[]>;
+  /** number 专用（Lora 管理器）：这一颗拧的是清单里点名的那一颗 lora 的强度 */
+  lora?: string;
+  /** number 专用：作者点名这一颗要画成滑块（1–6 档那种连续量），区间仍由 min/max 说话 */
+  slider?: boolean;
 }
 
 /** 云端模型那张声明卡要说的话：模型叫什么、能干什么、哪几条还没实测。 */
@@ -856,8 +869,27 @@ export function jobForTemplate(job: CloneJob, templateId: number | null): CloneJ
 
 // ---------- 槽位 ----------
 
-export function slotKey(slot: Pick<CloneSlot, "node" | "input">): string {
-  return `${slot.node}.${slot.input}`;
+/** 整组开关那颗（lora_group）的键尾，与后端 clone_templates.LORA_GROUP_SUFFIX 同值 */
+export const LORA_GROUP_SUFFIX = "#@";
+
+/** lora 名里最后那一段：MinimaxH3/H3_speed_slider_1.1 → H3_speed_slider_1.1 */
+export function loraShortName(name: string): string {
+  return String(name ?? "").split(/[\\/]/).filter(Boolean).pop() ?? "";
+}
+
+/**
+ * 槽位的键，两边共用一套口径（后端 clone_templates.slot_key）。
+ * 一台 Lora 管理器常挂两颗控件（整组开关 + 某一颗的强度），它们写的是同一个
+ * node.input——只靠「节点.输入」两颗粒键会撞，撞了就是后提交的那颗悄悄盖掉前一颗，
+ * 弹窗里两根都填过、工作流里只留一份。所以 lora 槽位的键带一段身份。
+ */
+export function slotKey(
+  slot: Pick<CloneSlot, "node" | "input"> & Partial<Pick<CloneSlot, "lora" | "lora_group">>,
+): string {
+  const base = `${slot.node}.${slot.input}`;
+  if (slot.lora) return `${base}#${loraShortName(slot.lora)}`;
+  if (slot.lora_group?.length) return `${base}${LORA_GROUP_SUFFIX}`;
+  return base;
 }
 
 /* 装饰记号：emoji、杂项符号与 Dingbats、变体选择符（摄影机、闪光灯、方框字母那一类）。
@@ -1076,7 +1108,11 @@ export function slotVisible(
   const when = slot.show_when;
   if (!when || !when.input) return true;
   const gate = controlSlots(template).find(
-    (one) => one.kind === "select" && one.node === slot.node && one.input === when.input,
+    (one) =>
+      one.kind === "select" &&
+      // 整颗键优先：一台 Lora 管理器上两颗控件共用同一个 node.input，
+      // 只有按整颗键找才不会把「戏种」认成并排那颗「武打速度」。
+      (slotKey(one) === when.input || (one.node === slot.node && one.input === when.input)),
   );
   if (!gate) return true;
   const value = controls[slotKey(gate)] ?? gate.value ?? "";

@@ -20,10 +20,14 @@ IMAGE_KEY = "qwen-multi-image-edit"
 MASK_KEY = "qwen-single-mask-edit"
 MASK_LABEL = "闪寻局部编辑"
 VIDEO_KEY = "h3-reference-video"
+# 视频族的第二条：带文戏／武戏开关的那版。它是新的「当前」，老那条留在库里切得回去。
+VIDEO_V2_KEY = "h3-reference-video-v2"
+VIDEO_V2_LABEL = "闪寻视频生成 H3"
 AUDIO_KEY = "qwen3-tts-voice-clone"
 DESIGN_KEY = "qwen3-tts-voice-design"
 CUSTOM_KEY = "qwen3-tts-custom-voice"
-ALL_KEYS = [IMAGE_KEY, MASK_KEY, VIDEO_KEY, AUDIO_KEY, DESIGN_KEY, CUSTOM_KEY]
+ALL_KEYS = [IMAGE_KEY, MASK_KEY, VIDEO_KEY, VIDEO_V2_KEY,
+            AUDIO_KEY, DESIGN_KEY, CUSTOM_KEY]
 AUDIO_LABELS = {"闪寻参考音色", "闪寻音色描述", "闪寻指定音色"}
 # 2026-11-16 苏醒：三族并列时统一带「生成」，只写「闪寻图片」读着像左边那排的类型筛选。
 IMAGE_LABEL = "闪寻图片生成"
@@ -87,6 +91,12 @@ def test_ships_one_workflow_per_family():
     assert by_key[MASK_KEY]["label"] == MASK_LABEL
     assert by_key[VIDEO_KEY]["media_kind"] == "video"
     assert by_key[VIDEO_KEY]["label"] == VIDEO_LABEL
+    # 视频族第二条：文戏／武戏那版。它要当新的当前，见
+    # test_the_combat_template_is_seeded_as_the_new_default
+    assert by_key[VIDEO_V2_KEY]["media_kind"] == "video"
+    assert by_key[VIDEO_V2_KEY]["label"] == VIDEO_V2_LABEL
+    assert by_key[VIDEO_V2_KEY]["prefer_active"] is True
+    assert by_key[VIDEO_KEY].get("prefer_active") is None, "老那条不抢，别每次启动都翻案"
     assert {by_key[k]["media_kind"] for k in (AUDIO_KEY, DESIGN_KEY, CUSTOM_KEY)} == {"audio"}
     assert {by_key[k]["label"] for k in (AUDIO_KEY, DESIGN_KEY, CUSTOM_KEY)} == AUDIO_LABELS
 
@@ -236,7 +246,8 @@ def test_shipped_slots_can_report_the_real_output_size():
 
 def test_fresh_install_seeds_every_family(seeded):
     rows = clone_templates.list_templates()
-    assert {r["name"] for r in rows} == {IMAGE_LABEL, MASK_LABEL, VIDEO_LABEL} | AUDIO_LABELS
+    assert {r["name"] for r in rows} == (
+        {IMAGE_LABEL, MASK_LABEL, VIDEO_LABEL, VIDEO_V2_LABEL} | AUDIO_LABELS)
     assert all(r["is_builtin"] for r in rows)
     assert {r["media_kind"] for r in rows} == {"image", "video", "audio"}
     # 每族各自一个「当前」：声音三条也只能有一条是当前，弹窗开出来才有唯一默认
@@ -256,6 +267,72 @@ def test_the_mask_template_is_seeded_but_not_the_default(seeded):
     assert [c["key"] for c in mask["reference_cells"]] == MASK_CELLS
     assert [c["label"] for c in mask["reference_cells"]] == MASK_CELL_LABELS
     assert [c["kind"] for c in mask["reference_cells"]] == ["image"] * len(MASK_CELLS)
+
+
+def test_the_combat_template_is_seeded_as_the_new_default(seeded):
+    """视频族换人了：随包点名新那条当当前，老那条留在库里，菜单里切得回去。
+
+    换的是「默认」，不是「只有一条能选」——老那条正文一字没动，
+    用它攒下来的配方还在，谁想回去在切换工作流里点一下就行。
+    """
+    video = [r for r in clone_templates.list_templates() if r["media_kind"] == "video"]
+    assert len(video) == 2
+    assert [r["bundled_key"] for r in video if r["is_active"]] == [VIDEO_V2_KEY]
+    assert [r["bundled_key"] for r in video if not r["is_active"]] == [VIDEO_KEY]
+    # 别的族不受牵连
+    assert [r["name"] for r in clone_templates.list_templates()
+            if r["media_kind"] == "image" and r["is_active"]] == [IMAGE_LABEL]
+    assert sum(1 for r in clone_templates.list_templates()
+               if r["media_kind"] == "audio" and r["is_active"]) == 1
+
+
+def test_prefer_active_does_not_steal_the_default_back(seeded):
+    """用户之后自己选了老那条，下次启动不许再抢回来：那是他的选择。"""
+    conn = seeded.main()
+    old = [r for r in clone_templates.list_templates() if r["bundled_key"] == VIDEO_KEY][0]
+    clone_templates.set_active(old["id"])
+    assert clone_bundled.seed(conn)["inserted"] == []
+    video = [r for r in clone_templates.list_templates() if r["media_kind"] == "video"]
+    assert [r["bundled_key"] for r in video if r["is_active"]] == [VIDEO_KEY]
+
+
+def test_the_combat_template_ships_the_drama_switch(seeded):
+    """随包那条的戏种约定：四颗 lora 一起开关，换档连带改步数，速度只管那一颗。
+
+    这几样都在 JSON 里手写死，检测给不出来，所以随包文件写错一个字节
+    就只有真机才看得见——在这儿先钉住。
+    """
+    row = json.loads(_row_of_key(seeded, VIDEO_V2_KEY)["slots"])
+    group = next(s for s in row if s.get("lora_group"))
+    speed = next(s for s in row if s.get("lora"))
+    assert group["label"] == "戏种" and group["options"] == ["文戏", "武戏"]
+    assert group["value"] == "文戏", "默认走文戏：多出来的那几颗 lora 不该是默认"
+    assert group["lora_on"] == "武戏"
+    assert len(group["lora_group"]) == 4
+    assert group["option_writes"] == {
+        "文戏": [{"node": "261", "input": "steps", "value": 10}],
+        "武戏": [{"node": "261", "input": "steps", "value": 12}]}
+    assert speed["label"] == "武打速度" and speed["lora"].endswith("H3_speed_slider_1.1")
+    assert (speed["min"], speed["max"], speed["value"], speed["slider"]) == (1, 6, 3, True)
+    # 键要和后端算出来的一字不差，否则弹窗里那颗滑块永远不出现
+    assert speed["show_when"]["input"] == clone_templates.slot_key(group) == "407.loras#@"
+
+def test_the_combat_template_keeps_the_author_workflow(seeded):
+    """正文只许动两处：三台参考视频加载器的 force_rate、默认提示词。
+
+    采样步数留在 10、transition_step 留在 6——那是「戏种」换档要写的值，
+    正文里改一个就等于偷偷改了默认档，两处的口径会分叉。
+    """
+    nodes = json.loads(_row_of_key(seeded, VIDEO_V2_KEY)["workflow"])
+    assert [nodes[n]["inputs"]["force_rate"] for n in ("25", "26", "27")] == [24, 24, 24]
+    assert nodes["261"]["inputs"]["steps"] == 10
+    assert nodes["397"]["inputs"]["transition_step"] == 6
+    assert nodes["407"]["class_type"] == "Lora Loader (LoraManager)"
+    text = nodes["404"]["inputs"]["value"]
+    assert "雨夜" not in text and "hooded" not in text, "作者那条片子的内容不该是新用户的默认"
+    for header in ("subject_definitions:", "summary:", "retention_analysis:",
+                   "detailed_description:", "overall_soundscape:", "non_diegetic_music:"):
+        assert header in text, header
 
 
 def test_the_mask_template_ships_the_slot_contracts(seeded):
@@ -551,16 +628,25 @@ def test_deleted_builtin_does_not_come_back(seeded):
 
 
 def test_deleting_the_active_one_promotes_a_sibling(seeded):
-    target = [r for r in clone_templates.list_templates() if r["bundled_key"] == VIDEO_KEY][0]
+    """删掉「当前」那条，同族顶上来的只能有一条，而且不许牵连别的族。"""
+    target = [r for r in clone_templates.list_templates()
+              if r["media_kind"] == "video" and r["is_active"]][0]
     clone_templates.delete_template(target["id"])
     rows = clone_templates.list_templates()
-    assert {r["media_kind"] for r in rows} == {"image", "audio"}
-    # 图片族有两条（闪寻图片生成 + 闪寻局部编辑），删掉的正好是「当前」那条：顶上来的只能有一条
+    video = [r for r in rows if r["media_kind"] == "video"]
+    assert [r["bundled_key"] for r in video if r["is_active"]] == [VIDEO_KEY], \
+        "当前那条删了，顶上来的是同族留下的那一条，且只有这一条"
+    # 图片族有两条（闪寻图片生成 + 闪寻局部编辑），删的是视频：图片族的当前不许跟着动
     image = [r for r in rows if r["media_kind"] == "image"]
     assert [r["name"] for r in image if r["is_active"]] == [IMAGE_LABEL], "图片族的当前不能跟着删视频那条一起变动"
     audio = [r for r in rows if r["media_kind"] == "audio"]
     assert sum(1 for r in audio if r["is_active"]) == 1, "声音三条里仍只有一条是当前"
     assert len(audio) == 3, "删掉视频不会牵连声音那三条"
+    # 视频族整个空了才是真的没这一族：这时候族别从菜单里消失。
+    # 删的是当前那条，顶上来的已经接着是 active，所以按「还剩几条」删，不按「未选中」筛。
+    assert len(video) == 1, "视频族本来就两条，删掉当前只剩这一条"
+    clone_templates.delete_template(video[0]["id"])
+    assert {r["media_kind"] for r in clone_templates.list_templates()} == {"image", "audio"}
 
 
 # ---------- 老库里存着的槽位缺「对齐步长」 ----------
@@ -652,7 +738,7 @@ def test_switch_off_keeps_a_fresh_db_empty(tmp_path: Path, monkeypatch):
 def test_api_reports_builtin_templates(seeded):
     with TestClient(app) as client:
         items = client.get("/api/clone/templates").json()["items"]
-    assert {i["name"] for i in items} == {IMAGE_LABEL, MASK_LABEL, VIDEO_LABEL} | AUDIO_LABELS
+    assert {i["name"] for i in items} == {IMAGE_LABEL, MASK_LABEL, VIDEO_LABEL, VIDEO_V2_LABEL} | AUDIO_LABELS
     assert all(i["is_builtin"] for i in items)
     assert {i["media_kind"] for i in items} == {"image", "video", "audio"}
 

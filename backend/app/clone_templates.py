@@ -146,7 +146,54 @@ CONTROL_LABELS = {
 
 
 def slot_key(slot: dict) -> str:
-    return f"{slot.get('node')}.{slot.get('input')}"
+    base = f"{slot.get('node')}.{slot.get('input')}"
+    # 一颗 Lora 管理器往往挂好几颗控件（整组开关一颗、某一颗 lora 的强度一颗），
+    # 它们写的都是同一个 loras 输入。只靠「节点.输入」两颗粒键会撞，
+    # 撞了就是后提交的那颗悄悄覆盖前一颗——弹窗里两根都填过，工作流里只留一份。
+    # 所以 lora 槽位的键要带一段身份。尾巴用 #：:: 已经被 autogrow 的参考位占了。
+    single = str(slot.get("lora") or "").strip()
+    if single:
+        return f"{base}#{lora_short_name(single)}"
+    if slot.get("lora_group"):
+        return f"{base}{LORA_GROUP_SUFFIX}"
+    return base
+
+
+# ---------- Lora 管理器：整组开关与单颗强度 ----------
+# ComfyUI-Lora-Manager 那颗 loras 输入不是普通值，是一份清单：
+#   {"__value__": [{"name","strength","clipStrength","active",...}, ...]}
+# 运行时读它的是 lora_loader.py：active 为假的条目直接跳过；强度取 strength，
+# clipStrength 只在缺省时才回落到 strength。两件事因此各有唯一写法：
+# 开不开只能写 active，而改强度必须 strength 与 clipStrength 一起写
+# （只改一份，提交给模型的标签就成了「新模型强度 + 旧字轨强度」）。
+
+LORA_GROUP_SUFFIX = "#@"                       # 整组开关那颗粒键的尾巴，见 slot_key
+LORA_NAME_SEPARATORS = ("/", chr(92))          # 斜杠与反斜杠：两种导出习惯都见过
+
+
+def lora_short_name(name: Any) -> str:
+    """lora 名里最后那一段：MinimaxH3/H3_speed_slider_1.1 -> H3_speed_slider_1.1。"""
+    flat = str(name or "")
+    for sep in LORA_NAME_SEPARATORS:
+        flat = flat.replace(sep, "/")
+    return flat.rsplit("/", 1)[-1]
+
+
+def _is_lora_manager(class_type: Any) -> bool:
+    return "loramanager" in str(class_type or "").lower()
+
+
+def lora_slot_entries(nodes: dict, slot: dict) -> list[dict]:
+    """按槽位取那份 lora 清单本体。
+
+    返回的是工作流里那个 list 本身，改条目就是改工作流，不需要再写回去。
+    结构不对（用户自己换过节点、或认错了槽位）直接抛——这一句在导入与生成都会走到。
+    """
+    raw = node_inputs(nodes.get(str(slot.get("node") or ""))).get(str(slot.get("input") or ""))
+    entries = raw.get("__value__") if isinstance(raw, dict) else raw
+    if not isinstance(entries, list):
+        raise ValueError(f"{slot_key(slot)} 读不出一份 lora 清单，请在设置里重新导入这份工作流。")
+    return entries
 
 # ---------- 多图参考（ComfyUI 的 autogrow 输入组） ----------
 
@@ -936,6 +983,10 @@ def detect_slots(nodes: dict, info: dict | None = None) -> dict:
     for nid in _ordered_ids(nodes):
         node = nodes[nid]
         class_type = str(node.get("class_type") or "").lower()
+        if _is_lora_manager(class_type):
+            # Lora 管理器自带一段拼好的 <lora:...> 文字，运行时那一步直接把它丢掉、
+            # 读的是 loras 清单。认成提示词框等于凭空多出一个「改了什么都没变」的框。
+            continue
         for key, value in node_inputs(node).items():
             lowered = key.lower()
             if "negative" in lowered:
@@ -1169,7 +1220,13 @@ def detect_media_kind(nodes: dict) -> str:
 
 # 这些字段不是从工作流里"看"出来的，是这份模板的用法说明：能不能画遮罩、
 # 提示词留空算不算一个模式、一颗旋钮管几台节点。重新检测没资格把它们抹掉。
-SLOT_CONTRACT_KEYS = ("mask", "allow_empty", "empty_hint", "sync_to", "show_when")
+# lora_group / lora_on / lora / option_writes / slider 这几样更不可能「看」出来：
+# 它们说的是「这几颗 lora 代表什么」「这一颗要画成滑块」，是作者写下的用法。
+SLOT_CONTRACT_KEYS = ("mask", "allow_empty", "empty_hint", "sync_to", "show_when",
+                      "lora_group", "lora_on", "lora", "option_writes", "slider")
+# 其中这几样连「槽位本身」都检测不出来：lora 控件的值不是某个 node.input 的字面量，
+# 而是那份清单里的条目，所以 object_info 里根本没有对应的旋钮。
+LORA_CONTRACT_KEYS = ("lora_group", "lora_on", "lora", "option_writes", "slider")
 
 
 def _load_slots(raw: Any) -> list[dict]:
@@ -1188,7 +1245,12 @@ def normalize_slots(raw: Any, nodes: dict) -> list[dict]:
     """槽位必须落在真实存在、且值是字面量的输入上；否则抛中文错误。"""
     out: list[dict] = []
     seen: set[str] = set()
-    for item in _load_slots(raw):
+    authored = _load_slots(raw)
+    # show_when 可以指向「同模板里另一颗控件的完整键」（一台 Lora 管理器挂两颗控件那种）。
+    # 条件那颗可能排在后面，所以先把作者写的控件键全数一遍，不靠先后顺序。
+    control_keys = {slot_key(x) for x in authored
+                    if str(x.get("kind") or "") in ("select", "number")}
+    for item in authored:
         kind = str(item.get("kind") or "")
         node = str(item.get("node") or "")
         key = str(item.get("input") or "")
@@ -1228,6 +1290,10 @@ def normalize_slots(raw: Any, nodes: dict) -> list[dict]:
                        if isinstance(x, (int, float)) and not isinstance(x, bool)]
             if presets:
                 slot["presets"] = presets[:12]
+            if item.get("slider") is True:
+                # 「1 到 6 档」这种连续量点按钮像在猜，作者说要滑块就画滑块。
+                # 只传意图，区间仍由 min/max 说话，前端不自己挑上下限。
+                slot["slider"] = True
             # 对齐步长也得活着过一遍存库：弹窗靠它算「这一趟出多大」，丢了就退回 8，
             # 把 32 对齐的工作流报成 8 对齐的尺寸（几十像素的差）。
             # 谁说了算：节点。真跑起来用的是工作流里那个数，作者写的（内置槽位文件里那一份、
@@ -1240,6 +1306,56 @@ def normalize_slots(raw: Any, nodes: dict) -> list[dict]:
                     not isinstance(authored, bool) and isinstance(authored, (int, float))
                     and 1 <= authored <= 1024):
                 slot["multiple"] = int(authored)
+        # ---- Lora 管理器那两类：整组开关 / 单颗强度 ----
+        # 点名的 lora 在不在图里，必须导入这一刻就吵。留到生成时才失败，
+        # 用户看到的是一句 ComfyUI 的英文报错，而根因是槽位绑了一颗不存在的 lora。
+        group = item.get("lora_group")
+        if kind == "select" and isinstance(group, list):
+            present = [str(e.get("name") or "") for e in lora_slot_entries(nodes, slot)]
+            named = [str(x or "").strip() for x in group if str(x or "").strip()]
+            if not named:
+                raise ValueError(f"控件 {slot_key(slot)} 没点名任何 lora，请重新导入这份工作流。")
+            absent = [x for x in named if x not in present]
+            if absent:
+                raise ValueError(f"节点 {node} 的 lora 清单里没有 {'、'.join(absent)}，"
+                                 "这和工作流里那几颗对不上，请重新导入这份工作流。")
+            slot["lora_group"] = named
+            on = str(item.get("lora_on") or "").strip()
+            if on not in (slot.get("options") or []):
+                raise ValueError(f"控件 {slot_key(slot)} 要说清哪一档是「开」，"
+                                 f"目前选项是 {'、'.join(slot.get('options') or [])}。")
+            slot["lora_on"] = on
+            writes = item.get("option_writes")
+            if isinstance(writes, dict):
+                clean: dict[str, list[dict]] = {}
+                for opt, rows in writes.items():
+                    option = str(opt or "")
+                    if option not in slot["options"] or not isinstance(rows, list):
+                        continue
+                    keep: list[dict] = []
+                    for row in rows:
+                        if not isinstance(row, dict):
+                            continue
+                        rnode, rkey = str(row.get("node") or ""), str(row.get("input") or "")
+                        if rnode not in nodes or rkey not in node_inputs(nodes[rnode]):
+                            raise ValueError(f"控件 {slot_key(slot)} 换档时要写的 {rnode}.{rkey} "
+                                             "不在这份工作流里，请重新导入。")
+                        written = row.get("value")
+                        if isinstance(written, bool) or not isinstance(
+                                written, (str, int, float)):
+                            continue
+                        keep.append({"node": rnode, "input": rkey, "value": written})
+                    if keep:
+                        clean[option] = keep
+                if clean:
+                    slot["option_writes"] = clean
+        single_lora = str(item.get("lora") or "").strip()
+        if kind == "number" and single_lora:
+            present = [str(e.get("name") or "") for e in lora_slot_entries(nodes, slot)]
+            if single_lora not in present:
+                raise ValueError(f"节点 {node} 的 lora 清单里没有 {single_lora}，"
+                                 "这和工作流里那几颗对不上，请重新导入这份工作流。")
+            slot["lora"] = single_lora
         if kind == "image" and str(item.get("mask") or "") == "alpha":
             # 这台加载器把「这张图」和「只改哪一块」一起收进同一个文件的透明通道，
             # 弹窗里因此多一个画遮罩的入口。只认 alpha 这一种投递方式：
@@ -1261,8 +1377,14 @@ def normalize_slots(raw: Any, nodes: dict) -> list[dict]:
             # 绝不因为一个算不出的条件把控件藏死。
             when_key = str(shown.get("input") or "")
             equals, not_equals = shown.get("equals"), shown.get("not_equals")
-            if (when_key and when_key != key and when_key in inputs
-                    and isinstance(inputs[when_key], str)):
+            # 条件挂在哪儿：要么是同节点另一个字面量文字输入（绝大多数），
+            # 要么是同模板里另一颗控件的完整键——一颗 Lora 管理器挂两颗控件时，
+            # 两颗粒键只有完整键分得开，而它们的值根本不是 node.input 本身。
+            same_node = bool(when_key) and when_key != key and when_key in inputs \
+                and isinstance(inputs[when_key], str)
+            by_full_key = (bool(when_key) and when_key != slot_key(slot)
+                           and when_key in control_keys)
+            if same_node or by_full_key:
                 if isinstance(equals, str) and equals:
                     slot["show_when"] = {"input": when_key, "equals": equals[:120]}
                 elif isinstance(not_equals, str) and not_equals:
@@ -1411,6 +1533,40 @@ def _attach_grown_reference(nodes: dict, slot: dict, name: str, file_name: str) 
     target_inputs.update({f"{group}.{name}": [link, 0]})
 
 
+def _apply_lora_group(workflow: dict, slot: dict, value: Any) -> None:
+    """整组开关：选到「开」那一档就点亮点名的几颗 lora，其余选项一律全灭。
+
+    全灭不是「不动」：文戏要的就是这台节点变成直通，四颗一颗都不进模型。
+    换档写入（option_writes）走的是普通 node.input，用来把「戏种」这件事
+    连带到的别的参数一起改掉——比如武戏多两步采样。
+    """
+    _validate_control(slot, value)
+    named = set(slot.get("lora_group") or [])
+    live = value == slot.get("lora_on")
+    for entry in lora_slot_entries(workflow, slot):
+        if str(entry.get("name") or "") in named:
+            entry["active"] = bool(live)
+    for write in ((slot.get("option_writes") or {}).get(str(value)) or []):
+        node_inputs(workflow.get(str(write["node"]))).update(
+            {str(write["input"]): write["value"]})
+
+
+def _apply_lora_strength(workflow: dict, slot: dict, value: Any) -> None:
+    """单颗 lora 的强度：strength 与 clipStrength 一起写，缺一个就是半新半旧。
+
+    关着的那颗不写：运行时 active 为假就跳过它，留着原作者那份数，
+    在 ComfyUI 里核对「这一趟到底加载了谁」反而更清楚。
+    """
+    _validate_control(slot, value)
+    want = str(slot.get("lora") or "")
+    text = f"{float(value):.2f}"
+    for entry in lora_slot_entries(workflow, slot):
+        if str(entry.get("name") or "") != want or not entry.get("active"):
+            continue
+        entry["strength"] = text
+        entry["clipStrength"] = text
+
+
 def build_workflow(
     nodes: dict,
     slots: list[dict],
@@ -1457,10 +1613,28 @@ def build_workflow(
         if grow_name not in grow_names(slot):
             raise ValueError(f"{key} 不是这份工作流空着的参考位，请重新打开弹窗再试。")
         _attach_grown_reference(workflow, slot, grow_name, str(image_name))
-    for key, value in (controls or {}).items():
+    pending = dict(controls or {})
+    for key in pending:
         slot = by_key.get(key)
         if slot is None or slot.get("kind") not in ("select", "number"):
             raise ValueError(f"{key} 不是这份工作流声明的控件，请重新打开弹窗再试。")
+    # 三趟，顺序固定，不吃提交顺序（JSON 的键序一变，「强度只写给活着的 lora」
+    # 就退化成「写给全部」，而这种错不会报错，只是出片和屏幕上选的不一样）：
+    #   ①整组开关：决定哪几颗 lora 活着，顺带做换档写入（戏种连带改采样步数）；
+    #   ②单颗强度：只写给第一趟之后活着的那些；
+    #   ③其余控件：照老办法直写 node.input。
+    for key, value in pending.items():
+        slot = by_key[key]
+        if value is not None and slot.get("kind") == "select" and slot.get("lora_group"):
+            _apply_lora_group(workflow, slot, value)
+    for key, value in pending.items():
+        slot = by_key[key]
+        if value is not None and slot.get("lora") and not slot.get("lora_group"):
+            _apply_lora_strength(workflow, slot, value)
+    for key, value in pending.items():
+        slot = by_key[key]
+        if slot.get("lora_group") or slot.get("lora"):
+            continue        # 前两颗自己写 lora 清单，不能往 node.input 上写「武戏」
         if value is None:
             continue
         _validate_control(slot, value)
@@ -1652,6 +1826,17 @@ def keep_authored_contract(old: list[dict], detected: list[dict]) -> list[dict]:
             if extra in before:
                 keep[extra] = before[extra]
         out.append(keep)
+    # 检测认不出 lora 那两类控件（它们的值不是 node.input 的字面量，object_info 里
+    # 也没有对应旋钮）。照上面的循环走，重新检测会把「戏种」「武打速度」整个抹掉，
+    # 而正文里那几颗 lora 还是开着的——工作流从此固定在武戏，还不报错。
+    # 所以作者点名过的 lora 控件一律补回来：键在检测结果里已经有了的不补（那份是新的），
+    # 补在末尾（面板按类型分行画，顺序只影响同一行里的先后，不影响能用）。
+    landed = {slot_key(x) for x in detected}
+    for before in old:
+        if not isinstance(before, dict) or slot_key(before) in landed:
+            continue
+        if any(extra in before for extra in LORA_CONTRACT_KEYS):
+            out.append(dict(before))
     return out
 
 

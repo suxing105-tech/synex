@@ -20,7 +20,7 @@ from app.comfyui_client import ComfyUIClient
 from app.db import get_pool
 from app.indexer import Indexer
 
-from .conftest import make_png
+from .conftest import lora_keys, lora_nodes, lora_slots, make_png
 
 FAKE_URL = "http://comfy.test.invalid:9"
 
@@ -777,3 +777,79 @@ def test_output_summary_reports_the_measured_duration(init_db, source_image):
     video = clone_jobs._output_summary(source_image, "源图.png")
     assert video["kind"] == "video"
     assert video["duration_seconds"] == 12.4
+
+
+# ---------- Lora 管理器：戏种开关要一路打到提交给 ComfyUI 的那份载荷 ----------
+# 槽位层（clone_templates）已经证明了 build_workflow 的写法对不对，这里要证的是
+# 再外面两层：弹窗提交的键（407.loras#@ / 407.loras#H3_speed_slider_1.1）能被
+# plan_request 认下来，以及真的落到 /prompt 请求体里时字段没被中间的哪一手改坏。
+
+
+def lora_workflow() -> dict:
+    """把测试里那台 Lora 管理器挂到一条带参考图的链上（接线怎么接的不重要）。"""
+    nodes = json.loads(json.dumps(lora_nodes()))
+    nodes["543"] = {"class_type": "LoadImage", "inputs": {"image": "旧参考图.png"},
+                    "_meta": {"title": "加载图像"}}
+    nodes["265"]["inputs"]["image"] = ["543", 0]
+    return nodes
+
+
+def drama_slots() -> list[dict]:
+    """共享样本再加一格参考图：这条链要能上传素材，才谈得上「新增两颗控件没弄坏原链路」。"""
+    return list(lora_slots()) + [
+        {"kind": "image", "node": "543", "input": "image", "label": "首帧参考"}]
+
+
+def drama_template() -> dict:
+    return clone_templates.create_template("戏种开关", lora_workflow(), drama_slots())
+
+
+async def test_combat_ships_the_loras_and_the_extra_step(fake, source_image, init_db):
+    """武戏：点名的 lora 全开、速度档同时写 strength 与 clipStrength、采样 12 步。"""
+    group_key, speed_key = lora_keys()
+    tpl = drama_template()
+    await start(tpl["id"], source_image,
+                references=[{"slot": "543.image", "image_id": source_image}],
+                controls={group_key: "武戏", speed_key: 5})
+    state = await finish()
+    assert state["state"] == "done", state
+    sent = fake.prompts[0]["prompt"]
+    entries = sent["407"]["inputs"]["loras"]["__value__"]
+    assert [e["active"] for e in entries] == [True, True], "武戏要的就是这几颗都进模型"
+    speed = [e for e in entries if e["name"].endswith("H3_speed_slider_1.1")][0]
+    # 两个字段必须同值：只差 0.001 以上，节点就会写成 <lora:名:3:0.65> 这种带两档的形态
+    assert (speed["strength"], speed["clipStrength"]) == ("5.00", "5.00")
+    other = [e for e in entries if e["name"] != speed["name"]][0]
+    assert other["strength"] == "0.65", "没点名的那颗不许被速度档顺手改掉"
+    assert sent["261"]["inputs"]["steps"] == 12, "武戏多两步采样"
+    # 参考图照常上传注入：新增两颗控件不该把原来那套弄坏
+    assert "seekx_ref_" in sent["543"]["inputs"]["image"], "参考图照常上传后注入"
+    assert "武戏" not in json.dumps(sent["407"], ensure_ascii=False), \
+        "戏种是开关，不是往工作流里写一句话"
+
+
+async def test_dialogue_skips_every_lora_and_keeps_the_default_step(fake, source_image, init_db):
+    """文戏：四颗全灭（这台节点变成直通）、采样退回 10 步、速度档不生效。"""
+    group_key, speed_key = lora_keys()
+    tpl = drama_template()
+    await start(tpl["id"], source_image,
+                references=[{"slot": "543.image", "image_id": source_image}],
+                controls={group_key: "文戏", speed_key: 5})
+    state = await finish()
+    assert state["state"] == "done", state
+    sent = fake.prompts[0]["prompt"]
+    entries = sent["407"]["inputs"]["loras"]["__value__"]
+    assert [e["active"] for e in entries] == [False, False], "文戏要的是这颗 lora 一颗都不加载"
+    speed = [e for e in entries if e["name"].endswith("H3_speed_slider_1.1")][0]
+    assert speed["strength"] == "3.00", "关着的 lora 不写强度：留着原作者那份数更好核对"
+    assert sent["261"]["inputs"]["steps"] == 10
+
+
+async def test_a_lora_control_key_the_flow_never_declared_is_refused(fake, source_image, init_db):
+    """键名写错就得当场拒绝，不能当成普通旋钮往 node.input 上写。"""
+    tpl = drama_template()
+    with pytest.raises(ValueError, match="不是这份工作流声明的控件"):
+        await start(tpl["id"], source_image,
+                    references=[{"slot": "543.image", "image_id": source_image}],
+                    controls={"407.loras": "武戏"})
+    clone_jobs.reset_for_tests()

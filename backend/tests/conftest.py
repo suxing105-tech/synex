@@ -206,3 +206,65 @@ def connect():
     c = sqlite3.connect(":memory:")
     c.row_factory = sqlite3.Row
     return c
+
+
+# ---------- Lora 管理器：戏种开关与武打速度 ----------
+# 一台 Lora 管理器挂两颗控件：整组开关（文戏／武戏）和其中一颗 lora 的强度。
+# 它们的值都不是某个 node.input 的字面量，而是 loras 清单里的条目，
+# 所以「撞键」「写错字段」「认错 lora」这三类错都只在我们这一侧会发生。
+LORA_COMBAT = "MinimaxH3/H3_Combat_V2"
+LORA_SPEED = "MinimaxH3/H3_speed_slider_1.1"
+
+
+def lora_nodes() -> dict:
+    def entry(name: str, strength: str) -> dict:
+        return {"name": name, "strength": strength, "active": True, "expanded": False,
+                "clipStrength": strength, "selected": False, "locked": False}
+
+    return {
+        "404": {"class_type": "PrimitiveStringMultiline",
+                "inputs": {"value": "一份写好的默认提示词"}, "_meta": {"title": "提示词"}},
+        "407": {
+            "class_type": "Lora Loader (LoraManager)",
+            "inputs": {
+                # 运行时这一步直接 del text，节点读的是 loras 清单
+                "text": f"<lora:{LORA_COMBAT}:0.65> <lora:{LORA_SPEED}:3.00>",
+                "loras": {"__value__": [entry(LORA_COMBAT, "0.65"), entry(LORA_SPEED, "3.00")]},
+                "model": ["412", 0],
+            },
+            "_meta": {"title": "LoRA加载器 (Lora管理器)"},
+        },
+        "412": {"class_type": "LoraLoaderModelOnly",
+                "inputs": {"lora_name": "a.safetensors", "strength_model": 1}},
+        "261": {"class_type": "BasicScheduler",
+                "inputs": {"scheduler": "simple", "steps": 10, "denoise": 1, "model": ["412", 0]}},
+        "265": {"class_type": "MiniMaxH3ReferenceToVideo",
+                "inputs": {"prompt": ["404", 0], "length": 124}},
+        "397": {"class_type": "SelfLiftH3Sampler",
+                "inputs": {"seed": 12345, "sigmas": ["261", 0], "positive": ["265", 0]}},
+        "600": {"class_type": "SaveImage", "inputs": {"images": ["397", 0]}},
+    }
+
+
+def lora_slots() -> list[dict]:
+    return [
+        {"kind": "prompt", "node": "404", "input": "value", "label": "完整提示词"},
+        {"kind": "select", "node": "407", "input": "loras", "label": "戏种",
+         "options": ["文戏", "武戏"], "value": "文戏",
+         "lora_group": [LORA_COMBAT, LORA_SPEED], "lora_on": "武戏",
+         "option_writes": {"文戏": [{"node": "261", "input": "steps", "value": 10}],
+                           "武戏": [{"node": "261", "input": "steps", "value": 12}]}},
+        {"kind": "number", "node": "407", "input": "loras", "label": "武打速度",
+         "lora": LORA_SPEED, "min": 1, "max": 6, "step": 1, "value": 3, "slider": True,
+         "show_when": {"input": "407.loras#@", "equals": "武戏"}},
+    ]
+
+
+def lora_keys() -> tuple[str, str]:
+    """两颗 lora 控件的提交键：整组那根固定叫 407.loras#@，速度那根带 lora 名。"""
+    from app import clone_templates as ct
+
+    slots = ct.normalize_slots(lora_slots(), lora_nodes())
+    group = next(s for s in slots if s.get("lora_group"))
+    speed = next(s for s in slots if s.get("lora"))
+    return ct.slot_key(group), ct.slot_key(speed)

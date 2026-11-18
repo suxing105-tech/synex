@@ -551,6 +551,29 @@
     const hi = Math.min(DURATION_MAX, Math.floor(slot.max ?? DURATION_MAX));
     return hi > lo ? [lo, hi] : [DURATION_MIN, DURATION_MAX];
   }
+  /**
+   * 该画滑块的颗：时长（连续量，点档位像在猜），加上工作流自己点名要滑块的
+   * （后端给的 slider，比如「武打速度」1–6 档）。
+   * 点名那颗不吃 presets：既然要拖，就别再摆一排按钮跟她抢同一件事；
+   * 上下限也只认槽位写的 min/max，不像时长那样再套一层 3–15 的常识——
+   * 人家是 1–6，凭什么按秒数的经验改它的量程。没给量程就不画滑块，退回数字框。
+   */
+  function isSliderSlot(slot: CloneSlot): boolean {
+    if (slot.slider) {
+      const lo = Math.floor(Number(slot.min));
+      const hi = Math.ceil(Number(slot.max));
+      return Number.isFinite(lo) && Number.isFinite(hi) && hi > lo;
+    }
+    return isDurationSlot(slot);
+  }
+  function sliderRange(slot: CloneSlot): [number, number] {
+    if (!slot.slider) return durationRange(slot);
+    return [Math.floor(Number(slot.min)), Math.ceil(Number(slot.max))];
+  }
+  function sliderStep(slot: CloneSlot): number {
+    const step = Number(slot.step);
+    return slot.slider && Number.isFinite(step) && step > 0 ? step : 1;
+  }
   /** 滑块只画落在区间里的值：数字框里刚敲了个 90，滑块就该顶到最右而不是消失。 */
   function slideValue(value: string | number | undefined, range: [number, number]): number {
     return Math.min(range[1], Math.max(range[0], Number(value) || range[0]));
@@ -2686,10 +2709,10 @@
                         {/each}
                         {#each numberSlots as slot (slotKey(slot))}
                           {@const key = slotKey(slot)}
-                          {@const range = durationRange(slot)}
+                          {@const range = sliderRange(slot)}
                           {@const steps = numberPresets(slot)}
                           <p class="cm-pop-title">{cleanNodeTitle(slot.label)}</p>
-                          {#if isDurationSlot(slot)}
+                          {#if isSliderSlot(slot)}
                             <!-- 时长是连续量：档位按钮点起来像在猜，拖滑块到几秒就是几秒（3–15 秒，
                                  也不越过工作流自己给的上下限）。右边留个数字框，要几秒直接敲。 -->
                             <div class="cm-slide">
@@ -2698,7 +2721,7 @@
                                 class="cm-slider"
                                 min={range[0]}
                                 max={range[1]}
-                                step="1"
+                                step={sliderStep(slot)}
                                 value={slideValue(controls[key], range)}
                                 style="--min: {range[0]}; --span: {range[1] - range[0]}; --value: {slideValue(controls[key], range)}"
                                 aria-label={`${slot.label}滑块`}
@@ -2710,10 +2733,10 @@
                                 aria-label={slot.label}
                                 min={range[0]}
                                 max={range[1]}
-                                step="1"
+                                step={sliderStep(slot)}
                                 bind:value={controls[key]}
                               />
-                              <span class="cm-slide-unit">{numberUnit(slot) || "秒"}</span>
+                              <span class="cm-slide-unit">{numberUnit(slot) || (slot.slider ? "" : "秒")}</span>
                             </div>
                           {:else if steps.length}
                             <div class="cm-seg" role="group" aria-label={`${slot.label}档位`}>

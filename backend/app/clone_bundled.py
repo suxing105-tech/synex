@@ -17,6 +17,8 @@
   的那一版（给某格加遮罩标记、撤掉一条多余的输入框都算）光比 sha 会被当成没变，
   用户库里永远留着旧约定。所以正文没被改过时，还要再比一次槽位。
 - 用户删掉的内置模板不会下次启动又长回来（记进 meta 的 dismissed 名单）。
+- `prefer_active: true` 的那条第一次装进库时顶掉同族原先的「当前」，
+  老那条留在库里不再当前，用户随时能在菜单里切回去；之后不再抢（见 seed）。
 """
 from __future__ import annotations
 
@@ -308,12 +310,20 @@ def seed(conn) -> dict:
             is_first = conn.execute(
                 "SELECT 1 FROM clone_templates WHERE media_kind=? AND is_active=1", (kind,)
             ).fetchone() is None
-            conn.execute(
+            cursor = conn.execute(
                 "INSERT INTO clone_templates(name, workflow, slots, default_prompt, is_active,"
                 " media_kind, bundled_key, bundled_sha) VALUES(?,?,?,?,?,?,?,?)",
                 (label, json.dumps(nodes, ensure_ascii=False), json.dumps(slots, ensure_ascii=False),
                  default_prompt_for(nodes, slots), 1 if is_first else 0, kind, key, sha),
             )
+            if item.get("prefer_active"):
+                # 包里点名这一条是新的当前（一条工作流被它的后继取代）。只在这个 key
+                # 第一次进库时顶一次，同族原先那条摘下来留在库里——菜单里切得回去。
+                # 不做「每次启动都抢回来」：用户之后自己选了别的，那是他的选择。
+                new_id = int(cursor.lastrowid or 0)
+                conn.execute("UPDATE clone_templates SET is_active=0 WHERE media_kind=? AND id<>?",
+                             (kind, new_id))
+                conn.execute("UPDATE clone_templates SET is_active=1 WHERE id=?", (new_id,))
             summary["inserted"].append(_describe(key, nodes, slots))
             continue
 

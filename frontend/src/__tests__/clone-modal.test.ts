@@ -4406,3 +4406,51 @@ it('选「自定义宽高」就把宽高两个框换进来、百万像素换出�
   const sent = (submitted ?? {}) as unknown as { controls?: Record<string, unknown> };
   expect(sent.controls?.['584.百万像素']).toBe(2);
 });
+
+it('戏种默认文戏＝不加载 lora：武打速度不出现；切到武戏才出来，量程只认工作流写的 1–6 档', async () => {
+  // 真机那份 H3 的开关形状：一台 Lora 管理器 = 戏种（整组开关）+ 武打速度（其中一颗的强度）
+  const H3_DRAMA = {
+    ...H3, control_count: 2,
+    slots: [
+      { kind: 'prompt', node: '404', input: 'value', label: '完整提示词' },
+      { kind: 'image', node: '188', input: 'image', label: '参考图片',
+        grow: { node: '136', group: 'ref_images', names: ['ref_image_1'], type: 'IMAGE' } },
+      { kind: 'video', node: '185', input: 'video', label: '参考视频' },
+      { kind: 'select', node: '252', input: 'aspect_ratio', label: '比例', options: ['16:9', '9:16'], value: '16:9' },
+      { kind: 'select', node: '407', input: 'loras', label: '戏种', options: ['文戏', '武戏'], value: '文戏',
+        lora_group: ['MinimaxH3/H3_Combat_V2', 'MinimaxH3/H3_speed_slider_1.1'], lora_on: '武戏' },
+      { kind: 'number', node: '407', input: 'loras', label: '武打速度', lora: 'MinimaxH3/H3_speed_slider_1.1',
+        min: 1, max: 6, step: 1, value: 3, unit: '档', slider: true,
+        show_when: { input: '407.loras#@', equals: '武戏' } },
+    ],
+  };
+  routes({ ...videoRoutes(), '/api/clone/templates': { items: [H3_DRAMA] } });
+  const screen = await ready({ image: VIDEO_CARD });
+  await fireEvent.click(screen.getByRole('button', { name: /^(画面参数|音频参数)$/ }));
+  const pop = await screen.findByRole('dialog', { name: /^(画面参数|音频参数)$/ });
+  const pill = () => screen.getByRole('button', { name: /^(画面参数|音频参数)$/ });
+  expect(pop.textContent).toContain('戏种');
+  // 文戏：这台 Lora 管理器四颗全灭，那一档根本没有东西可调
+  expect(screen.queryByLabelText('武打速度滑块')).toBeNull();
+  expect(pill().textContent).toContain('文戏');
+  expect(pill().textContent).not.toContain('档');
+
+  await fireEvent.click(within(pop).getByRole('button', { name: '武戏' }));
+  const slider = screen.getByLabelText('武打速度滑块') as HTMLInputElement;
+  // 量程只吃槽位自己写的 1/6，不像时长那样套一层 3–15 秒的常识
+  expect([slider.min, slider.max, slider.step]).toEqual(['1', '6', '1']);
+  expect(slider.value).toBe('3');
+  slider.value = '5';
+  await fireEvent.input(slider);
+  await tick();
+  expect((screen.getByLabelText('武打速度') as HTMLInputElement).value).toBe('5');
+  expect(pop.querySelector('.cm-slide-unit')?.textContent).toBe('档');
+  // 点名的滑块不再配档位按钮：整段都拖得到，摆六颗反而像只有这六档
+  expect(pop.querySelector('[aria-label="武打速度档位"]')).toBeNull();
+  expect(pill().textContent).toContain('武戏 / 5档');
+
+  // 换回文戏：速度当场退场，胶囊也不再报那一档（报出去就是谎报参数）
+  await fireEvent.click(within(pop).getByRole('button', { name: '文戏' }));
+  expect(screen.queryByLabelText('武打速度滑块')).toBeNull();
+  expect(pill().textContent).not.toContain('档');
+});

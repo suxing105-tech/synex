@@ -112,6 +112,14 @@ REFERENCE_KINDS = ("image", "audio", "video")
 REFERENCE_INPUT_KEYS = {"image": "image", "audio": "audio", "video": "video"}
 REFERENCE_LABEL_STEMS = {"image": "图片", "audio": "音频", "video": "视频"}
 REFERENCE_TYPE_FOR_KIND = {"image": "IMAGE", "audio": "AUDIO", "video": "IMAGE"}
+# 素材组格名前缀 -> 这一族。参考位谁排第几，看的是它接进了消费节点的第几格
+# （H3 写成 ref_images.ref_image_0、ref_videos.ref_video_0…，Qwen 写成 images.image_1…），
+# 不是节点号：模型眼里的 <Picture 1> / <Video 1> 就是 ref_image_0 / ref_video_0 那一格。
+# 只认这几个前缀。ref_video_audio_0 这种不在名单里的，是参考视频自己的音轨，
+# 不占参考格（它的计数在 wired_reference_soundtracks），认错族就会把编号排乱。
+CELL_STEM_KINDS = {"image": "image", "ref_image": "image",
+                   "audio": "audio", "ref_audio": "audio",
+                   "video": "video", "ref_video": "video"}
 # H3 在上下文里给参考拼的标签，带空格（comfy/text_encoders/minimax.py:175 是 "<Picture %d>: "）。
 # 提示词里回指参考就写这个，弹窗 @ 引用要插入的也是它。
 TAG_TEMPLATES = {"image": "<Picture {n}>", "audio": "<Audio {n}>", "video": "<Video {n}>"}
@@ -554,6 +562,68 @@ def _ordered_ids(nodes: dict) -> list[str]:
         return (0, int(nid), "") if nid.isdigit() else (1, 0, nid)
 
     return sorted(nodes, key=key)
+
+
+def _wired_reference_cells(nodes: dict) -> dict[str, dict[str, tuple[int, str, int]]]:
+    """{加载器节点号: {族: (消费节点序号, 组名, 格号)}} —— 一次扫完全图的参考接线。
+
+    API 格式里连线只写在消费方（`"ref_images.ref_image_1": ["188", 0]`），所以要反过来扫。
+    只认「组名.格名_数字」这种 autogrow 写法：ComfyUI 存盘时素材组一律是这个形状，
+    第三方平铺的 image_01…05 没有组名可核对族，不猜（宁可不排，也别把本来对的次序改坏）。
+    同一台加载器被连到多格时取最靠前的那格。
+    """
+    ranks = {nid: i for i, nid in enumerate(_ordered_ids(nodes))}
+    out: dict[str, dict[str, tuple[int, str, int]]] = {}
+    for nid, node in nodes.items():
+        for key, value in node_inputs(node).items():
+            if not isinstance(value, (list, tuple)) or len(value) < 2:
+                continue
+            group, dot, cell = str(key).rpartition(".")
+            if not dot:
+                continue        # 平铺的 image_02 那种没有组名，核对不了族，不认
+            stem, sep, num = cell.rpartition("_")
+            if not sep or not num.isdigit():
+                continue
+            kind = CELL_STEM_KINDS.get(stem.rstrip("s"))
+            if not kind:
+                continue
+            hit = (ranks.get(nid, len(ranks)), group, int(num))
+            bucket = out.setdefault(str(value[0]), {})
+            if bucket.get(kind) is None or hit < bucket[kind]:
+                bucket[kind] = hit
+    return out
+
+
+def sort_reference_slots(nodes: dict, slots: list[dict]) -> list[dict]:
+    """参考槽位照「接进模型的第几格」重排，一族里接线说不清就整族照原样。
+
+    为什么必须重排：导入时按节点号数参考位，而 ComfyUI 的节点号是随手分配的。
+    苏醒那份 H3 工作流里 25/26/27 三台视频加载器实际接的是 ref_video_1/2/0，
+    照节点号数就把 25 号报成「视频1」，用户在弹窗里 @ 的 <Video 1> 其实是 ref_video_1
+    那份——编号和 @ 引用一起指错人，而且一声不响。
+
+    「说不清」有两种：这一族里有加载器根本没接到素材组（局部编辑那张底图是走
+    VAEEncode 进模型的，不该跟着参考格编号跑），或者两台挤在同一格。这两种都没有
+    可靠的接线依据，就保留导入时的顺序，不硬编一个可能更错的。
+
+    只动同一族内部的先后：文字位、控件原位不动，参考位的键（node.input）也不变，
+    所以库里记的历史来源照旧认得，变的只是编号和 @ 引用与接线对不对得上。
+    """
+    if not nodes or not slots:
+        return list(slots)
+    cells = _wired_reference_cells(nodes)
+    out = list(slots)
+    for kind in REFERENCE_KINDS:
+        at = [i for i, slot in enumerate(out) if slot.get("kind") == kind]
+        if len(at) < 2:
+            continue
+        keyed = [cells.get(str(out[i].get("node")), {}).get(kind) for i in at]
+        if any(hit is None for hit in keyed) or len(set(keyed)) != len(keyed):
+            continue
+        moved = [out[at[j]] for j in sorted(range(len(at)), key=lambda j: keyed[j])]
+        for pos, slot in enumerate(moved):
+            out[at[pos]] = slot
+    return out
 
 
 def _value_kind(value: Any) -> str:
@@ -1018,7 +1088,7 @@ def detect_slots(nodes: dict, info: dict | None = None) -> dict:
             slots.append({"kind": "prompt", "node": nid, "input": key,
                           "label": label, "value": value})
 
-    counters: dict[str, int] = {kind: 0 for kind in REFERENCE_KINDS}
+    pending_refs: list[dict] = []
     for nid in _ordered_ids(nodes):
         node = nodes[nid]
         kind = reference_kind_for(node.get("class_type"))
@@ -1028,16 +1098,26 @@ def detect_slots(nodes: dict, info: dict | None = None) -> dict:
         if not input_key or not isinstance(node_inputs(node).get(input_key), str):
             warnings.append(f"节点 {nid} 的输入素材是上游节点连过来的，不能当参考位。")
             continue
-        counters[kind] += 1
-        slot: dict[str, Any] = {
-            "kind": kind, "node": nid, "input": input_key,
-            "label": node_title(node, f"{REFERENCE_LABEL_STEMS[kind]}{counters[kind]}"),
-        }
+        entry: dict[str, Any] = {"kind": kind, "node": nid, "input": input_key,
+                                 "title": node_title(node, "")}
         if info:
             _GROUPS.clear(); _GROUPS.update(_autogrow_groups(info))
             grow = _grow_target(nodes, nid, REFERENCE_TYPE_FOR_KIND.get(kind, ""))
             if grow:
-                slot["grow"] = grow
+                entry["grow"] = grow
+        pending_refs.append(entry)
+    # 先按接线排好序，再数「图片1/2/3」：没写标题的加载器那个号是它唯一的名字，
+    # 数错了就等于给用户一个和它那一格无关的标签（详见 sort_reference_slots）。
+    counters: dict[str, int] = {kind: 0 for kind in REFERENCE_KINDS}
+    for entry in sort_reference_slots(nodes, pending_refs):
+        kind = str(entry["kind"])
+        counters[kind] += 1
+        slot: dict[str, Any] = {
+            "kind": kind, "node": entry["node"], "input": entry["input"],
+            "label": str(entry.get("title") or "") or f"{REFERENCE_LABEL_STEMS[kind]}{counters[kind]}",
+        }
+        if entry.get("grow"):
+            slot["grow"] = entry["grow"]
         slots.append(slot)
 
     # 谁的 MASK 输出去到了下游，谁就能在弹窗里画遮罩：加载器交回的第 1 个输出
@@ -1679,6 +1759,9 @@ def public(row: Any) -> dict:
         nodes = parse_workflow(workflow)
     except ValueError:
         nodes = {}
+    # 参考位编号照接线，不照导入时存下的顺序（老模板那份是按节点号存的）。
+    # 显示、计数、@ 引用三处都从这份 slots 出，一次排对，别各自再算一遍。
+    slots = sort_reference_slots(nodes, slots)
     kind = str(data.get("media_kind") or "image")
     if kind not in MEDIA_KINDS:
         kind = "image"
@@ -1768,11 +1851,14 @@ def get_row(template_id: int) -> dict:
 def get_template(template_id: int) -> dict:
     """带节点表与解析后槽位的完整模板，生成流程用这个。"""
     row = get_row(template_id)
-    row["slots"] = _load_slots(row.get("slots"))
     raw = str(row.get("workflow") or "")
     # 云端模板没有工作流正文（那一列 NOT NULL，所以存空串）。空就当零个节点，
     # 但正文写坏了仍然要吵——那种时候报错比假装没有节点有用。
-    row["nodes"] = parse_workflow(raw) if raw.strip() else {}
+    nodes = parse_workflow(raw) if raw.strip() else {}
+    row["nodes"] = nodes
+    # 生成那边的「第几格要连着填」校验读的是这份 slots，弹窗显示的编号读的是
+    # public() 那份。两边必须同一套顺序，否则用户照弹窗填、后端说他跳格。
+    row["slots"] = sort_reference_slots(nodes, _load_slots(row.get("slots")))
     return row
 
 

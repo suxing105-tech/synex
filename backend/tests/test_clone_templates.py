@@ -494,6 +494,70 @@ def test_autogrow_group_gives_free_reference_cells():
     assert ct.reference_cell_keys(detected["slots"])[:2] == ["543.image", ct.grow_key(slot, "image_2")]
 
 
+def test_stored_reference_order_is_corrected_when_reading(init_db):
+    """库里那条老模板的参考位是按节点号存的（400 在 401 前），接线却是 401 先进第 1 格。
+
+    读出来就得照接线排好，两处都得排：弹窗的编号、@ 引用走 public()，
+    「同一族要从第 1 格连着放」的校验走 get_template()。漏一处，用户照弹窗填完、
+    后端说他跳格；或者反过来，弹窗里的「图片1」根本不是模型看到的 <Picture 1>。
+    """
+    nodes = nodes_multi()
+    nodes.pop("543")
+    nodes["582"]["inputs"].pop("images.image_1")
+    nodes["400"] = {"class_type": "LoadImage", "inputs": {"image": "second.png"}}
+    nodes["401"] = {"class_type": "LoadImage", "inputs": {"image": "first.png"}}
+    nodes["582"]["inputs"]["images.image_1"] = ["401", 0]
+    nodes["582"]["inputs"]["images.image_2"] = ["400", 0]
+    authored = [{"kind": "image", "node": "400", "input": "image", "label": "加载图像"},
+                {"kind": "image", "node": "401", "input": "image", "label": "加载图像"},
+                {"kind": "prompt", "node": "582", "input": "prompt", "label": ct.PRIMARY_PROMPT_LABEL}]
+    tpl = ct.create_template("老模板", nodes, authored)
+
+    stored = json.loads(ct._conn().execute(
+        "SELECT slots FROM clone_templates WHERE id=?", (tpl["id"],)).fetchone()[0])
+    assert [s["node"] for s in stored if s["kind"] == "image"] == ["400", "401"]   # 库里存的是错的
+    assert [c["key"] for c in ct.public(ct.get_row(tpl["id"]))["reference_cells"]] == [
+        "401.image", "400.image"]
+    assert [s["node"] for s in ct.get_template(tpl["id"])["slots"] if s["kind"] == "image"] == [
+        "401", "400"]
+
+
+def test_partially_wired_reference_family_keeps_its_order():
+    """一族里有一台根本没接进素材组（局部编辑那张底图是走 VAEEncode 进模型的），
+    接线就说不清这一族谁排前面。这时照导入时的顺序留着，别硬排——
+    局部编辑的「图片1 = 底图」就是这么留对的，排错了等于把用户的模板改坏。"""
+    nodes = nodes_multi()
+    nodes["400"] = {"class_type": "LoadImage", "inputs": {"image": "base.png"},
+                    "_meta": {"title": "底图"}}
+    nodes["590"] = {"class_type": "VAEEncode", "inputs": {"pixels": ["400", 0]}}
+    slots = ct.detect_slots(nodes, info_autogrow())["slots"]
+    assert [s["node"] for s in slots if s["kind"] == "image"] == ["400", "543"]
+
+
+def test_flat_cell_names_are_not_read_as_wiring():
+    """第三方节点常把参考位平铺成 image_01…05：没有组名就核对不了这是哪一族的组，
+    硬认会把音轨、把别的组数成参考格。这种工作流照导入顺序留着。"""
+    nodes = nodes_multi()
+    nodes["400"] = {"class_type": "LoadImage", "inputs": {"image": "style.png"}}
+    nodes["582"]["inputs"]["image_02"] = ["400", 0]      # 平铺写法：582 的组是 images.image_1
+    slots = ct.detect_slots(nodes, info_autogrow())["slots"]
+    assert [s["node"] for s in slots if s["kind"] == "image"] == ["400", "543"]
+
+
+def test_reference_slots_are_reordered_to_match_the_wiring():
+    """接线说得一清二楚时才重排：两张图倒着接，编号就得跟着倒过来。"""
+    nodes = nodes_multi()
+    nodes.pop("543")
+    nodes["582"]["inputs"].pop("images.image_1")
+    nodes["400"] = {"class_type": "LoadImage", "inputs": {"image": "second.png"}}
+    nodes["401"] = {"class_type": "LoadImage", "inputs": {"image": "first.png"}}
+    nodes["582"]["inputs"]["images.image_1"] = ["401", 0]
+    nodes["582"]["inputs"]["images.image_2"] = ["400", 0]
+    slots = ct.detect_slots(nodes, info_autogrow())["slots"]
+    assert [s["node"] for s in slots if s["kind"] == "image"] == ["401", "400"]
+    assert ct.reference_cell_keys(slots)[:2] == ["401.image", "400.image"]
+
+
 def test_autogrow_without_object_info_gives_no_cells():
     """没开 ComfyUI 时不能瞎猜能扩几张——猜错就是提交一份跑不通的工作流。"""
     detected = ct.detect_slots(nodes_multi(), None)

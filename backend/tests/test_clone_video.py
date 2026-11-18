@@ -130,7 +130,8 @@ def test_recognises_prompt_from_string_primitive(init_db):
 
 def test_recognises_all_three_reference_families(init_db):
     det = detected()
-    assert kinds_of(det, "image") == ["188", "199"]
+    # 顺序照接线，不照节点号：199 接的是 ref_image_0，它就是图片1（见 h3_nodes 的连线）
+    assert kinds_of(det, "image") == ["199", "188"]
     assert kinds_of(det, "audio") == ["182"]
     assert kinds_of(det, "video") == ["185"]
     # 输入键各按族点名：视频加载器还有个 format 也是字符串，认错就把文件名写进格式框
@@ -145,9 +146,10 @@ def test_reference_cells_are_nine_images_three_audios_three_videos(init_db):
         [f"图片{i}" for i in range(1, 10)]
         + [f"音频{i}" for i in range(1, 4)]
         + [f"视频{i}" for i in range(1, 4)])
+    # 199→ref_image_0、188→ref_image_1，所以 199 是图片1；扩位挂在族里第一台身上
     assert [c["key"] for c in cells] == (
-        ["188.image", "199.image"]
-        + [f"188.image::ref_image_{i}" for i in range(2, 9)]
+        ["199.image", "188.image"]
+        + [f"199.image::ref_image_{i}" for i in range(2, 9)]
         + ["182.audio", "182.audio::ref_audio_1", "182.audio::ref_audio_2"]
         + ["185.video", "185.video::ref_video_1", "185.video::ref_video_2"])
 
@@ -174,6 +176,43 @@ def test_video_audio_output_does_not_become_an_extra_reference_cell(init_db):
     assert [c["tag"] for c in det["reference_cells"] if c["kind"] == "audio"] == [
         "<Audio 2>", "<Audio 3>", "<Audio 4>"]
     assert [c["tag"] for c in det["reference_cells"] if c["kind"] == "video"][:1] == ["<Video 1>"]
+
+
+def test_reference_cells_follow_the_wiring_not_the_node_numbers(init_db):
+    """三台视频加载器是 25/26/27 号、接的却是 ref_video_1/2/0——这是苏醒那份老 H3
+    工作流的真实接线。照节点号数会把 25 号报成「视频1」，用户在弹窗里 @ 的 <Video 1>
+    实际是 ref_video_1 那份：编号和 @ 引用一起指错人，而且一声不响。"""
+    nodes = h3_nodes()
+    nodes.pop("185")
+    del nodes["136"]["inputs"]["ref_videos.ref_video_0"]
+    for nid, cell in (("25", 1), ("26", 2), ("27", 0)):
+        nodes[nid] = {"class_type": "VHS_LoadVideo", "_meta": {"title": "Load Video (Upload)"},
+                      "inputs": {"video": "", "format": "AnimateDiff"}}
+        nodes["136"]["inputs"][f"ref_videos.ref_video_{cell}"] = [nid, 0]
+    cells = [c for c in ct.detect_slots(nodes, h3_info())["reference_cells"]
+             if c["kind"] == "video"]
+    assert [c["key"] for c in cells] == ["27.video", "25.video", "26.video"]
+    assert [c["label"] for c in cells] == ["视频1", "视频2", "视频3"]
+    assert [c["tag"] for c in cells] == ["<Video 1>", "<Video 2>", "<Video 3>"]
+
+
+def test_soundtrack_wiring_does_not_decide_the_video_order(init_db):
+    """ref_video_audio_0 是那台视频自带的音轨，不占参考格，也不能拿来定视频的顺序：
+    按它排会把「只有音轨接在第 0 格」的那台当成视频1。"""
+    nodes = h3_nodes()
+    nodes.pop("185")
+    del nodes["136"]["inputs"]["ref_videos.ref_video_0"]
+    for nid, video_cell, audio_cell in (("20", 2, 0), ("30", 1, None), ("40", 0, None)):
+        nodes[nid] = {"class_type": "VHS_LoadVideo",
+                      "inputs": {"video": "", "format": "AnimateDiff"}}
+        nodes["136"]["inputs"][f"ref_videos.ref_video_{video_cell}"] = [nid, 0]
+        if audio_cell is not None:
+            nodes["136"]["inputs"][f"ref_video_audios.ref_video_audio_{audio_cell}"] = [nid, 1]
+    cells = [c for c in ct.detect_slots(nodes, h3_info())["reference_cells"]
+             if c["kind"] == "video"]
+    assert [c["key"] for c in cells] == ["40.video", "30.video", "20.video"]
+    # 三台都没有 _meta.title，兜底标签也得跟着接线数，不能数成节点号的顺序
+    assert [c["slot_label"] for c in cells] == ["视频1", "视频2", "视频3"]
 
 
 def test_soundtrack_count_only_counts_wired_video_soundtracks(init_db):

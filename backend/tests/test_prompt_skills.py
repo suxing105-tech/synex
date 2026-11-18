@@ -1092,6 +1092,17 @@ def test_optimize_puts_the_selected_knobs_before_the_output_rule(client, model, 
     assert instruction.index("--- references/camera-spec.md ---") < instruction.index(knobs)
 
 
+def test_the_knob_block_is_named_the_way_the_shipped_skill_calls_it():
+    """送出去那一段的标题，必须是技能正文用来指它的那三个字。
+
+    技能正文有三处按「界面参数」这个名字去找这一段。标题单方面换成别的说法，模型多半还
+    连得上，但那是靠语感而不是靠对得上；这一句读不到，前端拼的那行就白送。两边钉在一起。
+    """
+    assert "界面参数" in service.CONTEXT_NOTE
+    body = (bundled_skills.h3_video_dir() / "SKILL.md").read_text(encoding="utf-8")
+    assert body.count("界面参数") >= 3, "技能正文要是改口了，上面那句标题得跟着改"
+
+
 def test_optimize_without_context_sends_no_knob_block(client, model, monkeypatch):
     capture = Capture()
     monkeypatch.setattr(reverse_prompts, "request_model", capture)

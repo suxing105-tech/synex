@@ -248,6 +248,25 @@ export function formatDuration(seconds: number | null): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
+/**
+ * 「这一份有多大」的一行读数：视频 = `时长 · 尺寸`，图片 = 尺寸，音频 = 只有时长。
+ *
+ * 卡片页脚之外的第二个落点是再次创作弹窗主图下面那一行（2026-11-17 苏醒：
+ * 「缩略图点击再次创作进来，这里也要有尺寸信息…视频增加一个时长信息」），
+ * 两处同一排法：时长在前、尺寸在后，谁拿不到谁不露面，绝不写 0:00 也不写 0×0。
+ * 音频不报宽高——库里那两列存的是波形画布尺寸（840×360），报出来是假话。
+ */
+export function mediaSizeReadout(input: {
+  kind: string;
+  width?: number | null;
+  height?: number | null;
+  durationSeconds?: number | null;
+}): string {
+  const dims = input.kind === "audio" ? "" : pixelSizeLabel(input.width, input.height);
+  const duration = input.kind === "image" ? "" : formatDuration(input.durationSeconds ?? null);
+  return [duration, dims].filter(Boolean).join(" · ");
+}
+
 /** 剪贴板与拖拽共用的可导入格式判断：有 MIME 就用 MIME，否则退回扩展名（剪贴板位图叫 image.png）。 */
 export const AUDIO_EXT_PATTERN = "mp3|wav|flac|m4a|aac|opus|ogg";
 

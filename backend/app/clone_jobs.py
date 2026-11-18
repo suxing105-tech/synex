@@ -871,6 +871,17 @@ def _dim(value: object) -> int | None:
     return num if num > 0 else None
 
 
+def _seconds(value: object) -> float | None:
+    """时长只认正数（秒），其余一律 None：库里没探到就是「不知道」，报成 0 秒是假话。
+
+    真出片不会有零秒的视频、也不会有零秒的配音，探到 0 只可能是坏探测，同样算不知道。
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    num = float(value)
+    return num if num > 0 else None
+
+
 def _output_summary(image_id: int, filename: str) -> dict:
     """产出 chip 需要的几样：图库 id、是哪一类、叫什么、缩略图在哪，另加真实宽高。
 
@@ -881,13 +892,16 @@ def _output_summary(image_id: int, filename: str) -> dict:
     （比例与分辨率按 32 对齐、放大按倍数放大），只有落盘之后才说得准。弹窗要在文件名
     旁边报这一份到底多大（2026-11-17 苏醒）。音频那两列存的是波形画布尺寸，
     报不报由前端按 kind 决定，这里只负责照实给。
+    时长同一条理由：视频那一条到底几秒，也是探到库里之后才说得准，弹窗要在尺寸旁边
+    一起报出来（苏醒同一轮：「视频增加一个时长信息」）。
     """
     summary = repository.image_summary(image_id=image_id) or {}
     return {"id": image_id, "kind": str(summary.get("kind") or "image"),
             "filename": str(summary.get("filename") or filename),
             "thumbnail_url": str(summary.get("thumbnail_url") or ""),
             "width": _dim(summary.get("width")),
-            "height": _dim(summary.get("height"))}
+            "height": _dim(summary.get("height")),
+            "duration_seconds": _seconds(summary.get("duration_seconds"))}
 
 
 async def _collect_outputs(outputs: dict) -> tuple[list[int], list[str], list[dict]]:

@@ -812,7 +812,23 @@ describe("产出清单带真实宽高", () => {
     expect(job.outputs[0]).toEqual({
       id: 3, kind: "image", filename: "a.png",
       thumbnail_url: "/api/images/3/file?max=256", width: 1536, height: 1088,
+      duration_seconds: null,
     });
+  });
+
+  it("视频那一条把真实时长一起收下；探不到是 null，不是 0", () => {
+    // 2026-11-17 苏醒：「视频增加一个时长信息」。数只许是后端从库里回读的探测值；
+    // 0 秒、坏值、老后端不发这三种都是「不知道」，那一行因此只报尺寸，绝不写 0:00。
+    const job = applyCloneProgress({
+      state: "done", running: false,
+      outputs: [
+        { id: 1, kind: "video", filename: "a.mp4", thumbnail_url: "", width: 1280, height: 720, duration_seconds: 12.4 },
+        { id: 2, kind: "video", filename: "b.mp4", thumbnail_url: "", duration_seconds: 0 },
+        { id: 3, kind: "video", filename: "c.mp4", thumbnail_url: "", duration_seconds: "abc" },
+        { id: 4, kind: "video", filename: "d.mp4", thumbnail_url: "" },
+      ],
+    });
+    expect(job.outputs.map((o) => o.duration_seconds)).toEqual([12.4, null, null, null]);
   });
 
   it("缺字段 / 0 / null 一律当「不知道」，不许落成 0 像素", () => {

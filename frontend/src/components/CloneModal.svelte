@@ -13,7 +13,7 @@
   import { tick, untrack } from "svelte";
   import { comfyuiApi, imagesApi } from "../lib/api";
   import { backendUrl } from "../lib/backend-url";
-  import { basenameOnly, pixelSizeLabel } from "../lib/media-format";
+  import { basenameOnly, mediaSizeReadout, pixelSizeLabel } from "../lib/media-format";
   import { comfyuiStatus, stopAudio } from "../lib/stores";
   import { dismissToast, pushToast } from "../lib/toast";
   import { modalFocus } from "../lib/modal-focus";
@@ -648,20 +648,53 @@
     if (maskTemplate) return maskRef?.filename ?? "";
     return image?.filename ?? "";
   });
-  /** 还没出片时，文件名旁边顺带报一句「这么点下去会出多大」：算得出就报，算不出这行不排。
-     出片之后换成下面那行真数（拿计划值冒充实测值是假话），生成中也撤掉——
-     跟上面那行文件名同一条理由：等待台不报还没有的东西。 */
-  const heroTargetSize = $derived(heroShowsOutput || busy ? "" : formatTargetSize(template, controls));
   /**
-   * 出片之后文件名旁边报的是这一份的真实宽高（2026-11-17 苏醒圈着文件名右侧：
-   * 「图片生成完毕，这里也要有图片尺寸信息」）。为什么非得从后端拿、不吃上面那个计划值：
-   * 出图链路里节点自己还要按倍数取整、放大链还会再乘一次，挑的 1500 出来可能是 1536——
-   * 这一格摆的已经是真图，只能报真图那一套账。多份产出时跟着正在看的那一份走。
-   * 音频不报：库里那两列存的是波形画布尺寸（840×360），报出来是骗人的。
+   * 主图下面那一行的「这一份有多大」，只吃这一格真正摆着的那一份。
+   *
+   * 同一格落了苏醒两条批注：先是「图片生成完毕，这里也要有图片尺寸信息」——那一版把计划值
+   * 换成后端从库里回读的实测宽高（出图链路里节点自己还要按倍数取整、放大链再乘一次，
+   * 计划值冒充实测值是假话）；这一轮又是「缩略图点击再次创作进来，这里也要有尺寸信息…
+   * 视频增加一个时长信息」。所以这一格不再是「出片之后才有数」，而是跟着正在摆的这一份走：
+   * 产出报产出的，手上的素材报素材的，遮罩工作流摆的是参考位那一份就报那一份。
+   * 音频只报时长：库里那两列是波形画布尺寸（840×360），报成这段音频的尺寸是骗人的。
    */
-  const heroOutputSize = $derived.by(() => {
-    if (!heroShowsOutput || !heroOutput || heroOutput.kind === "audio") return "";
-    return pixelSizeLabel(heroOutput.width, heroOutput.height);
+  const heroItem = $derived.by<{
+    kind: string; width: number | null; height: number | null; seconds: number | null;
+  } | null>(() => {
+    if (busy) return null; // 等待台不报还没有的东西：和上面那行文件名同一条理由
+    if (heroShowsOutput) {
+      const out = heroOutput;
+      return out
+        ? { kind: String(out.kind), width: out.width ?? null, height: out.height ?? null, seconds: out.duration_seconds ?? null }
+        : null;
+    }
+    const src = maskTemplate ? maskRef : image;
+    return src
+      ? { kind: String(src.kind), width: src.width ?? null, height: src.height ?? null, seconds: src.duration_seconds ?? null }
+      : null;
+  });
+  /** 眼前这一份的真实宽高（不含时长）：下面拿它和「将生成」比对，数一样就不报第二遍。 */
+  const heroRealDims = $derived(heroItem && heroItem.kind !== "audio"
+    ? pixelSizeLabel(heroItem.width, heroItem.height)
+    : "");
+  /** 那一行的读数：时长在前、尺寸在后，和卡片页脚同一排法（见 mediaSizeReadout）。 */
+  const heroRealSize = $derived(mediaSizeReadout({
+    kind: heroItem?.kind ?? "",
+    width: heroItem?.width ?? null,
+    height: heroItem?.height ?? null,
+    durationSeconds: heroItem?.seconds ?? null,
+  }));
+  /** 给 tooltip 与读屏的那半句：只有尺寸时说「尺寸」，带上时长就说全。 */
+  const heroRealWords = $derived(heroItem && heroItem.kind !== "image" ? "时长与尺寸" : "尺寸");
+  /**
+   * 「这么点下去会出多大」：只在还没出片时算，且和眼前这一份一样大就不再报第二遍。
+   * 这颗要留着（2026-11-12 苏醒：选完比例和分辨率看不见将要出的尺寸），但它和上面那颗
+   * 是两件事——一个答「现在这张多大」，一个答「点下去会出多大」，数不同才值得并排两个数。
+   */
+  const heroPlannedSize = $derived.by(() => {
+    if (heroShowsOutput || busy) return "";
+    const planned = formatTargetSize(template, controls);
+    return planned && planned !== heroRealDims ? planned : "";
   });
   /** 参数弹层最下面那行吃的是同一个数：弹层本来就开着在挑比例和 MP，得跟着手上的选择实时走。 */
   const targetSize = $derived(formatTargetSize(template, controls));
@@ -2162,22 +2195,24 @@
                 <div class="cm-hero cm-hero-empty">没有预览</div>
               {/if}
           {/if}
-          {#if heroCaption || heroTargetSize || heroOutputSize}
+          {#if heroCaption || heroRealSize || heroPlannedSize}
             <div class="cm-hero-meta">
               {#if heroCaption}
                 <!-- 文件名回到展示图下面（旧图那一版有）：一次出几份、或者从这一格跳回图库时，认的就是它。 -->
                 <p class="cm-hero-name" title={heroCaption}>{heroCaption}</p>
               {/if}
-              {#if heroOutputSize}
-                <!-- 出片之后报的是这一份实际出图的尺寸，和文件名并排在同一行。 -->
-                <p class="cm-hero-dims" title="这一份实际出图的尺寸">
-                  <span class="sr-only">实际尺寸</span>{heroOutputSize}
+              {#if heroRealSize}
+                <!-- 这一格摆的是哪一份，就报哪一份的真实账：出片之后是产出的实测数，还没出片是手上这份素材的。 -->
+                <p class="cm-hero-dims" title={heroShowsOutput ? `这一份实际出图的${heroRealWords}` : `这张素材的实际${heroRealWords}`}>
+                  <span class="sr-only">实际{heroRealWords}</span>{heroRealSize}
                 </p>
-              {:else if heroTargetSize}
+              {/if}
+              {#if heroPlannedSize}
                 <!-- 这一趟会出多大：公式和 ComfyUI 那台 ResolutionSelector 同一份，挑完比例与分辨率就落地，
-                     不用等跑完才发现尺寸不对。认不出这两个数的工作流（云端、局部重绘）不会走到这里。 -->
-                <p class="cm-hero-dims" title="按当前比例与分辨率，这一趟会出这么大的图">
-                  <span class="sr-only">将生成</span>{heroTargetSize}
+                     不用等跑完才发现尺寸不对。认不出这两个数的工作流（云端、局部重绘）不会走到这里。
+                     前面那颗小魔杖不是装饰：它和左边那颗窄体数字挨着排，不说清就会被读成同一个数。 -->
+                <p class="cm-hero-dims cm-hero-dims--planned" title="按当前比例与分辨率，这一趟会出这么大的图">
+                  <span class="sr-only">将生成</span><Icon name="wand" size={12} />{heroPlannedSize}
                 </p>
               {/if}
             </div>
@@ -2960,11 +2995,17 @@
   /* 展示图下面那行文件名（旧图有这一行，2026-11-10 放回来）：从这一格跳回图库、或一次出几份时，
      认的就是它。长名字截断，完整名字在 title 里。 */
   .cm-hero-name { margin: var(--sp-05) 0 0; max-width: 100%; font-size: var(--fs-xs); line-height: var(--lh-label); color: #8a8a8e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  /* 文件名与「这一趟出多大」并排一行（2026-11-12 苏醒照图：文件名右边那块空位就是留给它的）。
-     被挤的只许是名字——省略号本来就长在它身上；尺寸不许被顶出这一行。 */
-  .cm-hero-meta { display: flex; align-items: baseline; gap: var(--sp-2); max-width: 100%; min-width: 0; }
+  /* 文件名与它右边那几颗读数并排一行（2026-11-12 苏醒照图：文件名右边那块空位就是留给它们的；
+     2026-11-17 又一轮批注：从卡片点进来也要看得见这一份的尺寸，视频还要多一条时长）。
+     被挤的只许是名字——省略号本来就长在它身上；读数不许被顶出这一行。
+     center 与 baseline 在这一行里等价：三颗都是同一字号、同一行高、同一条上边距。
+     改成 center 只为一件事——「将生成」那颗里的小图标要跟数字对齐，inline-flex 拿不到文字基线。 */
+  .cm-hero-meta { display: flex; align-items: center; gap: var(--sp-2); max-width: 100%; min-width: 0; }
   .cm-hero-meta .cm-hero-name { flex: 0 1 auto; min-width: 0; }
   .cm-hero-dims { flex: none; margin: var(--sp-05) 0 0; font-size: var(--fs-xs); line-height: var(--lh-label); color: var(--text-3); font-family: var(--font-condensed); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  /* 「将生成」那颗：数字还是同一档窄体，前面那颗小魔杖说清它不是眼前这一张。
+     和左边那颗共用 .cm-hero-dims 的字号、行高与字族，这里只加图标与间隙，不另挑数值。 */
+  .cm-hero-dims--planned { display: inline-flex; align-items: center; gap: var(--sp-05); }
   /* 波形是一张扁的后端 PNG：照搬 cm-hero 的 contain 会把它拉成一大块模糊，这里锁住高度。 */
   .cm-hero-wave { width: min(100%, 560px); height: clamp(88px, 18vh, 148px); object-fit: cover; }
   .cm-hero-audio { width: min(100%, 560px); margin-top: var(--sp-3); height: 36px; }

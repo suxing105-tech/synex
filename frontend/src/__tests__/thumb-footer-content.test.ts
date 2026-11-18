@@ -6,6 +6,7 @@ import {
   footerTimeLabel,
   parentFolderLabel,
   parentFolderPath,
+  mediaSizeReadout,
   pixelSizeLabel,
 } from "../lib/media-format";
 
@@ -150,5 +151,29 @@ describe("元信息按类型给，窄卡先撤尺寸", () => {
   it("文件大小从卡片上撤了（扫描时没人靠字节数挑图，详情栏和灯箱都还在）", () => {
     const bits = footerMetaBits({ kind: "image", width: 800, height: 600, mtime: ago(600), now: NOW, columnWidth: 400 }).bits;
     expect(bits.join(" ")).not.toMatch(/B\b/);
+  });
+});
+
+describe("「这一份有多大」的一行读数", () => {
+  // 卡片页脚之外，这一行还落在再次创作弹窗主图下面（2026-11-17 苏醒：「（再次创作）进来，
+  // 图片、视频下面也要显示尺寸信息，视频增加一个时长信息」）。两处必须同一排法：
+  // 时长在前、尺寸在后，拿不到的那一段不露面。
+  it("视频 = 时长 · 尺寸，图片 = 只有尺寸", () => {
+    expect(mediaSizeReadout({ kind: "video", width: 1088, height: 1920, durationSeconds: 12.4 }))
+      .toBe("0:12 · 1088×1920");
+    expect(mediaSizeReadout({ kind: "image", width: 800, height: 600 })).toBe("800×600");
+  });
+
+  it("音频只报时长：库里那两列是波形画布尺寸，报出来是假话", () => {
+    expect(mediaSizeReadout({ kind: "audio", width: 840, height: 360, durationSeconds: 5 }))
+      .toBe("0:05");
+  });
+
+  it("缺哪段就少哪段，全拿不到就整串不排（不写 0:00、也不写 0×0）", () => {
+    expect(mediaSizeReadout({ kind: "video", width: 1088, height: 1920 })).toBe("1088×1920");
+    expect(mediaSizeReadout({ kind: "video", width: null, height: null, durationSeconds: 8 })).toBe("0:08");
+    expect(mediaSizeReadout({ kind: "video", width: 0, height: 1920 })).toBe("");
+    expect(mediaSizeReadout({ kind: "audio", durationSeconds: null })).toBe("");
+    expect(mediaSizeReadout({ kind: "" })).toBe("");
   });
 });

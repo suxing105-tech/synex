@@ -750,3 +750,30 @@ async def test_an_empty_prompt_is_allowed_only_where_it_is_a_mode(fake, source_i
     state = await finish()
     assert state["state"] == "done", state
     assert fake.prompts[0]["prompt"]["540"]["inputs"]["prompt"] == ""
+
+def test_output_duration_only_accepts_a_positive_number():
+    """时长同宽高的口径：0 / null / 文字都是「不知道」。
+
+    界面那一行因此只报尺寸，不写 0:00（2026-11-17 苏醒：「视频增加一个时长信息」）。
+    真出片不会有零秒的片子，探到 0 只可能是坏探测，同样算不知道。
+    """
+    assert clone_jobs._seconds(12.4) == 12.4
+    assert clone_jobs._seconds(12) == 12.0
+    assert clone_jobs._seconds(0) is None
+    assert clone_jobs._seconds(-3) is None
+    assert clone_jobs._seconds(None) is None
+    assert clone_jobs._seconds("") is None
+    assert clone_jobs._seconds("abc") is None
+    assert clone_jobs._seconds(True) is None
+
+
+def test_output_summary_reports_the_measured_duration(init_db, source_image):
+    """视频那一条把库里探到的秒数一起带给弹窗；图片没有时长就是 null，不编一个 0。"""
+    assert clone_jobs._output_summary(source_image, "源图.png")["duration_seconds"] is None
+
+    get_pool().main().execute(
+        "UPDATE images SET kind='video', duration_seconds=12.4 WHERE id=?", (source_image,)
+    )
+    video = clone_jobs._output_summary(source_image, "源图.png")
+    assert video["kind"] == "video"
+    assert video["duration_seconds"] == 12.4

@@ -19,9 +19,9 @@
   "charsetGroups": {
     "latin+punct": 2898,
     "gb2312": 6763,
-    "source": 1639
+    "source": 1643
   },
-  "totalBytes": 5937024,
+  "totalBytes": 5936904,
   "licenseFile": "frontend/src-tauri/resources/OFL-SeekX-Sans.txt",
   "files": [
     {
@@ -29,40 +29,40 @@
       "family": "SeekX Sans",
       "subfamily": "Regular",
       "weight": 400,
-      "bytes": 1169688,
-      "sha256": "0ff6de30b84d0ac0e294e2616ff5ddbd440a634a95ad3347cf9581d0027f76d6"
+      "bytes": 1169848,
+      "sha256": "4acd86a860b2908d1e2772209f191010ec59843896ccfaf0204719160073b3f4"
     },
     {
       "file": "seekx-sans-medium.woff2",
       "family": "SeekX Sans",
       "subfamily": "Medium",
       "weight": 500,
-      "bytes": 1199964,
-      "sha256": "35ec8b7838e9b7a300b6db8e8a599f84e21baa095b93689a851b30e408d97cf0"
+      "bytes": 1199176,
+      "sha256": "9874fcd4126fd0979573a570bfb09c7523dffcfff9bd3cc8ccba70a03f897e5b"
     },
     {
       "file": "seekx-sans-semibold.woff2",
       "family": "SeekX Sans",
       "subfamily": "SemiBold",
       "weight": 600,
-      "bytes": 1209524,
-      "sha256": "8ef7bbb39c033bd228465d9372403cf2b5aa0ad8b2c60546b3477c23321121db"
+      "bytes": 1208940,
+      "sha256": "99beed2aefa9f23d7b33ec0fac3ddde91bd561aeeb6eef0405ab6bc18de3d7ca"
     },
     {
       "file": "seekx-sans-bold.woff2",
       "family": "SeekX Sans",
       "subfamily": "Bold",
       "weight": 700,
-      "bytes": 1208868,
-      "sha256": "b5c509ec616b6f3b09aec9cd16e0bcb942055ece51f396b3c7b475d83c7925e8"
+      "bytes": 1209132,
+      "sha256": "8e6a41a517f054ee4e7962e9b79cfa76dabe7a3ce4343dcee4f525b46736ccb9"
     },
     {
       "file": "seekx-sans-condensed-regular.woff2",
       "family": "SeekX Sans Condensed",
       "subfamily": "Regular",
       "weight": 400,
-      "bytes": 1148980,
-      "sha256": "0d1b7d664ce5697c1cd7f78515dbcaea00bc6b9edc38fc867c232d973a843769"
+      "bytes": 1149808,
+      "sha256": "10702f29916add4247936aefed8256715fa8d3b78a2042c6de75fdeee9011933"
     }
   ]
 }

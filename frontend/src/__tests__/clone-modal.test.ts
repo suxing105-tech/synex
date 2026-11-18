@@ -3436,10 +3436,12 @@ it('顶栏那行大字与图下那行文件名都在：大字说哪条工作流�
   expect(screen.getByRole('button', { name: '工作流' }).textContent).toContain('Qwen 多图编辑');
 });
 
-it('文件名旁边报「这一趟会出多大」：跟着比例与分辨率当场变，认不出就不排', async () => {
-  // 2026-11-12 苏醒照图：文件名右边那一块空着，选完比例和分辨率看不见将要出的尺寸。
-  // 数字不是前端拍的：公式与 ComfyUI 那台 ResolutionSelector 同一份（lib/clone.ts 的 targetPixelSize，
-  // 纯函数那头的用例已按真机档位钉死），这里只管它落在界面上。
+it('文件名右边那一排读数：眼前这一份的真实账 + 「这么点下去会出多大」', async () => {
+  // 2026-11-12 苏醒照图：文件名右边那块空着，选完比例和分辨率看不见将要出的尺寸。
+  // 2026-11-17 又一轮批注：「缩略图点击再次创作进来，这里也要有尺寸信息」——同一格还要报
+  // 眼前这一份自己的实测尺寸。两个数是两件事，于是拆成两颗：不带图标那颗是这一格摆着的
+  // 那一份（真数，从库里来），带魔杖那颗是点下去会出的那一张（公式与 ComfyUI 那台
+  // ResolutionSelector 同一份，见 lib/clone.ts 的 targetPixelSize，纯函数那头的用例已按真机档位钉死）。
   routes(baseRoutes());
   const screen = await ready();
   // 只算肉眼看得到的那截：给读屏的一句在 .sr-only 里，界面上按定稿就只有数字，没有「尺寸：」这类前缀
@@ -3448,53 +3450,91 @@ it('文件名旁边报「这一趟会出多大」：跟着比例与分辨率当�
     if (!el) return null;
     const lead = el.querySelector('.sr-only')?.textContent ?? '';
     // 两个实参都得给：replace 少给第二个，会拿字符串 "undefined" 去顶替匹配到的那截字
-    // （写成 replace(x ?? '') 看着像给了两个，其实只有一个——读出来就是「undefined1208×1208」）
     return (el.textContent ?? '').replace(lead, '').trim();
   };
-  // 默认那颗 1:1 + 1.4MP、步长按节点默认的 8
-  expect(shown('.cm-hero-dims')).toBe('1208×1208');
-  // 文件名那一格仍旧只是文件名：一次出几份、跳回图库认的就是它，不许被这行掺进去
+  // 还没跑：这一格摆的就是那张 800×600 的卡，报的是它自己那几列实测值
+  expect(shown('.cm-hero-dims')).toBe('800×600');
+  expect(shown('.cm-hero-dims--planned')).toBe('1208×1208');
+  // 文件名那一格仍旧只是文件名：一次出几份、跳回图库认的就是它，不许被这一排掺进去
   expect(document.querySelector('.cm-hero-name')?.textContent).toBe('source.png');
   expect(document.querySelector('.cm-hero-meta')).toBeTruthy();
 
   await fireEvent.click(screen.getByRole('button', { name: '画面参数' }));
   await fireEvent.click(screen.getByRole('button', { name: '16:9' }));
   await tick();
-  expect(shown('.cm-hero-dims')).toBe('1616×912');
+  // 计划值跟着选择走；眼前这一份的尺寸不跟——它是已经落盘的那张图，不是预览
+  expect(shown('.cm-hero-dims--planned')).toBe('1616×912');
+  expect(shown('.cm-hero-dims')).toBe('800×600');
   expect(shown('.cm-pop-size')).toBe('1616×912');
-  // 分辨率那一颗也照样牵着它走
+  // 分辨率那一颗也照样牵着计划值走
   await fireEvent.click(screen.getByRole('button', { name: '2MP' }));
   await tick();
-  expect(shown('.cm-hero-dims')).toBe('1928×1088');
+  expect(shown('.cm-hero-dims--planned')).toBe('1928×1088');
   expect(shown('.cm-pop-size')).toBe('1928×1088');
 
-  // 配方里没有百万像素那颗（局部重绘那条出图尺寸跟原图走）：整行不排，不报一个猜的数
+  // 配方里没有百万像素那颗（局部重绘那条出图尺寸跟原图走）：「将生成」那颗不排，不报一个猜的数。
+  // 但眼前这一份的真实尺寸照报——那是卡里就有的实测值，不是猜的。
   cleanup();
   const blind = { ...TPL, slots: TPL.slots.filter((slot) => slot.input !== 'megapixels') };
   routes({ ...baseRoutes(), '/api/clone/templates': { items: [blind] } });
   const bare = await ready();
-  expect(bare.container.querySelector('.cm-hero-dims')).toBeNull();
+  expect(bare.container.querySelector('.cm-hero-dims--planned')).toBeNull();
+  expect(shown('.cm-hero-dims')).toBe('800×600');
 
-  // 尺度护栏：新写的这两行不许再往六档外面挑字号
+  // 挑的档位刚好和眼前这张一样大：不并排两个一样的数，只留真实尺寸那一颗
+  cleanup();
+  routes(baseRoutes());
+  await ready({ image: { ...SOURCE, width: 1208, height: 1208 } });
+  expect(shown('.cm-hero-dims')).toBe('1208×1208');
+  expect(document.querySelector('.cm-hero-dims--planned')).toBeNull();
+
+  // 尺度护栏：这一排读数不许再往七档外挑字号，挤的时候只许挤文件名（省略号长在它身上）
   const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
   const rules: [string, string][] = [
-    ['.cm-hero-dims', /.cm-hero-dims {([^}]*)}/.exec(css)?.[1] ?? ''],
-    ['.cm-pop-size', /.cm-pop-size {([^}]*)}/.exec(css)?.[1] ?? ''],
+    ['.cm-hero-dims', /\.cm-hero-dims {([^}]*)}/.exec(css)?.[1] ?? ''],
+    ['.cm-pop-size', /\.cm-pop-size {([^}]*)}/.exec(css)?.[1] ?? ''],
   ];
   for (const [name, rule] of rules) {
     expect(rule, name + ' 找不到样式').not.toBe('');
-    expect(/font-size:s*d+(?:.d+)?px/.exec(rule)?.[0] ?? '', name + ' 又写了裸 px 字号').toBe('');
+    expect(/font-size:\s*\d+(?:\.\d+)?px/.exec(rule)?.[0] ?? '', name + ' 又写了裸 px 字号').toBe('');
   }
-  // 挤的时候只许挤文件名（省略号长在它身上），尺寸不许被顶出这一行
-  expect(css).toMatch(/.cm-hero-meta .cm-hero-name { flex: 0 1 auto; min-width: 0; }/);
-  expect(css).toMatch(/.cm-hero-dims { flex: none/);
-  expect(css).toMatch(/.cm-body.is-stacked .cm-hero-meta { flex: none; }/);
+  expect(css).toMatch(/\.cm-hero-meta \.cm-hero-name { flex: 0 1 auto; min-width: 0; }/);
+  expect(css).toMatch(/\.cm-hero-dims { flex: none/);
+  expect(css).toMatch(/\.cm-body\.is-stacked \.cm-hero-meta { flex: none; }/);
+  // 「将生成」那颗不另挑数值：字号、行高、字族全从 .cm-hero-dims 来，自己只加图标与间隙。
+  // 整行改 center 也只为这一颗里的图标能跟数字对齐（三颗同字号同行高，center 与 baseline 等价）
+  expect(css).toMatch(/\.cm-hero-meta { display: flex; align-items: center;/);
+  expect(css).toMatch(/\.cm-hero-dims--planned { display: inline-flex; align-items: center; gap: var\(--sp-05\); }/);
+});
+
+it('点进来还没跑也报这一份的账：视频给「时长 · 尺寸」，音频只给时长', async () => {
+  // 2026-11-17 苏醒：「再次创作进来，图片、视频下面也要显示尺寸信息，视频增加一个时长信息」。
+  // 三个数吃的都是卡里那几列（width / height / duration_seconds），不是提交时挑的档位：
+  // 人站在一张已经存在的片子前面问的是它多大、多长，不是下一趟会出多大。
+  const shown = () => {
+    const el = document.querySelector('.cm-hero-dims');
+    if (!el) return null;
+    const lead = el.querySelector('.sr-only')?.textContent ?? '';
+    return (el.textContent ?? '').replace(lead, '').trim();
+  };
+  routes({ ...videoRoutes(), '/api/clone/templates': { items: [H3] } });
+  cleanup();
+  await ready({ image: { ...VIDEO_CARD, duration_seconds: 12.4 } });
+  expect(shown()).toBe('0:12 · 1280×720');
+  // H3 那条没有百万像素那颗：算不出「将生成」就不报，不拿一个猜的数并在旁边
+  expect(document.querySelector('.cm-hero-dims--planned')).toBeNull();
+
+  // 音频：库里那两列存的是波形画布尺寸（840×360），报成这段音频的尺寸是假话，只许报时长
+  cleanup();
+  routes({ ...audioRoutes(), '/api/clone/templates': { items: [TPL] } });
+  await ready({ image: { ...AUDIO, width: 840, height: 360, duration_seconds: 5 } });
+  expect(shown()).toBe('0:05');
 });
 
 it('计划值只在「还没出片」时报：生成中是等待台，跑完这一行改吃真实宽高', async () => {
   routes({ ...baseRoutes(), '/api/clone/generate': { ...EMPTY_CLONE_JOB, active: true, job_id: 'j1', state: 'queued', running: true } });
   const screen = await ready();
-  expect(document.querySelector('.cm-hero-dims')).toBeTruthy();
+  expect(document.querySelector('.cm-hero-dims--planned')).toBeTruthy();
   await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '出一张' } });
   await fireEvent.click(screen.getByRole('button', { name: '生成' }));
   await tick();

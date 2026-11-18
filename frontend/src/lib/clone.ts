@@ -527,6 +527,12 @@ export interface CloneOutput {
    */
   width?: number | null;
   height?: number | null;
+  /**
+   * 这一份的真实时长（秒），同样是从库里回读，不是提交时挑的档位。
+   * 图片没有、老后端不发、探到 0 都是 null——那一行只报尺寸，不写 0:00
+   * （2026-11-17 苏醒：「视频增加一个时长信息」）。
+   */
+  duration_seconds?: number | null;
 }
 
 export const EMPTY_CLONE_JOB: CloneJob = {
@@ -553,6 +559,12 @@ function asRowId(value: unknown): number | null {
 function asDim(value: unknown): number | null {
   const num = Number(value);
   return Number.isInteger(num) && num > 0 ? num : null;
+}
+
+/** 时长（秒）：只认正数，其余（null / 0 / "abc"）当「不知道」。探到 0 秒只可能是坏探测。 */
+function asSeconds(value: unknown): number | null {
+  const num = Number(value);
+  return Number.isFinite(num) && num > 0 ? num : null;
 }
 
 const CLONE_STATES: CloneState[] = ["uploading", "queued", "running", "downloading", "done", "error", "cancelled"];
@@ -733,6 +745,7 @@ export function applyCloneProgress(payload: unknown, opts: { seal?: boolean } = 
           thumbnail_url: String(item.thumbnail_url ?? ""),
           width: asDim(item.width),
           height: asDim(item.height),
+          duration_seconds: asSeconds(item.duration_seconds),
         }))
         .filter((item) => Number.isInteger(item.id) && item.id > 0)
       : [],

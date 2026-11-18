@@ -11,7 +11,17 @@ BACKEND_DIR = REPO_ROOT / "backend"
 ENTRY = BACKEND_DIR / "run_server.py"
 # 内置的「再次创作」工作流：随 sidecar 一起打包，首启装进库（app/clone_bundled.py 在 _MEIPASS/app 下找它）
 BUNDLED_WORKFLOWS = BACKEND_DIR / "app" / "bundled_workflows"
+# 内置技能「闪寻视频生成H3优化」的正文与四份资料：同样随 sidecar 走，装载时从 _MEIPASS/app 下读
+# （app/bundled_skills.py 的 h3_video_dir 找法和 clone_bundled.bundled_dir 一致）。
+# 漏了这一条，技能清单上会直接少这一条，界面上看不出原因，所以有一条测试盯着它。
+BUNDLED_SKILL_PACKAGES = BACKEND_DIR / "app" / "bundled_skill_packages"
 PSD_HIDDENIMPORTS = collect_submodules("psd_tools")
+
+BUNDLE_DATAS = []
+if BUNDLED_WORKFLOWS.is_dir():
+    BUNDLE_DATAS.append((str(BUNDLED_WORKFLOWS), "app/bundled_workflows"))
+if BUNDLED_SKILL_PACKAGES.is_dir():
+    BUNDLE_DATAS.append((str(BUNDLED_SKILL_PACKAGES), "app/bundled_skill_packages"))
 
 PATHEX = [str(BACKEND_DIR)]
 
@@ -19,7 +29,7 @@ a = Analysis(
     [str(ENTRY)],
     pathex=PATHEX,
     binaries=[],
-    datas=[(str(BUNDLED_WORKFLOWS), "app/bundled_workflows")] if BUNDLED_WORKFLOWS.is_dir() else [],
+    datas=BUNDLE_DATAS,
     hiddenimports=[
         "app",
         "app.__init__",

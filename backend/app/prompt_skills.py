@@ -122,6 +122,21 @@ BUILTINS: tuple[dict, ...] = (
         # 只带正文不带资料，等于让模型以为后面有资料而它什么也没看见。
         "package": bundled_skills.h3_package_payload,
     },
+    {
+        # 第五条：随包那条「闪寻视频生成 H3」模板专用，认的是它弹窗上的戏种开关。
+        # 正文与四份资料是随包数据文件（见 bundled_skills 文件末），装载时才读；
+        # available 说不成立时这一条整条不装——装一条「说后面有资料却什么都没附」的更难查。
+        "builtin_key": "h3_video",
+        "name": "闪寻视频生成H3优化",
+        "note": "MiniMax H3 参考生视频专用：六段协议不动，按界面上选的戏种写武戏或文戏",
+        "kinds": ("video",),
+        # 六段协议的段名、标签、语言标签都得是英文，台词本身保留原语言（中文台词照抄进
+        # <d>[Chinese] ...</d>）。所以这条的默认输出语言规矩是 en，不是 auto。
+        "language": "en",
+        "instruction": bundled_skills.h3_video_instruction,
+        "package": bundled_skills.h3_video_package_payload,
+        "available": bundled_skills.h3_video_available,
+    },
 )
 
 # 引用标记是这个弹窗的硬通货：@图片N 与 <Picture N> 都指「第 N 格参考」。模型一旦把它们
@@ -143,6 +158,15 @@ OUTPUT_RULE = (
     + MARK_RULE
     + "\n{language}"
 )
+# 界面上选好的旋钮（戏种、武打速度、时长、比例）随优化请求送进来时挂在这儿。
+# 必须垫在 OUTPUT_RULE 之前：它是「这次生成要用什么」的依据，属于正文那一侧，
+# 不是给模型的输出格式约束。长度由前端压到 500 字以内（接口那层 max_length 卡的是整条请求）。
+CONTEXT_NOTE = (
+    "\n\n这次生成在界面上选定的参数（写出来的提示词必须与之一致，"
+    "不要自己另选戏种、比例、时长或档位）：\n"
+)
+
+
 REF_NOTE = (
     "参考素材按编号依次附在下面（图 N 就是提示词里的第 N 格参考，@图片N 与 <Picture N> 指的是它）。"
     "看图只为了核对画面里到底有什么，别照着图另写一份画面描述。\n\n"
@@ -168,8 +192,28 @@ def initialize(conn):
         _seed_builtin(conn, seed, index)
 
 
+def seed_instruction(seed):
+    """内置技能的正文。登记成可调用的那一条在装载时才读盘。
+
+    H3 视频那条的正文是随包数据文件（三万多字，见 bundled_skills 文件末的说明）。要是像
+    上面两条那样在 BUILTINS 里直接写函数调用，模块导入时就会去读盘：万一资源没打进包，
+    整个后端起不来。惰性一次，最坏结果只是那一条技能不装。
+    """
+    value = seed["instruction"]
+    return value() if callable(value) else value
+
+
+def seed_language(seed):
+    """这条内置默认的输出语言规矩。没登记就是 auto（跟随原文）。"""
+    return seed.get("language", "auto")
+
+
 def _seed_builtin(conn, seed, index):
     """把一条内置技能装进库。已经在的一律不动内容——用户改过的写法比我们的默认值值钱。"""
+    if seed.get("available") and not seed["available"]():
+        logger.warning("内置技能 %s 这一趟不装：随包资源目录里找不到它的正文文件",
+                       seed["builtin_key"])
+        return
     row = conn.execute("SELECT * FROM prompt_skills WHERE builtin_key=?",
                        (seed["builtin_key"],)).fetchone()
     inserted = False
@@ -190,8 +234,8 @@ def _seed_builtin(conn, seed, index):
         cur = conn.execute(
             "INSERT INTO prompt_skills(name,note,kinds,instruction,language,with_refs,builtin_key,sort)"
             " VALUES(?,?,?,?,?,?,?,?)",
-            (seed["name"], seed["note"], ",".join(seed["kinds"]), seed["instruction"], "auto", 1,
-             seed["builtin_key"], (index + 1) * 10),
+            (seed["name"], seed["note"], ",".join(seed["kinds"]), seed_instruction(seed),
+             seed_language(seed), 1, seed["builtin_key"], (index + 1) * 10),
         )
         row = conn.execute("SELECT * FROM prompt_skills WHERE id=?", (cur.lastrowid,)).fetchone()
         inserted = True
@@ -417,9 +461,12 @@ def restore_default(skill_id: int):
     # 那一份，都不属于「写法被改坏了」这一件事。要把资料换回去，重新导一次那个包。
     with db.transaction() as tx:
         tx.execute(
-            "UPDATE prompt_skills SET name=?,note=?,kinds=?,instruction=?,language='auto',with_refs=1,"
+            # language 跟着 seed 走，不硬写 auto：H3 视频那条的默认就是 en（六段协议的段名和
+            # 语言标签必须是英文），恢复一次默认把人家默认值改没了，等于恢复出一个坏默认。
+            "UPDATE prompt_skills SET name=?,note=?,kinds=?,instruction=?,language=?,with_refs=1,"
             "updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?",
-            (seed["name"], seed["note"], ",".join(seed["kinds"]), seed["instruction"], skill_id),
+            (seed["name"], seed["note"], ",".join(seed["kinds"]), seed_instruction(seed),
+             seed_language(seed), skill_id),
         )
     return public(get_skill(skill_id))
 
@@ -1147,16 +1194,18 @@ def save_settings(*, default_image_skill, default_video_skill):
     return settings()
 
 
-def system_prompt(skill) -> str:
-    """一条技能 = 一句写法 +（是包的话）一叠资料 + 两条谁都不许违反的硬规矩。
+def system_prompt(skill, context: str = "") -> str:
+    """一条技能 = 一句写法 +（是包的话）一叠资料 +（这次界面上选定的参数）+ 两条硬规矩。
 
-    顺序有讲究：资料在正文之后（正文是主干，资料是补充），硬规矩永远垫底。
+    顺序有讲究：资料在正文之后（正文是主干，资料是补充），这次选定的参数再往后，
+    硬规矩永远垫底——它得离「输出」最近，才不会被前面那三万字冲淡。
     硬规矩拼在这儿而不是写进技能正文：技能可以被用户改成一句话，
     规矩要是跟着正文一起被改没，优化就会开始吞 @图片N。
     """
     language = skill["language"] if skill["language"] in LANGUAGE_RULES else "auto"
     refs = _row_get(skill, "package_refs", "")
-    return (skill["instruction"].strip() + refs + "\n"
+    knobs = str(context or "").strip()
+    return (skill["instruction"].strip() + refs + ((CONTEXT_NOTE + knobs) if knobs else "") + "\n"
             + OUTPUT_RULE.replace("{language}", LANGUAGE_RULES[language]))
 
 
@@ -1241,7 +1290,8 @@ def resolve_model():
     return config, reverse_prompts.key_for(config)
 
 
-async def optimize(*, skill, prompt: str, kind: str, refs: list[dict]) -> dict:
+async def optimize(*, skill, prompt: str, kind: str, refs: list[dict],
+                   context: str = "") -> dict:
     """跑一次优化。这个方法一行都不写库：优化是给建议，历史留在会话里的撤销就够。"""
     if kind not in kinds_of(skill["kinds"]):
         raise HTTPException(422, "「" + skill["name"] + "」不适用于" + KIND_WORDS.get(kind, kind) + "提示词")
@@ -1250,7 +1300,8 @@ async def optimize(*, skill, prompt: str, kind: str, refs: list[dict]) -> dict:
     config, key = resolve_model()
     prepared, degraded = (await prepare_refs(refs)) if (skill["with_refs"] and refs) else ([], None)
     answer = await reverse_prompts.request_model(
-        config, key, build_content(prompt, prepared), system_prompt(skill), output_rule="")
+        config, key, build_content(prompt, prepared), system_prompt(skill, context),
+        output_rule="")
     result = clean_output(answer)
     if not result:
         raise HTTPException(502, "模型只回了一层壳，没回提示词内容，请重试或换一条技能")

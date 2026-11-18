@@ -59,14 +59,14 @@ def builtin_id(client, key):
 # ---------- 内置技能：开箱可用，改得动，删不掉 ----------
 
 
-def test_new_db_gets_four_builtin_skills(client):
+def test_new_db_gets_five_builtin_skills(client):
     rows = client.get("/api/prompt-skills").json()
     assert [row["builtin_key"] for row in rows] == [
-        "image_default", "video_default", "qwen_image", "h3_image"]
-    image, video, qwen, h3 = rows
+        "image_default", "video_default", "qwen_image", "h3_image", "h3_video"]
+    image, video, qwen, h3, h3v = rows
     # 名字也是出厂口径：2026-11-17 苏醒把两条通用的改成「通用优化」，「增强」听着像加料
     assert [row["name"] for row in rows] == [
-        "图片通用优化", "视频通用优化", "Qwen-Image-2.1 优化", "H3-Image 优化"]
+        "图片通用优化", "视频通用优化", "Qwen-Image-2.1 优化", "H3-Image 优化", "闪寻视频生成H3优化"]
     assert image["kinds"] == ["image"] and image["with_refs"] is True
     assert video["kinds"] == ["video"]
     # 内置技能的写法得有真正的正事，否则等于给了条空技能
@@ -74,6 +74,10 @@ def test_new_db_gets_four_builtin_skills(client):
     # 按模型那两条也各有自己的正事：一条讲先判模式，一条讲带图时的编辑协议
     assert "文生图" in qwen["instruction"] and "负面提示词" in qwen["instruction"]
     assert "Subject" in h3["instruction"]
+    # 第五条只认视频：把它挂到图片提示词上，出来的就是六段协议那套没人要的东西
+    assert h3v["kinds"] == ["video"]
+    # 正文的立身之本是那个戏种开关，认不出戏种这条技能就没意义
+    assert "武戏" in h3v["instruction"] and "文戏" in h3v["instruction"]
     # 默认指针还是空的：出厂默认是通用那两条，按模型挑是使用时的选择，不是出厂选择
     assert client.get("/api/prompt-skill-settings").json() == {"default_image_skill": None,
                                                               "default_video_skill": None}
@@ -88,7 +92,7 @@ def test_initialize_heals_missing_seed_and_keeps_user_edits(init_db, client):
     rows = client.get("/api/prompt-skills").json()
     # 补齐按 builtin_key 回到自己原来那一档，不 appended 到末尾：内置那几条的先后顺序是定的
     assert [row["builtin_key"] for row in rows] == [
-        "image_default", "video_default", "qwen_image", "h3_image"]
+        "image_default", "video_default", "qwen_image", "h3_image", "h3_video"]
     healed = next(row for row in rows if row["builtin_key"] == "image_default")
     assert healed["instruction"] == service.DEFAULT_IMAGE_INSTRUCTION
     edited = next(row for row in rows if row["builtin_key"] == "video_default")
@@ -258,9 +262,12 @@ class Capture:
         return self.answer
 
 
-def optimize(client, skill_id, prompt="一张猫 @图片1 坐在 @图片3 上", kind="image", refs=None):
-    return client.post(f"/api/prompt-skills/{skill_id}/optimize",
-                       json={"prompt": prompt, "kind": kind, "refs": refs or []})
+def optimize(client, skill_id, prompt="一张猫 @图片1 坐在 @图片3 上", kind="image", refs=None,
+             send_context=None):
+    body = {"prompt": prompt, "kind": kind, "refs": refs or []}
+    if send_context is not None:
+        body["context"] = send_context
+    return client.post(f"/api/prompt-skills/{skill_id}/optimize", json=body)
 
 
 def test_optimize_sends_mark_rule_and_image_ordinals(client, model, init_db, tmp_path, monkeypatch):
@@ -961,6 +968,157 @@ def test_builtin_h3_references_reach_the_model_after_the_body(init_db, client):
     # 顺序：正文在前、资料在中、谁都不许违反的硬规矩垫底
     assert prompt.index("MiniMax") < prompt.index("--- references/edit-en.txt ---")
     assert prompt.index("只返回优化后的提示词正文") > prompt.index("--- references/t2i-en.txt ---")
+
+
+# ---------- 第五条内置：闪寻视频生成H3优化 ----------
+#
+# 这条和 H3-Image 那条的区别只在「正文与资料从哪来」：H3-Image 四段内联在 bundled_skills
+# 里，这条是随包数据目录（backend/app/bundled_skill_packages/h3-video/）。装进库之后的形状
+# 必须完全一样，界面上、发请求时都不该看出差别。
+
+
+def test_ref_budget_is_pinned_wide_enough_for_the_shipped_video_skill():
+    # 参考预算从 20000 抬到 60000 是为了装下这条技能的四份资料。钉住数值本身：
+    # 谁哪天把它调回去，四份里按路径排在后面的两份会整份消失，而界面上看不出来。
+    assert skill_packages.MAX_REFS_CHARS == 60_000
+    payload = bundled_skills.h3_video_package_payload()
+    refs = [item for item in payload["files_meta"] if item["path"] != "SKILL.md"]
+    assert len(refs) == 4 and all(item["included"] and not item["truncated"] for item in refs)
+    assert payload["refs_chars"] == sum(len(item["text"]) for item in payload["entries"][1:])
+    assert payload["refs_chars"] < skill_packages.MAX_REFS_CHARS
+
+
+def test_builtin_h3_video_ships_the_craft_references_it_promises(client):
+    row = builtin_row(client, "h3_video")
+    # 正文末尾点名了四份资料的路径，那这四份就得真的跟着走
+    body = row["instruction"]
+    for path in ("references/combat-beats.md", "references/combat-moves.md",
+                 "references/combat-impact.md", "references/camera-spec.md"):
+        assert path in body, path
+    assert row["source"] == "package"
+    assert row["package_dir"] is None
+    files = row["package"]["files"]
+    assert [item["path"] for item in files] == [
+        "SKILL.md", "references/camera-spec.md", "references/combat-beats.md",
+        "references/combat-impact.md", "references/combat-moves.md"]
+    assert [item["role"] for item in files] == ["写法", "参考", "参考", "参考", "参考"]
+    assert [item["included"] for item in files] == [False, True, True, True, True]
+    assert row["package"]["dropped"] == []
+
+
+def test_builtin_h3_video_row_is_the_shipped_files_byte_for_byte(init_db, client):
+    row = init_db.main().execute(
+        "SELECT instruction,package_refs FROM prompt_skills WHERE builtin_key='h3_video'").fetchone()
+    assert row["instruction"] == bundled_skills.h3_video_instruction()
+    assert row["package_refs"] == bundled_skills.h3_video_package_payload()["block"]
+
+
+def test_builtin_h3_video_references_reach_the_model_after_the_body(init_db, client):
+    sid = builtin_id(client, "h3_video")
+    row = init_db.main().execute("SELECT * FROM prompt_skills WHERE id=?", (sid,)).fetchone()
+    prompt = service.system_prompt(row)
+    assert "--- references/camera-spec.md ---" in prompt
+    assert "--- references/combat-moves.md ---" in prompt
+    # 顺序：正文在前、资料在中、谁都不许违反的硬规矩垫底
+    assert prompt.index("六段") < prompt.index("--- references/camera-spec.md ---")
+    assert prompt.index("只返回优化后的提示词正文") > prompt.index("--- references/combat-moves.md ---")
+
+
+def test_builtin_h3_video_writes_english_prose_but_keeps_chinese_dialogue(client):
+    row = builtin_row(client, "h3_video")
+    # 六段协议的段名、参考标签、台词的语言标签都必须是英文，所以出厂语言规矩是 en
+    assert row["language"] == "en"
+    # 但台词本身不翻译，这条得在正文里说明白，光靠「Output in English」会被理解成连台词也译
+    assert "[Chinese]" in row["instruction"]
+    assert "不翻译" in row["instruction"] or "一字" in row["instruction"]
+    assert "Output in English." in service.system_prompt(row)
+
+
+def test_restore_default_goes_back_to_that_builtin_language_not_auto(client):
+    sid = builtin_id(client, "h3_video")
+    client.patch(f"/api/prompt-skills/{sid}", json={"language": "zh", "instruction": "我自己那份"})
+    restored = client.post(f"/api/prompt-skills/{sid}/restore-default").json()
+    # 恢复默认恢复的是这条技能自己的默认。硬写 auto 会把 en 这个出厂值恢复没了
+    assert restored["language"] == "en"
+    assert restored["instruction"] == bundled_skills.h3_video_instruction()
+
+
+def test_the_sidecar_spec_ships_the_video_skill_package():
+    """打包口径：这条技能的正文与资料必须随 sidecar 一起进安装包。
+
+    漏了这一条，开发期一切正常（直接读仓库里的目录），发出去的包里却没有这条技能，
+    而界面上只留下「少了个技能」——没人会怀疑到 spec 头上。钉在 spec 文本上最便宜。
+    """
+    spec = Path(__file__).resolve().parents[2] / "frontend" / "pyinstaller" / "python-backend.spec"
+    text = spec.read_text(encoding="utf-8")
+    assert 'BACKEND_DIR / "app" / "bundled_skill_packages"' in text
+    assert '"app/bundled_skill_packages"' in text
+    # 而且真的进了 Analysis 的 datas，不是只声明一个没人用的变量
+    assert "datas=BUNDLE_DATAS" in text
+
+
+def test_a_missing_package_dir_skips_the_video_builtin_instead_of_shipping_an_empty_one(
+        init_db, client, monkeypatch, tmp_path):
+    """资源没打进包时宁可少一条技能，也不装一条「正文说后面有资料、其实一份都没附」的。
+
+    patch 的是「资源目录在哪」这一步，不是 available 本身：BUILTINS 里存的是 available 的函数
+    引用，patch 模块上那个同名属性动不到已经存下来的那一份，而 available 每次都是现场去问目录。
+    """
+    conn = init_db.main()
+    conn.execute("DELETE FROM prompt_skills WHERE builtin_key='h3_video'")
+    monkeypatch.setattr(bundled_skills, "h3_video_dir", lambda: tmp_path / "not-shipped")
+    service.initialize(conn)
+    keys = [row["builtin_key"] for row in client.get("/api/prompt-skills").json()]
+    assert "h3_video" not in keys
+    assert "h3_image" in keys, "只跳过缺资源那一条，别把别的内置一起带走"
+
+
+# ---------- 界面上选定的旋钮怎么送进模型 ----------
+
+
+def test_optimize_puts_the_selected_knobs_before_the_output_rule(client, model, monkeypatch):
+    capture = Capture()
+    monkeypatch.setattr(reverse_prompts, "request_model", capture)
+    sid = builtin_id(client, "h3_video")
+    knobs = "戏种：武戏｜武打速度：4档｜时长：8秒｜比例：9:16"
+    result = optimize(client, sid, prompt="两个在天台上对打的人", kind="video", send_context=knobs)
+    assert result.status_code == 200, result.text
+    instruction = capture.calls[0]["instruction"]
+    assert knobs in instruction
+    # 它是写提示词的依据，得排在垫底的硬规矩之前；垫到最底会被前面那三万字挤到看不见。
+    # 锚点用 OUTPUT_RULE 独有的那句：「输出要求」这四个字技能正文自己也会提到，不当锚点
+    assert instruction.index(knobs) < instruction.index("只返回优化后的提示词正文")
+    # 也必须排在参考资料之后：先读规矩，再读这次选了什么
+    assert instruction.index("--- references/camera-spec.md ---") < instruction.index(knobs)
+
+
+def test_optimize_without_context_sends_no_knob_block(client, model, monkeypatch):
+    capture = Capture()
+    monkeypatch.setattr(reverse_prompts, "request_model", capture)
+    sid = builtin_id(client, "video_default")
+    assert optimize(client, sid, prompt="两个在天台上对打的人", kind="video").status_code == 200
+    # 没选就别硬塞一行空标题：模型会开始猜「戏种」是什么
+    assert "选定的参数" not in capture.calls[0]["instruction"]
+
+
+def test_optimize_sends_the_ordinary_skill_path_unchanged_when_context_is_blank(client, model,
+                                                                                monkeypatch):
+    capture = Capture()
+    monkeypatch.setattr(reverse_prompts, "request_model", capture)
+    sid = builtin_id(client, "image_default")
+    optimize(client, sid, send_context="")
+    blank = capture.calls[0]["instruction"]
+    capture.calls.clear()
+    optimize(client, sid)
+    assert capture.calls[0]["instruction"] == blank
+
+
+def test_optimize_refuses_an_oversized_knob_line(client, model, monkeypatch):
+    monkeypatch.setattr(reverse_prompts, "request_model", Capture())
+    sid = builtin_id(client, "video_default")
+    # 前端负责压到 500 以内；真超了就是 422，不能让它悄悄拼进系统提示
+    assert optimize(client, sid, kind="video", send_context="参" * 501).status_code == 422
+
 
 
 def test_a_same_name_skill_is_adopted_instead_of_duplicated(init_db, client):

@@ -17,6 +17,10 @@ Picture/Subject 那套编辑协议。照通用写法出的提示词在这两具�
 
 from __future__ import annotations
 
+import logging
+import sys
+from pathlib import Path
+
 from . import skill_packages
 
 # ---------- Qwen-Image-2.1 ----------
@@ -379,4 +383,77 @@ def h3_package_payload() -> dict:
     block, files_meta, refs_chars = skill_packages.compose_refs_block(
         entries, H3_IMAGE_INSTRUCTION, "SKILL.md")
     return {"root": H3_PACKAGE_ROOT, "entries": entries, "block": block,
+            "files_meta": files_meta, "refs_chars": refs_chars}
+
+
+# ---------- 闪寻视频生成H3优化 ----------
+
+# 这第五条内置技能不照上面两条内联成字符串：它自带四份资料（武戏节奏、招式词汇、力道与防守
+# 的证据、镜头规格与中英对照），实带三万二千多字。内联进来会把这个模块变成十万字级的源文件，
+# 一次小改动的 diff 完全没法读；而它本来就是一个技能包的形状——SKILL.md 加 references/。
+# 所以放成随包数据目录，装载时读进来；拼资料块仍旧走 skill_packages.compose_refs_block，
+# 预算、优先级、界面那份文件清单三件事仍然只有一处口径。
+# 目录找法和 clone_bundled.bundled_dir() 一致：开发期在包内，冻结后先 _MEIPASS/app，再 exe 同级。
+H3_VIDEO_PACKAGE_DIR_NAME = "bundled_skill_packages"
+H3_VIDEO_PACKAGE_SUBDIR = "h3-video"
+H3_VIDEO_PACKAGE_ROOT = "seekx-h3-video-prompt"
+H3_VIDEO_SKILL_PATH = "SKILL.md"
+
+logger = logging.getLogger(__name__)
+
+
+def h3_video_dir() -> Path:
+    """这条技能的资源目录。找不到时照实返回那个不存在的路径，由 h3_video_available 说没有。"""
+    leaf = (H3_VIDEO_PACKAGE_DIR_NAME, H3_VIDEO_PACKAGE_SUBDIR)
+    here = Path(__file__).resolve().parent.joinpath(*leaf)
+    if here.is_dir():
+        return here
+    meipass = getattr(sys, "_MEIPASS", None)
+    if isinstance(meipass, str) and meipass:
+        alt = Path(meipass).joinpath("app", *leaf)
+        if alt.is_dir():
+            return alt
+    alt = Path(sys.executable).resolve().parent.joinpath("app", *leaf)
+    if alt.is_dir():
+        return alt
+    return here
+
+
+def h3_video_available() -> bool:
+    """正文文件在不在。不在就别装这条内置。
+
+    这条技能正文末尾点名了四份资料。附不上的话模型会照着「下面附有资料」写出不存在的引用，
+    那比技能清单上少一条更难查——和上面 H3-Image 那条防的是同一件事。
+    """
+    return (h3_video_dir() / H3_VIDEO_SKILL_PATH).is_file()
+
+
+def h3_video_instruction() -> str:
+    """技能正文。调用前必须已经确认 h3_video_available()。"""
+    return (h3_video_dir() / H3_VIDEO_SKILL_PATH).read_text(encoding="utf-8")
+
+
+def h3_video_package_entries() -> list[dict]:
+    """SKILL.md 加 references/ 下每一份 .md，形状和扫描一个真目录扫出来的一样。
+
+    只收 references/ 下的 .md：这条技能没有脚本、没有图，多写一套过滤是给以后的债留位置。
+    """
+    body = h3_video_instruction()
+    entries = [{"path": H3_VIDEO_SKILL_PATH, "text": body,
+                "size": len(body.encode("utf-8")), "is_text": True}]
+    refs_dir = h3_video_dir() / "references"
+    if refs_dir.is_dir():
+        for path in sorted(refs_dir.glob("*.md")):
+            text = path.read_text(encoding="utf-8")
+            entries.append({"path": "references/" + path.name, "text": text,
+                            "size": len(text.encode("utf-8")), "is_text": True})
+    return entries
+
+
+def h3_video_package_payload() -> dict:
+    """这条内置技能要写进库的那一份技能包，口径与 h3_package_payload 逐字一致。"""
+    entries = h3_video_package_entries()
+    block, files_meta, refs_chars = skill_packages.compose_refs_block(
+        entries, entries[0]["text"], H3_VIDEO_SKILL_PATH)
+    return {"root": H3_VIDEO_PACKAGE_ROOT, "entries": entries, "block": block,
             "files_meta": files_meta, "refs_chars": refs_chars}

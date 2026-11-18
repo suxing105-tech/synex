@@ -89,6 +89,9 @@ class OptimizeInput(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
     prompt: str = Field(min_length=1, max_length=50000)
     kind: str = Field(pattern="^(image|video)$")
+    # 弹窗上选定的参数（戏种、武打速度、时长、比例）压成一行送进来。
+    # 500 是上限不是目标：它拼在系统提示尾部，太长会开始稀释技能正文本身。
+    context: str = Field(default="", max_length=500)
     refs: list[RefInput] = Field(default_factory=list, max_length=service.MAX_REF_IMAGES)
 
 
@@ -167,4 +170,5 @@ def update_settings(payload: SettingsInput):
 @router.post("/prompt-skills/{skill_id}/optimize")
 async def optimize(skill_id: int, payload: OptimizeInput):
     return await service.optimize(skill=service.get_skill(skill_id), prompt=payload.prompt,
-                                 kind=payload.kind, refs=[item.model_dump() for item in payload.refs])
+                                 kind=payload.kind, refs=[item.model_dump() for item in payload.refs],
+                                 context=payload.context)

@@ -423,7 +423,9 @@
 <div class="settings-card">
   <SettingsRow title="导入工作流" description="只接受 API 格式（顶层是节点号 → 节点内容）。ComfyUI 里用「Workflow → Export (API)」导出。要换一条工作流就是再导一次，导完在上面的列表点「设为当前」。" top>
     {#snippet control()}
-      <button class="setting-button bg-accent text-bg" disabled={busy} onclick={() => void pickWorkflowJson()}>选择工作流 JSON</button>
+      <button class="setting-button bg-accent text-bg" disabled={busy} onclick={() => void pickWorkflowJson()}>
+        {pickedFile ? "换一份工作流 JSON" : "选择工作流 JSON"}
+      </button>
     {/snippet}
     {#if pickedFile}
       <p class="clone-picked">已选：<b title={pickedFile}>{basenameOnly(pickedFile)}</b>
@@ -448,7 +450,10 @@
         </div>
         <input class="setting-control" type="text" aria-label="模板名称" bind:value={pendingName} />
         <button class="setting-button bg-accent text-bg" disabled={busy} onclick={() => void savePending()}>保存模板</button>
-        <button class="setting-button setting-button-ghost" onclick={() => (pending = null)}>取消导入</button>
+        <!-- 取消导入连「已选」一起清掉：留着那行会谎报还有一份读到一半的工作流，
+             而确认面板已经不在了。 -->
+        <button class="setting-button setting-button-ghost"
+          onclick={() => { pending = null; pickedFile = ""; }}>取消导入</button>
       </div>
       {#if pending.inspect.warnings.length}
         <ul class="clone-warnings" role="status">
@@ -550,7 +555,9 @@
   /* 一格一条 chip，宽度自己排：H3 那 9 格参考图竖成一列时，确认一次要滚三屏。
      chip 的内距与圆角是 .fill-interactions 给的（特异度更高），这里不重复写。 */
   .clone-slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--sp-2); }
-  .clone-slot { align-items: center; min-width: 0; color: var(--text-1); font-size: var(--fs-sm); border: 1px solid transparent; }
+  /* min-height 是命中区地板（WCAG 2.5.8 要 24px）：两行 chip 实际高约 52px，
+     写出来是防止以后为省地方把它压小。内距和圆角仍旧由 .fill-interactions 给。 */
+  .clone-slot { align-items: center; min-width: 0; min-height: var(--ctl-sm); color: var(--text-1); font-size: var(--fs-sm); border: 1px solid transparent; }
   .clone-slot-body { display: flex; flex-direction: column; gap: var(--sp-05); min-width: 0; }
   .clone-slot-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* 节点号是「哪个节点」的凭据，等宽栈才看得清 582 与 543 的差别；副行用 text-2：

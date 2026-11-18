@@ -538,6 +538,29 @@ describe('导入口只有「选文件」一条', () => {
     expect(picked.getAttribute('title')).toBe('F:\\常用\\H3.json');
   });
 
+  it('选好文件之后那颗按钮改口说「换一份」，取消导入连「已选」那行一起清掉', async () => {
+    routes(inspectRoutes());
+    const screen = render(CloneTemplates, {});
+    await screen.findByText('旧的同款');
+    // 手上还没有文件之前不许说「换一份」，那是给已经挑过一份的人看的
+    expect(screen.getByRole('button', { name: '选择工作流 JSON' })).toBeTruthy();
+    await importJson(screen);
+    expect(await screen.findByRole('button', { name: '换一份工作流 JSON' })).toBeTruthy();
+    expect(screen.container.querySelector('.clone-picked')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: '取消导入' }));
+    // 取消之后回初始态：确认面板没了，「已选」那行也不许留着谎报有一份读到一半的工作流
+    expect(screen.queryByText('确认槽位')).toBeNull();
+    expect(screen.container.querySelector('.clone-picked')).toBeNull();
+    expect(screen.getByRole('button', { name: '选择工作流 JSON' })).toBeTruthy();
+  });
+
+  it('chip 带着命中区地板，两行再挤也不许压到 24px 以下', async () => {
+    const style = readFileSync('src/components/CloneTemplates.svelte', 'utf8');
+    const block = style.match(/\.clone-slot\s*\{([^}]*)\}/);
+    expect(block, '.clone-slot 这条规则不见了').toBeTruthy();
+    expect(block![1]).toContain('min-height: var(--ctl-sm)');
+  });
+
   it('原生框取消就是没改主意：不报错、也不动页面', async () => {
     vi.mocked(isTauri).mockReturnValue(true);
     vi.mocked(selectWorkflowJsonPath).mockResolvedValue(null);

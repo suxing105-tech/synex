@@ -8,10 +8,11 @@
    *
    * 工作流随时可换：再导一份新的，旧模板留着，切哪一条在列表里点「设为当前」。
    */
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { basenameOnly } from "../lib/media-format";
   import { isTauri, selectWorkflowJsonPath } from "../lib/tauri";
   import SettingsRow from "./SettingsRow.svelte";
+  import Icon from "./Icon.svelte";
   import {
     cloneApi, cloneError, promptSlots, imageSlots, controlSlots, referenceCells, slotKey, templateDisplayName,
     familyCells, isAudioTemplate, isVideoTemplate, referenceFamilies, REF_KIND_NAMES,
@@ -37,6 +38,13 @@
   let pending = $state<{ inspect: CloneInspect; workflow?: unknown; path?: string } | null>(null);
   let pendingName = $state("");
   let picked = $state<Record<string, boolean>>({});
+  // 槽位一多（H3 那条 17 个）就得分组收起、按名字找，否则确认一次要滚半屏。
+  // 这两样只决定「看不看得见」，一律不动 picked：过滤框里剩几条、哪一组收起来，
+  // 都不该让本来勾上的槽位悄悄掉出提交——那是最难查的一种丢法。
+  let filter = $state("");
+  let collapsed = $state<Record<string, boolean>>({});
+  // 确认面板排在卡片下半屏，长列表里点完「选择工作流 JSON」不滚过去就像没反应。
+  let confirmEl = $state<HTMLDivElement | null>(null);
 
   async function reload(quiet = false) {
     if (!quiet) loading = true;
@@ -72,6 +80,41 @@
       items: all.filter((slot) => groupOf(slot) === label),
     })).filter((group) => group.items.length);
   });
+
+  /**
+   * 槽位清单的计数 / 过滤 / 折叠。三者都只做显示，不回写勾选。
+   *
+   * 过滤框只在槽位多到一屏放不下时出现：五六个槽位的工作流摆着那个框，
+   * 只是多一个没人打的输入框，还抢走「确认槽位」那一行的注意力。
+   */
+  const slotTotal = $derived(groups.reduce((n, group) => n + group.items.length, 0));
+  const pickedCount = $derived(groups.reduce((n, group) => n + groupPicked(group), 0));
+  const showFilter = $derived(slotTotal > 12);
+  const needle = $derived(filter.trim().toLowerCase());
+  const shownGroups = $derived.by(() => groups
+    .map((group) => ({ ...group, shown: group.items.filter(slotMatches) }))
+    .filter((group) => group.shown.length));
+
+  /** 名字、节点号、输入名、族别都参与匹配：记不住「87 号那台」的人打 87 也能找到。 */
+  function slotMatches(slot: CloneSlot): boolean {
+    if (!needle) return true;
+    return `${slot.label} ${slot.node} ${slot.input} ${slot.kind}`.toLowerCase().includes(needle);
+  }
+
+  function groupPicked(group: { items: CloneSlot[] }): number {
+    return group.items.filter((slot) => picked[slotKey(slot)]).length;
+  }
+
+  function allPicked(group: { items: CloneSlot[] }): boolean {
+    return group.items.every((slot) => picked[slotKey(slot)]);
+  }
+
+  /** 一键整组勾上或去勾，只碰这一组：参考图九格里想全去掉不该连累别的族。 */
+  function setGroupAll(group: { items: CloneSlot[] }, on: boolean): void {
+    const next = { ...picked };
+    for (const slot of group.items) next[slotKey(slot)] = on;
+    picked = next;
+  }
 
   /** 导入完成后报的各族格数；只有图片一族时不罗嗦。 */
   function refSummary(tpl: CloneTemplate): string {
@@ -139,7 +182,13 @@
       picked = {};
       for (const slot of result.slots) picked[slotKey(slot)] = true;
       for (const slot of result.candidates) picked[slotKey(slot)] = false;
+      // 上一份的过滤词和折叠状态不能带进这一份：换了工作流还留着旧关键词，
+      // 看上去就像「新工作流少了几个槽位」。
+      filter = "";
+      collapsed = {};
       notice = "";
+      await tick();
+      confirmEl?.scrollIntoView?.({ block: "start", behavior: "smooth" });
     } catch (e) {
       error = cloneError(e);
       pending = null;
@@ -379,7 +428,7 @@
     onchange={(e) => void onWorkflowFile(e)} />
 
   {#if pending}
-    <div class="clone-confirm">
+    <div class="clone-confirm" bind:this={confirmEl}>
       <div class="clone-confirm-head">
         <div>
           <span class="clone-confirm-title">确认槽位</span>
@@ -396,19 +445,51 @@
           {/each}
         </ul>
       {/if}
-      {#each groups as group (group.label)}
-        <div class="clone-group">
-          <span class="clone-group-label">{group.label}</span>
-          {#each group.items as slot (slotKey(slot))}
-            <label class="clone-slot">
-              <input type="checkbox" checked={picked[slotKey(slot)] ?? false}
-                onchange={(e) => (picked = { ...picked, [slotKey(slot)]: (e.target as HTMLInputElement).checked })} />
-              <span>{slot.label || slotKey(slot)}</span>
-              <code>{slotKey(slot)}</code>
-            </label>
-          {/each}
-        </div>
-      {/each}
+      <div class="clone-confirm-meta">
+        <span class="clone-count">勾选 {pickedCount} / {slotTotal}</span>
+        {#if showFilter}
+          <input class="setting-control clone-filter" type="search" placeholder="按名称或节点号过滤"
+            aria-label="过滤槽位" bind:value={filter} />
+        {/if}
+      </div>
+      <!-- 槽位区自己封顶滚，「确认槽位」那一行留在滚动盒外面。这里没用 sticky：
+           设置页真正滚的是 .settings-content，而 .settings-card 是 overflow:hidden，
+           sticky 在这种祖先里静默失效，头部一滚就没。 -->
+      <div class="clone-slot-scroll">
+        {#each shownGroups as group (group.label)}
+          <section class="clone-group">
+            <div class="clone-group-head">
+              <button class="clone-group-toggle" type="button" aria-expanded={!collapsed[group.label]}
+                title={collapsed[group.label] ? "展开这一组" : "收起这一组"}
+                onclick={() => (collapsed = { ...collapsed, [group.label]: !collapsed[group.label] })}>
+                <Icon name={collapsed[group.label] ? "chevron-right" : "chevron-down"} size={12} />
+                <span class="clone-group-label">{group.label}</span>
+                <span class="clone-group-count">{groupPicked(group)} / {group.items.length}</span>
+              </button>
+              <button class="setting-button setting-button-ghost clone-group-all" type="button"
+                title={allPicked(group) ? `取消这一组的 ${group.items.length} 个槽位` : `勾上这一组的 ${group.items.length} 个槽位`}
+                onclick={() => setGroupAll(group, !allPicked(group))}>{allPicked(group) ? "全不选" : "全选"}</button>
+            </div>
+            {#if !collapsed[group.label]}
+              <div class="clone-slot-grid">
+                {#each group.shown as slot (slotKey(slot))}
+                  <label class="clone-slot" class:is-on={picked[slotKey(slot)] ?? false}>
+                    <input type="checkbox" checked={picked[slotKey(slot)] ?? false}
+                      onchange={(e) => (picked = { ...picked, [slotKey(slot)]: (e.target as HTMLInputElement).checked })} />
+                    <span class="clone-slot-body">
+                      <span class="clone-slot-name">{slot.label || slotKey(slot)}</span>
+                      <code>{slotKey(slot)}</code>
+                    </span>
+                  </label>
+                {/each}
+              </div>
+            {/if}
+          </section>
+        {/each}
+        {#if !shownGroups.length}
+          <p class="settings-hint">没有名字或节点号对上「{filter}」的槽位。勾着的槽位不受过滤影响，清空过滤框就都回来了。</p>
+        {/if}
+      </div>
       <p class="settings-hint">内置提示词：{pending.inspect.default_prompt ? pending.inspect.default_prompt.slice(0, 80) : "（没有）"}</p>
     </div>
   {/if}
@@ -438,10 +519,29 @@
   .clone-picked b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40ch; }
   .clone-picked-note { font-size: var(--fs-xs); color: var(--text-3); }
   .clone-file { display: none; }
-  .clone-group { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: var(--sp-3); }
-  .clone-group-label { color: #9a9aa1; font-size: var(--fs-2xs); letter-spacing: var(--track-label); }
-  .clone-slot { display: flex; align-items: center; gap: var(--sp-2); color: #d8d8dc; font-size: var(--fs-sm); }
-  .clone-slot code { color: #8a8a90; font-size: var(--fs-2xs); }
+  .clone-confirm-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+  .clone-count { color: var(--text-2); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+  .clone-filter { flex: 1 1 200px; min-width: 180px; }
+  /* 槽位区自己封顶滚，滚到头把滚动交回整页：这里不许写锁滚动的属性，
+     指针停在这块里滚到底、整页却再也滚不动，是设置页最难退的一种卡。 */
+  .clone-slot-scroll { display: flex; flex-direction: column; gap: var(--sp-4); max-height: 420px; overflow-y: auto; }
+  .clone-group { display: flex; flex-direction: column; gap: var(--sp-2); }
+  .clone-group-head { display: flex; align-items: center; gap: var(--sp-2); }
+  /* 组头是一行标签加一颗 caret，不是卡片按钮：交互底色交给 .fill-interactions，这里只定形状。 */
+  .clone-group-toggle { display: flex; align-items: center; gap: var(--sp-1); min-height: var(--ctl-sm); padding: 0 var(--sp-1); border: 0; border-radius: var(--r-1); background: transparent; color: var(--text-2); }
+  .clone-group-label { font-size: var(--fs-xs); font-weight: 600; letter-spacing: var(--track-label); }
+  /* 计数挂 tabular-nums：展开收起时数字跳位比数字本身更碍眼。窄体不给这里用。 */
+  .clone-group-count { color: var(--text-2); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+  /* 一格一条 chip，宽度自己排：H3 那 9 格参考图竖成一列时，确认一次要滚三屏。
+     chip 的内距与圆角是 .fill-interactions 给的（特异度更高），这里不重复写。 */
+  .clone-slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--sp-2); }
+  .clone-slot { align-items: center; min-width: 0; color: var(--text-1); font-size: var(--fs-sm); border: 1px solid transparent; }
+  .clone-slot-body { display: flex; flex-direction: column; gap: var(--sp-05); min-width: 0; }
+  .clone-slot-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 节点号是「哪个节点」的凭据，等宽栈才看得清 582 与 543 的差别；副行用 text-2：
+     hover 时全局把这格底色刷成 --ink-3，text-3 压在上面只有 4.3:1。 */
+  .clone-slot code { color: var(--text-2); font-size: var(--fs-2xs); font-family: var(--font-mono); }
+  .clone-slot.is-on { border-color: var(--accent); }
   /* 槽位确认这块不用 SettingsRow：它的 control snippet 和正文里的 {#each} 撞在一起会渲染崩，
      而且这一屏本来就是一张密集的清单表，左右分栏反而放不下。 */
   .clone-confirm { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3) 0 0; border-top: 1px solid #2a2a2f; margin-top: var(--sp-3); }

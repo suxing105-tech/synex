@@ -606,3 +606,135 @@ describe('设置页输入框只有一份控件配方', () => {
   });
 });
 
+/**
+ * 槽位确认面板的长列表。
+ *
+ * H3 那种工作流一次给出 17 个槽位，竖着一列排下来要点半天：所以 chip 自己排网格、
+ * 组头能收起、槽位多到一屏放不下才出现过滤框。这三样都只是「看不看得见」，
+ * 下面最后两条钉的就是它们不许动勾选——少提交一个参考位是看不出来的错。
+ */
+const BIG_SLOTS = [
+  PROMPT_SLOT,
+  ...Array.from({ length: 9 }, (_, i) => ({
+    kind: 'image', node: String(188 + i), input: i === 0 ? 'image' : `image_${i + 1}`, label: `图片${i + 1}`,
+  })),
+  { kind: 'number', node: '227', input: 'value', label: '时长', value: 8, min: 5, max: 15, step: 1, unit: '秒' },
+  { kind: 'select', node: '13', input: 'aspect_ratio', label: '比例', options: ['1:1', '16:9'], value: '1:1' },
+  { kind: 'number', node: '9', input: 'seed', label: '随机种子', value: 0, min: 0, max: 999, step: 1 },
+];
+
+const bigInspectBody = () => ({
+  slots: BIG_SLOTS, candidates: [], nodes: [], default_prompt: '写一句', warnings: [],
+  suggested_name: '多图编辑', media_kind: 'image',
+});
+
+/** 预演 inspect + 保存，返回「读到的 POST body」取法。 */
+function saveRoutes(inspectBody: unknown) {
+  let created: Record<string, any> | null = null;
+  http.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path === '/api/clone/templates' && (init as RequestInit)?.method === 'POST') {
+      created = JSON.parse(String(init?.body));
+      return { ...TPL, id: 9, name: '多图编辑', slots: created!.slots };
+    }
+    if (path === '/api/clone/templates/inspect') return inspectBody;
+    if (path === '/api/clone/templates') return { items: [TPL] };
+    throw new Error(`未预演的接口：${path}`);
+  });
+  return () => created as unknown as Record<string, any>;
+}
+
+describe('槽位确认的长列表', () => {
+  const head = (screen: any, label: string) => screen.getByText(label).closest('section')!;
+
+  it('「确认槽位」那一行留在滚动盒外面，槽位区自己封顶滚', async () => {
+    routes(inspectRoutes());
+    const screen = render(CloneTemplates, {});
+    await screen.findByText('旧的同款');
+    await importJson(screen);
+    const headEl = screen.container.querySelector('.clone-confirm-head')!;
+    const scroller = screen.container.querySelector('.clone-slot-scroll')!;
+    // 头部一旦进滚动盒，勾到第十格就看不见「保存模板」了
+    expect(headEl.closest('.clone-slot-scroll')).toBeNull();
+    expect(scroller.contains(screen.container.querySelector('.clone-slot')!)).toBe(true);
+    // sticky 在这张卡里静默失效（.settings-card 有 overflow:hidden），不许拿它当第二套方案
+    const style = readFileSync('src/components/CloneTemplates.svelte', 'utf8');
+    expect(style).toMatch(/\.clone-slot-scroll\s*\{[^}]*overflow-y:\s*auto/);
+    expect(style).not.toContain('position: sticky');
+    expect(style).not.toContain('overscroll-behavior');
+  });
+
+  it('组头报「本组已勾 / 本组总数」，那颗「全不选」只清自己这一组', async () => {
+    saveRoutes(bigInspectBody());
+    const screen = render(CloneTemplates, {});
+    await screen.findByText('旧的同款');
+    await importJson(screen);
+    const imageSection = head(screen, '参考图片');
+    expect(imageSection.querySelector('.clone-group-count')!.textContent).toBe('9 / 9');
+    expect(screen.getByText('勾选 13 / 13')).toBeTruthy();
+    // 全勾着时那颗按钮是「全不选」，点它只清这一组
+    expect(imageSection.querySelector('.clone-group-all')!.textContent).toBe('全不选');
+    await fireEvent.click(imageSection.querySelector('.clone-group-all')!);
+    expect([...imageSection.querySelectorAll('.clone-slot input')]
+      .every((el: HTMLInputElement) => !el.checked)).toBe(true);
+    expect(imageSection.querySelector('.clone-group-count')!.textContent).toBe('0 / 9');
+    // 别的组一点没被牵连
+    expect(head(screen, '提示词').querySelector('input')!.checked).toBe(true);
+    expect(head(screen, '弹窗控件').querySelectorAll('input')).toHaveLength(3);
+    expect(screen.getByText('勾选 4 / 13')).toBeTruthy();
+    // 再点一次整组回来；只去掉一格时按钮翻成「全选」
+    await fireEvent.click(imageSection.querySelector('.clone-group-all')!);
+    expect(imageSection.querySelector('.clone-group-count')!.textContent).toBe('9 / 9');
+    await fireEvent.click(screen.getByLabelText(/图片3/).closest('label')!.querySelector('input')!);
+    expect(imageSection.querySelector('.clone-group-count')!.textContent).toBe('8 / 9');
+    expect(imageSection.querySelector('.clone-group-all')!.textContent).toBe('全选');
+  });
+
+  it('过滤框只在槽位多到一屏放不下时出现，五六个槽位的工作流不摆空框', async () => {
+    routes(h3InspectRoutes());
+    const screen = render(CloneTemplates, {});
+    await screen.findByText('旧的同款');
+    await importJson(screen);
+    expect(screen.queryByLabelText('过滤槽位')).toBeNull();
+    cleanup();
+    routes({ ...inspectRoutes(), '/api/clone/templates/inspect': bigInspectBody() });
+    const big = render(CloneTemplates, {});
+    await big.findByText('旧的同款');
+    await importJson(big);
+    expect(big.getByLabelText('过滤槽位')).toBeTruthy();
+  });
+
+  it('过滤只是不显示：勾着的槽位一个不少地交给后端', async () => {
+    const created = saveRoutes(bigInspectBody());
+    const screen = render(CloneTemplates, {});
+    await screen.findByText('旧的同款');
+    await importJson(screen);
+    await fireEvent.input(screen.getByLabelText('过滤槽位'), { target: { value: '时长' } });
+    expect(screen.container.querySelectorAll('.clone-slot')).toHaveLength(1);
+    await fireEvent.click(screen.getByRole('button', { name: '保存模板' }));
+    await tick();
+    await tick();
+    expect(created().slots).toHaveLength(13);
+    expect(created().slots.map((s: { kind: string }) => s.kind).filter((k: string) => k === 'image')).toHaveLength(9);
+  });
+
+  it('组收起来之后 chip 不在版面里，但勾着的仍然跟着提交', async () => {
+    const created = saveRoutes(h3InspectRoutes()['/api/clone/templates/inspect']);
+    const screen = render(CloneTemplates, {});
+    await screen.findByText('旧的同款');
+    await importJson(screen);
+    expect(screen.getByText('图片1')).toBeTruthy();
+    await fireEvent.click(screen.getByText('参考图片').closest('button')!);
+    expect(screen.queryByText('图片1')).toBeNull();
+    // 展开回来还在，收起只是不渲染
+    await fireEvent.click(screen.getByText('参考图片').closest('button')!);
+    expect(screen.getByText('图片1')).toBeTruthy();
+    await fireEvent.click(screen.getByText('参考音频').closest('button')!);
+    await fireEvent.click(screen.getByRole('button', { name: '保存模板' }));
+    await tick();
+    await tick();
+    const kinds = created().slots.map((s: { kind: string }) => s.kind);
+    expect(kinds).toContain('audio');
+    expect(kinds).toContain('image');
+  });
+});
+

@@ -119,7 +119,12 @@ def source_codepoints(roots: list[Path]) -> set[int]:
         if not root.is_dir():
             continue
         for path in root.rglob("*"):
-            if not path.is_file() or path.suffix not in {".svelte", ".ts", ".js", ".css", ".html", ".py", ".json"}:
+            # .md 在名单里不是凑数：内置提示词技能（闪寻视频生成H3优化）的正文和四份资料就是
+            # backend/app 下的 .md，它们在技能弹窗里直接显示给用户。H3-Image 那条把三万字内联在
+            # .py 里，所以老早被扫到了；同样是「界面上要显示的技能正文」，换成数据文件形态反而
+            # 扫不到，这一条闸就漏了它自己该管的那类东西。
+            scanned = {".svelte", ".ts", ".js", ".css", ".html", ".py", ".json", ".md"}
+            if not path.is_file() or path.suffix not in scanned:
                 continue
             if skip_dirs & set(path.parts):
                 continue

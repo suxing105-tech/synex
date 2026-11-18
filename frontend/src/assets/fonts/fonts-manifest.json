@@ -15,13 +15,13 @@
     "archiveSha256": "2bea24f6eb4bb3ccce516d1704f2225a504bb5fffad6cee28269cc9964ba0b84"
   },
   "renamedBecause": "SIL OFL 1.1 Reserved Font Name：子集不得沿用原字族名",
-  "codepoints": 9674,
+  "codepoints": 9677,
   "charsetGroups": {
     "latin+punct": 2898,
     "gb2312": 6763,
-    "source": 1653
+    "source": 1893
   },
-  "totalBytes": 5937552,
+  "totalBytes": 5940356,
   "licenseFile": "frontend/src-tauri/resources/OFL-SeekX-Sans.txt",
   "files": [
     {
@@ -29,40 +29,40 @@
       "family": "SeekX Sans",
       "subfamily": "Regular",
       "weight": 400,
-      "bytes": 1169860,
-      "sha256": "a105f71c91d162258f480da1f867d10338c123f4d7fa0352181440de864b7424"
+      "bytes": 1170644,
+      "sha256": "4f8c34034b394f264f5f75f8dea3e38b2c73d80ff57f37c2b9962f97eb9b8e95"
     },
     {
       "file": "seekx-sans-medium.woff2",
       "family": "SeekX Sans",
       "subfamily": "Medium",
       "weight": 500,
-      "bytes": 1199220,
-      "sha256": "b142677040355a7dc2bd893da2c77a9259f42f195166c5ce84bb9456064ddb32"
+      "bytes": 1199520,
+      "sha256": "105a7dda3a9be94e1e632cc1b5663d186c1b849a621d3332415b504d5ac63fdf"
     },
     {
       "file": "seekx-sans-semibold.woff2",
       "family": "SeekX Sans",
       "subfamily": "SemiBold",
       "weight": 600,
-      "bytes": 1209784,
-      "sha256": "dd497501b21301bdd2a2db01688d9898e1b57f6135d826b0abe3d44134da6cc2"
+      "bytes": 1210216,
+      "sha256": "8d26ca5825558a414c02fe99f9916aad4e8d69d089ae35ba9eb55d1dac11ccf2"
     },
     {
       "file": "seekx-sans-bold.woff2",
       "family": "SeekX Sans",
       "subfamily": "Bold",
       "weight": 700,
-      "bytes": 1209064,
-      "sha256": "5b49733227165472ab086326c3cf23184d665971458cfc078ef09fdae8dc73de"
+      "bytes": 1209568,
+      "sha256": "b785919f64202a1b1551a73f240ddf2f892b8d8deaf2a2aaad122b102527a1d4"
     },
     {
       "file": "seekx-sans-condensed-regular.woff2",
       "family": "SeekX Sans Condensed",
       "subfamily": "Regular",
       "weight": 400,
-      "bytes": 1149624,
-      "sha256": "d30e56a54c0560b36ba3421e09a6f2c5c19915c5442c9bd556895935cc2e7786"
+      "bytes": 1150408,
+      "sha256": "6194d60274578767ab3c4ee423906ffd8358f99e9bd463419d7fba9f52233370"
     }
   ]
 }

@@ -143,6 +143,21 @@ def _fmt(cps) -> str:
     return " ".join("U+%04X%s" % (cp, chr(cp)) for cp in sorted(cps))
 
 
+def test_skill_markdown_is_inside_the_scanned_set():
+    """技能正文换成 .md 数据文件之后，闸必须跟着把 .md 扫进来。
+
+    这条钉的是「闸还管不管得到那一类字」，不是某个具体的字。哪天后缀名单被收窄回
+    .py 那一套，内置技能的四份资料就重新变成静默缺字区：开发期看着正常，界面上掉回雅黑。
+    """
+    sf = _subsetter()
+    import inspect
+    body = inspect.getsource(sf.source_codepoints)
+    assert '".md"' in body, "技能正文是 .md，不在扫描后缀里就是给自己留静默缺字区"
+    found = sf.source_codepoints(_SOURCE_ROOTS)
+    # 技能正文里的字真的进了请求集合（掤：太极八法之一，不在 GB2312 里，只能靠这一路进来）
+    assert ord("掤") in found
+
+
 def test_shipped_faces_cover_every_character_the_source_asks_for():
     sf = _subsetter()
     requested = sf.source_codepoints(_SOURCE_ROOTS)

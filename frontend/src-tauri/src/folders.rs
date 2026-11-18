@@ -82,6 +82,64 @@ pub async fn select_skill_source(window: WebviewWindow) -> Result<Option<String>
         .transpose()
 }
 
+/// 「导入工作流」那一个入口认的后缀。
+///
+/// 只认 .json：后端 inspect 只吃 ComfyUI「Export (API)」那一份 JSON，
+/// 挑了 .txt / .yaml 只会换来一句「读不了」，在原生框这一道拦掉比事后报错省一轮。
+const WORKFLOW_JSON_FILTERS: &[&str] = &["json"];
+
+/// 后缀在不在名单里。同 `accepts_skill_source`：原生框里输 `*.*` 能绕过筛子，这里补一道。
+fn accepts_workflow_json(path: &str) -> bool {
+    let name = path.trim().replace('\\', "/");
+    let name = name.rsplit('/').next().unwrap_or("");
+    match name.rfind('.') {
+        Some(dot) => WORKFLOW_JSON_FILTERS
+            .iter()
+            .any(|ext| name[dot + 1..].eq_ignore_ascii_case(ext)),
+        None => false,
+    }
+}
+
+/// 导入工作流那一个入口：挑一份 API 格式的 .json，只回路径。
+///
+/// 不在 Rust 这边读文件：解析、扫节点、检测槽位全是后端那一份的活，
+/// 这里多读一遍等于把几十 MB 的工作流搬两遍。
+#[tauri::command]
+pub async fn select_workflow_json(window: WebviewWindow) -> Result<Option<String>, String> {
+    if window.label() != "main" {
+        return Err("请从主窗口选择工作流文件".into());
+    }
+    let _guard = PICKER.try_lock().map_err(|_| "文件选择窗口已打开")?;
+    let (send, receive) = tokio::sync::oneshot::channel();
+    window
+        .app_handle()
+        .dialog()
+        .file()
+        .set_title("选择工作流 JSON（ComfyUI → Workflow → Export API）")
+        .set_parent(&window)
+        .add_filter("工作流 JSON", WORKFLOW_JSON_FILTERS)
+        .pick_files(move |files| {
+            let _ = send.send(files.and_then(|list| list.into_iter().next()));
+        });
+    let result = receive
+        .await
+        .map_err(|_| "文件选择窗口未能返回结果，请重试")?;
+    result
+        .map(|file| {
+            let path = file
+                .into_path()
+                .map_err(|_| "请选择本地路径".to_string())?
+                .into_os_string()
+                .into_string()
+                .map_err(|_| "无法识别路径".to_string())?;
+            if !accepts_workflow_json(&path) {
+                return Err("只能选 .json：要的是 ComfyUI「Workflow → Export (API)」导出的那一份".to_string());
+            }
+            Ok(path)
+        })
+        .transpose()
+}
+
 fn initial_directory(current: Option<String>, previous: Option<String>) -> Option<PathBuf> {
     [current, previous]
         .into_iter()
@@ -163,6 +221,18 @@ mod tests {
         assert!(!accepts_skill_source("C:\\a\\SKILL"));
         assert!(!accepts_skill_source(""));
         assert!(!accepts_skill_source("archive."));
+    }
+    #[test]
+    fn workflow_json_only_takes_the_api_export_suffix() {
+        assert!(accepts_workflow_json("C:\\常用\\Qwen-image-2.1多图编辑.json"));
+        assert!(accepts_workflow_json("/tmp/H3/WORKFLOW.JSON"));
+        // 界面格式那份也是 .json，筛子分不出这两种——认格式在后端，别在这儿装懂。
+        // 但别的后缀必须当场拦住，省得挑了 .txt 再吃一句读不了。
+        assert!(!accepts_workflow_json("C:\\a\\workflow.txt"));
+        assert!(!accepts_workflow_json("C:\\a\\workflow.yaml"));
+        assert!(!accepts_workflow_json("C:\\a\\workflow"));
+        assert!(!accepts_workflow_json(""));
+        assert!(!accepts_workflow_json("workflow."));
     }
     #[test]
     fn rejects_a_file_as_initial_directory() {

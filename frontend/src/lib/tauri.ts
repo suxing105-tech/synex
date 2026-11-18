@@ -39,6 +39,17 @@ export async function selectSkillSourcePath(): Promise<string | null> {
   return (window as any).__TAURI__.core.invoke("select_skill_source");
 }
 
+/**
+ * 「导入工作流」那一个入口：挑一份 ComfyUI「Export (API)」的 .json，取消返回 null。
+ *
+ * 只回路径，不在这边读文件：解析工作流、检测槽位是后端 inspect 的活，
+ * 一次几十 MB 的东西没理由先搬进 WebView 再发回去。
+ */
+export async function selectWorkflowJsonPath(): Promise<string | null> {
+  if (!isTauri()) throw new Error("原生文件选择仅在桌面版提供，浏览器里请用文件框");
+  return (window as any).__TAURI__.core.invoke("select_workflow_json");
+}
+
 export async function selectTextPaths(directory: boolean): Promise<string[]> {
   if (!isTauri()) throw new Error('文件选择仅在桌面版提供，请输入本地路径');
   return (window as any).__TAURI__.core.invoke('select_text_paths', { directory });

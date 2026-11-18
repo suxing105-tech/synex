@@ -1,15 +1,16 @@
 <script lang="ts">
   /**
-   * 设置 → 再次创作：工作流模板的导入、确认与替换。
+   * 设置 → 再次创作：工作流模板的导入与确认。
    *
    * 为什么导入要人确认一遍槽位：自动检测只能猜「哪个输入框是提示词、哪个节点收参考图、
    * 哪两个控件值得放进弹窗」。猜错的代价是生成出来的图不对，而用户在弹窗里根本看不出
    * 是哪个节点没被写。所以这里先把检测结果摊开给人勾选，确认后才落库。
    *
-   * 工作流随时可替换：再导一份新的即可，旧模板留着；也可以就地换掉某一条的工作流。
+   * 工作流随时可换：再导一份新的，旧模板留着，切哪一条在列表里点「设为当前」。
    */
-  import { onDestroy, onMount } from "svelte";
-  import { subscribeFileDrop } from "../lib/native-drop";
+  import { onMount } from "svelte";
+  import { basenameOnly } from "../lib/media-format";
+  import { isTauri, selectWorkflowJsonPath } from "../lib/tauri";
   import SettingsRow from "./SettingsRow.svelte";
   import {
     cloneApi, cloneError, promptSlots, imageSlots, controlSlots, referenceCells, slotKey, templateDisplayName,
@@ -27,12 +28,10 @@
   // 删掉的内置工作流。以前删了就是永别，这一栏是后悔药；老后端没这个接口时留空。
   let hidden = $state<CloneHiddenBuiltin[]>([]);
 
-  // 导入的两条路：磁盘路径（Tauri 拖放/手填，由后端读文件）与 JSON 文本（浏览器里拖或粘贴）。
-  let pathInput = $state("");
-  let jsonInput = $state("");
-  let dropCount = $state(0);
-  let dropZone = $state<HTMLDivElement | null>(null);
-  let detachDrop: (() => void) | null = null;
+  // 导入口只有「选文件」这一条：桌面版走原生文件框（只回路径，读文件是后端的活），
+  // 浏览器 dev 没有原生框，退化成一颗 display:none 的文件框——真机上它不进版面。
+  let pickedFile = $state("");
+  let fileEl = $state<HTMLInputElement | null>(null);
 
   // 导入预览：pending 保存原始工作流，确认后才带着勾选过的 slots 落库。
   let pending = $state<{ inspect: CloneInspect; workflow?: unknown; path?: string } | null>(null);
@@ -55,19 +54,7 @@
       loading = false;
     }
   }
-  onMount(() => {
-    void reload();
-    detachDrop = subscribeFileDrop(() => dropZone, (n) => (dropCount = n), async (paths) => {
-      const json = paths.find((p) => p.toLowerCase().endsWith(".json"));
-      if (!json) {
-        error = "拖进来的不是 .json 工作流文件。";
-        return;
-      }
-      pathInput = json;
-      void inspect({ path: json });
-    });
-  });
-  onDestroy(() => detachDrop?.());
+  onMount(() => void reload());
 
   /**
    * 槽位确认的分组。参考位按族分开列（图片 / 音频 / 视频）：H3 那种工作流一次冒出
@@ -95,16 +82,47 @@
     return fams.map((kind) => `${REF_KIND_NAMES[kind]} ${familyCells(cells, kind).length} 格`).join(" / ");
   }
 
-  /** 粘贴进来的 JSON 读不了要当场说清楚，不能把 undefined 发给后端换成一句 422。 */
-  function safeParse(text: string): unknown {
-    try {
-      return JSON.parse(text);
-    } catch {
-      error = "这段 JSON 读不了，检查一下是不是从 ComfyUI 完整复制出来的。";
-      return undefined;
+  /**
+   * 那颗「选择工作流 JSON」。桌面版开原生框，浏览器 dev 点隐藏的文件框。
+   *
+   * 原生框取消返回 null，那是用户改了主意，不许报错也不许动已经确认到一半的那份。
+   */
+  async function pickWorkflowJson() {
+    if (busy) return;
+    error = "";
+    if (!isTauri()) {
+      fileEl?.click();
+      return;
     }
+    let path: string | null = null;
+    try {
+      path = await selectWorkflowJsonPath();
+    } catch (e) {
+      error = cloneError(e);
+      return;
+    }
+    if (!path) return;
+    pickedFile = path;
+    void inspect({ path });
   }
 
+  /** 浏览器版那条文件框：网页里拿不到磁盘路径，只能读成正文直接交后端。 */
+  async function onWorkflowFile(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file || busy) return;
+    error = "";
+    let workflow: unknown;
+    try {
+      workflow = JSON.parse(await file.text());
+    } catch {
+      error = "这份文件读不成 JSON，检查一下是不是 ComfyUI「Workflow → Export (API)」导出的那一份。";
+      return;
+    }
+    pickedFile = file.name;
+    void inspect({ workflow });
+  }
   async function reloadAfter<T>(fn: () => Promise<T>): Promise<void> {
     await fn();
     await reload(true);
@@ -130,19 +148,7 @@
     }
   }
 
-  /** 浏览器里拖文件：Tauri 的原生拖放拿的是磁盘路径，网页里的 drop 只有文件内容，两条都要留。 */
-  async function onDropFiles(e: DragEvent) {
-    e.preventDefault();
-    dropCount = 0;
-    const file = Array.from(e.dataTransfer?.files ?? []).find((f) => f.name.toLowerCase().endsWith(".json"));
-    if (!file) return;
-    try {
-      inspect({ workflow: JSON.parse(await file.text()) });
-    } catch {
-      error = "这个 JSON 读不了，检查一下是不是完整的 API 格式导出。";
-    }
-  }
-
+  /** 原生框那条只回路径，读文件与认格式全在后端，坏格式回来的那句中文原样贴给用户。 */
   async function savePending() {
     if (!pending) return;
     const chosen = [...pending.inspect.slots, ...pending.inspect.candidates]
@@ -181,6 +187,7 @@
         media_kind: pending.inspect.media_kind ?? "image",
       });
       pending = null;
+      pickedFile = "";
       notice = `已导入「${templateDisplayName(saved.name)}」：${refSummary(saved)}。` 
         + `${WF_KIND_WORDS[templateMediaKind(saved)]}卡右下角的图标就是它。`;
       await reload(true);
@@ -353,22 +360,23 @@
 </div>
 
 <div class="settings-card">
-  <SettingsRow title="导入或替换工作流" description="只接受 API 格式（顶层是节点号 → 节点内容）。ComfyUI 里用「Workflow → Export (API)」导出。" top>
+  <SettingsRow title="导入工作流" description="只接受 API 格式（顶层是节点号 → 节点内容）。ComfyUI 里用「Workflow → Export (API)」导出。要换一条工作流就是再导一次，导完在上面的列表点「设为当前」。" top>
     {#snippet control()}
-      <button class="setting-button bg-accent text-bg" disabled={busy || (!pathInput.trim() && !jsonInput.trim())}
-        onclick={() => {
-          if (pathInput.trim()) { void inspect({ path: pathInput.trim() }); return; }
-          const parsed = safeParse(jsonInput);
-          if (parsed !== undefined) void inspect({ workflow: parsed });
-        }}>解析工作流</button>
+      <button class="setting-button bg-accent text-bg" disabled={busy} onclick={() => void pickWorkflowJson()}>选择工作流 JSON</button>
     {/snippet}
-    <div class="clone-import-box" class:is-hover={dropCount > 0} role="group" aria-label="导入工作流" bind:this={dropZone}
-      ondragover={(e) => e.preventDefault()} ondrop={(e) => void onDropFiles(e)}>
-      <p class="settings-hint">把 .json 拖到这里；或者填磁盘路径；或者直接把 JSON 粘在下面。</p>
-      <input type="text" aria-label="工作流文件路径" placeholder="F:/常用/Qwen-image-2.1多图编辑.json" bind:value={pathInput} />
-      <textarea aria-label="工作流 JSON" rows="5" placeholder="把导出的 JSON 整段粘在这里" bind:value={jsonInput}></textarea>
-    </div>
+    {#if pickedFile}
+      <p class="clone-picked">已选：<b title={pickedFile}>{basenameOnly(pickedFile)}</b>
+        <span class="clone-picked-note">读完先在下面确认槽位，确认后才落库。</span></p>
+    {:else}
+      <p class="settings-hint">点「选择工作流 JSON」挑一份 ComfyUI 导出的 .json，读完先给你确认哪些槽位进弹窗。</p>
+    {/if}
   </SettingsRow>
+  <!-- 浏览器 dev 没有原生文件框（isTauri() 为 false）时那颗「选择工作流 JSON」就点它。
+       display:none 不进版面，真机上永远走原生框，所以桌面上没有第三条导入路。
+       它挂在卡片自己身上而不是 SettingsRow 的正文里：那颗 change 事件是 Svelte 委托到
+       组件根元素上的，塞进子组件的 snippet 里就脱了委托链（测试里点了没反应就是这个坑）。 -->
+  <input bind:this={fileEl} class="clone-file" type="file" accept=".json" aria-label="工作流 JSON 文件"
+    onchange={(e) => void onWorkflowFile(e)} />
 
   {#if pending}
     <div class="clone-confirm">
@@ -426,9 +434,10 @@
   .clone-tpl-kind.is-audio { background: rgb(139 92 246 / 16%); color: #c4b5fd; }
   .clone-tpl-kind-set { padding: var(--sp-05) var(--sp-2); font-size: var(--fs-xs); }
   .clone-tpl-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
-  .clone-import-box { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: 1px dashed #3a3a41; border-radius: var(--r-1); background: #1a1a1e; }
-  .clone-import-box.is-hover { border-color: #f24e4e; background: rgb(242 78 78 / 8%); }
-  .clone-import-box textarea { width: 100%; font-family: var(--font-mono); font-size: var(--fs-xs); }
+  .clone-picked { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-1); margin: 0; font-size: var(--fs-sm); color: var(--text-1); }
+  .clone-picked b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40ch; }
+  .clone-picked-note { font-size: var(--fs-xs); color: var(--text-3); }
+  .clone-file { display: none; }
   .clone-group { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: var(--sp-3); }
   .clone-group-label { color: #9a9aa1; font-size: var(--fs-2xs); letter-spacing: var(--track-label); }
   .clone-slot { display: flex; align-items: center; gap: var(--sp-2); color: #d8d8dc; font-size: var(--fs-sm); }

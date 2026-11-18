@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import CloneTemplates from '../components/CloneTemplates.svelte';
+import { isTauri, selectWorkflowJsonPath } from '../lib/tauri';
 
 const http = vi.fn();
 // 同 clone-modal.test.ts：vi.mock 工厂被提升，取不到本文件的 http，所以路由挂在 globalThis 上。
@@ -12,6 +13,9 @@ vi.mock('../lib/api', () => ({
   http: (path: string, init?: RequestInit) => (globalThis as any).__http(path, init),
 }));
 (globalThis as any).__http = http;
+// 导入口分两条：桌面版走原生框（要 mock 掉 lib/tauri），浏览器版走那颗隐藏文件框。
+// 默认按浏览器版跑——绝大多数用例只关心确认面板，不想知道壳的存在。
+vi.mock('../lib/tauri', () => ({ isTauri: vi.fn(), selectWorkflowJsonPath: vi.fn() }));
 
 const TPL = {
   id: 1, name: '旧的同款', is_active: false, default_prompt: '', created_at: '', updated_at: '',
@@ -51,13 +55,27 @@ const inspectRoutes = () => ({
   '/api/clone/templates': { items: [TPL] },
 });
 
+/**
+ * 浏览器那条文件框（isTauri() 为 false 时「选择工作流 JSON」点的就是它）。
+ *
+ * 桌面版走的是原生框 + 磁盘路径，那条路单独有用例（mock 掉 lib/tauri）。
+ */
 async function importJson(screen: any) {
-  await fireEvent.input(screen.getByLabelText('工作流 JSON'), { target: { value: '{"582":{"class_type":"X"}}' } });
-  await fireEvent.click(screen.getByRole('button', { name: '解析工作流' }));
+  const input = screen.getByLabelText('工作流 JSON 文件') as HTMLInputElement;
+  const file = new File(['{"582":{"class_type":"X"}}'], 'Qwen-image-2.1多图编辑.json');
+  Object.defineProperty(file, 'text', { value: async () => '{"582":{"class_type":"X"}}' });
+  Object.defineProperty(input, 'files', { value: [file], configurable: true });
+  await fireEvent.change(input);
   expect(await screen.findByText('确认槽位')).toBeTruthy();
 }
 
-afterEach(() => { cleanup(); http.mockReset(); });
+// 桌面版那一条路要临时把 isTauri 拧成 true，所以每轮都得把它拧回来，
+// 否则下一条用例的「文件框」分支会被上一轮的 mock 带走。
+afterEach(() => {
+  cleanup(); http.mockReset();
+  vi.mocked(isTauri).mockReturnValue(false);
+  vi.mocked(selectWorkflowJsonPath).mockReset().mockResolvedValue(null);
+});
 
 it('模板列表显示当前模板与槽位统计，设为当前只 PATCH is_active', async () => {
   routes({
@@ -120,8 +138,11 @@ it('导入 UI 格式工作流时把后端的中文提示原样贴出来，不让
   });
   const screen = render(CloneTemplates, {});
   await screen.findByText('旧的同款');
-  await fireEvent.input(screen.getByLabelText('工作流 JSON'), { target: { value: '{"nodes":[]}' } });
-  await fireEvent.click(screen.getByRole('button', { name: '解析工作流' }));
+  const input = screen.getByLabelText('工作流 JSON 文件') as HTMLInputElement;
+  const file = new File(['{"nodes":[]}'], 'workflow.json');
+  Object.defineProperty(file, 'text', { value: async () => '{"nodes":[]}' });
+  Object.defineProperty(input, 'files', { value: [file], configurable: true });
+  await fireEvent.change(input);
   expect((await screen.findByRole('alert')).textContent).toContain('Export (API)');
   expect(screen.queryByText('确认槽位')).toBeNull();
 });
@@ -471,5 +492,75 @@ it('内置工作流不给点「重新检测槽位」，并且说清为什么；�
   // 不给点就得给个说法：随包那份的槽位约定（遮罩、留空模式）重扫会被冲掉
   expect(off.getAttribute('title')).toContain('内置');
   expect(off.getAttribute('title')).toContain('冲掉');
+});
+
+describe('导入口只有「选文件」一条', () => {
+  /**
+   * 以前这块是「拖进来 / 填路径 / 粘 JSON」三个入口叠在一起，一屏里既像表单又像上传区，
+   * 而且三个入口的报错各不相同。真删到只剩一颗按钮，这里钉的就是「其余三个不许回来」。
+   */
+  it('页面上没有拖拽框、没有路径输入框、也没有粘贴用的 textarea', async () => {
+    routes({ '/api/clone/templates': { items: [TPL] } });
+    const screen = render(CloneTemplates, {});
+    await screen.findByText('旧的同款');
+    expect(screen.container.querySelector('textarea')).toBeNull();
+    expect(screen.queryByLabelText('工作流文件路径')).toBeNull();
+    expect(screen.queryByRole('button', { name: '解析工作流' })).toBeNull();
+    expect(screen.queryByRole('group', { name: '导入工作流' })).toBeNull();
+    // 唯一那颗入口挂在 SettingsRow 的控件位上
+    expect(screen.getByRole('button', { name: '选择工作流 JSON' })).toBeTruthy();
+    const hidden = screen.getByLabelText('工作流 JSON 文件') as HTMLInputElement;
+    expect(hidden.type).toBe('file');
+    expect(hidden.className).toContain('clone-file');
+  });
+
+  it('桌面版点「选择工作流 JSON」：原生框回来的路径直接交给 inspect，不读文件内容', async () => {
+    vi.mocked(isTauri).mockReturnValue(true);
+    vi.mocked(selectWorkflowJsonPath).mockResolvedValue('F:\\常用\\H3.json');
+    let inspected: Record<string, unknown> | null = null;
+    http.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/api/clone/templates/inspect') {
+        inspected = JSON.parse(String(init?.body));
+        return inspectRoutes()['/api/clone/templates/inspect'];
+      }
+      if (path === '/api/clone/templates') return { items: [TPL] };
+      throw new Error(`未预演的接口：${path}`);
+    });
+    const screen = render(CloneTemplates, {});
+    await screen.findByText('旧的同款');
+    await fireEvent.click(screen.getByRole('button', { name: '选择工作流 JSON' }));
+    expect(await screen.findByText('确认槽位')).toBeTruthy();
+    expect(inspected).toEqual({ path: 'F:\\常用\\H3.json' });
+    // 回显只报文件名，全路径挂在 title 上：一长串目录会把这一行挤成一团
+    const picked = screen.container.querySelector('.clone-picked b')!;
+    expect(picked.textContent).toBe('H3.json');
+    expect(picked.getAttribute('title')).toBe('F:\\常用\\H3.json');
+  });
+
+  it('原生框取消就是没改主意：不报错、也不动页面', async () => {
+    vi.mocked(isTauri).mockReturnValue(true);
+    vi.mocked(selectWorkflowJsonPath).mockResolvedValue(null);
+    routes({ '/api/clone/templates': { items: [TPL] } });
+    const screen = render(CloneTemplates, {});
+    await screen.findByText('旧的同款');
+    await fireEvent.click(screen.getByRole('button', { name: '选择工作流 JSON' }));
+    await tick();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText('确认槽位')).toBeNull();
+    expect(http.mock.calls.some(([p]) => String(p).includes('/inspect'))).toBe(false);
+  });
+
+  it('浏览器里挑了一份读不成 JSON 的文件，当场说清楚，不发请求', async () => {
+    routes({ '/api/clone/templates': { items: [TPL] } });
+    const screen = render(CloneTemplates, {});
+    await screen.findByText('旧的同款');
+    const input = screen.getByLabelText('工作流 JSON 文件') as HTMLInputElement;
+    const file = new File(['不是 JSON'], 'workflow.json');
+    Object.defineProperty(file, 'text', { value: async () => '不是 JSON' });
+    Object.defineProperty(input, 'files', { value: [file], configurable: true });
+    await fireEvent.change(input);
+    expect((await screen.findByRole('alert')).textContent).toContain('读不成 JSON');
+    expect(http.mock.calls.some(([p]) => String(p).includes('/inspect'))).toBe(false);
+  });
 });
 

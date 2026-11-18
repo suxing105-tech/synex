@@ -63,6 +63,7 @@ pub fn run() {
             folders::select_import_directory,
             folders::select_text_paths,
             folders::select_skill_source,
+            folders::select_workflow_json,
             commands::restart_sidecar,
             updates::get_update_status,
             updates::set_update_automatic,

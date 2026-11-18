@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -561,6 +562,47 @@ describe('导入口只有「选文件」一条', () => {
     await fireEvent.change(input);
     expect((await screen.findByRole('alert')).textContent).toContain('读不成 JSON');
     expect(http.mock.calls.some(([p]) => String(p).includes('/inspect'))).toBe(false);
+  });
+});
+
+describe('设置页输入框只有一份控件配方', () => {
+  /**
+   * 再次创作这块确认面板故意不走 SettingsRow，于是过去它自己写了一套输入框样式，
+   * 和设置页其余输入框差着高度和圆角——同一个页面里两种控件长相。现在两边吃同一条声明，
+   * 这里钉的就是「组件不许再造第二套」。
+   */
+  it('app.css 里 .setting-control 和 SettingsRow 那两条选择器共用同一个声明块', async () => {
+    // vitest 的工作目录就是 frontend（spacing-scale 同一口径），别再拿 import.meta.url 拼
+    const css = readFileSync('src/app.css', 'utf8');
+    const block = css.match(/\.setting-control,[\s\S]*?\{([^}]*)\}/);
+    expect(block, '.setting-control 不在选择器组里，等于又开了一套配方').toBeTruthy();
+    const head = block![0].slice(0, block![0].indexOf('{'));
+    expect(head).toContain('.setting-row-side input');
+    expect(head).toContain('.setting-row-side select');
+    expect(block![1]).toContain('min-height: 34px');
+    expect(block![1]).toContain('border-radius: var(--r-1)');
+  });
+
+  it('确认面板那份模板名输入框挂的是公共配方，组件里不再有自己的 .clone-name-input', async () => {
+    routes(inspectRoutes());
+    const screen = render(CloneTemplates, {});
+    await screen.findByText('旧的同款');
+    await importJson(screen);
+    const name = screen.getByLabelText('模板名称') as HTMLInputElement;
+    expect(name.classList.contains('setting-control')).toBe(true);
+    const style = readFileSync('src/components/CloneTemplates.svelte', 'utf8');
+    expect(style).not.toContain('.clone-name-input');
+    // 组件里不许再有一条专门给输入框量身高的规则——那正是「又造一套」的样子
+    expect(style).not.toMatch(/input[^{}]*\{[^}]*min-height/);
+  });
+
+  it('模板列表里那颗改名输入框吃同一份配方，不再比旁边的按钮矮一截', async () => {
+    routes({ '/api/clone/templates': { items: [TPL] } });
+    const screen = render(CloneTemplates, {});
+    await screen.findByText('旧的同款');
+    await fireEvent.click(screen.getByRole('button', { name: '改名' }));
+    const rename = screen.getByLabelText('模板名称') as HTMLInputElement;
+    expect(rename.classList.contains('setting-control')).toBe(true);
   });
 });
 

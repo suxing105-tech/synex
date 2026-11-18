@@ -273,7 +273,7 @@
           <li class="clone-tpl" class:is-active={tpl.is_active}>
             <div class="clone-tpl-main">
               {#if renaming === tpl.id}
-                <input aria-label="模板名称" bind:value={renameValue}
+                <input class="setting-control" aria-label="模板名称" bind:value={renameValue}
                   onkeydown={(e) => { if (e.key === "Enter") { void run(async () => { await cloneApi.update(tpl.id, { name: renameValue.trim() }); renaming = null; await reload(true); }); } if (e.key === "Escape") renaming = null; }} />
                 <button class="setting-button" disabled={busy || !renameValue.trim()} onclick={() => void run(async () => { await cloneApi.update(tpl.id, { name: renameValue.trim() }); renaming = null; await reload(true); })}>存名</button>
               {:else}
@@ -385,7 +385,7 @@
           <span class="clone-confirm-title">确认槽位</span>
           <span class="settings-hint">勾上的才会出现在弹窗里。参考位数量由加载器节点决定：LoadImage＝图片位、LoadAudio＝音频位、VHS_LoadVideo＝视频位，工作流里没接那一台就没有那一族。</span>
         </div>
-        <input class="clone-name-input" type="text" aria-label="模板名称" bind:value={pendingName} />
+        <input class="setting-control" type="text" aria-label="模板名称" bind:value={pendingName} />
         <button class="setting-button bg-accent text-bg" disabled={busy} onclick={() => void savePending()}>保存模板</button>
         <button class="setting-button setting-button-ghost" onclick={() => (pending = null)}>取消导入</button>
       </div>
@@ -442,7 +442,6 @@
   .clone-group-label { color: #9a9aa1; font-size: var(--fs-2xs); letter-spacing: var(--track-label); }
   .clone-slot { display: flex; align-items: center; gap: var(--sp-2); color: #d8d8dc; font-size: var(--fs-sm); }
   .clone-slot code { color: #8a8a90; font-size: var(--fs-2xs); }
-  .clone-name-input { min-width: 160px; }
   /* 槽位确认这块不用 SettingsRow：它的 control snippet 和正文里的 {#each} 撞在一起会渲染崩，
      而且这一屏本来就是一张密集的清单表，左右分栏反而放不下。 */
   .clone-confirm { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3) 0 0; border-top: 1px solid #2a2a2f; margin-top: var(--sp-3); }

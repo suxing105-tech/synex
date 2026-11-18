@@ -789,6 +789,12 @@ html {
   color: var(--text-2);
 }
 
+/* 设置页正文里的输入框有两个来源：一种是 SettingsRow 右侧那一栏（下面前两条选择器），
+   另一种是组件自己排版的控件——再次创作那块确认面板就不走 SettingsRow（它的 control
+   snippet 和正文的 {#each} 会撞车）。过去第二类只能自带一套高度和圆角，于是同一个设置页里
+   两种输入框差 4px、圆角也不一样。`.setting-control` 就是给第二类挂的同一份配方，
+   挂 class 而不是再抄一遍数值：改一次全站跟着变。 */
+.setting-control,
 .setting-row-side input,
 .setting-row-side select {
   min-width: 170px;

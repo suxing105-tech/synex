@@ -19,6 +19,11 @@
 - 用户删掉的内置模板不会下次启动又长回来（记进 meta 的 dismissed 名单）。
 - `prefer_active: true` 的那条第一次装进库时顶掉同族原先的「当前」，
   老那条留在库里不再当前，用户随时能在菜单里切回去；之后不再抢（见 seed）。
+- **冻住的那条，随包后来修过的单个字段照样要送到**：同名认领时 `bundled_sha` 记的是
+  安装包那版的指纹，于是「他自己导入的那份从一开始就和包里的不一样」跟「他后来动过正文」
+  长得一模一样，seed 只能整条不覆盖。正文不覆盖是对的（那是他的资产），
+  代价是那一个字段也跟着卡死。登记在 `STALE_FIELD_FIXES` 里的，装载时按值定点补一次
+  （`_stale_field_repairs`），和 `clone_templates.migrate_slot_multiples` 是同一个思路。
 """
 from __future__ import annotations
 
@@ -51,6 +56,23 @@ SPLIT_RESCUE_KEYS = ("qwen3-tts-voice-clone",)
 SPLIT_RESCUE_FLAG = "clone_bundled_split_rescued"
 _DIR_NAME = "bundled_workflows"
 _REQUIRED = ("key", "label", "media_kind", "workflow", "slots")
+
+# 随包正文后来修过的某一个个字段，遇到被「用户改过」冻住的那条就永远送不进去（原因见文件头）。
+# 登记在这里的字段，装载时定点补一次。条件写得很窄，宁可漏补不可错补：
+# 这条 key 的这颗节点还在、类别还是登记的那个、这个输入还在、而且值**正好是当年那个旧值**。
+# 只要他自己拧过（值不等于旧值），一个字都不动。随包正文以后改了目标值，这条登记就得跟着
+# 删或改，有一条测试专门盯这件事。
+STALE_FIELD_FIXES: tuple[dict, ...] = (
+    {
+        "key": "h3-reference-video",   # 老版参考生视频（后继是 h3-reference-video-v2）
+        "node": "185",                 # 参考视频载入，喂 ref_video_0，也就是模型眼里的 <Video 1>
+        "class_type": "VHS_LoadVideo",
+        "input": "force_rate",
+        "stale": 0,                    # 0 = 按参考片自己的帧率载入（他当年导入的那份就是这个）
+        "fixed": 24,                   # 随包两版（这一版和 v2 的三台载入）一律 24
+        "why": "参考视频按原生帧率载入，与随包两版一律 24 的口径不一致",
+    },
+)
 
 
 def seed_enabled() -> bool:
@@ -263,11 +285,57 @@ def _adoptable_row(conn, names: list[str]):
     return None
 
 
+def _stale_field_repairs(key: str, nodes: dict) -> list[str]:
+    """按 STALE_FIELD_FIXES 补这份工作流里「包里早改了、库里还停在当年那个值」的字段。
+
+    只动点名的那一个输入，且只在它仍等于旧值时动。返回改动的说明，空表表示一个字没动。
+    节点号还在但类别已经不是登记的那个也跳过：那颗节点已经不是当年那颗，不能拿号当身份。
+    """
+    done: list[str] = []
+    for fix in STALE_FIELD_FIXES:
+        if str(fix["key"]) != str(key):
+            continue
+        node = nodes.get(str(fix["node"]))
+        if not isinstance(node, dict):
+            continue
+        if str(node.get("class_type") or node.get("_class_type") or "") != str(fix["class_type"]):
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict) or fix["input"] not in inputs:
+            continue
+        if inputs[fix["input"]] != fix["stale"]:
+            continue  # 不是当年那个旧值 = 他自己拧过，不碰
+        inputs[fix["input"]] = fix["fixed"]
+        done.append(f'{fix["key"]} 节点{fix["node"]}.{fix["input"]}：'
+                    f'{fix["stale"]}→{fix["fixed"]}（{fix["why"]}）')
+    return done
+
+
+def _repair_stale_fields(conn, template_id: int, key: str, stored_workflow: Any) -> list[str]:
+    """在「正文不覆盖」那条路上定点补登记过的字段，返回补了什么的说明。
+
+    补完这条仍然算用户改过：bundled_sha 不动，下次启动正文照旧整条冻着；而这个字段
+    已经不是旧值，再启动也不会重复写。正文读不出来只吵日志——不能因为一次字段修正
+    把整条装载带崩（建库那条路整个包在 try 里）。
+    """
+    try:
+        nodes = parse_workflow(stored_workflow)
+    except ValueError as exc:
+        logger.info("内置工作流 %s 的正文读不出来，登记过的字段修正先跳过：%s", key, exc)
+        return []
+    done = _stale_field_repairs(key, nodes)
+    if done:
+        conn.execute("UPDATE clone_templates SET workflow=? WHERE id=?",
+                     (json.dumps(nodes, ensure_ascii=False), template_id))
+        logger.info("内置工作流字段修正：%s", "；".join(done))
+    return done
+
+
 def seed(conn) -> dict:
     """把内置模板装进库。幂等：每启动一次跑一次也不会重复、不会覆盖用户的手改。"""
     # inserted 里带格子清单（h3-reference-video(9image/3audio/1video)），日志里一眼能核对
     summary = {"inserted": [], "updated": [], "adopted": [], "renamed": [],
-               "skipped": [], "dismissed": [], "rescued": []}
+               "skipped": [], "dismissed": [], "rescued": [], "repaired": []}
     if not seed_enabled():
         return summary
     summary["rescued"] = forgive_split_keys(conn)
@@ -299,6 +367,10 @@ def seed(conn) -> dict:
                 summary["adopted"].append(key)
                 if rename:
                     summary["renamed"].append(key)
+                # 认领完就地补一次登记过的字段：他那份是当年自己导的，
+                # 不必等下一次启动才收到包里早就有的那个修正
+                summary["repaired"] += _repair_stale_fields(
+                    conn, adopt_id, key, same_name["workflow"])
                 continue
             if _name_taken(conn, label):
                 # 名字被别条占着（模板名有唯一索引），硬插会整条装载失败
@@ -336,6 +408,9 @@ def seed(conn) -> dict:
         stored_sha = str(row["bundled_sha"] or "")
         if workflow_sha(row["workflow"]) != stored_sha:
             summary["skipped"].append(key)  # 用户改过（或改名前动过正文），不覆盖
+            # 整条不覆盖，不等于那一个字段就该永远停在当年：登记过的定点补
+            summary["repaired"] += _repair_stale_fields(
+                conn, int(row["id"]), key, row["workflow"])
             continue
         nodes, slots = _prepare(item)
         shipped_slots = json.dumps(slots, ensure_ascii=False)

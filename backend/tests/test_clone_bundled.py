@@ -947,3 +947,137 @@ def test_restore_clears_a_key_the_package_no_longer_ships(seeded, monkeypatch):
         res = client.post("/api/clone/templates/hidden/" + AUDIO_KEY + "/restore")
         assert res.status_code == 409, res.text
     assert clone_bundled.dismissed(seeded.main()) == set()
+
+
+# ---------- 被冻住那条的定点修正 ----------
+# 同名认领把 bundled_sha 记成随包指纹，于是「他自己导的那份本来就和包里不同」与
+# 「他后来改过正文」无法区分，seed 只能整条不覆盖（上面那条测试钉的就是这个）。
+# 冻住的代价是随包后来修过的单个字段也永远送不进去，所以有 STALE_FIELD_FIXES 定点补。
+
+def _video_entry():
+    return [e for e in clone_bundled.entries() if e["key"] == VIDEO_KEY][0]
+
+
+def _video_fix():
+    return [f for f in clone_bundled.STALE_FIELD_FIXES if f["key"] == VIDEO_KEY][0]
+
+
+def _body_of(pool, template_id):
+    return json.loads(clone_templates.workflow_json(template_id))
+
+
+def test_every_registered_field_fix_still_matches_the_shipped_file():
+    """登记表不许烂在库里：随包正文现在必须就是这个新值，节点类别也还得对得上。
+
+    这条红了只有两种解法——把登记删掉（库里不再有可补的了）或改成新的目标值，
+    不能留着一条按旧口径写死的登记继续往用户库里写。
+    """
+    assert clone_bundled.STALE_FIELD_FIXES, "登记表空了就把这套机制一起删掉，别留个空壳"
+    shipped = {str(e["key"]): e for e in clone_bundled.entries()}
+    for fix in clone_bundled.STALE_FIELD_FIXES:
+        entry = shipped.get(str(fix["key"]))
+        assert entry is not None, f"登记的 {fix['key']} 已经不是随包工作流了"
+        node = entry["workflow"].get(str(fix["node"]))
+        assert node is not None and node.get("class_type") == fix["class_type"], \
+            f'{fix["key"]} 的节点 {fix["node"]} 已经不是 {fix["class_type"]}'
+        assert node["inputs"].get(fix["input"]) == fix["fixed"], \
+            f'{fix["key"]} 正文里 {fix["input"]} 已不是 {fix["fixed"]}，这条登记该删或改'
+        assert node["inputs"][fix["input"]] != fix["stale"], "新值与旧值相同 = 没有可补的"
+
+
+def test_a_frozen_builtin_still_gets_the_registered_field_fixed(seeded):
+    """正文冻住的那条：登记过的字段照样补上，他自己写的提示词一个字不许动。"""
+    entry = _video_entry()
+    fix = _video_fix()
+    his = json.loads(json.dumps(entry["workflow"]))
+    his[fix["node"]]["inputs"][fix["input"]] = fix["stale"]        # 他那份还停在当年那个值
+    prompt_slot = [s for s in entry["slots"] if s.get("kind") == "prompt"][0]
+    his[str(prompt_slot["node"])]["inputs"][prompt_slot["input"]] = "他自己写的台词，别碰"
+    template_id = int(_row_of_key(seeded, VIDEO_KEY)["id"])
+    seeded.main().execute("UPDATE clone_templates SET workflow=? WHERE id=?",
+                          (json.dumps(his, ensure_ascii=False), template_id))
+
+    result = clone_bundled.seed(seeded.main())
+    assert VIDEO_KEY in result["skipped"] and result["updated"] == [], "正文整条不许覆盖"
+    assert any(fix["input"] in one for one in result["repaired"]), result["repaired"]
+    after = _body_of(seeded, template_id)
+    assert after[fix["node"]]["inputs"][fix["input"]] == fix["fixed"]
+    assert after[str(prompt_slot["node"])]["inputs"][prompt_slot["input"]] == "他自己写的台词，别碰"
+
+
+def test_the_registered_fix_is_written_once(seeded):
+    """补过一次就不是旧值了：再启动一次不落笔，正文也不许被顺带改写。"""
+    entry, fix = _video_entry(), _video_fix()
+    his = json.loads(json.dumps(entry["workflow"]))
+    his[fix["node"]]["inputs"][fix["input"]] = fix["stale"]
+    template_id = int(_row_of_key(seeded, VIDEO_KEY)["id"])
+    seeded.main().execute("UPDATE clone_templates SET workflow=? WHERE id=?",
+                          (json.dumps(his, ensure_ascii=False), template_id))
+
+    clone_bundled.seed(seeded.main())
+    first = clone_templates.workflow_json(template_id)
+    again = clone_bundled.seed(seeded.main())
+    assert clone_templates.workflow_json(template_id) == first, "第二次启动不许再写一遍"
+    assert again["repaired"] == []
+
+
+def test_a_field_the_user_twisted_himself_is_left_alone(seeded):
+    """值不是当年那个旧值 = 他自己拧过：宁可漏补，也不能把他的数改回去。"""
+    entry, fix = _video_entry(), _video_fix()
+    his = json.loads(json.dumps(entry["workflow"]))
+    his[fix["node"]]["inputs"][fix["input"]] = 12
+    template_id = int(_row_of_key(seeded, VIDEO_KEY)["id"])
+    seeded.main().execute("UPDATE clone_templates SET workflow=? WHERE id=?",
+                          (json.dumps(his, ensure_ascii=False), template_id))
+
+    result = clone_bundled.seed(seeded.main())
+    assert result["repaired"] == []
+    assert _body_of(seeded, template_id)[fix["node"]]["inputs"][fix["input"]] == 12
+
+
+def test_the_fix_refuses_a_node_that_changed_kind(seeded):
+    """节点号还在、类别已经换成别的：那不是当年那颗节点，号不能当身份。"""
+    entry, fix = _video_entry(), _video_fix()
+    his = json.loads(json.dumps(entry["workflow"]))
+    his[fix["node"]]["class_type"] = "VHS_LoadImagesPath"
+    his[fix["node"]]["inputs"][fix["input"]] = fix["stale"]
+    template_id = int(_row_of_key(seeded, VIDEO_KEY)["id"])
+    seeded.main().execute("UPDATE clone_templates SET workflow=? WHERE id=?",
+                          (json.dumps(his, ensure_ascii=False), template_id))
+
+    assert clone_bundled.seed(seeded.main())["repaired"] == []
+    assert _body_of(seeded, template_id)[fix["node"]]["inputs"][fix["input"]] == fix["stale"]
+
+
+def test_an_adopted_template_gets_the_fix_in_the_same_pass(tmp_path: Path, monkeypatch):
+    """同名认领那一趟就地补一次：他那份是当年自己导的，不必等下次启动。
+
+    他那份除这个字段外还有自己的台词（真库里那条就是这么来的），所以补完仍旧算改过，
+    bundled_sha 也不许被顺手改成他的——改了就等于宣布「正文与包一致」，下次刷新会覆盖他。
+    """
+    monkeypatch.setenv("SUXING_GALLERY_DATA_DIR", str(tmp_path))
+    from app import config, db
+
+    importlib.reload(config)
+    importlib.reload(db)
+    monkeypatch.setenv("SUXING_SEED_BUNDLED_TEMPLATES", "0")
+    pool = db.init_pool()
+    pool.initialize()
+    entry, fix = _video_entry(), _video_fix()
+    his = json.loads(json.dumps(entry["workflow"]))
+    his[fix["node"]]["inputs"][fix["input"]] = fix["stale"]
+    prompt_slot = [s for s in entry["slots"] if s.get("kind") == "prompt"][0]
+    his[str(prompt_slot["node"])]["inputs"][prompt_slot["input"]] = "他自己那句台词"
+    mine = clone_templates.create_template(VIDEO_LABEL, his)
+
+    monkeypatch.setenv("SUXING_SEED_BUNDLED_TEMPLATES", "1")
+    result = clone_bundled.seed(pool.main())
+    assert result["adopted"] == [VIDEO_KEY]
+    assert any(fix["input"] in one for one in result["repaired"]), result["repaired"]
+    after = json.loads(clone_templates.workflow_json(int(mine["id"])))
+    assert after[fix["node"]]["inputs"][fix["input"]] == fix["fixed"]
+    assert after[str(prompt_slot["node"])]["inputs"][prompt_slot["input"]] == "他自己那句台词"
+    row = _row_of_key(pool, VIDEO_KEY)
+    assert row["bundled_sha"] == clone_bundled.workflow_sha(entry["workflow"]), "记的还得是随包指纹"
+    assert clone_bundled.workflow_sha(json.loads(row["workflow"])) != row["bundled_sha"], \
+        "补完仍旧算他改过，正文不许被覆盖"

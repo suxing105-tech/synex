@@ -42,6 +42,28 @@ describe("设置页版式：左目录 + 卡片行", () => {
     expect(css).toMatch(/\.settings-switch input:focus-visible \+ \.switch-track \{/);
   });
 
+  it("卡片里不走 SettingsRow 的直接子元素自己带横内距，不许顶到边框", () => {
+    // .settings-card 只给边框和圆角，横向内距全写在 .setting-row 自己身上。
+    // 所以直接挂在卡片上的那几块必须自己带同一档 --sp-5，否则文字贴边框、和上下行差出一整档
+    // （2026-11-18 苏醒在槽位确认面板抓到那次）。--sp-5 取自 .setting-row，不是另挑的一档。
+    const cases: [string, string[]][] = [
+      ["components/CloneTemplates.svelte", [".clone-confirm"]],
+      ["components/UpdatePanel.svelte", [".update-error", ".update-confirm"]],
+      ["components/SettingsModal.svelte", [".comfyui-found", ".comfyui-notice"]],
+    ];
+    for (const [file, selectors] of cases) {
+      const src = read(file);
+      for (const selector of selectors) {
+        const at = src.indexOf(selector + " {");
+        expect(at, file + " 里找不到规则 " + selector).toBeGreaterThan(-1);
+        const body = src.slice(at, src.indexOf("}", at) + 1);
+        const padding = /padding:[^;}]*/.exec(body)?.[0] ?? "";
+        expect(padding, file + " 的 " + selector + " 没有 padding").not.toBe("");
+        expect(padding, file + " 的 " + selector + " 横向没带 var(--sp-5)").toContain("var(--sp-5)");
+      }
+    }
+  });
+
   it("开关关掉后保存的确实是 live_enabled=false", async () => {
     render(SettingsModal, { open: true, tab: "通用" });
     const toggle = await globalScreen.findByRole("checkbox", { name: "自动收录监听目录中的新文件" });

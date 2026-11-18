@@ -565,10 +565,17 @@
   .clone-slot code { color: var(--text-2); font-size: var(--fs-2xs); font-family: var(--font-mono); }
   .clone-slot.is-on { border-color: var(--accent); }
   /* 槽位确认这块不用 SettingsRow：它的 control snippet 和正文里的 {#each} 撞在一起会渲染崩，
-     而且这一屏本来就是一张密集的清单表，左右分栏反而放不下。 */
-  .clone-confirm { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3) 0 0; border-top: 1px solid #2a2a2f; margin-top: var(--sp-3); }
+     而且这一屏本来就是一张密集的清单表，左右分栏反而放不下。
+     横内距得自己带：.settings-card 只管边框和圆角，内边距全写在 .setting-row 自己身上，
+     所以直接挂在卡片上的这一块不写 padding 就一路顶到边框（2026-11-18 苏醒：左右都没跟上面的文字对齐）。
+     --sp-5 不是新挑的数，就是 .setting-row 和 UpdatePanel 的 .update-confirm 用的那一档。
+     分隔线仍跟 .setting-row + .setting-row 一样通宽（border 画在 padding 外面，不受影响）；
+     margin-top 一并去掉——行与行之间的分隔线从来不额外留白，上面那行自己的 16px 下内距就是间距。 */
+  .clone-confirm { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--line-soft); }
   .clone-confirm-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
   .clone-confirm-head > div { display: flex; flex-direction: column; gap: var(--sp-05); margin-right: auto; }
   .clone-confirm-title { font-size: var(--fs-sm); font-weight: 500; color: #e6e6ea; }
-  .clone-warnings { margin: var(--sp-2) 0 0; padding-left: var(--sp-5); color: #ffc36b; font-size: var(--fs-xs); }
+  /* 面板已经缩进一档，这里再 padding-left 就是缩两档；preflight 清掉了 ul 的 list-style，
+     本来也没有项目符号要让位。 */
+  .clone-warnings { margin: var(--sp-2) 0 0; color: #ffc36b; font-size: var(--fs-xs); }
 </style>

@@ -686,6 +686,23 @@ describe('槽位确认的长列表', () => {
     expect(style).not.toContain('overscroll-behavior');
   });
 
+  it('确认面板自己缩一档横内距，chip 的左边缘和上面「导入工作流」对齐', async () => {
+    routes(inspectRoutes());
+    const screen = render(CloneTemplates, {});
+    await screen.findByText('旧的同款');
+    await importJson(screen);
+    // 面板真渲染出来了，下面的规则断言才有意义
+    expect(screen.container.querySelector('.clone-confirm')).toBeTruthy();
+    const style = readFileSync('src/components/CloneTemplates.svelte', 'utf8');
+    const rule = /.clone-confirm\s*\{[^}]*\}/.exec(style)![0];
+    // .settings-card 只有边框，横内距写在每一块自己身上；这里不写就一路顶到边框
+    expect(rule).toMatch(/padding:\s*var\(--sp-4\) var\(--sp-5\)/);
+    // 分隔线通宽靠的是 border 画在 padding 外，不是把内容撑到边，所以不许再拿 margin-top 补白
+    expect(rule).not.toMatch(/margin-top/);
+    // 警告行同理：面板已经缩过一档，自己再加 padding-left 就是缩两档
+    expect(/\.clone-warnings\s*\{[^}]*\}/.exec(style)![0]).not.toMatch(/padding-left/);
+  });
+
   it('chip 上是清洗加编号后的名字，交给后端的 label 还是工作流里那一份', async () => {
     const note = 'CLIP Text Encode (Prompt)\u{1F4DD}';
     const imageLabel = '人物参考 \u{1F5BC}';

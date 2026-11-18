@@ -693,11 +693,13 @@ import Icon from "./Icon.svelte";
   .about-zoom-figure { display: flex; flex-direction: column; align-items: center; gap: var(--sp-4); margin: 0; }
   .about-zoom img { max-width: min(90vw, 440px); max-height: 62%; border-radius: var(--r-2); background: #fafafa; }
   .about-zoom figcaption { font-size: var(--fs-sm); color: #a1a1aa; }
-  .comfyui-found { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-3) 0 0; padding: 0; list-style: none; }
+  /* 这两块是直接挂在 .settings-card 上的（不是 SettingsRow 的正文），卡片不给内边距，
+     不写 --sp-5 就贴着边框，和上下行的文字差出一整档。 */
+  .comfyui-found { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-3) 0 0; padding: 0 var(--sp-5); list-style: none; }
   .comfyui-found li { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-2); background: #101013; font-size: var(--fs-sm); }
   .comfyui-found-url { flex: 1 1 auto; font-family: var(--font-mono); color: #e4e4e7; }
   .comfyui-found-version { font-size: var(--fs-xs); color: #85858f; }
-  .comfyui-notice { margin: var(--sp-3) 0 0; font-size: var(--fs-xs); line-height: var(--lh-read); color: #a1a1aa; }
+  .comfyui-notice { margin: var(--sp-3) 0 0; padding: 0 var(--sp-5); font-size: var(--fs-xs); line-height: var(--lh-read); color: #a1a1aa; }
   @media (max-width: 1180px) {
     .settings-shell { grid-template-columns: 228px minmax(0, 1fr); }
   }

@@ -454,6 +454,27 @@ fn spawn_detached(exe: &str, args: &[String]) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
+/// 主路失败之后怎么收口：ShellExecute 可以接着试，但它的 Ok 不许把已经记下的失败抹平。
+///
+/// 单独抽一个纯函数出来是为了能被测试钉住：`open_in_default_browser` 一跑就真起浏览器，
+/// 单元测试碰不得，而「回的是成功、其实什么都没打开」正是这次「点了没反应、界面上连一句
+/// 错都没有」的根因。notes 为空表示主路没留下失败记录，那种情况下才相信 ShellExecute。
+#[cfg(windows)]
+fn finish_browser_attempt(notes: &[String], shell_result: Result<(), String>) -> Result<(), String> {
+    if notes.is_empty() {
+        return shell_result;
+    }
+    let detail = notes.join("；");
+    match shell_result {
+        // 成功分支也要报错出去：本机实测 ShellExecuteW 打开 URL 回 42（>32 按它的规矩算
+        // 成功）却一个窗口都不起。宁可多提示一句，也不要「既没动作也没反馈」那种沉默。
+        Ok(()) => Err(format!(
+            "{detail}；系统自己那条按关联打开的路报的是成功，但它的成功在这台机器上不可信，请手动复制地址打开"
+        )),
+        Err(error) => Err(format!("{detail}；系统那条路也没成：{error}")),
+    }
+}
+
 /// 用系统默认浏览器打开链接。不引入 opener/shell 依赖，其它平台用各自的 opener。
 ///
 /// Windows 这一条为什么不是「一句 ShellExecuteW 就完事」，2026-11-17 在本机实测过三回：
@@ -466,7 +487,8 @@ fn spawn_detached(exe: &str, args: &[String]) -> Result<(), String> {
 /// 于是主路改成自己做关联那一步：从注册表读出 URL 关联的命令行（HKCU 里用户选的默认程序优先，
 /// 退回 HKCR 机器默认），自己 spawn。这条能被验证（起不来就是 spawn 报错），做的又是同一件事
 /// ——注册表里那行 `"C:\...\msedge.exe" --single-argument %1` 本来就是 Shell 要去执行的。
-/// ShellExecute 留在后面当备胎，认不出关联时至少还试一次系统那条路。
+/// ShellExecute 留在后面当备胎，认不出关联时至少还试一次系统那条路；
+/// 但它的 Ok 不再当「真打开了」看：主路失败过就一定把原因报回前端，不再静默。
 #[cfg(windows)]
 pub(crate) fn open_in_default_browser(url: &str) -> Result<(), String> {
     let scheme = url
@@ -481,10 +503,8 @@ pub(crate) fn open_in_default_browser(url: &str) -> Result<(), String> {
         },
         None => notes.push("注册表里没认出这个地址该用哪个程序".to_string()),
     }
-    shell_open(url).map_err(|error| {
-        notes.push(format!("系统那条按关联打开的路也没成：{error}（它回的是成功还是失败都可能没真打开）"));
-        notes.join("；")
-    })
+    // 走到这里 notes 一定非空（上面两个分支各留下了一条），所以备胎报的成功不再当成功收。
+    finish_browser_attempt(&notes, shell_open(url))
 }
 #[cfg(target_os = "macos")]
 pub(crate) fn open_in_default_browser(url: &str) -> Result<(), String> {
@@ -759,6 +779,36 @@ mod tests {
             args.last().map(|one| one.as_str()),
             Some("https://example.com/"),
             "地址要原样落在参数里，参数：{args:?}"
+        );
+    }
+
+    #[test]
+    fn shell_open_success_never_masks_a_recorded_failure() {
+        // 本机实测：ShellExecuteW 开 URL 回 42（>32 按它的规矩算成功）却什么都不起。
+        // 所以「主路已经失败 + 备胎报成功」必须是 Err：命令一旦返回成功，前端一句提示都
+        // 不会有，界面上正是苏醒报的那句「点了没反应」。
+        let notes = vec!["起 msedge.exe 失败：拒绝访问".to_string()];
+        let message = finish_browser_attempt(&notes, Ok(()))
+            .expect_err("主路失败时备胎的成功不许当成功收");
+        assert!(message.contains("起 msedge.exe 失败"), "要说清主路为什么没成：{message}");
+        assert!(message.contains("不可信"), "要说明备胎的成功为什么不算数：{message}");
+
+        // 两条路都没成：两个原因都带上，排查的人才知道该查关联还是查权限
+        let both = finish_browser_attempt(&notes, Err("ShellExecute 错误码 31".to_string()))
+            .expect_err("两边都失败更该报错");
+        assert!(both.contains("起 msedge.exe 失败"), "两个原因都要带上：{both}");
+        assert!(both.contains("ShellExecute 错误码 31"), "两个原因都要带上：{both}");
+    }
+
+    #[test]
+    fn shell_open_alone_decides_when_nothing_was_recorded() {
+        // 没有失败记录时才照旧信 ShellExecute：报错也要有据，不许把没发生过的失败编进提示。
+        let ok: Result<(), String> = Ok(());
+        assert!(finish_browser_attempt(&[], ok).is_ok());
+        assert_eq!(
+            finish_browser_attempt(&[], Err("ShellExecute 错误码 31".to_string()))
+                .expect_err("备胎自己失败就是失败"),
+            "ShellExecute 错误码 31"
         );
     }
 

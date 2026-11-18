@@ -905,6 +905,8 @@ def delete_image_files(image_id: int) -> dict:
     """从数据库删除图片条目，并清理磁盘文件 + 预览缓存。
 
     返回 {"id": int, "removed_file": bool, "cleaned_previews": int}。
+    `removed_file` 说的是**这一次**有没有真的删掉原件：原件已经被搬进回收站、
+    或早就不在原路径，就是 False——它唯一的用处是告诉调用方文件还在不在，不能总报成功。
     图片不存在 → 抛 RenameError('not_found')。
     原文件删除失败（非 OSError）→ 让上层决定。
     """
@@ -922,7 +924,7 @@ def delete_image_files(image_id: int) -> dict:
     try:
         if fpath.exists():
             fpath.unlink()
-        removed_file = True
+            removed_file = True   # 只有真删了才报 True：原件已被别处搬走（回收站等）就是 False
     except FileNotFoundError:
         removed_file = False
     except OSError:

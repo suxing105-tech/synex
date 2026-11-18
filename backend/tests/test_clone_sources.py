@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import hashlib
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import clone_sources
-from app.db import get_pool, init_pool
+from app.db import PRE_CLONE_SOURCE_PRUNE_DIR, ConnectionPool, get_pool, init_pool
 from app.indexer import Indexer
 from app.main import app
 
@@ -373,3 +374,101 @@ def test_broken_slot_prompts_json_reads_as_empty(init_db, tmp_path: Path):
     out = clone_sources.lookup(produced)
     assert out["slot_prompts"] == {}
     assert out["prompt"] == "那句"
+
+
+# ---------- 成图删了，来源记录得跟着走 ----------
+# clone_sources 是全站唯一没给 image_id 挂外键的关联表，删成图不会把它一起带走。
+# 收垃圾靠每次启动跑一次 prune_orphan_rows，所以既测清得对，也测启动真的会自己跑。
+
+
+def _seed_pair(tmp_path: Path, tag: str) -> tuple[int, int]:
+    """一张参考图 + 一张用它生成的成图，来源登记好了。返回 (成图 id, 参考图 id)。"""
+    ref = index(tmp_path, f"参考{tag}.png")
+    produced = index(tmp_path, f"成图{tag}.png")
+    clone_sources.record(image_ids=[produced], template_id=1, source_image_id=ref,
+                         references=[{"image_id": ref}], prompt=f"{tag}的台词")
+    return produced, ref
+
+
+def _orphan_ids(conn) -> list[int]:
+    return [r["image_id"] for r in conn.execute(
+        "SELECT image_id FROM clone_sources"
+        " WHERE image_id NOT IN (SELECT id FROM images) ORDER BY image_id").fetchall()]
+
+
+def test_prune_drops_only_records_whose_image_is_gone(init_db, tmp_path: Path):
+    """成图已经删掉的清走，成图还在的一行不动：台词和参考图都还在。"""
+    conn = get_pool().main()
+    made_a, _ = _seed_pair(tmp_path, "甲")
+    made_b, ref_b = _seed_pair(tmp_path, "乙")
+    conn.execute("DELETE FROM images WHERE id = ?", (made_a,))
+    conn.commit()
+    assert _orphan_ids(conn) == [made_a]
+
+    assert clone_sources.prune_orphan_rows(conn) == 1
+
+    assert _orphan_ids(conn) == []
+    left = clone_sources.lookup(made_b)
+    assert left["prompt"] == "乙的台词"
+    assert [r["id"] for r in left["references"]] == [ref_b]
+
+
+def test_prune_backs_up_once_before_deleting(tmp_data_dir, init_db, tmp_path: Path):
+    """真删之前备份一次，备份里那条孤儿还在：删错了还有唯一那次回滚。"""
+    conn = get_pool().main()
+    made, _ = _seed_pair(tmp_path, "甲")
+    conn.execute("DELETE FROM images WHERE id = ?", (made,))
+    conn.commit()
+
+    assert clone_sources.prune_orphan_rows(conn, tmp_data_dir / "db.sqlite") == 1
+
+    backup = tmp_data_dir / "backup" / PRE_CLONE_SOURCE_PRUNE_DIR / "db.sqlite"
+    assert backup.is_file()
+    with sqlite3.connect(backup) as frozen:
+        frozen_ids = [r[0] for r in frozen.execute(
+            "SELECT image_id FROM clone_sources").fetchall()]
+    assert made in frozen_ids
+    assert _orphan_ids(conn) == []
+
+
+def test_prune_without_orphans_writes_nothing(tmp_data_dir, init_db):
+    """库本来就干净：不许写任何东西，更不该为此生成一份备份。"""
+    conn = get_pool().main()
+    assert clone_sources.prune_orphan_rows(conn, tmp_data_dir / "db.sqlite") == 0
+    assert not (tmp_data_dir / "backup").exists()
+
+
+def test_prune_is_idempotent_and_keeps_first_backup(tmp_data_dir, init_db, tmp_path: Path):
+    """第二次跑没得删：返回 0，第一次那份备份原样不动（口径同其他一次性备份）。"""
+    conn = get_pool().main()
+    made, _ = _seed_pair(tmp_path, "甲")
+    conn.execute("DELETE FROM images WHERE id = ?", (made,))
+    conn.commit()
+    db_file = tmp_data_dir / "db.sqlite"
+    assert clone_sources.prune_orphan_rows(conn, db_file) == 1
+    backup = tmp_data_dir / "backup" / PRE_CLONE_SOURCE_PRUNE_DIR / "db.sqlite"
+    stamp = backup.stat().st_mtime_ns
+
+    assert clone_sources.prune_orphan_rows(conn, db_file) == 0
+    assert backup.stat().st_mtime_ns == stamp
+
+
+def test_startup_prunes_orphans_without_being_asked(tmp_data_dir, init_db, tmp_path: Path):
+    """接线测试：清理是开库时自己跑的，不是靠谁记得手动调用。
+
+    少了这条，把 db.py 里那一句删掉，上面几条照样全绿——真库里就又开始攒垃圾。
+    """
+    conn = get_pool().main()
+    made, _ = _seed_pair(tmp_path, "甲")
+    conn.execute("DELETE FROM images WHERE id = ?", (made,))
+    conn.commit()
+    assert _orphan_ids(conn) == [made]
+
+    again = ConnectionPool(tmp_data_dir / "db.sqlite")
+    try:
+        again.initialize()
+    finally:
+        again.close()
+
+    assert _orphan_ids(conn) == []
+    assert (tmp_data_dir / "backup" / PRE_CLONE_SOURCE_PRUNE_DIR / "db.sqlite").is_file()

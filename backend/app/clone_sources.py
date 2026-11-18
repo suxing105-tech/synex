@@ -28,7 +28,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from .db import get_pool
+from .db import PRE_CLONE_SOURCE_PRUNE_DIR, backup_database, get_pool
 from .parser import _is_link, _read_png_chunks
 from .repository import image_summary
 
@@ -68,6 +68,28 @@ def initialize(conn: sqlite3.Connection) -> None:
     for column, ddl in _ADDED_COLUMNS:
         if column not in have:
             conn.execute(f"ALTER TABLE clone_sources ADD COLUMN {column} {ddl}")
+
+
+def prune_orphan_rows(conn: sqlite3.Connection, db_path: Path | None = None) -> int:
+    """删掉「成图已经不在了」的来源记录，返回删了几条。
+
+    这种行怎么来的：`clone_sources.image_id` 建表时没挂外键，是全站唯一一张这样的
+    关联表（`image_tags`／`image_folders`／`reverse_prompts` 都写了
+    `REFERENCES images(id) ON DELETE CASCADE`），所以删成图不会把它一起带走。
+    它不是「等着被认领」：`lookup()` 只按成图 id 查，而 `images.id` 是 AUTOINCREMENT，
+    删掉的号永远不会被新图复用，所以剩下的只有体积。删一张图攒一条，重扫一次数据目录
+    能攒几十条，因此这是每次启动都要跑的清理，不是一次性迁移。
+
+    真删之前先备份一次，口径同其他改动数据的迁移（备份已存在就不再备份）。
+    没有孤儿时一条都不写、也不生成备份——不为空跑写一份几十兆的快照。
+    """
+    orphan = "WHERE image_id NOT IN (SELECT id FROM images)"
+    left = conn.execute(f"SELECT COUNT(*) AS c FROM clone_sources {orphan}").fetchone()["c"]
+    if not left:
+        return 0
+    if db_path is not None:
+        backup_database(conn, db_path, PRE_CLONE_SOURCE_PRUNE_DIR)
+    return int(conn.execute(f"DELETE FROM clone_sources {orphan}").rowcount)
 
 
 def _ref_snapshot(image_id: int) -> dict[str, Any] | None:

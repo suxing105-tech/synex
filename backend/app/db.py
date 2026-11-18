@@ -32,6 +32,8 @@ logger = logging.getLogger(__name__)
 PRE_FAVORITE_DROP_DIR = "pre-0.2.21"
 # 路径写法统一 + 同文件重复行合并前的一次性备份目录名
 PRE_PATH_DEDUPE_DIR = "pre-0.2.33"
+# 清「再次创作来源」孤儿记录前的一次性备份目录名（存在即不再备份）
+PRE_CLONE_SOURCE_PRUNE_DIR = "pre-clone-source-prune"
 
 
 SCHEMA = r"""
@@ -206,6 +208,17 @@ class ConnectionPool:
                     logger.info("再次创作模板：补上 %d 条的对齐步长", healed)
             except Exception as exc:  # noqa: BLE001 - 尺寸报不准不该让图库打不开
                 logger.warning("再次创作模板的对齐步长没补上：%s", exc)
+            # 成图删掉之后，它的「再次创作来源」行不会跟着消失：这张表是全站唯一
+            # 没给 image_id 挂外键的关联表。那种行读不到（只按成图 id 查）、也长不回去
+            # （images.id 是 AUTOINCREMENT，删掉的号不会被新图复用），是纯垃圾，但每删
+            # 一张图就攒一条，所以每次启动清一次。清之前备份一次，坏了只吵日志。
+            try:
+                from .clone_sources import prune_orphan_rows
+                pruned = prune_orphan_rows(self._main, self.path)
+                if pruned:
+                    logger.info("再次创作来源：清掉 %d 条成图已删除的记录", pruned)
+            except Exception as exc:  # noqa: BLE001 - 清垃圾不该让图库打不开
+                logger.warning("再次创作来源的孤儿记录没清成：%s", exc)
             # 「图片API / 视频API / 音频API」三条快捷方式：只在第一次装库时种。
             # 用户删掉说明他不想看见，每次启动又长回来等于告诉他这一行不归他管。
             try:

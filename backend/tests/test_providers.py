@@ -678,6 +678,59 @@ def test_zhipu_note_says_which_generation_can_read_images():
     assert "GLM-5.3 Flash" in note and "纯文本" in note and "GLM-4.6V" in note
 
 
+SILICONFLOW_REVERSE_MODELS = ["deepseek-ai/DeepSeek-V4.1-Flash", "zai-org/GLM-5.3-Flash"]
+
+
+def test_siliconflow_reverse_column_lists_only_the_two_from_the_marketplace():
+    """硅基流动模型广场按「对话 + 视觉」筛出来就这两张，反推这一列也只许列这两张（2026-11-17 苏醒挑定）。"""
+    from app import providers
+
+    preset = providers.PRESETS["siliconflow"]
+    curated = service.curated_models(preset)
+    assert [item["id"] for item in curated] == SILICONFLOW_REVERSE_MODELS
+    assert [item["id"] for item in curated if item["recommended"]] == ["deepseek-ai/DeepSeek-V4.1-Flash"], \
+        "推荐位给广场里热度那张，别再落回已经停用的小档"
+    assert preset["models_exact"] is True
+
+
+def test_siliconflow_both_models_are_invisible_to_the_name_guesser():
+    """钉住这一家为什么要白名单：这两张的名字里 vl / vision / omni 一个都没有，靠猜必被筛掉。
+
+    哪天 `_VISION_HINT` 改成认得出这类命名，这条会红——那时再评估要不要撤掉白名单。
+    别顺手把白名单删了：能反推的还是这两张，不是账号里那堆 Qwen3-VL 的小档。
+    """
+    for model_id in SILICONFLOW_REVERSE_MODELS:
+        assert not service._VISION_HINT.search(model_id)
+
+
+def test_siliconflow_config_list_keeps_out_the_other_vision_models(client, monkeypatch):
+    """账号里还开着一堆 Qwen3-VL / Qwen3-Omni，反推列也不把它们补进来：苏醒只要那两张。"""
+    _stub_models(monkeypatch, [{"id": "zai-org/GLM-5.3-Flash"},
+                               {"id": "deepseek-ai/DeepSeek-V4.1-Flash"},
+                               {"id": "Qwen/Qwen3-VL-32B-Instruct"},
+                               {"id": "Qwen/Qwen3-Omni-30B-A3B-Instruct"},
+                               {"id": "Qwen/Qwen3.8-27B"}])
+    row = client.post("/api/model-configs", json={"provider": "siliconflow", "api_key": "SF-KEY"}).json()
+    out = client.get(f'/api/model-configs/{row["id"]}/models').json()
+
+    assert [item["id"] for item in out["models"]] == SILICONFLOW_REVERSE_MODELS, "顺序照注册表，不跟清单跑"
+    assert out["models"][0]["label"] == "DeepSeek V4.1 Flash", "展示名照注册表，别只剩一串 id"
+    assert [item["id"] for item in out["models"] if item["recommended"]] == ["deepseek-ai/DeepSeek-V4.1-Flash"]
+    assert out["hidden"] == 3, "没列进来的两张视觉档加一张纯文本，数量要报得出来"
+    assert out["reason"] == ""
+    assert "SF-KEY" not in str(out)
+
+
+def test_siliconflow_config_list_names_the_model_the_account_switched_off(client, monkeypatch):
+    """停用就不报进清单：这时要点名说哪张没了，别等人在面板里点了才换回一句 403。"""
+    _stub_models(monkeypatch, [{"id": "zai-org/GLM-5.3-Flash"}, {"id": "Qwen/Qwen3-VL-8B-Instruct"}])
+    row = client.post("/api/model-configs", json={"provider": "siliconflow", "api_key": "SF-KEY"}).json()
+    out = client.get(f'/api/model-configs/{row["id"]}/models').json()
+
+    assert [item["id"] for item in out["models"]] == SILICONFLOW_REVERSE_MODELS, "表还是那两张，不偷偷少一行"
+    assert "deepseek-ai/DeepSeek-V4.1-Flash" in out["reason"] and "停用" in out["reason"]
+
+
 @pytest.mark.parametrize("model_id", [
     "glm-4.5v", "glm-4.6v", "glm-4.6v-flash", "glm-5v-turbo", "glm-4v", "glm-4v-flash",
     "qwen2.5-vl-72b-instruct", "moonshot-v1-8k-vision-preview", "internvl3-78b"])

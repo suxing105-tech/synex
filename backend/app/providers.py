@@ -106,14 +106,25 @@ PRESETS: dict[str, dict] = {
         "id": "siliconflow",
         "name": "硅基流动 SiliconFlow",
         "base_url": "https://api.siliconflow.cn/v1",
+        # 反推这一列只列这两张，且照这张表原样列（models_exact，见 reverse_prompts.exact_model_list）。
+        # 这是 2026-11-17 苏醒在硅基流动「模型广场」按 类型=对话 + 标签=视觉 挑定的两张，
+        # 两张都各发过一张真图问过颜色，确实收图。为什么这一家要另开白名单、不再让代码去猜：
+        # `_VISION_HINT` 拿模型名字里的 vl/vision/omni 认「看不看得懂图」，这两张的名字一个都不带；
+        # 反过来它照单全收了账号里那 8 张 Qwen3-VL / Qwen3-Omni（连 8B 那种小档都在），
+        # 于是下拉里全是读图的次要模型、真正强的两张一个不露——在这家猜名字就是猜反。
+        # 底下原来那四条（Qwen2.5-VL-72B/32B、DeepSeek-VL2、Qwen2-VL-72B）实测全被淘汰：
+        # 这把 Key 问过去一律 403 code 30003「Model disabled」，而停用就不报进 /models，
+        # 留在表里只会让人点了才知道反推失败，连那个 推荐 位都曾被它抢走。删。
         "models": {
-            "Qwen/Qwen2.5-VL-72B-Instruct": {"label": "Qwen2.5-VL-72B", "recommended": True},
-            "Qwen/Qwen2.5-VL-32B-Instruct": {"label": "Qwen2.5-VL-32B", "recommended": False},
-            "deepseek-ai/deepseek-vl2": {"label": "DeepSeek-VL2", "recommended": False},
-            "Qwen/Qwen2-VL-72B-Instruct": {"label": "Qwen2-VL-72B", "recommended": False},
+            "deepseek-ai/DeepSeek-V4.1-Flash": {"label": "DeepSeek V4.1 Flash", "recommended": True},
+            "zai-org/GLM-5.3-Flash": {"label": "GLM-5.3 Flash", "recommended": False},
         },
+        "models_exact": True,
         "default_timeout": PRESET_TIMEOUT_SECONDS,
         "format": "openai",
+        "note": "反推只用这两张：硅基流动模型广场按「对话 + 视觉」筛出来就是这两个，"
+                "用现成的 API Key 直接调，不需要另外开通或额外花钱。"
+                "账号里还开着的 Qwen3-VL / Qwen3-Omni 那批不列进这一列。",
         "console_url": "https://cloud.siliconflow.cn/account/apikey",
     },
     "moonshot": {
@@ -203,6 +214,7 @@ def list_presets():
             "note": preset.get("note", ""),
             # 这两个开关决定界面长什么样：清单是现拉的还是抄来的、Key 是自家存还是共用
             "models_dynamic": bool(preset.get("models_dynamic")),
+            "models_exact": bool(preset.get("models_exact")),
             "credential_scope": preset.get("credential_scope", "local"),
             # 服务商选择页按能力过滤：没接的路数不报（只有 RunningHub 真接了三条收费模型 API）
             "capabilities": list(preset.get("capabilities") or ["text"]),

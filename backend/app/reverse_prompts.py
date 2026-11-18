@@ -424,6 +424,25 @@ def merge_model_lists(curated: list[dict], live: list[dict], exclude=()) -> list
     return ordered
 
 
+def exact_model_list(curated: list[dict], live: list[dict]) -> dict:
+    """这一家反推照注册表那张表列，不让实时清单按名字往里补模型。
+
+    为什么单开一条路：`_VISION_HINT` 是拿模型名字猜它收不收图。硅基流动当下真正强的那两张
+    （DeepSeek-V4.1-Flash / GLM-5.3-Flash）名字里 vl、vision、omni 一个都没有，照名字筛必然被筛掉，
+    留下的反倒是一堆 Qwen3-VL 的小档——在这家猜名字就是猜反。注册表因此直接写死那两张。
+    实时清单还是得问一遍：注册表这几张哪天被账号停了（硅基流动停用就不报进 /models），
+    当场点名说出来，别等人点了才换回一句 403。
+    """
+    models = [dict(item) for item in curated]
+    shown = {item["id"] for item in models}
+    missing = [item["id"] for item in models if item["id"] not in {str(x.get("id")) for x in live}]
+    hidden = sum(1 for item in live if item["id"] not in shown)
+    reason = ("" if not missing else
+              "这家这次没报回 " + "、".join(missing) + "，多半是账号里把它停用了，反推会失败；"
+              "到服务商的模型广场确认这张还在不在，或换一家。")
+    return {"models": models, "source": "live", "hidden": hidden, "reason": reason}
+
+
 async def list_models(provider: str | None) -> dict:
     """按服务商要清单：注册表里抄得来的直接给，动态那几家去问它自己。
 
@@ -480,6 +499,9 @@ async def list_config_models(config_id: int) -> dict:
             # 问到了、但它一个都没报回来：这不算「这家只有这些」，照内置那几张报，别挂成实时清单
             return {"models": curated, "source": "preset",
                     "reason": live.get("reason") or "这家没报回模型清单，先列内置的常用模型"}
+        if preset.get("models_exact"):
+            # 这一家照注册表那张表原样列，不走下面那套「按名字补模型」（缘由见 exact_model_list）
+            return exact_model_list(curated, live["models"])
         merged = merge_model_lists(curated, live["models"],
                                    exclude=media_model_ids(preset))
         # 「这家还报了几个没列进来的」也带回界面：苏醒要的「5.3 怎么看不到」得在这儿答得清——

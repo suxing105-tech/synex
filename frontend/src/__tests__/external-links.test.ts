@@ -1,5 +1,9 @@
-import { afterEach, beforeEach, describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { get } from "svelte/store";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
+import ModelApiSettings from "../components/ModelApiSettings.svelte";
+import { modelConfigs, reverseApi, reverseSettings } from "../lib/reverse-prompts";
+import type { ModelConfig, ProviderPreset } from "../lib/reverse-prompts";
 import { clearToasts, toasts } from "../lib/toast";
 import {
   externalHref,
@@ -150,5 +154,56 @@ describe("external links", () => {
     delete (window as any).__TAURI__;
     openExternalUrl("https://platform.minimax.cn");
     expect(opened).toEqual(["https://platform.minimax.cn"]);
+  });
+});
+
+
+/**
+ * 真组件里的那一颗链接（2026-11-17 苏醒第二次指同一处：「APP端，这里不能以默认浏览器打开链接」）。
+ *
+ * 上面那些用例点的是手搭的 <a>，证明的是文档层自己成立。这一条点的是 ModelApiSettings
+ * 真渲染出来的那颗「获取 API Key」：从 <a> 走到 document 中间隔着设置页一整棵子树
+ * （section、settings-card、fieldset…），哪一层先 preventDefault，文档层就收不到，
+ * 界面上还是那句「点了没反应」。分开跑证明不了拼起来成立——口径同
+ * comfyui-injection-scope.test.ts 对注入脚本的要求。
+ */
+describe("external links in the real settings page", () => {
+  afterEach(() => cleanup());
+
+  const modelRow: ModelConfig = {
+    id: 7, name: "智谱 GLM", base_url: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4v",
+    timeout: 120, provider: "zhipu", has_api_key: true, key_persistence: "encrypted",
+  };
+  const zhipu: ProviderPreset = {
+    id: "zhipu", name: "智谱 GLM", base_url: "https://open.bigmodel.cn/api/paas/v4",
+    models: [{ id: "glm-4v", label: "GLM-4V", recommended: true }], default_timeout: 120,
+    capabilities: ["text"], console_url: "https://open.bigmodel.cn/usercenter/apikeys",
+  };
+  const loaded = { default_model_id: 7, instruction: "描述画面", default_instruction: "默认描述" };
+
+  it("那颗「获取 API Key」的点击被文档层接管，交给桌面壳去开系统默认浏览器", async () => {
+    modelConfigs.set([modelRow]);
+    reverseSettings.set(loaded);
+    vi.spyOn(reverseApi, "models").mockResolvedValue([modelRow]);
+    vi.spyOn(reverseApi, "settings").mockResolvedValue(loaded);
+    vi.spyOn(reverseApi, "providers").mockResolvedValue([zhipu]);
+    vi.spyOn(reverseApi, "configModels").mockResolvedValue({ models: [], source: "preset", reason: "" });
+    fakeTauri();
+    installExternalLinkHandler();
+    const panel = render(ModelApiSettings);
+    await waitFor(() => expect(panel.container.textContent).not.toContain("处理中"));
+    let anchor = panel.container.querySelector("a.api-console");
+    if (!anchor) {
+      // 没自动选中那一家时点它的卡片：点卡＝打开那一条，入口和界面上是同一个
+      const card = panel.container.querySelector('[data-provider="zhipu"]') as HTMLButtonElement;
+      expect(card, "服务商卡片里要有智谱这一张").toBeTruthy();
+      await fireEvent.click(card);
+      anchor = panel.container.querySelector("a.api-console");
+    }
+    expect(anchor, "服务商带回 console_url 时界面要画那颗「获取 API Key」").toBeTruthy();
+    const event = click(anchor as HTMLAnchorElement);
+    // 摁掉原生跳转 + 把地址交给桌面壳：缺一条，APP 端就还是「点了没反应」
+    expect(event.defaultPrevented).toBe(true);
+    expect(invokes).toEqual([["open_external_url", { url: "https://open.bigmodel.cn/usercenter/apikeys" }]]);
   });
 });

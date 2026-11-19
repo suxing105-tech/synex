@@ -437,52 +437,14 @@ def historical(text_id, ident):
 
 
 def recycle_file(p):
-    """IFileOperation: recycle-only + early failure, no permanent-delete fallback."""
-    if os.name != 'nt':
-        raise ValueError('当前平台没有可用的系统回收站接口，已停止删除')
-    import ctypes
-    from ctypes import wintypes
-    if str(p).startswith('\\\\'):
-        raise ValueError('网络路径无法保证回收站恢复，已停止删除')
-    if ctypes.windll.kernel32.GetDriveTypeW(str(p.anchor)) != 3:
-        raise ValueError('仅支持本地固定磁盘的回收站，已停止删除')
-    class GUID(ctypes.Structure):
-        _fields_ = [('a', wintypes.DWORD), ('b', wintypes.WORD), ('c', wintypes.WORD), ('d', ctypes.c_ubyte * 8)]
-    def guid(value):
-        return GUID.from_buffer_copy(uuid.UUID(value).bytes_le)
-    def check(hr):
-        if hr < 0:
-            raise OSError(f'回收站操作失败 (HRESULT {hr & 0xffffffff:08x})，未执行永久删除')
-    def method(pointer, slot, result, *args):
-        table = ctypes.cast(pointer, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents
-        return ctypes.WINFUNCTYPE(result, ctypes.c_void_p, *args)(table[slot])
-    ole, shell = ctypes.OleDLL('ole32'), ctypes.WinDLL('shell32')
-    initialized = ole.CoInitializeEx(None, 2)
-    check(initialized)
-    operation, item = ctypes.c_void_p(), ctypes.c_void_p()
-    try:
-        clsid = guid('3ad05575-8857-4850-9277-11b85bdb8e09')
-        iid = guid('947aab5f-0a5c-4c13-b4d6-4bf7836fc9f8')
-        check(ole.CoCreateInstance(ctypes.byref(clsid), None, 1, ctypes.byref(iid), ctypes.byref(operation)))
-        shell_iid = guid('43826d1e-e718-42ee-bc55-a1e261c37bfe')
-        create_item = shell.SHCreateItemFromParsingName
-        create_item.argtypes = [wintypes.LPCWSTR, ctypes.c_void_p, ctypes.POINTER(GUID), ctypes.POINTER(ctypes.c_void_p)]
-        create_item.restype = ctypes.c_long
-        check(create_item(str(p), None, ctypes.byref(shell_iid), ctypes.byref(item)))
-        flags = 0x00080000 | 0x00100000 | 0x00000400 | 0x00000010 | 0x00000004
-        check(method(operation, 5, ctypes.c_long, wintypes.DWORD)(operation, flags))
-        check(method(operation, 18, ctypes.c_long, ctypes.c_void_p, ctypes.c_void_p)(operation, item, None))
-        check(method(operation, 21, ctypes.c_long)(operation))
-        aborted = wintypes.BOOL()
-        check(method(operation, 22, ctypes.c_long, ctypes.POINTER(wintypes.BOOL))(operation, ctypes.byref(aborted)))
-        if aborted.value or p.exists():
-            raise OSError('回收站操作未完成，未执行永久删除')
-    finally:
-        if item.value:
-            method(item, 2, wintypes.ULONG)(item)
-        if operation.value:
-            method(operation, 2, wintypes.ULONG)(operation)
-        ole.CoUninitialize()
+    """薄壳：实现已经搬到 app.recycle，媒体删除用的是同一套。
+
+    名字留着有两个原因：删文本、删文件夹的调用点写的是 texts.recycle_file，
+    测试也以 app.texts.recycle_file 为 patch 目标。别再在这里复制第二份 COM 代码。
+    """
+    from .recycle import recycle_path
+
+    return recycle_path(p)
 
 
 def trash(text_id, expected):

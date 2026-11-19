@@ -902,16 +902,23 @@ def rotate_image(image_id: int, direction: str) -> dict:
     return _row_to_summary(updated)
 
 
-def delete_image_files(image_id: int) -> dict:
-    """从数据库删除图片条目，并清理磁盘文件 + 预览缓存。
+def delete_image_files(image_id: int, *, purge: bool = False) -> dict:
+    """删图片/视频的索引行与缓存，**原件默认进系统回收站**。
 
-    返回 {"id": int, "removed_file": bool, "cleaned_previews": int}。
-    `removed_file` 说的是**这一次**有没有真的删掉原件：原件已经被搬进回收站、
-    或早就不在原路径，就是 False——它唯一的用处是告诉调用方文件还在不在，不能总报成功。
-    图片不存在 → 抛 RenameError('not_found')。
-    原文件删除失败（非 OSError）→ 让上层决定。
+    - purge=False（默认，对应右键「移入回收站」）：原件交给 app.recycle 搬进回收站。
+      搬不动就抛 ValueError/OSError，由路由转 400——那一刻索引和文件都还在原处，
+      用户看得见也能重试。素材不可逆，这条线不能倒过来（AGENTS.md §5）。
+    - purge=True：永久删除原件。这是 API 层的显式 opt-in，界面上没有入口。
+      「只删索引、原文件不动」是另一条路，在路由层用 remove_file=False 走。
+
+    返回 {"id", "removed_file", "recycled", "cleaned_previews"}。
+    `removed_file` 只说这一次原件有没有离开原路径：被搬进回收站算离开，
+    本来就不在原路径算没离开；索引与缓存无论如何都清。
+    图片不存在 → 抛 RenameError("not_found")。
     """
+    from . import recycle
     from .config import previews_dir
+
     conn = get_pool().main()
     row = conn.execute(
         "SELECT id, path, thumb_path FROM images WHERE id = ?", (image_id,)
@@ -922,14 +929,18 @@ def delete_image_files(image_id: int) -> dict:
     thumb = row["thumb_path"]
 
     removed_file = False
-    try:
-        if fpath.exists():
-            fpath.unlink()
-            removed_file = True   # 只有真删了才报 True：原件已被别处搬走（回收站等）就是 False
-    except FileNotFoundError:
-        removed_file = False
-    except OSError:
-        raise
+    recycled = False
+    if fpath.exists():
+        if purge:
+            try:
+                fpath.unlink()  # OSError 交给路由，那是真·永久删除失败
+                removed_file = True
+            except FileNotFoundError:
+                removed_file = False
+        else:
+            recycle.recycle_path(fpath)  # 抛出去就意味着文件和索引都还在
+            removed_file = True
+            recycled = True
 
     # 缩略图（thumb_path 有就删，没有跳过）
     if thumb:
@@ -956,7 +967,8 @@ def delete_image_files(image_id: int) -> dict:
     cleaned += purge_video_frame_files(image_id)
 
     conn.execute("DELETE FROM images WHERE id = ?", (image_id,))
-    return {"id": image_id, "removed_file": removed_file, "cleaned_previews": cleaned}
+    return {"id": image_id, "removed_file": removed_file, "recycled": recycled,
+            "cleaned_previews": cleaned}
 
 
 def image_reveal_path(image_id: int) -> str | None:

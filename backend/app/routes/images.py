@@ -185,16 +185,18 @@ def open_in_photoshop(image_id: int):
 
 
 @router.delete("/{image_id}")
-def delete_image(image_id: int, remove_file: bool = True):
-    """从数据库删除图片，同时清理磁盘文件 + 缩略图缓存 + 预览缓存。
+def delete_image(image_id: int, remove_file: bool = True, purge: bool = False):
+    """删图片/视频的索引行，并按参数决定磁盘原件怎么走。三种语义别混：
 
-    - remove_file=True（默认，对应右键菜单"删除图片"）：
-        删 DB 行、删原 PNG、删 thumb_path、删 previews/{id}_max*.webp 全部
-    - remove_file=False：
-        仅删 DB 行 + 清 previews/{id}_max*.webp（保留原文件）
+    - remove_file=True + purge=False（默认，右键「移入回收站」）：
+        原件进系统回收站，再删 DB 行、thumb、previews、视频参考帧
+    - remove_file=True + purge=True：永久删原件。API 层的显式 opt-in，界面上没有这个按钮
+    - remove_file=False（「仅从图库移除」）：原文件不动，只删 DB 行 + 清缓存
 
     404 → 图片不存在
-    500 → 删除原文件时遇到 OSError
+    400 → 回收站不可用或搬不动（网络路径、可移动盘、被占用……）。此刻文件与索引都在
+          原处，用户看得见也能重试；绝不为了「报删除成功」退化成永久删除。
+    500 → purge=True 时永久删原件遇到 OSError
     """
     if not remove_file:
         conn = get_pool().main()
@@ -217,13 +219,19 @@ def delete_image(image_id: int, remove_file: bool = True):
         return {"ok": True, "id": image_id, "removed_file": False, "cleaned_previews": cleaned}
 
     try:
-        result = repository.delete_image_files(image_id)
+        result = repository.delete_image_files(image_id, purge=purge)
     except repository.RenameError as e:
         if str(e) == "not_found":
             raise HTTPException(404, "图片不存在")
         raise HTTPException(500, str(e))
+    except ValueError as e:
+        # app.recycle 的守卫：不是 Windows、网络路径、非固定磁盘
+        raise HTTPException(400, f"移入回收站失败：{e}") from e
     except OSError as e:
-        raise HTTPException(500, f"删除文件失败: {e}")
+        # COM 每一步都查 HRESULT；走到这里说明没搬成，同样不是永久删除
+        if purge:
+            raise HTTPException(500, f"删除文件失败: {e}") from e
+        raise HTTPException(400, f"移入回收站失败：{e}") from e
     return {"ok": True, **result}
 
 

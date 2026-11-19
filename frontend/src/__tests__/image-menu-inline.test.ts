@@ -25,7 +25,7 @@ it('菜单改名关闭菜单并聚焦名称输入，Enter 保存而不打开预�
   const screen = feed();
   const prompt = vi.spyOn(window, 'prompt');
   await fireEvent.contextMenu(screen.getByAltText('original.jpg'));
-  expect(screen.getByText('图片所在位置')).toBeTruthy(); expect(screen.getByText('删除图片')).toBeTruthy();
+  expect(screen.getByText('图片所在位置')).toBeTruthy(); expect(screen.getByText('移入回收站')).toBeTruthy();
   await fireEvent.click(screen.getByText('重命名'));
   const input = await screen.findByLabelText('编辑图片名称');
   expect(document.activeElement).toBe(input); expect(screen.queryByRole('menu')).toBeNull();
@@ -100,5 +100,7 @@ it('音频条目的菜单用「播放」替代复制图片', async () => {
   const screen = feed(); await fireEvent.contextMenu(screen.getByTitle('take.mp3'));
   expect(screen.getByText('播放')).toBeTruthy();
   expect(screen.queryByText('复制图片')).toBeNull();
-  expect(screen.getByText('删除音频')).toBeTruthy();
+  // 音频同理：界面上不再有「删除」这个说法，只剩「移入回收站」
+  expect(screen.getByText('移入回收站')).toBeTruthy();
+  expect(screen.queryByText(/删除/)).toBeNull();
 });

@@ -254,7 +254,13 @@
       { label: "复制文件所在位置", onClick: () => copyLocation(it.path) },
       { label: "图片所在位置", onClick: () => revealImage(it) },
       { kind: "sep" },
-      { label: "删除图片", danger: true, onClick: () => deleteImage(it) },
+      {
+        label: "移入回收站",
+        danger: true,
+        onClick: () => {
+          if (confirmTrash(1)) void deleteImage(it);
+        },
+      },
     ];
   });
 
@@ -291,11 +297,22 @@
     }
   }
 
+  // 和网格里那套同一个口径：一次点击就把原文件移出原路径，先问一句（AGENTS.md §5）。
+  // 这里用原生 confirm 是跟着本组件既有做法走的——「重命名」用的就是原生 prompt，
+  // 再手搓一套弹窗样式只会多一处要对齐的视觉。
+  function confirmTrash(count: number) {
+    const line = count > 1
+      ? "把这 " + count + " 个文件移入系统回收站？原件会一起移走，可以在系统回收站里找回。"
+      : "把这张图片移入系统回收站？原件会一起移走，可以在系统回收站里找回。";
+    return window.confirm(line);
+  }
+
   let deleting = false;
   async function deleteCurrent() {
     if (deleting) return;
-    deleting = true;
     const targets = comparing ? [...compareImages] : [$mediaItems[index]].filter(Boolean);
+    if (!confirmTrash(targets.length)) return;
+    deleting = true;
     for (const it of targets) await deleteImage(it);
     deleting = false;
   }
@@ -303,12 +320,12 @@
     try {
       const resp = await imagesApi.remove(it.id, true);
       removeImageFromFeed(it.id);
-      notify(`已删除图片（清理缩略图 ${resp.cleaned_previews ?? 0} 个）`);
+      notify(`已移入回收站（清理缩略图 ${resp.cleaned_previews ?? 0} 个）`);
       if (selectedId === it.id) selectedId = null;
       open = false;
       await Promise.allSettled([refreshStats(), refreshFolders()]);
     } catch (e) {
-      notify(`删除失败: ${(e as Error).message}`);
+      notify(`移入回收站失败: ${(e as Error).message}`);
     }
   }
 

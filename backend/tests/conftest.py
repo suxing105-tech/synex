@@ -77,6 +77,29 @@ def _no_real_dev_db_in_tests():
 
 
 @pytest.fixture(autouse=True)
+def _no_platform_global_mutation():
+    """收尾时进程级平台开关必须还是原来那套——不许改全局 `os.name` 来「假装」在别的平台。
+
+    代价不在改的那条用例身上：pathlib 是按 `os.name` 决定 `Path(...)` 构造 PosixPath 还是
+    WindowsPath，补丁还在生效时任何一处 `Path(...)` 都会去构造 PosixPath，3.14 当场抛
+    `UnsupportedOperation: cannot instantiate PosixPath on your system`。而 autouse 守卫的收尾
+    正好也落在这个窗口里（上面那条要读 `_POOL.path`），于是报出来的是一条与肇事用例无关的
+    teardown ERROR——第一次撞上时就这样白查一轮。
+    要测非 Windows 分支，换掉被测模块自己的引用：
+    `monkeypatch.setattr(app.xxx, "os", types.SimpleNamespace(name="posix"))`。
+    """
+    name = os.name
+    pathmod = os.path
+    sep = os.sep
+    yield
+    if (os.name, os.path, os.sep) != (name, pathmod, sep):
+        pytest.fail(
+            "用例改了全局 os 的平台开关（os.name/os.path/os.sep）："
+            + "这会连带改变 pathlib 选哪个 Path 实现，别的用例在同一会话里会拿到"
+            + "一个构造不出来的 Path。测跨平台分支请改被测模块自己的 os 引用，"
+            + "见 test_recycle.py 的 Non-windows 那条。")
+
+@pytest.fixture(autouse=True)
 def _no_bundled_clone_templates(monkeypatch):
     """新库默认不装内置的「再次创作」工作流。
 

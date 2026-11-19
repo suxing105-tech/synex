@@ -739,6 +739,9 @@ def test_deleting_video_purges_reference_frame_cache(client, init_db, video_id, 
 
     run = seed_plan(client, monkeypatch, video_id)
     assert frame_files(video_id, run["id"], 1, "first")
+    # 原件现在走 app.recycle；这条只验缓存清理，桩掉 COM，
+    # 别把测试造的假视频搬进开发机自己的系统回收站。
+    monkeypatch.setattr("app.recycle.recycle_path", lambda p: Path(p).unlink())
     cleaned = repository.delete_image_files(video_id)
     assert cleaned["cleaned_previews"] >= 2 * len(run["units"])
     assert not list(previews_dir().glob(f"{video_id}_vp*.jpg"))

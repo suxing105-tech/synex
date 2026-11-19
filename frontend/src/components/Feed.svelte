@@ -67,7 +67,7 @@ import { hoverPlay } from "../lib/hover-play";
   let menuOpen = $state(false);
   let menuX = $state(0);
   let menuY = $state(0);
-  // 右键菜单的目标 id 列表：右键目标在多选集合里 → 整个集合；否则 → [右键那张]。单图时菜单走单图逻辑（重命名 / 打开位置 / 复制单图），多图时只暴露「批量删除」和「复制 URL 列表」两条。
+  // 右键菜单的目标 id 列表：右键目标在多选集合里 → 整个集合；否则 → [右键那张]。单图时菜单走单图逻辑（重命名 / 打开位置 / 复制单图），多图时只暴露「移入回收站」和「复制 URL 列表」两条。
   let menuTargetIds = $state<number[]>([]);
   let menuTick = $state(0);
 
@@ -217,7 +217,7 @@ import { hoverPlay } from "../lib/hover-play";
   //
   // 文本卡与图片卡同构：单击 = 选中并在右侧出详情，双击 / 回车 = 在中间栏就地打开。
   // 选中状态必须走 selectedText，不能借 selectedId —— texts.id 与 images.id 会撞车。
-  // 文本不参与多选与批量移动 / 删除，选区始终只覆盖媒体子序列。
+  // 文本不参与多选与批量移动 / 移入回收站，选区始终只覆盖媒体子序列。
   // 文本卡的高度不写在这儿：它和媒体页脚共用同一套档位，见 lib/media-format.ts 的
   // textCardHeightFor / textCardLinesFor。2026-11-13 评审第二刀（T1 + T6）撤掉了原来的
   // 21/9 定比例 —— 那条比例在窄列里把卡压扁（12 列时整卡 36px 高，内容被 overflow 切光），
@@ -688,8 +688,8 @@ import { hoverPlay } from "../lib/hover-play";
   }
 
   // 派生：根据 menuTick + menuTargetIds + 当前 feed 派生菜单项。
-  // 单图：复制图片 / 重命名 / 打开位置 / 删除。
-  // 多图：复制 N 个图片地址（Clipboard 一次只能写一张图，多张降级为 URL 文本）/ 批量删除。
+  // 单图：复制图片 / 重命名 / 打开位置 / 移入回收站。
+  // 多图：复制 N 个图片地址（Clipboard 一次只能写一张图，多张降级为 URL 文本）/ 移入回收站。
   let menuItems = $derived.by<ContextMenuItem[]>(() => {
     void menuTick;
     const ids = menuTargetIds;
@@ -719,7 +719,7 @@ import { hoverPlay } from "../lib/hover-play";
         { label: `${noun}所在位置`, onClick: () => revealImage(t) },
         { label: "移动到…", children: moveMenu(items) },
         { kind: "sep" },
-        { label: `删除${noun}`, danger: true, onClick: () => deleteImages(items) },
+        { label: "移入回收站", danger: true, onClick: () => askMediaTrash(items) },
       ];
     }
     const noun = items[0].kind === "video" ? "视频" : items[0].kind === "audio" ? "音频" : "图片";
@@ -728,7 +728,7 @@ import { hoverPlay } from "../lib/hover-play";
       { label: "复制文件所在位置", onClick: () => copyMediaLocation(items.map((it) => it.path).join("\n")) },
       { label: "移动到…", children: moveMenu(items) },
       { kind: "sep" },
-      { label: `批量删除 ${items.length} 个${noun}`, danger: true, onClick: () => deleteImages(items) },
+      { label: `移入回收站 ${items.length} 个${noun}`, danger: true, onClick: () => askMediaTrash(items) },
     ];
   });
 
@@ -801,7 +801,34 @@ import { hoverPlay } from "../lib/hover-play";
     }
   }
 
-  // 批量删除：单图也走这条，传 length=1 的数组即可。
+  // 移入回收站：所有会把原文件移出原路径的动作都先落到这个确认框上。
+  // 原来右键一条菜单直接就把原 PNG 永久删掉，一次误点没有回头路（AGENTS.md §5）；
+  // 现在后端默认走系统回收站，确认框负责「别让人以为是在回收站里挪个位置」。
+  let mediaTrash = $state<MediaFeedItem[] | null>(null);
+  let mediaTrashBusy = $state(false);
+  let mediaTrashError = $state("");
+
+  function askMediaTrash(items: MediaFeedItem[]) {
+    if (items.length === 0) return;
+    mediaTrashError = "";
+    mediaTrash = items;
+  }
+
+  async function runMediaTrash() {
+    const items = mediaTrash;
+    if (!items || mediaTrashBusy) return;
+    mediaTrashBusy = true;
+    try {
+      await deleteImages(items);
+      mediaTrash = null;
+    } catch (e) {
+      mediaTrashError = e instanceof Error ? e.message : String(e);
+    } finally {
+      mediaTrashBusy = false;
+    }
+  }
+
+  // 真正执行移入回收站：单图也走这条，传 length=1 的数组即可。
   // 失败的项不会从多选集合里剔除，保留以便用户重试。
   let deleting = false;
   async function deleteImages(items: MediaFeedItem[]) {
@@ -821,16 +848,16 @@ import { hoverPlay } from "../lib/hover-play";
         console.error("delete failed", it.id, e);
       }
     }
-    // 同步从多选集合里剔除真正删除成功的（失败的保留以便重试）
+    // 同步从多选集合里剔除真正移入回收站成功的（失败的保留以便重试）
     removeIdsFromSelection(succeeded);
     const okCount = succeeded.length;
     const failCount = failed.length;
     if (okCount > 0 && failCount === 0) {
-      notify(okCount === 1 ? `已删除（清理预览 ${cleaned} 个）` : `已删除 ${okCount} 项（清理预览 ${cleaned} 个）`);
+      notify(okCount === 1 ? `已移入回收站（清理预览 ${cleaned} 个）` : `已移入回收站 ${okCount} 项（清理预览 ${cleaned} 个）`);
     } else if (okCount > 0 && failCount > 0) {
-      notify(`已删除 ${okCount} 项，${failCount} 项失败`);
+      notify(`已移入回收站 ${okCount} 项，${failCount} 项失败`);
     } else {
-      notify(`删除失败（${failCount} 项）`);
+      notify(`移入回收站失败（${failCount} 项）`);
     }
     // 乐观更新本地 feedItems：直接从数组里过滤掉已删 id。
     // 不调 refreshFeed() —— 整个数组替换会让 masonry 贪心分组重算，滚动条跳回顶部。
@@ -981,7 +1008,7 @@ import { hoverPlay } from "../lib/hover-play";
     if (e.key === "Delete" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
       e.preventDefault();
       const ids = $multiSelectedIds.size ? $multiSelectedIds : new Set(selectedId === null ? [] : [selectedId]);
-      void deleteImages($mediaItems.filter(item => ids.has(item.id)));
+      askMediaTrash($mediaItems.filter((item) => ids.has(item.id)));
       return;
     }
     if (e.key === "Escape") {
@@ -1520,6 +1547,27 @@ import { hoverPlay } from "../lib/hover-play";
         <button type="button" onclick={() => { textDialog = ""; }}>取消</button>
         <button type="button" class={textDialog === "trash" ? "danger" : "primary"} disabled={textDialogBusy} onclick={() => void runTextDialog()}>
           {textDialogBusy ? "处理中…" : textDialog === "rename" ? "保存" : "确认移入回收站"}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if mediaTrash}
+  <div class="text-dialog-backdrop" role="presentation">
+    <div class="text-dialog" role="dialog" aria-modal="true" aria-label="移入回收站">
+      <h2>移入系统回收站</h2>
+      {#if mediaTrashError}<p class="dialog-error" role="alert">{mediaTrashError}</p>{/if}
+      <p>会把磁盘原文件一起移入系统回收站：</p>
+      <pre>{mediaTrash[0].path}</pre>
+      {#if mediaTrash.length > 1}
+        <p class="dialog-muted">等 {mediaTrash.length} 项，每一项都按各自的原件处理。</p>
+      {/if}
+      <p class="dialog-muted">回收站不可用时会停止操作，不做永久删除；原文件可以在系统回收站里找回。</p>
+      <div class="dialog-actions">
+        <button type="button" onclick={() => { mediaTrash = null; }}>取消</button>
+        <button type="button" class="danger" disabled={mediaTrashBusy} onclick={() => void runMediaTrash()}>
+          {mediaTrashBusy ? "处理中…" : `确认移入回收站（${mediaTrash.length} 项）`}
         </button>
       </div>
     </div>

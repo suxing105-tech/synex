@@ -370,37 +370,89 @@ def test_reveal_returns_method_field(client):
 
 # ---------- 删除图片（缩略图 / 预览一并清） ----------
 
-def test_delete_image_default_removes_file_and_previews(client):
-    """DELETE 默认 remove_file=True：原文件 + 预览缓存全清。"""
-    from pathlib import Path
+def test_delete_image_default_recycles_orig_and_clears_previews(client, monkeypatch, tmp_path):
+    """DELETE 默认（右键「移入回收站」）：原件交给 app.recycle，不是 unlink。
+
+    回收站在这里是桩：单测不该真的把文件搬进开发机的系统回收站（每跑一次门禁就在里面
+    堆一份，CI 上也没有 shell）。桩按「搬走」的语义改名，要验的其实是三件事——走的是
+    回收站这条路、原文件还在（换了地方）、索引和缓存一起清干净。
+    """
     from app.config import previews_dir
     img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
     info = client.get(f"/api/images/{img_id}").json()
     orig_path = Path(info["path"])
     assert orig_path.exists()
 
-    # 先请求一次 file?max=512，触发预览落盘
-    r1 = client.get(f"/api/images/{img_id}/file", params={"max": 512})
-    assert r1.status_code == 200
+    client.get(f"/api/images/{img_id}/file", params={"max": 512})
     cache_p512 = next(previews_dir().glob(f"{img_id}_max512_*.webp"))
     assert cache_p512.exists(), "preview cache should be created"
 
-    # 删
+    bin_dir = tmp_path / "mock-recycle-bin"
+    bin_dir.mkdir()
+    recycled: list[Path] = []
+
+    def fake_recycle(p):
+        recycled.append(Path(p))
+        Path(p).rename(bin_dir / Path(p).name)
+
+    monkeypatch.setattr("app.recycle.recycle_path", fake_recycle)
     r = client.delete(f"/api/images/{img_id}")
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is True
+    assert body["recycled"] is True, "默认这条路必须是回收站，不是永久删除"
     assert body["removed_file"] is True
     assert body["cleaned_previews"] >= 1
 
-    # 原文件没了
+    assert recycled == [orig_path], "搬走的必须是磁盘原件"
+    assert (bin_dir / "x.png").exists(), "原件只是搬走了，内容必须还在"
     assert not orig_path.exists()
-    # 预览没了
     assert not cache_p512.exists()
-    # DB 行没了
-    detail = client.get(f"/api/images/{img_id}")
-    assert detail.status_code == 404
+    assert client.get(f"/api/images/{img_id}").status_code == 404
 
+
+@pytest.mark.parametrize("boom", [OSError("目标被占用"), ValueError("仅支持本地固定磁盘的回收站")],
+                         ids=["com-fail", "guard-reject"])
+def test_delete_image_recycle_failure_keeps_file_and_index(client, monkeypatch, boom):
+    """回收站搬不动 → 400，并且文件和索引都留在原处。
+
+    这条是「素材不可逆」那条线上最要紧的一条：宁可报失败让用户重试，也不能为了
+    返回 200 退化成 unlink。索引留着，用户在库里还看得见这张图，不会以为它消失了。
+    """
+    img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
+    orig_path = Path(client.get(f"/api/images/{img_id}").json()["path"])
+
+    def failing_recycle(p):
+        raise boom
+
+    monkeypatch.setattr("app.recycle.recycle_path", failing_recycle)
+    r = client.delete(f"/api/images/{img_id}")
+    assert r.status_code == 400
+    assert "移入回收站失败" in r.json()["detail"]
+    assert orig_path.exists(), "搬不走就必须还在原处，不能顺手删掉"
+    assert client.get(f"/api/images/{img_id}").status_code == 200, "索引也要原样留着"
+
+
+def test_delete_image_purge_skips_recycle_and_deletes_for_good(client, monkeypatch):
+    """purge=True 才是永久删除：直接 unlink，不经过回收站。
+
+    界面上没有这个入口，它只给 API 调用方显式 opt-in，所以两边都得钉住——
+    既要真删掉，也要证明它没走回收站（否则用户以为能找回，其实找不回）。
+    """
+    img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
+    orig_path = Path(client.get(f"/api/images/{img_id}").json()["path"])
+
+    def must_not_run(p):
+        raise AssertionError("purge=True 不该经过回收站")
+
+    monkeypatch.setattr("app.recycle.recycle_path", must_not_run)
+    r = client.delete(f"/api/images/{img_id}", params={"purge": "true"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["recycled"] is False
+    assert body["removed_file"] is True
+    assert not orig_path.exists()
+    assert client.get(f"/api/images/{img_id}").status_code == 404
 
 def test_delete_image_not_found(client):
     r = client.delete("/api/images/999999")

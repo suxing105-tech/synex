@@ -107,8 +107,21 @@ export const imagesApi = {
       body: JSON.stringify({ image_ids, folder_id }),
     });
   },
-  remove(id: number, removeFile = false): Promise<{ ok: boolean; cleaned_previews: number }> {
-    return http(`/api/images/${id}?remove_file=${removeFile}`, { method: "DELETE" });
+  /**
+   * 把一条媒体从图库移除。三种语义，别混（后端 routes/images.py 是同一套口径）：
+   * - removeFile=true + purge=false：原件进系统回收站。右键「移入回收站」和 Delete 键走的都是这条。
+   * - removeFile=true + purge=true：永久删除。界面上没有这个入口，只给 API 调用方显式 opt-in。
+   * - removeFile=false：只删索引，磁盘原文件一个字节都不动。
+   */
+  remove(
+    id: number,
+    removeFile = false,
+    purge = false,
+  ): Promise<{ ok: boolean; removed_file: boolean; recycled: boolean; cleaned_previews: number }> {
+    return http(
+      `/api/images/${id}?remove_file=${removeFile}&purge=${purge}`,
+      { method: "DELETE" },
+    );
   },
   rename(id: number, filename: string): Promise<ImageSummary> {
     return http<ImageSummary>(`/api/images/${id}/filename`, {

@@ -66,11 +66,16 @@ it('分割线位置改变裁切范围，原图不拉伸', async () => {
   await fireEvent.input(screen.getByLabelText('图片对比分割线'), { target: { value: '25' } });
   expect(screen.container.querySelector('.compare-overlay')?.getAttribute('style')).toContain('75%');
 });
-it('多选 Delete 成功移除原图及缩略图，失败项保留', async () => {
+it('多选 Delete 只弹确认框，确认后才移入回收站，失败项保留', async () => {
   multiSelectedIds.set(new Set([1, 2]));
   vi.mocked(imagesApi.remove).mockRejectedValueOnce(new Error('locked')).mockResolvedValueOnce({ ok: true } as any);
-  render(Feed, { selectedId: 1, lightboxOpen: false, lightboxIndex: 0 });
+  const screen = render(Feed, { selectedId: 1, lightboxOpen: false, lightboxIndex: 0 });
   await fireEvent.keyDown(window, { key: 'Delete' });
+  await tick();
+  // 这条是新语义的核心：误按 Delete 只能弹出确认，一个文件都不能已经动过
+  expect(imagesApi.remove).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: /确认移入回收站/ })).toBeTruthy();
+  await fireEvent.click(screen.getByRole('button', { name: /确认移入回收站/ }));
   await waitFor(() => expect(imagesApi.remove).toHaveBeenCalledTimes(2));
   await tick();
   expect(imagesApi.remove).toHaveBeenCalledWith(2, true);
@@ -99,9 +104,17 @@ it('再次创作那一层开着时，Delete 不删背后选中的那张', async 
   await tick();
   expect(imagesApi.remove).not.toHaveBeenCalled();
 });
-it('对比中的 Delete 删除两张，保留未选图片', async () => {
+it('对比中的 Delete 先确认：取消不删，确认才两张一起移入回收站', async () => {
   multiSelectedIds.set(new Set([1, 2]));
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
   render(Lightbox, { open: true, index: 0, selectedId: 1 });
+  await fireEvent.keyDown(window, { key: 'Delete' });
+  await tick();
+  // 取消就是什么都没发生——原图和索引都得原地不动
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect(imagesApi.remove).not.toHaveBeenCalled();
+  expect(get(feedItems).map(i => i.id)).toEqual([1, 2, 3]);
+  confirm.mockReturnValue(true);
   await fireEvent.keyDown(window, { key: 'Delete' });
   await waitFor(() => expect(get(feedItems).map(i => i.id)).toEqual([3]));
   expect(imagesApi.remove).toHaveBeenCalledTimes(2);
@@ -136,9 +149,19 @@ it('按住 Delete 不会对同一张图片发起重复删除', async () => {
   multiSelectedIds.set(new Set([1]));
   let finish!: (value: any) => void;
   vi.mocked(imagesApi.remove).mockImplementation(() => new Promise(resolve => finish = resolve));
-  render(Feed, { selectedId: 1, lightboxOpen: false, lightboxIndex: 0 });
+  const screen = render(Feed, { selectedId: 1, lightboxOpen: false, lightboxIndex: 0 });
   await fireEvent.keyDown(window, { key: 'Delete' });
-  await fireEvent.keyDown(window, { key: 'Delete' });
+  await tick();
+  await fireEvent.click(screen.getByRole('button', { name: /确认移入回收站/ }));
+  await tick();
   expect(imagesApi.remove).toHaveBeenCalledTimes(1);
-  finish({ ok: true }); await tick();
+  // 请求还挂着：按钮已经变成「处理中…」并且 disabled，再按 Delete 也点不出第二次
+  await fireEvent.keyDown(window, { key: 'Delete' });
+  await tick();
+  const busy = screen.getByRole('button', { name: /处理中/ }) as HTMLButtonElement;
+  expect(busy.disabled).toBe(true);
+  await fireEvent.click(busy);
+  expect(imagesApi.remove).toHaveBeenCalledTimes(1);
+  finish({ ok: true });
+  await tick();
 });

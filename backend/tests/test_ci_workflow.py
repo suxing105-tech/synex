@@ -34,9 +34,10 @@ TRIPLE = "x86_64-pc-windows-msvc"
 
 
 def _ci() -> str:
-    text = CI.read_text(encoding="utf-8")
-    assert "\r" not in text, "ci.yml 要存成 LF，和仓库里其它 YAML 一致"
-    return text
+    # 不钉行尾：这台机器 core.autocrlf=true，ci.yml 没有 .gitattributes 规则，新克隆检出就是
+    # CRLF（README.md 一样）。入库的 blob 是 LF，GitHub 读的是 blob，磁盘上那对 \r\n 不影响
+    # 解析，所以这里只管读、按 LF 归一。唯一真该钉行尾的是 sh 钩子，它已在 .gitattributes 里钉住。
+    return CI.read_text(encoding="utf-8").replace("\r\n", "\n")
 
 
 def _rust_job(text: str) -> str:

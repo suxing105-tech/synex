@@ -1,0 +1,114 @@
+name: CI
+
+# 为什么要这份文件：AGENTS.md §4.3 那五套门禁原先只在本机跑得起来，pre-commit 钩子还得
+# 手动装一次（install-git-hooks.ps1，而且 .git\hooks 不入库）。换机器、换人、或者某一轮
+# 就是没本地跑，全凭自觉——审查时就是这么攒下几百条 lint 意见和一个 3.12 才合法的写法的。
+# 这里把 verify-all 里能自动化的四套（后端 / 前端 / 类型 / Rust）拆成三个 job 并行跑。
+# 只测不打包：PyInstaller + NSIS 那一段留在本机，口径见 docs/release-process.md。
+#
+# 后端固定 Python 3.11，不用本机那台 3.14：pyproject 声明的是 >=3.11，而 repository.py
+# 写过只有 3.12 才允许的 f-string 同引号嵌套——在本机永远跑得出绿，声明却是骗人的。
+# test_python_floor.py 钉的就是这条下限。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: 后端 pytest
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: 装后端依赖（dev extras 里有 pytest、pytest-asyncio、ruff、psd-tools）
+        run: pip install -e ".[dev]"
+        working-directory: backend
+
+      # 没有 ffmpeg 时相关用例自己 skip，所以装不上不该把 CI 变红；装上了就真测海报与 PSNR。
+      - name: 备 ffmpeg / ffprobe（可选）
+        continue-on-error: true
+        run: choco install ffmpeg --y --no-progress
+
+      - name: pytest
+        run: python -m pytest -q
+        working-directory: backend
+
+  frontend:
+    name: 前端 vitest + svelte-check
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: 装依赖（锁文件是唯一来源，禁止 npm）
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
+
+      - name: vitest
+        run: pnpm test
+        working-directory: frontend
+
+      - name: svelte-check
+        run: pnpm exec svelte-check --threshold error
+        working-directory: frontend
+
+  rust:
+    name: Rust 壳 cargo test
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      # build.rs 调 tauri_build::build()，它要 frontend/dist 存在才过；本机一直有 dist，
+      # 所以这一步在本地是隐形的，CI 里必须自己先构建前端。
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: 前端产物（tauri build.rs 需要）
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
+
+      - name: vite build
+        run: pnpm build
+        working-directory: frontend
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # 本机门禁跑的是 cargo test --offline，因为依赖早就在本地缓存里；
+      # CI 是空缓存，--offline 会直接要不到 crate，所以先 fetch 再测。
+      - name: cargo test
+        run: cargo test
+        working-directory: frontend/src-tauri
+        env:
+          CARGO_TERM_COLOR: always

@@ -10,6 +10,11 @@ elseif ([IO.Path]::IsPathRooted($OutDir)) { $Out = [IO.Path]::GetFullPath($OutDi
 else { $Out = [IO.Path]::GetFullPath((Join-Path (Get-Location).Path $OutDir)) }
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $env:CARGO_NET_OFFLINE = 'true'
+# 门禁里的 Python 脚本（工作区闸、README 计数闸）打印的是中文。PowerShell 5.1 按 [Console]
+# 的代码页解码子进程输出，中文会直接变成 U+FFFD——日志里剩下的是「改 README 第几行」那句话的
+# 尸体，而那句话正是红了之后唯一需要读的东西。所以让 Python 按 UTF-8 写、控制台按 UTF-8 解。
+$env:PYTHONIOENCODING = 'utf-8'
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $Python = Join-Path $Repo 'backend\.venv\Scripts\python.exe'
 $fail = @()
 

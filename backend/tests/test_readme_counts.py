@@ -111,4 +111,8 @@ def test_verify_all_actually_runs_the_checker_after_the_suites(mod):
     assert "check-readme-counts.py" in text, "门禁不再核对 README 了：补回来，或删掉这条测试并说明理由"
     assert "readme counts" in text, "这一步没进失败名单，红了也不会让 verify-all 退非零"
     ordered = text.index("cargo test --offline") < text.index("check-readme-counts.py")
+    # 这一步的输出是要给人看的：Python 按 GBK 写、PowerShell 按别的代码页解，中文会变成
+    # U+FFFD，日志里只剩下「改 README 第几行」那句话的尸体。这两行不许被人顺手删掉。
+    assert "PYTHONIOENCODING" in text, "删掉它就等于把门禁的中文提示写回乱码"
+    assert "OutputEncoding" in text, "控制台解码要跟着改成 UTF-8，否则上面那行没用"
     assert ordered, "它读的是四套的日志，排到前面就永远在读上一次的结果"

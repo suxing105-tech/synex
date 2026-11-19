@@ -472,6 +472,7 @@
     role="menu" tabindex="-1"
     oncontextmenu={(e) => e.preventDefault()}
     onclick={(e) => e.stopPropagation()}
+    onkeydown={(e) => { if (e.key === "Escape") closeAll(); }}
   >
     <button role="menuitem" class="block w-full text-left px-3 py-2 hover:bg-surface-3"
       onclick={() => startNew(null)}>新建文件夹</button>
@@ -484,6 +485,7 @@
     role="menu" tabindex="-1"
     oncontextmenu={(e) => e.preventDefault()}
     onclick={(e) => e.stopPropagation()}
+    onkeydown={(e) => { if (e.key === "Escape") closeAll(); }}
   >
     <button role="menuitem"
       class="block w-full text-left px-3 py-1 hover:bg-surface-3"

@@ -1166,13 +1166,14 @@ def test_the_cut_verb_check_lists_the_five_verbs_inline():
     名单钉在自查那一行上，不靠回指。
     """
     body = bundled_skills.h3_video_instruction()
-    check = [line for line in body.splitlines() if line.startswith("- 切点时间戳")]
-    assert len(check) == 1
+    head = "## 8 交出去前自查"
+    assert head in body, "自查那一节改了名，下面这些断言会全部落空"
+    checklist = body.split(head, 1)[1].split("\n## ", 1)[0]
     for verb in ("the camera cuts to", "the shot cuts to", "the shot transitions to",
                  "the shot changes to", "the shot switches to"):
-        assert verb in check[0], verb
-    # 第 8 节这一份是第二处：只留第 2 节那一处的话，上面三条断言照样绿，自查表却空着
-    assert body.count("the camera cuts to") >= 2
+        assert verb in checklist, verb
+    # 必须在这一节里数得出来：发版那份正文第 1、2 节各有一处 `the camera cuts to`，
+    # 拿全文命中次数当凭据的话，自查表整条删掉都照样绿。
 
 
 def test_the_check_list_says_subjects_stay_empty_without_references():

@@ -47,7 +47,8 @@ def original_url_for(
     import hashlib
     key = hashlib.sha256(identity.encode()).hexdigest()[:16]
     qs.append(f"v=2-{file_mtime:.9f}-{key}")
-    return f"/api/images/{image_id}/file?{"&".join(qs)}"
+    query = "&".join(qs)
+    return f"/api/images/{image_id}/file?{query}"
 
 
 def _cache_bust(identity: str) -> str:

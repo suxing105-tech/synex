@@ -19,6 +19,14 @@ vi.mock("../lib/image-clipboard", () => ({
   dataUrlToBlob: vi.fn(() => new Blob(["x"], { type: "image/jpeg" })),
   downloadBlob: vi.fn(),
 }));
+
+// lib/ws 会拉起真实 stores，stores 的 200ms feed 防抖定时器在测试里会打真网络（happy-dom 默认源
+// http://localhost:3000），stderr 每轮冒 ECONNREFUSED。这里本面板不碰 feed，照 text-workspace.test.ts
+// 的口径把 stores 换薄桩，定时器根本不会装填。
+vi.mock("../lib/stores", () => ({
+  removeImageFromFeed: vi.fn(), markNew: vi.fn(), refreshFolders: vi.fn(),
+  refreshFeed: vi.fn(), refreshScanProgress: vi.fn(), refreshStats: vi.fn(),
+}));
 import { copyDataUrlImage, downloadBlob } from "../lib/image-clipboard";
 
 const model = {

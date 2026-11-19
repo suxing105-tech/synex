@@ -27,6 +27,8 @@ def make_video(path: Path, *, width: int = 64, height: int = 48, duration: float
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     assert path.exists(), "ffmpeg 未能生成测试视频"
@@ -105,6 +107,8 @@ def test_parse_video_metadata_handles_utf8_comment(tmp_path: Path):
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     assert vid.exists(), "ffmpeg 未能生成带注释的测试视频"

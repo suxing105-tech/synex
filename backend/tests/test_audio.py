@@ -33,6 +33,8 @@ def make_audio(path: Path, *, duration: float = 1.0) -> Path:
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     assert path.exists(), "ffmpeg 未能生成测试音频"

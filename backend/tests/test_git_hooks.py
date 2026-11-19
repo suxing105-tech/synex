@@ -82,7 +82,8 @@ def test_installer_copies_bytes_and_refuses_to_clobber():
 def test_installed_hook_matches_the_tracked_source():
     proc = subprocess.run(
         ["git", "-C", str(REPO), "rev-parse", "--git-path", "hooks"],
-        capture_output=True, text=True)
+        capture_output=True, text=True,
+        encoding="utf-8", errors="replace")
     if proc.returncode != 0:
         pytest.skip("拿不到 git hooks 目录")
     hooks = proc.stdout.strip()

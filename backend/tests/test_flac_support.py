@@ -25,6 +25,8 @@ def make_flac(path: Path, *, duration: float = 1.5) -> Path:
         ["ffmpeg", "-y", "-f", "lavfi", "-i", f"sine=frequency=440:duration={duration}", "-c:a", "flac", str(path)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     assert path.exists(), "ffmpeg 未能生成 FLAC"

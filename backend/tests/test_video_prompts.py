@@ -39,7 +39,8 @@ def make_scene_video(path: Path, *, scene_seconds: float, sources: tuple[str, ..
     labels = "".join(f"[{i}:v]" for i in range(len(sources)))
     args += ["-filter_complex", f"{labels}concat=n={len(sources)}:v=1:a=0[out]",
              "-map", "[out]", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(path)]
-    subprocess.run(args, capture_output=True, text=True, check=False)
+    subprocess.run(args, capture_output=True, text=True,
+                   encoding="utf-8", errors="replace", check=False)
     assert path.exists(), "ffmpeg 未能生成测试视频：" + str(path)
     return path
 
@@ -83,7 +84,8 @@ def flat_video_id(init_db, tmp_path):
     path = tmp_path / "flat.mp4"
     subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=black:s=64x48:r=10:d=6",
                     "-c:v", "libx264", "-pix_fmt", "yuv420p", str(path)],
-                   capture_output=True, text=True, check=False)
+                   capture_output=True, text=True,
+                   encoding="utf-8", errors="replace", check=False)
     return index_video(init_db, path, 6.0)
 
 

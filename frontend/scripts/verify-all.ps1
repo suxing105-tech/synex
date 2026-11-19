@@ -71,6 +71,13 @@ Suite 'frontend vitest' (Join-Path $Repo 'frontend') { pnpm test } 'frontend-tes
 Suite 'svelte-check' (Join-Path $Repo 'frontend') { pnpm exec svelte-check --threshold error } 'svelte-check.log'
 Suite 'cargo test' (Join-Path $Repo 'frontend\src-tauri') { cargo test --offline } 'rust-tests.log'
 
+# Gate 5: README 的三行用例数是给人看的，它滞后过两轮（每次都靠人收尾时想起来重锚）。
+# 数字取的就是上面四套刚写出来的日志，所以这一步必须排在它们后面。
+$ReadmeGate = Join-Path $PSScriptRoot 'check-readme-counts.py'
+$ReadmeLog = Join-Path $Out 'readme-counts.log'
+$ReadmeCode = RunNative { & $Python $ReadmeGate --logs $Out } $ReadmeLog
+Write-Output ('{0,-18} exit={1}  {2}' -f 'readme counts', $ReadmeCode, (Tail $ReadmeLog))
+if ($ReadmeCode) { $fail = $fail + 'readme counts' }
 if ($fail.Count) {
   Set-Content -LiteralPath (Join-Path $Out 'VERIFY.txt') -Value ('FAILURE: ' + ($fail -join '; ')) -Encoding utf8
   throw ('FAILED: ' + ($fail -join '; '))

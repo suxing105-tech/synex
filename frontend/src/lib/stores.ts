@@ -40,17 +40,6 @@ export const selectionAnchorId = writable<number | null>(null);
 
 export const scope = writable<Scope>("all");
 
-/**
- * 遗留开关：文本工作区是否可见。
- *
- * 0.2.24 之前它是 `derived(scope === 'text')`，所以「文本口径」= 卸载整个图库、
- * 换成全屏 TextWorkspace —— 这就是文本用起来像另一个应用的原因。现在文本和图片
- * 一样在中间栏里就地打开（TextReader / Lightbox / VideoPlayer 同一层），
- * scope 只决定网格里放什么。工作区入口已全部收掉、组件不再挂载，
- * 这个 store 只给它内部那批 `get(textMode)` 门控用，下一轮随文件一起删除。
- */
-export const textMode = writable(false);
-
 export const folderId = writable<number | null>(null);
 export const query = writable<string>("");
 export const tag = writable<string | null>(null);
@@ -199,10 +188,6 @@ export function stopAudio() {
   playingAudio.set(null);
   audioProgress.set(0);
 }
-
-/** 统一流里点文本卡 → 文本工作区要打开哪一篇。TextWorkspace 常驻（靠 display:none 隐藏），
- *  卸载期的 window 事件会丢，所以走 store。遗留：随工作区一起删除。 */
-export const pendingTextOpen = writable<number | null>(null);
 
 // ---------- 文本：选中 / 阅读层 / 关联 ----------
 //

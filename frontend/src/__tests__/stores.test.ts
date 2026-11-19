@@ -21,7 +21,6 @@ import { get } from "svelte/store";
 import {
   query,
   scope,
-  textMode,
   folderId,
   targetColumns,
   feedItems,
@@ -57,8 +56,7 @@ describe("前端 stores", () => {
 
   it("默认口径是所有素材，启动就停在混排流", () => {
     expect(get(scope)).toBe("all");
-    expect(get(textMode)).toBe(false);
-  });
+      });
 
   it("默认列数 5", () => {
     expect(get(targetColumns)).toBe(5);
@@ -71,13 +69,12 @@ describe("前端 stores", () => {
     expect(get(targetColumns)).toBe(12);
   });
 
-  it("切换口径只改 scope；textMode 是遗留门，不再随 scope 派生", () => {
+  it("切换口径只改 scope", () => {
     // 0.2.24 起文本在中间栏内嵌层里读，scope 只决定网格里放什么。
-    // textMode 只剩未挂载的 TextWorkspace 用，下一轮随文件一起删除。
+    // textMode 那道遗留门已随 TextWorkspace 一起下线（0.2.50），别再复活。
     for (const next of ["image", "video", "audio", "text", "all"] as const) {
       scope.set(next);
       expect(get(scope)).toBe(next);
-      expect(get(textMode)).toBe(false);
     }
   });
 

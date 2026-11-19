@@ -35,8 +35,7 @@ const BANNED: Array<{ re: RegExp; why: string }> = [
 
 describe("日期时间只有一支笔 dateTimeLabel（第三刀 T14）", () => {
   it("源码里不许再出现自拼的日期时间（数字千分位的 toLocaleString 不在此列）", () => {
-    // TextWorkspace 已下线（icon-unification.test.ts 的豁免名单），里面那处是死代码
-    const files = collect(srcRoot).filter((f) => !f.endsWith("TextWorkspace.svelte"));
+    const files = collect(srcRoot);
     const offenders: string[] = [];
     for (const f of files) {
       const lines = readFileSync(f, "utf8").split(/\r?\n/);

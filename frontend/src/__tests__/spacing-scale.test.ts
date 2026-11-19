@@ -76,12 +76,13 @@ it("间距尺度的真源只有一处：tailwind 的 theme.extend 里不许再�
   expect(extend ? extend[1] : "", "theme.extend 里出现了 spacing，两套尺度会打架").not.toMatch(/spacing\s*:/);
 });
 
-it("扫描还在扫全量：间距声明至少 690 条，正则退化了就报这里", () => {
+it("扫描还在扫全量：间距声明至少 650 条，正则退化了就报这里", () => {
   let total = 0;
   for (const src of Object.values(SOURCES)) {
     for (const m of src.matchAll(DECL)) if (m[0]) total += 1;
   }
-  expect(total).toBeGreaterThanOrEqual(690);
+  // 2026-11-18 重锚：TextWorkspace 随下线删除，全站间距声明实量降到 652；下限留 2 条余量。
+  expect(total).toBeGreaterThanOrEqual(650);
   // 光数条数不够：分组号写错时每条都读成 undefined，扫描会「零违规」地假绿。
   // 再钉一条「确实读到值、而且绝大多数已经走档位」，捕获组一失效这里就红。
   let withToken = 0;
@@ -93,8 +94,9 @@ it("扫描还在扫全量：间距声明至少 690 条，正则退化了就报�
       if (/var\(--sp-/.test(m[3])) withToken += 1;
     }
   }
-  expect(withAnyValue).toBeGreaterThanOrEqual(690);
-  expect(withToken, "读到值但没走档位的只有 " + withToken + " 条，扫描或迁移退化了").toBeGreaterThanOrEqual(560);
+  expect(withAnyValue).toBeGreaterThanOrEqual(650);
+  // 2026-11-18 重锚：TextWorkspace 随下线删除，未走档位存量实量降到 546。
+  expect(withToken, "读到值但没走档位的只有 " + withToken + " 条，扫描或迁移退化了").toBeGreaterThanOrEqual(545);
 });
 
 it("脱档间距清零：1px/3px 的微调和 >=40px 的版式尺寸之外，一律走 --sp-*", () => {

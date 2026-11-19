@@ -73,8 +73,6 @@ it("栏位开关与窗口三键的形状进了图标库，不再是各文件手�
 });
 /**
  * 允许继续手画 <svg> 的文件，以及为什么：
- *   - TextWorkspace.svelte：已经下线、没挂在 App 上的旧文本工作台（文件头有 ⚠ 说明），
- *     下一轮连同 text-workspace.test.ts 一起删，不值得先给它的 10 个图标搬家。
  *   - MediaPickerModal.svelte：音频卡上那颗播放/暂停角标是「半透明圆底 + 白色实心图形」
  *     的合成徽标，压在缩略图上；Icon 的 currentColor + fill:none 线性图标画不出它。
  *   - VideoPromptPanel.svelte：翻译那颗里有 <text> 字形（中 / A）和一块遮住重叠的实心矩形，
@@ -82,13 +80,12 @@ it("栏位开关与窗口三键的形状进了图标库，不再是各文件手�
  * 除此之外再出现手画 <svg>，这条就红。
  */
 const SVG_ALLOWLIST = [
-  "components/TextWorkspace.svelte",
   "components/MediaPickerModal.svelte",
   "components/VideoPromptPanel.svelte",
 ];
 const allowed = new Set(["components/Icon.svelte", ...SVG_ALLOWLIST]);
 
-it("手画 <svg> 只允许出现在 Icon.svelte 和那三个合成徽标里", () => {
+it("手画 <svg> 只允许出现在 Icon.svelte 和那两个合成徽标里", () => {
   const offenders: string[] = [];
   for (const file of svelteFiles(srcRoot)) {
     const rel = file.slice(srcRoot.length + 1).split("\\").join("/");

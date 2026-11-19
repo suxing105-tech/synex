@@ -50,12 +50,9 @@ function dangerRules(text: string): Array<{ selector: string; body: string }> {
 
 const COOL_RED = /#f07178|#f87171|#7f1d1d|#2a1414|#5b2723|#7d3a34|#934747|(?:text|border|bg)-red-\d{2,3}/i;
 
-// 已下线的 TextWorkspace：在 icon-unification.test.ts 的豁免名单里，里面那套 .danger{#934747}
-// 是死代码，改它没有用户可见收益，登记不修。
-const EXEMPT = ["TextWorkspace.svelte"];
 
 describe("破坏性动作的红色只有一个真源 --danger（第三刀 T10）", () => {
-  const files = collect(srcRoot).filter((f) => !EXEMPT.some((n) => f.endsWith(n)));
+  const files = collect(srcRoot);
 
   it("凡是选择器带 danger 的样式规则，只许引用 --danger，不许留第二套红", () => {
     const offenders: string[] = [];

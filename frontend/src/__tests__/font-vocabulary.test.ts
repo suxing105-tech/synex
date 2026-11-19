@@ -253,20 +253,18 @@ describe("font 简写不许再承担尺度", () => {
   const ALLOWED = [
     // 表单控件继承外层字体的标准写法，不带任何数值。
     { where: /^font:\s*inherit$/, why: "控件继承" },
-    // 文本工作区空态那个装饰性的「Aa」字标：要的就是衬线对比，不属于界面字族。
-    { where: /empty-symbol[^}]*font:\s*60px Georgia,serif/, why: "装饰性 Aa 字标" },
   ];
 
-  it("除登记过的两处，不用 font 简写", () => {
+  it("除登记过的控件继承，不用 font 简写", () => {
     const hits = findLines(/(?<![-\w])font:\s*(?!\s*inherit)[^;}\n]+/g);
     const offenders = hits.filter((h) => !ALLOWED.some((a) => a.where.test(h.line)));
     expect(
       offenders,
       "font 简写会把字号、行高、字族三件事写在一个值里，档位扫不到：\n" + offenders.map((h) => h.at + "  " + h.line.trim().slice(0, 90)).join("\n"),
     ).toEqual([]);
-    // font: inherit 已经被上面的正则排除，所以 hits 里只应当剩下登记过的那一条装饰性用法；
-    // 例外本身不许悄悄变多，数量也钉住。
-    expect(hits.length, "font 简写（不含 inherit）的命中数变了，登记在册的只有 TextWorkspace 那处装饰性 Aa").toBe(1);
+    // font: inherit 已经被上面的正则排除；TextWorkspace 删除后不应再有任何装饰性 font 简写，
+    // hits 钉死为零——想留例外，先在这个文件里登记理由。
+    expect(hits.length, "font 简写（不含 inherit）的命中数变了——TextWorkspace 已删，这里应当归零").toBe(0);
   });
 });
 

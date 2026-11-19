@@ -24,7 +24,7 @@ vi.mock("../lib/stores", () => {
   return {
   appBooting: writable(false), folders: writable([]), folderId, scope: writable("all"),
   query: writable(""), tag: writable(null),
-  textMode: writable(false), switchContent: vi.fn(), selectFolder: (id: number) => folderId.set(id),
+  switchContent: vi.fn(), selectFolder: (id: number) => folderId.set(id),
   stats: writable({ total_images: 0, total_videos: 0, total_audio: 0, total_texts: 0, folders: 0 }),
   refreshFolders: vi.fn(), refreshFeed: vi.fn(), refreshStats: vi.fn(),
   };

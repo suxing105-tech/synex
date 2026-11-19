@@ -61,7 +61,6 @@ it('打包窗口授予必要控制权限，所有全屏弹层为标题栏让出�
   const barZ = Number(titlebar.match(/\.desktop-titlebar\s*\{[^}]*z-index:\s*(\d+)/)?.[1]);
   const splashZ = Number(splash.match(/\.splash-overlay\s*\{[\s\S]*?z-index:\s*(\d+)/)?.[1]);
   expect(barZ, '标题栏必须压在启动页之上，否则启动期间关不掉窗口').toBeGreaterThan(splashZ);
-  expect(read('src/components/TextWorkspace.svelte')).toContain('inset:var(--desktop-titlebar-height, 0px) 0 0');
 });
 
 it('启动时已经最大化也进入紧凑状态，页面顶部使用同一高度', async () => {

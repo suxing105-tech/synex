@@ -131,7 +131,8 @@ describe("裸 hex 棘轮：只许降，不许升", () => {
   // 云端左列那两行小字（连同它们的 #8a8a8e 一起），再降到 724；2026-11-13 oil-ui 评审第一刀把
   // 文本卡自己挑的那批灰（渐变两档 + 卡字色 + hover 两档 + 徽标两处 + 摘录 + 焦点环朱红）
   // 全收进 token，降到 712。
-  const BASELINE = 712;
+  // 2026-11-18 TextWorkspace 下线删除（守卫名单同步清空），它一个文件就带着 93 处裸 hex，降到 619。
+  const BASELINE = 619;
 
   it("全站 token 之外的裸 hex 不超过基线", () => {
     const now = countRawHex();

@@ -110,7 +110,9 @@
 - 六段齐全、段名逐字对、顺序对，段间空一行；`retention_analysis` 里没有 `(Sx)`。
 - 正文英文；台词在 `<d>[语言] 原文</d>` 里，语言标签是英文语言名，原文一字未改（中文台词还是中文）；画面可见文字用双引号包住原文。
 - 参考编号一个不多一个不少，形式全篇统一，原文没有编号时你没新造；`<Subject N>` 每条都有来源。
-- 切点时间戳三位毫秒、严格递增、落在时长以内；切换动词只用那五个；每个切点都带来了新信息。
+- 这次一份参考都没挂 → `subject_definitions` 整段留空，人物改用自然描述（`the young woman in a grey coat`）。这一段的用途是把人物对到具体素材上，没素材就对不出任何东西；空着不是漏写，为填满这一段给凭空的人物编出三条 `<Subject N>` 才是漏写。
+- 给 `<Subject N>` 注明来源时，那个细节得在你引的那一张里真看得见。几张参考拍的是同一个地方时，别替图片分工：写"the monitor glows at the right of the desk"就够了，写成"天际线来自 `<Picture 2>`"是在断言只有那一张才有天际线，而它们谁像哪张，你我都定不了。
+- 切点时间戳三位毫秒、严格递增、落在时长以内；每个切点之后的第一句都以那五个动词开头——`the camera cuts to` / `the shot cuts to` / `the shot transitions to` / `the shot changes to` / `the shot switches to`。写成 `At 00:03.500, the camera pushes in toward her face.` 不算数：那是运镜，模型看见它就会在这里接着推下去而不是切；想切就先说切，再在同一段里写这一镜怎么动。每个切点都带来了新信息。
 - 每次运镜都有类型，需要时补幅度和速度；没有 "camera follows quickly" 这类含糊说法。
 - 镜头数量配得上这次的时长；台词总量说得完。
 - 正文里没有比例、分辨率、秒数、步数、LoRA、Seed，也没有负面提示词清单。
@@ -120,6 +122,6 @@
 
 ## 参考资料怎么用
 
-下面按顺序附了四份资料：`references/combat-beats.md`（武戏节奏与结构）、`references/combat-moves.md`（招式词汇）、`references/combat-impact.md`（力道与防守的证据）、`references/camera-spec.md`（镜头规格与中英对照，含一份完整六段范例的写法示范）。
+下面附了这些资料：`references/combat-beats.md`（武戏节奏与结构）、`references/combat-moves.md`（招式词汇）、`references/combat-impact.md`（力道与防守的证据）、`references/camera-spec.md`（镜头规格与中英对照，含一份完整六段范例的写法示范）。这次真的带上了哪几份，看每一份前面那行 `--- references/xxx.md ---`：四份都在就是武戏；只有 `camera-spec.md` 一份，就是这次是文戏、那三份打斗资料没跟着进来，别去引它们。
 
 写武戏之前先照 `combat-beats.md` 定时间轴骨架，再从 `combat-moves.md` 挑招式，按 `combat-impact.md` 补力道，最后按 `camera-spec.md` 给每个镜头配齐规格。写文戏只需要 `camera-spec.md`。这些是闪寻空间这套流程里额外的规矩；跟上面第 0 节到第 3 节的格式规矩冲突时，以第 0 节到第 3 节为准——段名、标签、台词格式这些协议级的东西错了，整条提示词就废了。

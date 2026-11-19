@@ -1157,6 +1157,48 @@ def test_the_knob_block_is_named_the_way_the_shipped_skill_calls_it():
     assert body.count("界面参数") >= 3, "技能正文要是改口了，上面那句标题得跟着改"
 
 
+def test_the_cut_verb_check_lists_the_five_verbs_inline():
+    """自查表那条切点检查必须把五个动词原文摆在自己这一行上。
+
+    真机三枪里有一枪把切点写成 `the camera pushes in ... from the full desk to a medium
+    close-up`——一句运镜顶在切点上，模型就一路推下去不切了。正文第 2 节确实列过这五个动词，
+    但交稿前那一眼看的是第 8 节，回头找名单找不着就照「把镜头怎么动写清楚」的语感走。
+    名单钉在自查那一行上，不靠回指。
+    """
+    body = bundled_skills.h3_video_instruction()
+    check = [line for line in body.splitlines() if line.startswith("- 切点时间戳")]
+    assert len(check) == 1
+    for verb in ("the camera cuts to", "the shot cuts to", "the shot transitions to",
+                 "the shot changes to", "the shot switches to"):
+        assert verb in check[0], verb
+    # 第 8 节这一份是第二处：只留第 2 节那一处的话，上面三条断言照样绿，自查表却空着
+    assert body.count("the camera cuts to") >= 2
+
+
+def test_the_check_list_says_subjects_stay_empty_without_references():
+    """没挂参考时 `subject_definitions` 整段留空：底线那条写了，自查表也得有一条对得上。
+
+    真机文戏那一枪三份参考都没挂，模型照样填了三条 `<Subject N>`。底线在第 0 节，交稿前
+    扫的是第 8 节——同一件事在两处都得读得到，光靠第 0 节那次「优先级最高」不够。
+    """
+    body = bundled_skills.h3_video_instruction()
+    hits = [line for line in body.splitlines() if "subject_definitions" in line and "留空" in line]
+    assert len(hits) >= 2, "第 0 节那条 + 第 8 节那条，少一条就是又只剩一次提醒"
+    assert any("一份参考都没挂" in line for line in hits), "自查那条要按弹窗上的实际情况说话"
+
+
+def test_the_reference_note_stops_promising_four_files_on_every_run():
+    """文戏那次只带 camera-spec，正文不许再说「下面附了四份资料」。
+
+    上一轮做了按戏种筛资料，这句就成了假话：模型照着它以为手里有打斗资料，而界面小条上
+    刚对用户说过那三份没带。改成教模型自己认——这次真带上的是哪几份，看分隔线。
+    """
+    body = bundled_skills.h3_video_instruction()
+    assert "附了四份资料" not in body
+    assert "--- references/xxx.md ---" in body, "得教它按分隔线认这次带来的资料"
+    assert any("camera-spec.md" in line and "文戏" in line for line in body.splitlines()
+               if "只有" in line), "只有 camera-spec 那一种情况要挑明是文戏"
+
 def test_optimize_without_context_sends_no_knob_block(client, model, monkeypatch):
     capture = Capture()
     monkeypatch.setattr(reverse_prompts, "request_model", capture)

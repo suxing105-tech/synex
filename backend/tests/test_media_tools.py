@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
+
 import pytest
 
 from app import media_tools
@@ -182,7 +184,6 @@ def _poster_reference(video: Path, out_dir: Path) -> Path:
 
 def test_poster_cache_key_streams_the_source_hash(tmp_path):
     """海报缓存名 = 质量档 + 源文件 sha256：锁住「不再整份读进内存」和「换质量自然失效」。"""
-    from app import thumbnails
 
     if media_tools.ffmpeg_path() is None:
         pytest.skip("需要 ffmpeg 生成海报帧")

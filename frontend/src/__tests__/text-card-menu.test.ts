@@ -136,18 +136,18 @@ describe("文本卡右键菜单", () => {
     expect(textsApi.move).not.toHaveBeenCalled();
   });
 
-  it("「移入回收站」要二次确认，确认后带 version 移入并清掉选中的文本", async () => {
+  it("「移入回收站」一次点击直接带 version 移入并清掉选中的文本", async () => {
     const ui = renderFeed();
     await tick();
     await fireEvent.click(textCard(ui.container));
     expect(get(selectedText)?.id).toBe(1);
     await fireEvent.contextMenu(textCard(ui.container));
     await fireEvent.click(ui.getByRole("menuitem", { name: "移入回收站" }));
-    const dialog = ui.getByRole("dialog", { name: "移入回收站" });
-    expect(dialog.textContent).toContain("D:/notes/随想1.md");
-    expect(textsApi.trash).not.toHaveBeenCalled();
-    await fireEvent.click(ui.getByRole("button", { name: "确认移入回收站" }));
+    // 没有确认框这一步了：version 只有详情接口给，所以先取详情，紧接着就移走
     await waitFor(() => expect(textsApi.trash).toHaveBeenCalledWith(1, "v7"));
+    expect(textsApi.detail).toHaveBeenCalledWith(1);
+    expect(ui.queryByRole("dialog", { name: "移入回收站" })).toBeNull();
     await waitFor(() => expect(get(selectedText)).toBeNull());
   });
+
 });

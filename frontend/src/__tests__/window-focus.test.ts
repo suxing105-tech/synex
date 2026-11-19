@@ -99,7 +99,7 @@ describe("F 键沉浸循环", () => {
     expect(APP_SOURCE).toMatch(/\.app-grid\.immersive > aside,[\s\S]{0,80}display: none/);
   });
 
-  it("弹窗（设置、新建文本、回收站确认…）开着时先不接管 F", () => {
+  it("弹窗（设置、新建文本、重命名…）开着时先不接管 F", () => {
     expect(APP_SOURCE).toContain("if (document.querySelector('[aria-modal=\"true\"]");
   });
 });

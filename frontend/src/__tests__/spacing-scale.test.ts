@@ -94,7 +94,8 @@ it("扫描还在扫全量：间距声明至少 650 条，正则退化了就报�
       if (/var\(--sp-/.test(m[3])) withToken += 1;
     }
   }
-  expect(withAnyValue).toBeGreaterThanOrEqual(650);
+  // 2026-11-18 重锚：撤掉文本详情栏的回收站确认框，实量从 651 降到 649。
+  expect(withAnyValue).toBeGreaterThanOrEqual(645);
   // 2026-11-18 重锚：TextWorkspace 随下线删除，未走档位存量实量降到 546。
   expect(withToken, "读到值但没走档位的只有 " + withToken + " 条，扫描或迁移退化了").toBeGreaterThanOrEqual(545);
 });

@@ -121,7 +121,7 @@ it("只读文件：可以阅读与复制，但不给编辑入口", async () => {
   expect(ui.getByRole("button", { name: "复制全文" })).toBeTruthy();
 });
 
-it("⋯ 菜单里有历史版本与回收站，回收站要二次确认", async () => {
+it("⋯ 菜单里的历史版本可预览，移入回收站一次点击直接移走", async () => {
   vi.spyOn(textsApi, "history").mockResolvedValue([]);
   const trash = vi.spyOn(textsApi, "trash").mockResolvedValue({ ok: true } as never);
   const ui = await openLoaded();
@@ -132,9 +132,7 @@ it("⋯ 菜单里有历史版本与回收站，回收站要二次确认", async 
   await fireEvent.click(ui.getByRole("button", { name: "×" }));
   await fireEvent.click(ui.getByRole("button", { name: "更多操作" }));
   await fireEvent.click(ui.getByRole("menuitem", { name: "移入回收站" }));
-  expect(ui.getByRole("button", { name: "确认移入回收站" })).toBeTruthy();
-  expect(trash).not.toHaveBeenCalled();
-  await fireEvent.click(ui.getByRole("button", { name: "确认移入回收站" }));
+  // 不再弹「确认移入回收站」：一次点击就移走，阅读层随之关掉
   await waitFor(() => expect(trash).toHaveBeenCalledWith(1, "v1"));
   await waitFor(() => expect(get(readerItem)).toBeNull());
 });

@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
  * 都在用），但评审量出六处破坏性动作还在借 Tailwind 的 cool red 或手挑的暗红：
  * ContextMenu 菜单项 #f07178、文本弹窗两颗确认按钮 #5b2723/#7d3a34（Feed 与阅读层各一份）、
  * 反推面板与视频面板的删除按钮 #f87171/#7f1d1d/#2a1414、抽帧错误文字 #f87171。
+ * 这两条规则随 2026-11-18 撤掉的「确认移入回收站」一起退掉了，理由记在下面逐条钉住那一节。
  * 品牌朱红 #f24e4e 是「选中 · 进行中 · 主动作」，破坏性动作借它反而把三件事混成一件，
  * 所以这一族并回 --danger，不是换成朱红。
  *
@@ -66,26 +67,20 @@ describe("破坏性动作的红色只有一个真源 --danger（第三刀 T10）
         if (hit) offenders.push(where + " 还留着第二套红 " + hit[0]);
       }
     }
-    // 少于这一轮的六处说明有规则被整条删掉或改了名，闸门本身失效了
-    expect(checked, "带 danger 的样式规则条数比预期少，检查是不是有人新写了不带 danger 的破坏性样式绕开闸").toBeGreaterThanOrEqual(6);
-    expect(offenders, offenders.join("\n")).toEqual([]);
+    // 现存七条（app.css 的 .dock-btn.is-danger、ContextMenu、PromptSkillModal 两条、
+    // 反推面板、抽帧、视频面板）。少于这个数就是有规则被整条删掉或改了名，闸门本身失效了；
+    // 2026-11-18 撤掉「确认移入回收站」时退了 Feed 与 TextReader 各一条，其余七条是新的底。
+    expect(checked, "带 danger 的样式规则条数比预期少，检查是不是有人新写了不带 danger 的破坏性样式绕开闸").toBeGreaterThanOrEqual(7);
   });
 
-  it("这一轮并回来的六处逐条钉住，别再漂回去", () => {
+  it("并回来的破坏性红逐条钉住，别再漂回去", () => {
     const at = (rel: string) => styleText(join(srcRoot, rel));
     expect(at("components/ContextMenu.svelte")).toMatch(/\.danger\s*\{\s*color:\s*var\(--danger\);/);
     expect(at("components/VideoFrameThumb.svelte")).toMatch(/\.vt-danger\s*\{\s*color:\s*var\(--danger\);/);
-    for (const [rel, selector] of [
-      ["components/Feed.svelte", ".dialog-actions .danger"],
-      ["components/TextReader.svelte", ".text-modal .danger"],
-    ] as const) {
-      const body = dangerRules(at(rel)).find((r) => r.selector === selector);
-      if (!body) throw new Error(rel + " 里找不到 " + selector);
-      // 弹窗里这颗是「确认移入回收站」，替代的是主按钮位，所以是填充式；
-      // 红底上压墨底字，和 .dock-btn 那条「红底不用白字」同一个规矩
-      expect(body.body, rel + " 的确认按钮不再是填充式 danger").toMatch(/background:\s*var\(--danger\)/);
-      expect(body.body, rel + " 的确认按钮用了白字").toMatch(/color:\s*var\(--accent-ink\)/);
-    }
+    // Feed 的 .dialog-actions .danger 与 TextReader 的 .text-modal .danger 曾经在
+    // 「确认移入回收站」那颗按钮上（2026-11-13 并回 --danger）。2026-11-18 那颗按钮连着
+    // 确认框一起撤了（可逆动作不设卡），两条规则跟着退掉，不是被改了名绕开闸。
+    // 谁要再把那颗确认按钮加回来，先过 __tests__/media-trash.test.ts 那道「不许二次确认」的闸。
     for (const [rel, selector] of [
       ["components/ReversePromptPanel.svelte", "button.danger"],
       ["components/VideoPromptPanel.svelte", ".vp-danger"],
@@ -103,9 +98,13 @@ describe("破坏性动作的红色只有一个真源 --danger（第三刀 T10）
     expect(css.match(/--danger-rgb:\s*[^;]+;/g)?.length ?? 0).toBe(1);
   });
 
-  it("详情栏那颗确认按钮继续走共用类，不自己挑红", () => {
+  it("详情栏那颗「移入回收站」继续走共用语义红，不自己挑红", () => {
     const src = readFileSync(join(srcRoot, "components/TextDetailPanel.svelte"), "utf8");
-    expect(src).toContain("dock-btn is-danger");
+    // 2026-11-18 起那颗直接就是 ⋯ 菜单里的一项（点一下就走，没有确认按钮了），
+    // 所以钉的是菜单项这一行还在用 text-danger，而不是弹窗里那颗 .dock-btn.is-danger。
+    const item = src.split(/\r?\n/).find((l) => l.includes("移入回收站") && l.includes('role="menuitem"'));
+    expect(item, "详情栏的移入回收站菜单项不见了").toBeTruthy();
+    expect(item!, "那颗菜单项不再走共用语义红").toContain("text-danger");
     expect(src).not.toMatch(/class="[^"]*\b(?:text|border|bg)-red-\d/);
   });
 });

@@ -93,9 +93,13 @@ import { hoverPlay } from "../lib/hover-play";
       .filter(Boolean).join('、');
   }
   let toast = $state<string | null>(null);
-  function notify(msg: string) {
+  let toastTimer: ReturnType<typeof setTimeout> | undefined;
+  /** ms 只给「刚做完、需要人看一眼」的回执用（移入回收站）；常规提示保持 1800。 */
+  function notify(msg: string, ms = 1800) {
     toast = msg;
-    setTimeout(() => (toast = null), 1800);
+    // 后一条不许被前一条的计时器提前抹掉（回收站那条是 4000）
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (toast = null), ms);
   }
   async function openVideo(it: MediaFeedItem) {
     if (it.kind !== "video") return;
@@ -234,8 +238,8 @@ import { hoverPlay } from "../lib/hover-play";
   let textMenuX = $state(0);
   let textMenuY = $state(0);
   let textMenuTarget = $state<TextFeedItem | null>(null);
-  /** 网格右键菜单里的重命名 / 回收站需要 version，只有详情接口给。 */
-  let textDialog = $state<"" | "rename" | "trash">("");
+  /** 网格右键菜单里的改名 / 移入回收站都要 version，只有详情接口给。 */
+  let textDialog = $state<"" | "rename">("");
   let textDialogValue = $state("");
   let textDialogBusy = $state(false);
   let textDialogError = $state("");
@@ -261,7 +265,7 @@ import { hoverPlay } from "../lib/hover-play";
       { label: "文件位置", onClick: () => void revealTextFile(it) },
       { label: "重命名", onClick: () => startTextRename(it) },
       { kind: "sep" },
-      { label: "移入回收站", danger: true, onClick: () => { textMenuTarget = it; textDialog = "trash"; textDialogError = ""; } },
+      { label: "移入回收站", danger: true, onClick: () => void trashText(it) },
     ];
   });
 
@@ -295,27 +299,33 @@ import { hoverPlay } from "../lib/hover-play";
   }
   async function runTextDialog() {
     const it = textMenuTarget;
-    if (!it) return;
+    if (!it || textDialog !== "rename") return;
     textDialogBusy = true; textDialogError = "";
     try {
       const detail = await textsApi.detail(it.id);
-      if (textDialog === "rename") {
-        const name = textDialogValue.trim();
-        if (!name) throw new Error("文件名不能为空");
-        if (name !== it.filename) await textsApi.move(it.id, detail.path.replace(/[\\/][^\\/]+$/, ""), name, detail.version);
-        textDialog = "";
-        await refreshFeed({ keepScroll: true });
-      } else {
-        await textsApi.trash(it.id, detail.version);
-        if ($selectedText?.id === it.id) selectedText.set(null);
-        textDialog = "";
-        await Promise.all([refreshFolders(), refreshFeed({ keepScroll: true })]);
-        notify("已移入系统回收站");
-      }
+      const name = textDialogValue.trim();
+      if (!name) throw new Error("文件名不能为空");
+      if (name !== it.filename) await textsApi.move(it.id, detail.path.replace(/[\\/][^\\/]+$/, ""), name, detail.version);
+      textDialog = "";
+      await refreshFeed({ keepScroll: true });
     } catch (e) {
       textDialogError = e instanceof Error ? e.message : String(e);
     } finally {
       textDialogBusy = false;
+    }
+  }
+
+  // 移入回收站一次点击就走，不再弹确认框（同 trashMedia：可逆动作不设卡）。
+  // version 只有详情接口给，所以先取详情再动手；成败都只走 toast 回执。
+  async function trashText(it: TextFeedItem) {
+    try {
+      const detail = await textsApi.detail(it.id);
+      await textsApi.trash(it.id, detail.version);
+      if ($selectedText?.id === it.id) selectedText.set(null);
+      await Promise.all([refreshFolders(), refreshFeed({ keepScroll: true })]);
+      notify(`已移入系统回收站：${it.filename}`, 4000);
+    } catch (e) {
+      notify(`移入回收站失败：${e instanceof Error ? e.message : String(e)}`, 4000);
     }
   }
 
@@ -719,7 +729,7 @@ import { hoverPlay } from "../lib/hover-play";
         { label: `${noun}所在位置`, onClick: () => revealImage(t) },
         { label: "移动到…", children: moveMenu(items) },
         { kind: "sep" },
-        { label: "移入回收站", danger: true, onClick: () => askMediaTrash(items) },
+        { label: "移入回收站", danger: true, onClick: () => void trashMedia(items) },
       ];
     }
     const noun = items[0].kind === "video" ? "视频" : items[0].kind === "audio" ? "音频" : "图片";
@@ -728,7 +738,7 @@ import { hoverPlay } from "../lib/hover-play";
       { label: "复制文件所在位置", onClick: () => copyMediaLocation(items.map((it) => it.path).join("\n")) },
       { label: "移动到…", children: moveMenu(items) },
       { kind: "sep" },
-      { label: `移入回收站 ${items.length} 个${noun}`, danger: true, onClick: () => askMediaTrash(items) },
+      { label: `移入回收站 ${items.length} 个${noun}`, danger: true, onClick: () => void trashMedia(items) },
     ];
   });
 
@@ -801,64 +811,35 @@ import { hoverPlay } from "../lib/hover-play";
     }
   }
 
-  // 移入回收站：所有会把原文件移出原路径的动作都先落到这个确认框上。
-  // 原来右键一条菜单直接就把原 PNG 永久删掉，一次误点没有回头路（AGENTS.md §5）；
-  // 现在后端默认走系统回收站，确认框负责「别让人以为是在回收站里挪个位置」。
-  let mediaTrash = $state<MediaFeedItem[] | null>(null);
-  let mediaTrashBusy = $state(false);
-  let mediaTrashError = $state("");
-
-  function askMediaTrash(items: MediaFeedItem[]) {
-    if (items.length === 0) return;
-    mediaTrashError = "";
-    mediaTrash = items;
-  }
-
-  async function runMediaTrash() {
-    const items = mediaTrash;
-    if (!items || mediaTrashBusy) return;
-    mediaTrashBusy = true;
-    try {
-      await deleteImages(items);
-      mediaTrash = null;
-    } catch (e) {
-      mediaTrashError = e instanceof Error ? e.message : String(e);
-    } finally {
-      mediaTrashBusy = false;
-    }
-  }
 
   // 真正执行移入回收站：单图也走这条，传 length=1 的数组即可。
+  // 一次点击直接执行，不弹确认框（苏醒 2026-11-18：可逆动作不设卡，原文件在系统回收站里能找回）。
   // 失败的项不会从多选集合里剔除，保留以便用户重试。
   let deleting = false;
-  async function deleteImages(items: MediaFeedItem[]) {
+  async function trashMedia(items: MediaFeedItem[]) {
     if (items.length === 0 || deleting) return;
     deleting = true;
-    const succeeded: number[] = [];
+    const succeeded: MediaFeedItem[] = [];
     const failed: number[] = [];
-    let cleaned = 0;
     for (const it of items) {
       try {
-        const resp = await imagesApi.remove(it.id, true);
-        succeeded.push(it.id);
+        await imagesApi.remove(it.id, true);
+        succeeded.push(it);
         removeImageFromFeed(it.id);
-        cleaned += resp.cleaned_previews ?? 0;
       } catch (e) {
         failed.push(it.id);
-        console.error("delete failed", it.id, e);
+        console.error("trash failed", it.id, e);
       }
     }
     // 同步从多选集合里剔除真正移入回收站成功的（失败的保留以便重试）
-    removeIdsFromSelection(succeeded);
+    removeIdsFromSelection(succeeded.map((it) => it.id));
     const okCount = succeeded.length;
     const failCount = failed.length;
-    if (okCount > 0 && failCount === 0) {
-      notify(okCount === 1 ? `已移入回收站（清理预览 ${cleaned} 个）` : `已移入回收站 ${okCount} 项（清理预览 ${cleaned} 个）`);
-    } else if (okCount > 0 && failCount > 0) {
-      notify(`已移入回收站 ${okCount} 项，${failCount} 项失败`);
-    } else {
-      notify(`移入回收站失败（${failCount} 项）`);
-    }
+    // 确认框撤了，这一句就是唯一的回执：说清动的是哪一张 / 几张，多留一会儿。
+    const done = okCount === 1 ? `已移入系统回收站：${succeeded[0].filename}` : `已移入系统回收站 ${okCount} 项`;
+    if (okCount === 0) notify(`移入回收站失败（${failCount} 项）`, 4000);
+    else if (failCount > 0) notify(`${done}，${failCount} 项失败`, 4000);
+    else notify(done, 4000);
     // 乐观更新本地 feedItems：直接从数组里过滤掉已删 id。
     // 不调 refreshFeed() —— 整个数组替换会让 masonry 贪心分组重算，滚动条跳回顶部。
     // feedItems 用 (it.id) keyed each，Svelte 会复用 DOM，scroll 位置自然保持。
@@ -1008,7 +989,7 @@ import { hoverPlay } from "../lib/hover-play";
     if (e.key === "Delete" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
       e.preventDefault();
       const ids = $multiSelectedIds.size ? $multiSelectedIds : new Set(selectedId === null ? [] : [selectedId]);
-      askMediaTrash($mediaItems.filter((item) => ids.has(item.id)));
+      void trashMedia($mediaItems.filter((item) => ids.has(item.id)));
       return;
     }
     if (e.key === "Escape") {
@@ -1532,42 +1513,15 @@ import { hoverPlay } from "../lib/hover-play";
 
 {#if textDialog && textMenuTarget}
   <div class="text-dialog-backdrop" role="presentation">
-    <div class="text-dialog" role="dialog" aria-modal="true" aria-label={textDialog === "rename" ? "重命名文本" : "移入回收站"}>
-      <h2>{textDialog === "rename" ? "重命名" : "移入系统回收站"}</h2>
+    <div class="text-dialog" role="dialog" aria-modal="true" aria-label="重命名文本">
+      <h2>重命名</h2>
       {#if textDialogError}<p class="dialog-error" role="alert">{textDialogError}</p>{/if}
-      {#if textDialog === "rename"}
-        <label>文件名称<input bind:value={textDialogValue} onkeydown={(e) => { if (e.key === "Enter") void runTextDialog(); }} /></label>
-        <p class="dialog-muted">改名作用在磁盘原文件上，图库记录跟着走。</p>
-      {:else}
-        <p>会把磁盘原文件一起移入系统回收站：</p>
-        <pre>{textMenuTarget.path}</pre>
-        <p class="dialog-muted">回收站不可用时会停止操作，不做永久删除。</p>
-      {/if}
+      <label>文件名称<input bind:value={textDialogValue} onkeydown={(e) => { if (e.key === "Enter") void runTextDialog(); }} /></label>
+      <p class="dialog-muted">改名作用在磁盘原文件上，图库记录跟着走。</p>
       <div class="dialog-actions">
         <button type="button" onclick={() => { textDialog = ""; }}>取消</button>
-        <button type="button" class={textDialog === "trash" ? "danger" : "primary"} disabled={textDialogBusy} onclick={() => void runTextDialog()}>
-          {textDialogBusy ? "处理中…" : textDialog === "rename" ? "保存" : "确认移入回收站"}
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
-
-{#if mediaTrash}
-  <div class="text-dialog-backdrop" role="presentation">
-    <div class="text-dialog" role="dialog" aria-modal="true" aria-label="移入回收站">
-      <h2>移入系统回收站</h2>
-      {#if mediaTrashError}<p class="dialog-error" role="alert">{mediaTrashError}</p>{/if}
-      <p>会把磁盘原文件一起移入系统回收站：</p>
-      <pre>{mediaTrash[0].path}</pre>
-      {#if mediaTrash.length > 1}
-        <p class="dialog-muted">等 {mediaTrash.length} 项，每一项都按各自的原件处理。</p>
-      {/if}
-      <p class="dialog-muted">回收站不可用时会停止操作，不做永久删除；原文件可以在系统回收站里找回。</p>
-      <div class="dialog-actions">
-        <button type="button" onclick={() => { mediaTrash = null; }}>取消</button>
-        <button type="button" class="danger" disabled={mediaTrashBusy} onclick={() => void runMediaTrash()}>
-          {mediaTrashBusy ? "处理中…" : `确认移入回收站（${mediaTrash.length} 项）`}
+        <button type="button" class="primary" disabled={textDialogBusy} onclick={() => void runTextDialog()}>
+          {textDialogBusy ? "处理中…" : "保存"}
         </button>
       </div>
     </div>
@@ -1651,14 +1605,12 @@ import { hoverPlay } from "../lib/hover-play";
   .text-dialog h2 { font-size: var(--fs-md); font-weight: 700; margin-bottom: var(--sp-3); }
   .text-dialog label { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-3) 0; }
   .text-dialog input { background: #101012; border: 1px solid #45454d; border-radius: var(--r-1); color: inherit; padding: var(--sp-2) var(--sp-2); }
-  .text-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-xs); line-height: var(--lh-read); font-family: var(--font-mono); background: #0e0e10; padding: var(--sp-3); border-radius: var(--r-1); }
   .dialog-muted { color: #8b8997; font-size: var(--fs-xs); line-height: var(--lh-read); }
   .dialog-error { color: #f0ce9b; font-size: var(--fs-xs); margin-bottom: var(--sp-2); }
   .dialog-actions { display: flex; justify-content: flex-end; gap: var(--sp-2); margin-top: var(--sp-4); }
   .dialog-actions button { border: 1px solid #49424c; border-radius: var(--r-1); background: #26262b; color: #dddce4; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-xs); cursor: pointer; }
   .dialog-actions button:disabled { opacity: .45; cursor: default; }
   .dialog-actions .primary { background: #6d4c4c; border-color: #8a5f5f; }
-  .dialog-actions .danger { background: var(--danger); border-color: var(--danger); color: var(--accent-ink); }
   /* 键盘焦点与选中同一圈白，和图片卡同口径（2026-11-16 苏醒：高亮不要红色）；
      焦点环不再单独用品牌红，撤它的理由记在 app.css 那条旁边 */
   .text-card:focus-visible::after { box-shadow: inset 0 0 0 1px var(--thumb-ring); }

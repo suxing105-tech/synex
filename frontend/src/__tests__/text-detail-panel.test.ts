@@ -118,18 +118,16 @@ describe("右侧详情栏：文本分支", () => {
     await waitFor(() => expect(ui.getByText("随想改名.md")).toBeTruthy());
   });
 
-  it("移入回收站要二次确认，确认后带 version 移入并清掉选中", async () => {
+  it("移入回收站一次点击直接带 version 移走，不再二次确认", async () => {
     const ui = render(TextDetailPanel);
     await fireEvent.click(ui.getByRole("button", { name: "更多操作" }));
     await fireEvent.click(ui.getByRole("menuitem", { name: "移入回收站" }));
-    const dialog = ui.getByRole("alertdialog", { name: "确认移入回收站" });
-    expect(dialog.textContent).toContain("D:/notes/随想4.md");
-    expect(textsApi.trash).not.toHaveBeenCalled();
-    await fireEvent.click(ui.getByRole("button", { name: "确认移入回收站" }));
+    // 面板直接收起：选中清空，确认框那一屏没了
     await waitFor(() => expect(textsApi.trash).toHaveBeenCalledWith(4, "v9"));
+    expect(textsApi.detail).toHaveBeenCalledWith(4);
+    expect(ui.queryByRole("alertdialog")).toBeNull();
     await waitFor(() => expect(get(selectedText)).toBeNull());
   });
-
   it("换一篇时收起没做完的改名输入", async () => {
     const ui = render(TextDetailPanel);
     await fireEvent.click(ui.getByRole("button", { name: "更多操作" }));

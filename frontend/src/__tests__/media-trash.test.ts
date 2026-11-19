@@ -57,22 +57,39 @@ describe("媒体删除只剩「移入回收站」这一条语义", () => {
     expect(lightbox).toContain("移入回收站");
   });
 
-  it("右键菜单和 Delete 键都先进确认框", () => {
+  it("移入回收站一次点击就走：菜单、Delete 键、看图器都直接执行", () => {
     const feed = read("components", "Feed.svelte");
-    // 单条 + 多选两条菜单，加键盘 Delete，三处都落在 askMediaTrash 上
-    expect(feed.match(/onClick: \(\) => askMediaTrash\(items\)/g)?.length).toBe(2);
-    expect(feed).toMatch(/askMediaTrash\(\$mediaItems\.filter/);
-    expect(feed).toContain("确认移入回收站");
-    // 唯一能调执行函数的地方是确认框的 runMediaTrash；菜单和按键都不许直接调
-    expect(feed.match(/await deleteImages\(items\)/g)?.length).toBe(1); // 只有确认框里那一处
-    expect(feed).not.toMatch(/onClick: \(\) => deleteImages/);
-    expect(feed).not.toMatch(/void deleteImages\(/);
+    const lightbox = read("components", "Lightbox.svelte");
+    // 单条 + 多选两条菜单，加键盘 Delete，三处都直接落到执行函数上
+    expect(feed.match(/onClick: \(\) => void trashMedia\(items\)/g)?.length).toBe(2);
+    expect(feed).toMatch(/void trashMedia\(\$mediaItems\.filter/);
+    // 文本卡那颗也一样，不再先进 textDialog
+    expect(feed).toContain("onClick: () => void trashText(it)");
+    expect(lightbox).toContain("void deleteImage(it);");
   });
 
-  it("看图器里的删除也先确认，并且说清能找回", () => {
+  // 苏醒 2026-11-18：可逆动作不设卡。原文件在系统回收站里能找回，
+  // 再问一遍只是把一次点击变成两次。这条闸负责拦住「顺手加个确认框」的回潮。
+  it("界面上没有「移入回收站」的二次确认", () => {
+    const sources: Array<[string, string]> = [
+      ["Feed", read("components", "Feed.svelte")],
+      ["Lightbox", read("components", "Lightbox.svelte")],
+      ["TextReader", read("components", "TextReader.svelte")],
+      ["TextDetailPanel", read("components", "TextDetailPanel.svelte")],
+    ];
+    for (const [name, src] of sources) {
+      expect(src, name + " 里又冒出了确认按钮").not.toContain("确认移入");
+      expect(src, name + " 里又用了原生确认框").not.toMatch(/window\.confirm|\bconfirm\s*\(/);
+    }
+  });
+
+  // 确认框没了，toast 就是唯一的回执：要点名动了哪一张，而且要留够时间读。
+  it("回执点名动了哪一张，并且留够时间读", () => {
+    const feed = read("components", "Feed.svelte");
     const lightbox = read("components", "Lightbox.svelte");
-    expect(lightbox).toContain("function confirmTrash(");
-    expect(lightbox).toMatch(/if \(!confirmTrash\(targets\.length\)\) return;/);
-    expect(lightbox).toContain("系统回收站里找回");
+    expect(feed).toContain("已移入系统回收站：${succeeded[0].filename}");
+    expect(feed).toContain("已移入系统回收站 ${okCount} 项");
+    expect(feed).toContain("notify(done, 4000)");
+    expect(lightbox).toContain("已移入系统回收站：${it.filename}");
   });
 });

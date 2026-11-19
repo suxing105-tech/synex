@@ -48,7 +48,7 @@ import { basenameOnly } from '../lib/media-format';
     if (session) lastState = session.state;
   }
 
-  type ModalKind = '' | 'history' | 'move' | 'tags' | 'conflict' | 'trash' | 'media' | 'copy';
+  type ModalKind = '' | 'history' | 'move' | 'tags' | 'conflict' | 'media' | 'copy';
   let modal = $state<ModalKind>('');
   let encodingMode = $state(false);
   let busy = $state(false);
@@ -203,7 +203,7 @@ import { basenameOnly } from '../lib/media-format';
     { label: '复制文本文件', onClick: () => void copyTextFile() },
     { label: '文件位置', onClick: () => void reveal() },
     { kind: 'sep' },
-    { label: '移入回收站', danger: true, onClick: () => { modal = 'trash'; modalError = ''; } },
+    { label: '移入回收站', danger: true, onClick: () => void trashDocument() },
   ]);
 
   let tagValue = $state('');
@@ -290,18 +290,22 @@ import { basenameOnly } from '../lib/media-format';
     } catch (e) { modalError = message(e); } finally { busy = false; }
   }
 
+  // 移入回收站一次点击就走，不再弹确认框（同网格 / 看图器：可逆动作不设卡）。
+  // 正文没落盘就停手；这一层没有弹窗可挂报错了，成败都走全局 toast。
   async function trashDocument() {
     const target = session; if (!target) return;
-    busy = true; modalError = '';
+    const name = basenameOnly(target.detail.path);
+    busy = true;
     try {
       await target.flush();
       if (target.dirty) throw new Error('请先保存正文或处理冲突');
       await textsApi.trash(target.detail.id, target.detail.version);
       target.dispose(); session = null; revision++;
-      modal = ''; selectedText.set(null); markTextFeedStale();
+      selectedText.set(null); markTextFeedStale();
       await refreshFolders();
       await closeTextReader();
-    } catch (e) { modalError = message(e); } finally { busy = false; }
+      pushToast(`已移入系统回收站：${name}`, { kind: 'success' });
+    } catch (e) { pushToast(`移入回收站失败：${message(e)}`, { kind: 'error' }); } finally { busy = false; }
   }
 
   async function reveal() {
@@ -483,7 +487,7 @@ import { basenameOnly } from '../lib/media-format';
   <div class="text-modal-backdrop" role="presentation">
     <div class="text-modal" class:wide={['media', 'history', 'conflict'].includes(modal)} role="dialog" aria-modal="true" aria-label="文本操作" tabindex="-1" use:modalFocus>
       <header>
-        <h2>{{ copy: '另存副本', history: '历史版本 · 保留 30 天', tags: encodingMode ? '重新选择编码' : '标签', move: '重命名 / 移动原文件', conflict: '解决外部修改冲突', trash: '移入系统回收站', media: replaceHref ? '重新定位素材' : '插入素材' }[modal]}</h2>
+        <h2>{{ copy: '另存副本', history: '历史版本 · 保留 30 天', tags: encodingMode ? '重新选择编码' : '标签', move: '重命名 / 移动原文件', conflict: '解决外部修改冲突', media: replaceHref ? '重新定位素材' : '插入素材' }[modal]}</h2>
         <button disabled={busy} onclick={() => { modal = ''; encodingMode = false; }}>×</button>
       </header>
       {#if modalError}<div class="notice" role="alert">{modalError}</div>{/if}
@@ -518,10 +522,6 @@ import { basenameOnly } from '../lib/media-format';
           <button disabled={busy} onclick={() => void resolveConflict(false)}>用磁盘版本</button>
           <button class="primary" disabled={busy} onclick={() => void resolveConflict(true)}>保留我的编辑并保存</button>
         </div>
-      {:else if modal === 'trash'}
-        <p>会把磁盘原文件一起移入系统回收站：</p><pre>{current?.detail.path}</pre>
-        <p>回收站不可用时会停止操作，不做永久删除。</p>
-        <div class="modal-actions"><button disabled={busy} onclick={() => modal = ''}>取消</button><button class="danger" disabled={busy} onclick={() => void trashDocument()}>确认移入回收站</button></div>
       {:else if modal === 'media'}
         <div class="media-search">
           <select bind:value={mediaKind} onchange={() => void loadMedia()}><option value="image">图片</option><option value="video">视频</option></select>
@@ -591,7 +591,6 @@ import { basenameOnly } from '../lib/media-format';
   .text-modal button { border: 1px solid #49424c; border-radius: var(--r-1); background: #26262b; color: #dddce4; padding: var(--sp-2) var(--sp-3); margin: 3px; cursor: pointer; font-size: var(--fs-xs); }
   .text-modal button:disabled { opacity: .45; cursor: default; }
   .text-modal .primary { background: #6d4c4c; border-color: #8a5f5f; }
-  .text-modal .danger { background: var(--danger); border-color: var(--danger); color: var(--accent-ink); }
   .text-modal pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-sm); line-height: var(--lh-read); font-family: var(--font-mono); background: #0e0e10; padding: var(--sp-4); border-radius: var(--r-1); }
   .history-layout { display: grid; grid-template-columns: 190px 1fr; height: 340px; gap: var(--sp-4); }
   .history-layout aside, .history-layout pre { overflow: auto; }

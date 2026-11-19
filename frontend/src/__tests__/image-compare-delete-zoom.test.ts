@@ -66,22 +66,20 @@ it('分割线位置改变裁切范围，原图不拉伸', async () => {
   await fireEvent.input(screen.getByLabelText('图片对比分割线'), { target: { value: '25' } });
   expect(screen.container.querySelector('.compare-overlay')?.getAttribute('style')).toContain('75%');
 });
-it('多选 Delete 只弹确认框，确认后才移入回收站，失败项保留', async () => {
+it('多选 Delete 一次按键直接移入回收站，不弹确认，失败项留在选区里', async () => {
   multiSelectedIds.set(new Set([1, 2]));
   vi.mocked(imagesApi.remove).mockRejectedValueOnce(new Error('locked')).mockResolvedValueOnce({ ok: true } as any);
   const screen = render(Feed, { selectedId: 1, lightboxOpen: false, lightboxIndex: 0 });
   await fireEvent.keyDown(window, { key: 'Delete' });
-  await tick();
-  // 这条是新语义的核心：误按 Delete 只能弹出确认，一个文件都不能已经动过
-  expect(imagesApi.remove).not.toHaveBeenCalled();
-  expect(screen.getByRole('button', { name: /确认移入回收站/ })).toBeTruthy();
-  await fireEvent.click(screen.getByRole('button', { name: /确认移入回收站/ }));
+  // 这条是新语义的核心：一次按键就把两张都送去系统回收站，中间不再插一屏
   await waitFor(() => expect(imagesApi.remove).toHaveBeenCalledTimes(2));
-  await tick();
+  expect(screen.queryByRole('dialog')).toBeNull();
   expect(imagesApi.remove).toHaveBeenCalledWith(2, true);
-  expect(get(feedItems).map(i => i.id)).toEqual([1, 3]);
+  await waitFor(() => expect(get(feedItems).map(i => i.id)).toEqual([1, 3]));
+  // 失败的那张留在多选集合里，可以直接重试
   expect(get(multiSelectedIds).has(1)).toBe(true);
 });
+
 it('输入框及重复按键不删除，打开预览后 Feed 不重复删除', async () => {
   multiSelectedIds.set(new Set([1]));
   const screen = render(Feed, { selectedId: 1, lightboxOpen: false, lightboxIndex: 0 });
@@ -104,21 +102,17 @@ it('再次创作那一层开着时，Delete 不删背后选中的那张', async 
   await tick();
   expect(imagesApi.remove).not.toHaveBeenCalled();
 });
-it('对比中的 Delete 先确认：取消不删，确认才两张一起移入回收站', async () => {
+it('对比中的 Delete 不再问第二遍，两张一起移入回收站', async () => {
   multiSelectedIds.set(new Set([1, 2]));
-  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
   render(Lightbox, { open: true, index: 0, selectedId: 1 });
-  await fireEvent.keyDown(window, { key: 'Delete' });
-  await tick();
-  // 取消就是什么都没发生——原图和索引都得原地不动
-  expect(confirm).toHaveBeenCalledTimes(1);
-  expect(imagesApi.remove).not.toHaveBeenCalled();
-  expect(get(feedItems).map(i => i.id)).toEqual([1, 2, 3]);
-  confirm.mockReturnValue(true);
   await fireEvent.keyDown(window, { key: 'Delete' });
   await waitFor(() => expect(get(feedItems).map(i => i.id)).toEqual([3]));
   expect(imagesApi.remove).toHaveBeenCalledTimes(2);
+  // 一次都不许问：原生确认框一次都没被调过
+  expect(confirm).not.toHaveBeenCalled();
 });
+
 it('单图滚轮向前放大、向后缩小，适应窗口可复位', async () => {
   const screen = render(Lightbox, { open: true, index: 0, selectedId: 1 });
   const img = screen.getByAltText('1.jpg') as HTMLImageElement;
@@ -145,23 +139,19 @@ it('双选后双击保留对比对象，工具栏不再给对比入口', async (
   await fireEvent.doubleClick(image);
   expect([...get(multiSelectedIds)]).toEqual([1, 2]);
 });
-it('按住 Delete 不会对同一张图片发起重复删除', async () => {
+it('第一笔请求还挂着时再按 Delete 不会发起第二次移入回收站', async () => {
   multiSelectedIds.set(new Set([1]));
   let finish!: (value: any) => void;
   vi.mocked(imagesApi.remove).mockImplementation(() => new Promise(resolve => finish = resolve));
-  const screen = render(Feed, { selectedId: 1, lightboxOpen: false, lightboxIndex: 0 });
+  render(Feed, { selectedId: 1, lightboxOpen: false, lightboxIndex: 0 });
   await fireEvent.keyDown(window, { key: 'Delete' });
-  await tick();
-  await fireEvent.click(screen.getByRole('button', { name: /确认移入回收站/ }));
   await tick();
   expect(imagesApi.remove).toHaveBeenCalledTimes(1);
-  // 请求还挂着：按钮已经变成「处理中…」并且 disabled，再按 Delete 也点不出第二次
+  // 确认框撤了，挡重复的只剩 deleting 那道闸：第一笔没回，换一张再按也不许发出第二次
+  multiSelectedIds.set(new Set([3]));
   await fireEvent.keyDown(window, { key: 'Delete' });
   await tick();
-  const busy = screen.getByRole('button', { name: /处理中/ }) as HTMLButtonElement;
-  expect(busy.disabled).toBe(true);
-  await fireEvent.click(busy);
   expect(imagesApi.remove).toHaveBeenCalledTimes(1);
   finish({ ok: true });
-  await tick();
+  await waitFor(() => expect(get(feedItems).map(i => i.id)).toEqual([2, 3]));
 });

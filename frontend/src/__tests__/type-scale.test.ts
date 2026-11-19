@@ -294,7 +294,8 @@ describe("详情栏共用一把尺子（2026-11-13 oil-ui 评审第一刀 T4 + T
     const textPanel = read("components/TextDetailPanel.svelte");
     expect(textPanel, "文本详情栏还有拿 padding 凑高度的按钮")
       .not.toMatch(/class="[^"]*(?:p-1\.5|py-1) rounded/);
-    expect(textPanel.match(/class="dock-btn/g) || []).toHaveLength(8);
+    // 2026-11-18 撤掉确认框里的「确认移入回收站 / 取消」两颗，8 → 6。
+    expect(textPanel.match(/class="dock-btn/g) || []).toHaveLength(6);
   });
 
   it("右栏标题只有一套语言：加粗 + --text-1，两级只差字号（2026-11-15 定稿）", () => {

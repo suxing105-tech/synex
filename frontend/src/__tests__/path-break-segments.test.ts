@@ -41,11 +41,12 @@ describe("pathBreakSegments（第三刀 T11）", () => {
     expect(pathBreakSegments(undefined)).toEqual([]);
   });
 
-  it("详情栏两处路径都改走段渲染，break-all 撤掉", () => {
+  it("详情栏的路径走段渲染，break-all 撤掉", () => {
     const src = readFileSync(join(srcRoot, "components/TextDetailPanel.svelte"), "utf8");
     expect(src).toContain('import { pathBreakSegments } from "../lib/path-segments";');
     expect(src, "路径还在逐字符断行").not.toMatch(/break-all/);
-    expect(src.match(/<wbr \/>/g) ?? []).toHaveLength(2);
+    // 2026-11-18 撤掉「确认移入回收站」那块时，里面那份路径渲染跟着退；正文这一份还在。
+    expect(src.match(/<wbr \/>/g) ?? []).toHaveLength(1);
     expect(src).toContain("{@const pathSegs = pathBreakSegments(it?.path)}");
   });
 });

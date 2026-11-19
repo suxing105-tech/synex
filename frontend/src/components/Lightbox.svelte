@@ -36,9 +36,12 @@
   let menuTargetId = $state<number | null>(null);
   let menuTick = $state(0);
   let toast = $state<string | null>(null);
-  function notify(msg: string) {
+  let toastTimer: ReturnType<typeof setTimeout> | undefined;
+  /** ms 只给「刚做完、需要人看一眼」的回执用（移入回收站）；常规提示保持 1800。 */
+  function notify(msg: string, ms = 1800) {
     toast = msg;
-    setTimeout(() => (toast = null), 1800);
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (toast = null), ms);
   }
 
   let originalUrl = $state<string | null>(null);
@@ -258,7 +261,7 @@
         label: "移入回收站",
         danger: true,
         onClick: () => {
-          if (confirmTrash(1)) void deleteImage(it);
+          void deleteImage(it);
         },
       },
     ];
@@ -297,38 +300,31 @@
     }
   }
 
-  // 和网格里那套同一个口径：一次点击就把原文件移出原路径，先问一句（AGENTS.md §5）。
-  // 这里用原生 confirm 是跟着本组件既有做法走的——「重命名」用的就是原生 prompt，
-  // 再手搓一套弹窗样式只会多一处要对齐的视觉。
-  function confirmTrash(count: number) {
-    const line = count > 1
-      ? "把这 " + count + " 个文件移入系统回收站？原件会一起移走，可以在系统回收站里找回。"
-      : "把这张图片移入系统回收站？原件会一起移走，可以在系统回收站里找回。";
-    return window.confirm(line);
-  }
+  // 和网格里那套同一个口径：一次点击直接移入系统回收站，不再弹确认框
+  // （苏醒 2026-11-18：可逆动作不设卡）。后端只做移入回收站、回收站不可用就停手，
+  // 永久删除在界面上没有入口（守卫见 __tests__/media-trash.test.ts）。
 
   let deleting = false;
   async function deleteCurrent() {
     if (deleting) return;
     const targets = comparing ? [...compareImages] : [$mediaItems[index]].filter(Boolean);
-    if (!confirmTrash(targets.length)) return;
     deleting = true;
     for (const it of targets) await deleteImage(it);
     deleting = false;
   }
   async function deleteImage(it: any) {
     try {
-      const resp = await imagesApi.remove(it.id, true);
+      await imagesApi.remove(it.id, true);
       removeImageFromFeed(it.id);
-      notify(`已移入回收站（清理缩略图 ${resp.cleaned_previews ?? 0} 个）`);
+      // 确认框撤了，这一句就是唯一的回执：说清动的是哪一张，多留一会儿。
+      notify(`已移入系统回收站：${it.filename}`, 4000);
       if (selectedId === it.id) selectedId = null;
       open = false;
       await Promise.allSettled([refreshStats(), refreshFolders()]);
     } catch (e) {
-      notify(`移入回收站失败: ${(e as Error).message}`);
+      notify(`移入回收站失败: ${(e as Error).message}`, 4000);
     }
   }
-
   // 切换图片 / 重新打开：设置 URL + 选中
   $effect(() => {
     if (open) {

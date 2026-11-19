@@ -19,11 +19,10 @@
   let notice = $state("");
   let renaming = $state(false);
   let renameValue = $state("");
-  let confirming = $state(false);
   let menuOpen = $state(false);
 
-  // 换一篇文本时收起未完成的改名 / 删除确认：面板常驻，不会重建组件。
-  $effect(() => { void $selectedText?.id; renaming = false; confirming = false; menuOpen = false; notice = ""; });
+  // 换一篇文本时收起未完成的改名 / 菜单：面板常驻，不会重建组件。
+  $effect(() => { void $selectedText?.id; renaming = false; menuOpen = false; notice = ""; });
 
   function read() {
     if ($selectedText) openTextReader($selectedText);
@@ -104,9 +103,9 @@
       const detail = await textsApi.detail(it.id);
       await textsApi.trash(it.id, detail.version);
       selectedText.set(null);
-      confirming = false;
       await Promise.all([refreshFolders(), refreshFeed({ keepScroll: true })]);
-      pushToast("已移入系统回收站", { kind: "success" });
+      // 面板随选中一起关了，这一句 toast 就是唯一的回执
+      pushToast(`已移入系统回收站：${it.filename}`, { kind: "success" });
     } catch (e) {
       notice = message(e);
     } finally {
@@ -137,7 +136,7 @@
             <button type="button" class="w-full px-3 py-2 text-left hover:bg-surface-3" role="menuitem" onclick={() => void copyFile()}>复制文本文件</button>
             <button type="button" class="w-full px-3 py-2 text-left hover:bg-surface-3" role="menuitem" onclick={() => void copyFull()}>复制全文</button>
             <button type="button" class="w-full px-3 py-2 text-left hover:bg-surface-3" role="menuitem" onclick={() => void reveal()}>文件位置</button>
-            <button type="button" class="w-full px-3 py-2 text-left text-danger hover:bg-surface-3" role="menuitem" onclick={() => { confirming = true; menuOpen = false; }}>移入回收站</button>
+            <button type="button" class="w-full px-3 py-2 text-left text-danger hover:bg-surface-3" role="menuitem" onclick={() => { menuOpen = false; void trash(); }}>移入回收站</button>
           </div>
         {/if}
       </div>
@@ -172,17 +171,6 @@
         </div>
       {/if}
       {#if notice}<div class="rounded border border-border bg-surface-2 p-2 text-xs text-amber-200" role="status">{notice}</div>{/if}
-      {#if confirming}
-        <div class="rounded border border-danger/40 bg-surface-2 p-3 space-y-2" role="alertdialog" aria-label="确认移入回收站">
-          <p>会把磁盘原文件一起移入系统回收站：</p>
-          <p class="font-mono text-2xs break-words text-muted">{#each pathSegs as seg, i}{seg}{#if i !== pathSegs.length - 1}<wbr />{/if}{/each}</p>
-          <div class="flex gap-2">
-            <button type="button" class="dock-btn is-danger hover:bg-surface-3 disabled:opacity-40" disabled={busy} onclick={() => void trash()}>确认移入回收站</button>
-            <button type="button" class="dock-btn hover:bg-surface-3" onclick={() => (confirming = false)}>取消</button>
-          </div>
-        </div>
-      {/if}
-
       <section>
         <h3 class="section-title mb-2">摘录</h3>
         <p class="whitespace-pre-wrap leading-read rounded-ctl border border-border bg-surface-2 p-3 max-h-72 overflow-auto">{it.excerpt || "（空）"}</p>

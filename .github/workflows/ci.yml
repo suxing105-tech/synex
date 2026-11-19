@@ -6,6 +6,11 @@ name: CI
 # 这里把 verify-all 里能自动化的四套（后端 / 前端 / 类型 / Rust）拆成三个 job 并行跑。
 # 只测不打包：PyInstaller + NSIS 那一段留在本机，口径见 docs/release-process.md。
 #
+# 这份文件在 CI 上跑之前本地验不了，能本地取证的都取了：四套命令与目录照本机 verify-all 抄并且
+# 本机全绿；rust 这一 job 少随包文件会连编译都进不去，那条已经在本机取证，结论写在它自己的步骤
+# 里，名单由 backend/tests/test_ci_workflow.py 钉住。剩下没验的是 Actions 环境本身：choco 装的
+# ffmpeg、pnpm 11 + node 24、空缓存下的 cargo 下载，以及 Windows runner 的耗时。
+#
 # 后端固定 Python 3.11，不用本机那台 3.14：pyproject 声明的是 >=3.11，而 repository.py
 # 写过只有 3.12 才允许的 f-string 同引号嵌套——在本机永远跑得出绿，声明却是骗人的。
 # test_python_floor.py 钉的就是这条下限。
@@ -102,6 +107,38 @@ jobs:
       - name: vite build
         run: pnpm build
         working-directory: frontend
+
+      # tauri-build 在 build script 阶段就按 tauri.conf.json 把 externalBin 与 resources 逐个查
+      # 存在性，缺一个 build.rs 直接 return Err，cargo test 连编译都进不去。本机实测：把这些文件
+      # 从工作区挪走，cargo test 停在 build script，报
+      #   resource path `binaries\python-backend-x86_64-pc-windows-msvc.exe` doesn't exist
+      # 换成占位文件后同一条命令 50 passed / 2 ignored（取证日志 outputs/ci-rust-probe/）。
+      # 全新 checkout 真正缺的只有三个 sidecar：它们由 PyInstaller 与 fetch-media-tools 现造，
+      # .gitignore 里 binaries/*.exe 挡的就是它们；两份授权文本是入库的，列进来只为让名单与
+      # tauri.conf.json 一致，Test-Path 会让已有的文件原样保留。本机一直在，所以看不见这个坑。
+      # CI 不打安装包（发布仍在本机），所以这里只补「文件在不在」：cargo test 既不 spawn sidecar
+      # （tests/ 只有 release_signature 与 updater_transport，sidecar.rs 的用例只算路径）也不读
+      # 授权内容；真随包文件由 build-preview.ps1 / build-update.ps1 出。两个名单由
+      # backend/tests/test_ci_workflow.py 对着 tauri.conf.json 双向钉死——加一个 sidecar 忘了同步
+      # 这里，本机就红，不用等 CI 首跑。
+      - name: 补 tauri-build 要的随包文件（CI 不打包）
+        shell: pwsh
+        run: |
+          $triple = 'x86_64-pc-windows-msvc'
+          $tauri = 'frontend/src-tauri'
+          New-Item -ItemType Directory -Force -Path "$tauri/binaries", "$tauri/resources" | Out-Null
+          foreach ($n in @('python-backend', 'ffmpeg', 'ffprobe')) {
+            $p = "$tauri/binaries/$n-$triple.exe"
+            if (-not (Test-Path -LiteralPath $p)) {
+              New-Item -ItemType File -Force -Path $p | Out-Null   # tauri 只要这个路径存在，copy 而已
+            }
+          }
+          foreach ($r in @('ffmpeg-LICENSE.txt', 'OFL-SeekX-Sans.txt')) {
+            $p = "$tauri/resources/$r"
+            if (-not (Test-Path -LiteralPath $p)) {
+              Set-Content -LiteralPath $p -Encoding utf8 -Value 'CI placeholder: packaging happens locally, see docs/release-process.md'
+            }
+          }
 
       - uses: dtolnay/rust-toolchain@stable
 

@@ -33,5 +33,7 @@ export default defineConfig({
   test: {
     environment: "happy-dom",
     globals: true,
+    // 测试不许真连网络，桩见 src/__tests__/setup-no-network.ts
+    setupFiles: ["./src/__tests__/setup-no-network.ts"],
   },
 });

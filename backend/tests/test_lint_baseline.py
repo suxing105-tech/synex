@@ -24,7 +24,7 @@ import pytest
 
 BACKEND = Path(__file__).resolve().parents[1]
 
-# 规则 → 允许的最大条数（2026-11-19 在 backend 下量到的现状）。只挑「写错就是 bug」这几类，
+# 规则 → 允许的最大条数（2026-11-18 在 backend 下量到的现状）。只挑「写错就是 bug」这几类，
 # 并且显式 --select：不跟 ruff 的默认规则集走，那套每版都在变，跟着它钉基线等于每升级红一次。
 BASELINE = {
     "F821": 0,   # 未定义名字：注解里写一个没 import 的东西就是这么来的

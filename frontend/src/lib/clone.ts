@@ -52,6 +52,8 @@ export interface CloneSlot {
   options?: string[];
   /** select 专用：仅改界面显示名，保存与提交仍使用 options 里的原值 */
   option_labels?: Record<string, string>;
+  /** select 专用：作者点名的画法是拨动开关（"toggle"），和设置里「监听」那颗同一个控件 */
+  ui?: string;
   value?: string | number | null;
   min?: number | null;
   max?: number | null;
@@ -1786,6 +1788,20 @@ export function numberUnit(slot: CloneSlot): string {
   return /mega|百万/.test(text) ? "MP" : "";
 }
 
+/**
+ * 拨动开关那两颗档：作者写 ui="toggle" 才认，第一档＝关、第二档＝开。
+ *
+ * 为什么不让前端自己猜：两档的下拉多的是（戏种的「文戏／武戏」也是两档），
+ * 那种两档是有名字的选项，画成开关就读不出它管的是什么。所以只认作者点名，
+ * 而且点名了却不是两档就当普通下拉画——画一个说不清的开关，比多两颗按钮更糟。
+ */
+export function switchPair(slot: CloneSlot): { off: string; on: string } | null {
+  if (slot.ui !== "toggle") return null;
+  const options = slot.options ?? [];
+  if (options.length !== 2) return null;
+  return { off: options[0], on: options[1] };
+}
+
 const NUMBER_PRESETS = [0.5, 1, 1.5, 2, 2.5, 3, 4, 6, 8];
 const DURATION_PRESETS = [5, 8, 10, 12, 15];
 
@@ -1814,10 +1830,27 @@ export function numberPresets(slot: CloneSlot): number[] {
   return values.sort((a, b) => a - b).slice(0, 10);
 }
 
+/**
+ * 档位按钮上写的那个数：同一排里只要有带小数的档，整数就得跟着写成 1.0 / 2.0。
+ *
+ * 分辨率那一排是 0.6 0.7 0.8 0.9 0.98 1.0 1.2 1.5 1.8 2.0，JS 把 1.0 存成 1、
+ * 直接印出来就是「0.9 1 1.2」，一排里两种写法，看着像单位不一样。纯整数的排
+ * （时长 5/8/10/12/15 秒）不补小数点：那一排补了只会多占地方读得更慢。
+ */
+export function presetLabel(values: number[], value: number): string {
+  const fractional = values.some((v) => Number.isFinite(v) && !Number.isInteger(v));
+  return fractional && Number.isInteger(value) ? value.toFixed(1) : String(value);
+}
+
 export function formatControlValue(slot: CloneSlot, value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === "") return "";
   if (slot.kind === "select") return optionLabel(String(value));
-  return `${value}${numberUnit(slot)}`;
+  // 作者点名了档位表的那一颗（H3 的分辨率十档）：摘要跟着档位用同一套写法，
+  // 免得上面点的是「1.0」、下面胶囊报的是「1」。没点名的照旧直接印数——
+  // 「武打速度 5 档」「2MP」本来就该是整数，给它补个 .0 是凭空多一个字符。
+  const ladder = (slot.presets ?? []).filter((v) => typeof v === "number");
+  const shown = ladder.length ? presetLabel(ladder, Number(value)) : String(value);
+  return `${shown}${numberUnit(slot)}`;
 }
 
 /**
@@ -1851,7 +1884,9 @@ export function controlSummary(
   const pair = customSizeSlots(template);
   const sizeText = customPixelSize(template, controls);
   return slots
-    .filter((slot) => slotVisible(template, slot, controls))
+    // 开关那一颗不上胶囊：它改的是「这台机器跑得快还是省显存」，不出片的参数报在
+    // 摘要里只会多一个读不懂的「关」字（和「云端没有 megapixels 就别冒出来」同一条尺）。
+    .filter((slot) => slotVisible(template, slot, controls) && !switchPair(slot))
     .map((slot) => {
       if (pair && slotKey(slot) === slotKey(pair.w)) {
         return sizeText ? `${sizeText.w}×${sizeText.h}` : "";
@@ -1888,6 +1923,8 @@ export function controlContextLine(
   const pair = customSizeSlots(template);
   const sizeText = customPixelSize(template, controls);
   const parts = visibleControlSlots(template, controls)
+    // 同上：省显存还是跑满，是这台机器的选择，与这句提示词该怎么写无关
+    .filter((slot) => !switchPair(slot))
     .map((slot) => {
       const label = String(slot.label ?? "").trim() || slotKey(slot);
       if (pair && slotKey(slot) === slotKey(pair.h)) return "";

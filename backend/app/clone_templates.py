@@ -1300,11 +1300,12 @@ def detect_media_kind(nodes: dict) -> str:
 
 # 这些字段不是从工作流里"看"出来的，是这份模板的用法说明：能不能画遮罩、
 # 提示词留空算不算一个模式、一颗旋钮管几台节点。重新检测没资格把它们抹掉。
-# lora_group / lora_on / lora / option_writes / slider 这几样更不可能「看」出来：
-# 它们说的是「这几颗 lora 代表什么」「这一颗要画成滑块」，是作者写下的用法。
+# lora_group / lora_on / lora / option_writes / slider / ui / presets 这几样更不可能「看」出来：
+# 它们说的是「这几颗 lora 代表什么」「这一颗要画成滑块／画成开关」「这一颗常用的是这几档」，
+# 是作者写下的用法。object_info 只给得出上下限和步长，给不出「0.98 这一档值得单独一颗按钮」。
 SLOT_CONTRACT_KEYS = ("mask", "allow_empty", "empty_hint", "sync_to", "show_when",
                       "lora_group", "lora_on", "lora", "option_writes", "slider",
-                      "mode_only")
+                      "mode_only", "ui", "presets")
 # 其中这几样连「槽位本身」都检测不出来：lora 控件的值不是某个 node.input 的字面量，
 # 而是那份清单里的条目，所以 object_info 里根本没有对应的旋钮。
 LORA_CONTRACT_KEYS = ("lora_group", "lora_on", "lora", "option_writes", "slider")
@@ -1481,6 +1482,18 @@ def normalize_slots(raw: Any, nodes: dict) -> list[dict]:
                         f"控件 {slot_key(slot)} 是「只换档、不填值」的开关，"
                         f"但 {'、'.join(missing)} 这一档没说要改什么，选了它等于什么都没发生。")
                 slot["mode_only"] = True
+
+        if kind == "select" and str(item.get("ui") or "").strip() == "toggle":
+            # 「画成开关」和「画成滑块」一样，是作者写下的用法，图里看不出来。一颗只有两档的
+            # 下拉（低显存模式＝关/开）摆成两颗大按钮，不如一颗拨动开关一眼读完。哪一头算「开」
+            # 由顺序说清：第一档＝关，第二档＝开，所以这里钉死正好两档——三档塞不进一个开关
+            # （中间那档没有对应的开关位置），与其画一个说不清的控件让界面去猜，不如当场报错。
+            toggle_options = [str(o) for o in (slot.get("options") or [])]
+            if len(toggle_options) != 2:
+                listed = "、".join(toggle_options) or "一档都没有"
+                raise ValueError(f"控件 {slot_key(slot)} 要画成开关就得正好两档"
+                                 f"（第一档是关、第二档是开），现在是：{listed}。")
+            slot["ui"] = "toggle"
 
         single_lora = str(item.get("lora") or "").strip()
         if kind == "number" and single_lora:

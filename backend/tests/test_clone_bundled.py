@@ -1136,6 +1136,7 @@ def test_the_int8_template_ships_the_low_vram_switch(seeded):
     toggle = next(s for s in row if s.get("mode_only"))
     assert toggle["label"] == "低显存模式"
     assert toggle["options"] == ["关", "开"] and toggle["value"] == "关"
+    assert toggle["ui"] == "toggle", "这颗开关在界面里画成拨动开关（和设置里「监听」那颗同一个控件）"
     assert toggle["option_writes"] == {
         "关": [{"node": "261", "input": "model", "value": ["333", 0]},
                {"node": "397", "input": "model", "value": ["333", 0]}],
@@ -1189,3 +1190,26 @@ def test_the_int8_template_keeps_what_v2_already_had(seeded):
                    "detailed_description:", "overall_soundscape:", "non_diegetic_music:"):
         assert header in text, header
 
+def test_only_the_low_vram_switch_is_a_toggle(seeded):
+    """开关是点名才画的：戏种那两颗也是两档，但它两档都有名字，画成开关就读不出「戏种」。"""
+    row = json.loads(_row_of_key(seeded, VIDEO_V3_KEY)["slots"])
+    assert [s["label"] for s in row if s.get("ui") == "toggle"] == ["低显存模式"]
+    group = next(s for s in row if s.get("lora_group"))
+    assert len(group["options"]) == 2 and "ui" not in group
+
+def test_the_video_family_ships_one_resolution_ladder(seeded):
+    """分辨率这十档是 H3 的常识（multiple=32 下 0.98 就是 1344×768 那一格），写进三份槽位。
+
+    为什么不改前端那张通用兜底表：同一张表图片那条也在用，而它的分辨率最高要跑到 50 MP，
+    跟着视频一起收窄到 2.0，等于替用户把出图尺寸砍掉一截。
+    """
+    ladder = [0.6, 0.7, 0.8, 0.9, 0.98, 1.0, 1.2, 1.5, 1.8, 2.0]
+    for key in (VIDEO_KEY, VIDEO_V2_KEY, VIDEO_V3_KEY):
+        row = json.loads(_row_of_key(seeded, key)["slots"])
+        mega = next(s for s in row if s.get("input") == "megapixels")
+        assert mega["presets"] == ladder, key
+        # 默认值原样不动：只有第一条还是 1.1（它不在新档位里，界面照旧把当前值补成一颗按钮）
+        assert mega["value"] == (1.1 if key == VIDEO_KEY else 0.9), key
+    image = next(s for s in json.loads(_row_of_key(seeded, IMAGE_KEY)["slots"])
+                 if s.get("label") == "分辨率")   # 图片那条的输入口自己就叫「百万像素」
+    assert "presets" not in image, "图片那条不许跟着视频收窄档位（它最高到 50 MP）"

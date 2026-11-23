@@ -29,7 +29,7 @@
     applyCloneProgress, buildGenerateRequest, cloneApi, cloneError, cloneJob, cloneStatusLabel,
     allowsTextMode, cleanNodeTitle, controlContextLine, controlSlots, controlSummary, defaultControlValues, defaultReferences, formatTargetSize, latestReversePrompt, sceneTypeOf,
     pickedRatioOption,
-    promptGroupValues, modeFromRefCount, modeLabel, numberPresets, numberUnit,
+    promptGroupValues, modeFromRefCount, modeLabel, numberPresets, numberUnit, presetLabel, switchPair,
     primaryPromptGroup, promptGroupHint, promptPlaceholder, promptSlots, promptSourceLabel, secondaryPromptGroups,
     ratioShape, referenceCells, referenceIssues, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, slotVisible, visibleRefCells, voiceAvatar, voiceSample, nativeLanguageOverride,
     firstFreeRefKey, mergedRefCells, openRefKinds, REF_DISPLAY_ORDER,
@@ -2813,42 +2813,56 @@
                       <div class="cm-pop cm-pop-params" role="dialog" aria-label={paramsLabel}>
                         {#each selectSlots as slot (slotKey(slot))}
                           {@const key = slotKey(slot)}
-                          <p class="cm-pop-title">{cleanNodeTitle(slot.label)}</p>
-                          <div class="cm-ratio-grid" role="group" aria-label={`${slot.label}选项`}>
-                            {#each slot.options ?? [] as option (option)}
-                              {@const optionLabel = slot.option_labels?.[option] ?? option}
-                              {@const shape = ratioShape(optionLabel)}
-                              {@const face = voiceAvatar(option)}
-                              {@const hearing = hearingVoice === option && voiceSample(option) !== null}
-                              <button
-                                class="cm-ratio"
-                                class:is-voice={face !== null}
-                                class:is-on={controls[key] === option}
-                                class:is-hearing={hearing}
-                                title={face ? `试听并选用：${optionLabel}` : optionLabel}
-                                aria-label={optionLabel}
-                                aria-pressed={controls[key] === option}
-                                onclick={() => pickVoiceValue(key, option)}
-                              >
-                                {#if face}
-                                  <!-- 内置音色：认得出是谁就摆那张脸。名字仍在下面，不看图也不影响读；
-                                       圆形遮罩由 CSS 负责，图自己按「脸居中、头顶留白」出。
-                                       正在放的那位右上角挂三条跳动的窄条——扫一眼就知道在听谁。 -->
-                                  <span class="cm-ratio-face-wrap">
-                                    <img class="cm-ratio-face" src={face} alt="" draggable="false" />
-                                    {#if hearing}
-                                      <span class="cm-voice-eq" aria-hidden="true"><i></i><i></i><i></i></span>
-                                    {/if}
-                                  </span>
-                                {:else if shape.ratio}
-                                  <span class="cm-ratio-box" style="width: {shape.box.w}px; height: {shape.box.h}px;" aria-hidden="true"></span>
-                                {:else}
-                                  <span class="cm-ratio-flat" aria-hidden="true">•</span>
-                                {/if}
-                                <span class="cm-ratio-label">{shape.label}</span>
-                              </button>
-                            {/each}
-                          </div>
+                          {@const pair = switchPair(slot)}
+                          {#if pair}
+                            <!-- 作者点名画开关的那一颗（低显存模式）：名字在左、开关在右，照设置页「监听」那一行
+                                 的长相，控件直接复用 app.css 里那颗 .settings-switch——同一个「开／关」不该有两种长相。 -->
+                            <div class="cm-switch-row">
+                              <p class="cm-pop-title">{cleanNodeTitle(slot.label)}</p>
+                              <label class="settings-switch">
+                                <input type="checkbox" aria-label={slot.label} checked={controls[key] === pair.on}
+                                       onchange={(e) => (controls[key] = (e.target as HTMLInputElement).checked ? pair.on : pair.off)} />
+                                <span class="switch-track"></span>
+                              </label>
+                            </div>
+                          {:else}
+                            <p class="cm-pop-title">{cleanNodeTitle(slot.label)}</p>
+                            <div class="cm-ratio-grid" role="group" aria-label={`${slot.label}选项`}>
+                              {#each slot.options ?? [] as option (option)}
+                                {@const optionLabel = slot.option_labels?.[option] ?? option}
+                                {@const shape = ratioShape(optionLabel)}
+                                {@const face = voiceAvatar(option)}
+                                {@const hearing = hearingVoice === option && voiceSample(option) !== null}
+                                <button
+                                  class="cm-ratio"
+                                  class:is-voice={face !== null}
+                                  class:is-on={controls[key] === option}
+                                  class:is-hearing={hearing}
+                                  title={face ? `试听并选用：${optionLabel}` : optionLabel}
+                                  aria-label={optionLabel}
+                                  aria-pressed={controls[key] === option}
+                                  onclick={() => pickVoiceValue(key, option)}
+                                >
+                                  {#if face}
+                                    <!-- 内置音色：认得出是谁就摆那张脸。名字仍在下面，不看图也不影响读；
+                                         圆形遮罩由 CSS 负责，图自己按「脸居中、头顶留白」出。
+                                         正在放的那位右上角挂三条跳动的窄条——扫一眼就知道在听谁。 -->
+                                    <span class="cm-ratio-face-wrap">
+                                      <img class="cm-ratio-face" src={face} alt="" draggable="false" />
+                                      {#if hearing}
+                                        <span class="cm-voice-eq" aria-hidden="true"><i></i><i></i><i></i></span>
+                                      {/if}
+                                    </span>
+                                  {:else if shape.ratio}
+                                    <span class="cm-ratio-box" style="width: {shape.box.w}px; height: {shape.box.h}px;" aria-hidden="true"></span>
+                                  {:else}
+                                    <span class="cm-ratio-flat" aria-hidden="true">•</span>
+                                  {/if}
+                                  <span class="cm-ratio-label">{shape.label}</span>
+                                </button>
+                              {/each}
+                            </div>
+                          {/if}
                         {/each}
                         {#each numberSlots as slot (slotKey(slot))}
                           {@const key = slotKey(slot)}
@@ -2887,10 +2901,10 @@
                                 <button
                                   class="cm-seg-item"
                                   class:is-on={Number(controls[key]) === preset}
-                                  aria-label={`${preset}${numberUnit(slot)}`}
+                                  aria-label={`${presetLabel(steps, preset)}${numberUnit(slot)}`}
                                   aria-pressed={Number(controls[key]) === preset}
                                   onclick={() => (controls[key] = preset)}
-                                >{preset}</button>
+                                >{presetLabel(steps, preset)}</button>
                               {/each}
                             </div>
                             <label class="cm-custom" for={`clone-${key}`}>
@@ -3561,6 +3575,15 @@
      写两条类名是为了压过窄窗口那条 .cm-pop { width: min(328px, 78vw) }：锚点换了，封顶得跟着换来源。 */
   .cm-pop.cm-pop-params { left: auto; right: 0; width: min(328px, var(--cm-pop-left, 328px)); }
   .cm-pop-title { margin: var(--sp-05) 0 0; font-size: var(--fs-sm); color: #a1a1aa; }
+/* 开关那一颗的行：名字在左、开关在右（与下面 .cm-custom 那种「帽子＋值」同一套摆法）。
+   开关本体不在这里画，用 app.css 里的 .settings-switch，全站只有一枚开关。 */
+.cm-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.cm-switch-row .cm-pop-title { margin: 0; }
   /* 弹层最底那行是上面那几颗的合算结果：只写数字，不套「尺寸：」这类前缀（2026-11-12 定稿）。
      用 --text-2 不用 --text-3：这行压在 #1a1a1e 的弹层底上还要读得出，是结论不是注脚。 */
   .cm-pop-size { margin: 0; font-size: var(--fs-sm); line-height: var(--lh-label); color: var(--text-2); font-family: var(--font-condensed); font-variant-numeric: tabular-nums; }

@@ -3,7 +3,7 @@ import {
   EMPTY_CLONE_JOB, applyCloneProgress, buildGenerateRequest, cloneError, cloneStatusLabel,
   allowsTextMode, controlContextLine, controlSlots, controlSummary, CONTEXT_LINE_LIMIT, defaultControlValues, defaultReferences, formatControlValue, modesFor, sceneTypeOf,
   formatTargetSize, pickedRatioOption, slotVisible, targetPixelSize, visibleControlSlots,
-  imageSlots, jobForTemplate, latestReversePrompt, modeFromRefCount, numberPresets, numberUnit,
+  imageSlots, jobForTemplate, latestReversePrompt, modeFromRefCount, numberPresets, numberUnit, presetLabel,
   modeLabel, optionLabel, promptSourceLabel, promptSlots, ratioShape, referenceCells, referenceIssues, visibleRefCells,
   chipLabels, cleanNodeTitle, loraShortName, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, templateDisplayName,
   applyMention, comparePair, matchMention, mentionAddLabel, mentionChunks, mentionItems, mentionToken,
@@ -12,7 +12,7 @@ import {
   referenceCounter, referenceFamilies, referenceNoun,
   defaultPromptGroupValues, primaryPromptGroup, promptGroupHint, promptGroupValues, promptGroups, promptPlaceholder, secondaryPromptGroups,
   audioModeLabel, audioModeTemplates, promptGroupPlaceholder, REFERENCE_TRANSCRIPT_LABEL, VOICE_DESIGN_LABEL, VOICE_STYLE_LABEL,
-  workflowMenuRows, workflowDisplayName, AUDIO_MODE_GROUP_LABEL, voiceAvatar, voiceSample,
+  workflowMenuRows, workflowDisplayName, AUDIO_MODE_GROUP_LABEL, voiceAvatar, voiceSample, switchPair,
   CREATION_KIND_ORDER, CREATION_KIND_WORDS, rowsForKind, rowForKindSwitch, tallyByKind,
   voiceNativeLanguage, isLanguageSlot, languageSlotAmong, languageOptionFor, nativeLanguageOverride,
   firstFreeRefKey, mergedRefCells, openRefKinds, REF_DISPLAY_ORDER, sortByDisplayFamily,
@@ -1723,5 +1723,62 @@ describe("这一次是武戏还是文戏（带哪几份资料就照这个走）"
     // 第一颗说了算：它是随包那条模板的戏种开关，后端也只在认戏种那条技能上才用它
     expect(sceneTypeOf(two, { "407.loras#@": "武戏", "408.loras#@": "开" })).toBe("combat");
     expect(sceneTypeOf(two, { "407.loras#@": "文戏", "408.loras#@": "开" })).toBe("drama");
+  });
+});
+
+describe('拨动开关那颗（ui=toggle）', () => {
+  it('只有作者点名才认，且必须正好两档：第一档是关、第二档是开', () => {
+    const flagged: CloneSlot = { kind: "select", node: "401", input: "chunks", label: "低显存模式",
+      options: ["关", "开"], value: "关", ui: "toggle" };
+    expect(switchPair(flagged)).toEqual({ off: "关", on: "开" });
+  });
+
+  it('没点名的两档下拉不当开关：戏种那种两档是有名字的选项', () => {
+    const drama: CloneSlot = { kind: "select", node: "407", input: "loras", label: "戏种",
+      options: ["文戏", "武戏"], value: "文戏", lora_group: ["a", "b"], lora_on: "武戏" };
+    expect(switchPair(drama)).toBeNull();
+  });
+
+  it('点名了却不是两档就退回普通下拉：画一个说不清的开关比多两颗按钮更糟', () => {
+    const three: CloneSlot = { kind: "select", node: "9", input: "x", label: "画质",
+      options: ["低", "中", "高"], value: "中", ui: "toggle" };
+    expect(switchPair(three)).toBeNull();
+  });
+});
+
+it('开关那一颗不进胶囊摘要，也不进优化请求那句参数', () => {
+  // 它改的是这台机器跑得快还是省显存，这一趟出什么片跟它无关。
+  // 报在摘要里，胶囊上就多一个读不懂的「关」字；报给模型，等于叫它按显存写提示词。
+  const sw: CloneSlot = { kind: "select", node: "401", input: "chunks", label: "低显存模式",
+    options: ["关", "开"], value: "关", ui: "toggle" };
+  const ratio: CloneSlot = { kind: "select", node: "252", input: "aspect_ratio", label: "比例",
+    options: ["16:9", "9:16"], value: "9:16" };
+  const template = tpl([ratio, sw]);
+  expect(controlSummary(template, { "252.aspect_ratio": "9:16", "401.chunks": "开" })).toBe("9:16");
+  expect(controlContextLine(template, { "252.aspect_ratio": "9:16", "401.chunks": "开" }))
+    .toBe("比例：9:16");
+});
+
+describe("档位按钮上那个数怎么写", () => {
+  const ladder: CloneSlot = { kind: "number", node: "404", input: "megapixels", label: "分辨率",
+    value: 0.9, min: 0.25, max: 2, step: 0.1, presets: [0.6, 0.7, 0.8, 0.9, 0.98, 1.0, 1.2, 1.5, 1.8, 2.0] };
+  const seconds: CloneSlot = { kind: "number", node: "7", input: "duration", label: "时长",
+    value: 8, min: 3, max: 15, step: 1, unit: "秒" };
+
+  it("同一排里有小数档，整数跟着写成 1.0 / 2.0：一排里两种写法看着像两种单位", () => {
+    const steps = numberPresets(ladder);
+    expect(steps.map((v) => presetLabel(steps, v)))
+      .toEqual(["0.6", "0.7", "0.8", "0.9", "0.98", "1.0", "1.2", "1.5", "1.8", "2.0"]);
+  });
+
+  it("纯整数那一排（时长 5/8/10/12/15 秒）不补小数点：补了只是多占地方", () => {
+    const steps = numberPresets(seconds);
+    expect(steps.map((v) => presetLabel(steps, v))).toEqual(["5", "8", "10", "12", "15"]);
+  });
+
+  it("胶囊摘要里那个数走同一套写法", () => {
+    expect(formatControlValue(ladder, 1)).toBe("1.0MP");
+    expect(formatControlValue(ladder, 0.98)).toBe("0.98MP");
+    expect(formatControlValue(seconds, 8)).toBe("8秒");
   });
 });

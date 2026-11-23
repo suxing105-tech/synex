@@ -146,7 +146,9 @@ it('比例与百万像素收进参数面板：默认值在面板里点得中，�
   const box = screen.getByRole('button', { name: '16:9' }).querySelector('.cm-ratio-box') as HTMLElement;
   expect(parseFloat(box.style.width)).toBeGreaterThan(parseFloat(box.style.height));
   await fireEvent.click(screen.getByRole('button', { name: '16:9' }));
-  await fireEvent.click(screen.getByRole('button', { name: '2MP' }));
+  // 档位那一排里已经有 0.5 / 1.5 这种带小数的，整数就得写成 2.0，
+  // 一排两种写法读着像单位不一样（提交出去的数仍是 2，看下面那条）
+  await fireEvent.click(screen.getByRole('button', { name: '2.0MP' }));
   expect((screen.getByLabelText('百万像素') as HTMLInputElement).value).toBe('2');
   // 底部那颗 pill 就是当前选择的汇总
   expect(screen.getByRole('button', { name: /^(画面参数|音频参数)$/ }).textContent).toContain('16:9 / 2MP');
@@ -1678,6 +1680,84 @@ const H3_DRAMA = {
       show_when: { input: '407.loras#@', equals: '武戏' } },
   ],
 };
+/** v3 的形状：戏种（整组开关）之外多一颗点名画成拨动开关的低显存模式，分辨率换成十档。 */
+const H3_INT8 = {
+  ...H3_DRAMA, id: 19, name: "闪寻视频生成 H3 INT8", control_count: 4,
+  slots: [
+    ...H3_DRAMA.slots,
+    { kind: 'number', node: '252', input: 'megapixels', label: '分辨率', value: 0.9,
+      min: 0.1, max: 16, step: 0.1,
+      presets: [0.6, 0.7, 0.8, 0.9, 0.98, 1.0, 1.2, 1.5, 1.8, 2.0] },
+    { kind: 'select', node: '401', input: 'chunks', label: '低显存模式',
+      options: ['关', '开'], value: '关', mode_only: true, ui: 'toggle' },
+  ],
+};
+
+const openParams = async (screen: any) => {
+  await fireEvent.click(screen.getByRole('button', { name: /^(画面参数|音频参数)$/ }));
+  return screen.findByRole('dialog', { name: /^(画面参数|音频参数)$/ });
+};
+
+it('低显存模式画成设置页那枚开关：名字在左、开关在右；戏种那两档照旧是两颗按钮', async () => {
+  routes({ ...videoRoutes(), '/api/clone/templates': { items: [H3_INT8] } });
+  const screen = await ready({ image: VIDEO_CARD });
+  const pop = await openParams(screen);
+  const row = pop.querySelector('.cm-switch-row') as HTMLElement;
+  expect(row?.textContent).toContain('低显存模式');
+  const input = row.querySelector('.settings-switch input') as HTMLInputElement;
+  expect(input).toBeTruthy();
+  // 与设置页「自动收录新文件」同一颗控件、同一种语义：一个复选框 + 一根轨道
+  expect(input.type).toBe('checkbox');
+  expect(input.getAttribute('aria-label')).toBe('低显存模式');
+  expect(input.checked).toBe(false);   // 默认档是「关」
+  expect(row.querySelectorAll('button').length).toBe(0);   // 开关那一行不再多出两颗按钮
+  const grids = [...pop.querySelectorAll('.cm-ratio-grid')];
+  expect(grids.some((g: Element) => g.textContent?.includes('低显存模式'))).toBe(false);
+  // 戏种也是两档，但那是两个有名字的选项，不许被顺手画成开关
+  const drama = grids.find((g: Element) => g.textContent?.includes('文戏')) as Element;
+  expect([...drama.querySelectorAll('.cm-ratio-label')].map((b: Element) => b.textContent?.trim())).toEqual(['文戏', '武戏']);
+  // 那颗开关也不许挤进胶囊摘要：它改的是这台机器跑得快不快，不是这趟出什么片
+  expect(screen.getByRole('button', { name: /^(画面参数|音频参数)$/ }).textContent).not.toContain('低显存');
+});
+
+it('拨一下开关，提交里 401.chunks 那一档写的是「开」', async () => {
+  let sent: any = null;
+  routes({
+    ...videoRoutes(),
+    '/api/clone/templates': { items: [H3_INT8] },
+    '/api/clone/generate': (init?: RequestInit) => {
+      sent = JSON.parse(String(init?.body));
+      return { ...EMPTY_CLONE_JOB, active: true, job_id: 'j3', state: 'queued', running: true };
+    },
+  });
+  const screen = await ready({ image: VIDEO_CARD });
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '一句话' } });
+  const pop = await openParams(screen);
+  const input = pop.querySelector('.cm-switch-row input') as HTMLInputElement;
+  await fireEvent.click(input);
+  expect(input.checked).toBe(true);
+  await fireEvent.click(screen.getByRole('button', { name: '生成' }));
+  await vi.waitFor(() => expect(sent).toBeTruthy());
+  expect(sent.controls?.['401.chunks']).toBe('开');
+});
+
+it('分辨率那十档照 H3 那张表来：0.98 这种值没人能从步长里猜出来', async () => {
+  routes({ ...videoRoutes(), '/api/clone/templates': { items: [H3_INT8] } });
+  const screen = await ready({ image: VIDEO_CARD });
+  const pop = await openParams(screen);
+  const seg = pop.querySelector('[aria-label="分辨率档位"]') as HTMLElement;
+  expect([...seg.querySelectorAll('button')].map((b: Element) => b.textContent?.trim())).toEqual([
+    '0.6', '0.7', '0.8', '0.9', '0.98', '1.0', '1.2', '1.5', '1.8', '2.0',
+  ]);
+  // 同一排只许一种写法：0.9 旁边不能冒出个不带小数点的 1（JS 把 1.0 存成 1，直接印就露馅）
+  expect([...seg.querySelectorAll('button')].every((b: Element) => /^\d+\.\d$|^0\.98$/.test(String(b.textContent?.trim())))).toBe(true);
+  expect([...seg.querySelectorAll('button')].filter((b: Element) => b.getAttribute('aria-pressed') === 'true')
+    .map((b: Element) => b.textContent?.trim())).toEqual(['0.9']);
+  // 0.98 点得中：它是表里真实存在的一格，不是被步长抹平的 1.0
+  const p98 = [...seg.querySelectorAll('button')].find((b: Element) => b.textContent?.trim() === '0.98') as HTMLButtonElement;
+  await fireEvent.click(p98);
+  expect((screen.getByLabelText('分辨率') as HTMLInputElement).value).toBe('0.98');
+});
 const VIDEO_CARD = {
   id: 31, item_type: 'media', kind: 'video', filename: 'shot.mp4', path: 'D:/shot.mp4',
   original_url: null, thumbnail_url: '/api/videos/31/thumb', play_url: '/api/videos/31/file',
@@ -3490,7 +3570,7 @@ it('文件名右边那一排读数：眼前这一份的真实账 + 「这么点�
   expect(shown('.cm-hero-dims')).toBe('800×600');
   expect(shown('.cm-pop-size')).toBe('1616×912');
   // 分辨率那一颗也照样牵着计划值走
-  await fireEvent.click(screen.getByRole('button', { name: '2MP' }));
+  await fireEvent.click(screen.getByRole('button', { name: '2.0MP' }));
   await tick();
   expect(shown('.cm-hero-dims--planned')).toBe('1928×1088');
   expect(shown('.cm-pop-size')).toBe('1928×1088');

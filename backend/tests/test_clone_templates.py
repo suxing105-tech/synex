@@ -960,7 +960,7 @@ def branch_slots() -> list:
     return [
         {"kind": "prompt", "node": "404", "input": "value", "label": "完整提示词"},
         {"kind": "select", "node": "401", "input": "chunks", "label": "低显存模式",
-         "options": ["关", "开"], "value": "关", "mode_only": True,
+         "options": ["关", "开"], "value": "关", "mode_only": True, "ui": "toggle",
          "option_writes": {
              "关": [{"node": "261", "input": "model", "value": ["333", 0]},
                     {"node": "397", "input": "model", "value": ["333", 0]}],
@@ -1033,3 +1033,43 @@ def test_redetect_keeps_the_mode_only_switch_and_its_links():
     assert toggle["option_writes"]["开"] == [
         {"node": "261", "input": "model", "value": ["403", 0]},
         {"node": "397", "input": "model", "value": ["403", 0]}]
+
+def test_a_toggle_hint_survives_normalize_and_redetect():
+    """「画成开关」是作者写的用法，object_info 里没有这颗旋钮可问，只能一路带着走。"""
+    nodes = branch_nodes()
+    authored = ct.normalize_slots(branch_slots(), nodes)
+    assert next(s for s in authored if s.get("mode_only"))["ui"] == "toggle"
+    kept = ct.keep_authored_contract(authored, ct.detect_slots(nodes)["slots"])
+    assert next(s for s in kept if s.get("mode_only"))["ui"] == "toggle", \
+        "重新检测一次就把开关变回两颗大按钮，等于用户的界面被偷偷改过"
+
+
+def test_a_toggle_switch_must_have_exactly_two_options():
+    """三档塞不进一个开关：中间那档没有对应的开关位置，导入这一刻就要吵。"""
+    bad = [{"kind": "select", "node": "401", "input": "chunks", "label": "低显存模式",
+            "options": ["关", "中", "开"], "value": "关", "ui": "toggle"}]
+    with pytest.raises(ValueError, match="两档"):
+        ct.normalize_slots(bad, branch_nodes())
+
+
+def test_an_unflagged_two_option_select_stays_two_buttons():
+    """没点名的两颗下拉不许被顺手画成开关——戏种那种两档是有名字的选项，不是开关两头。"""
+    plain = [{"kind": "prompt", "node": "404", "input": "value", "label": "完整提示词"},
+             {"kind": "select", "node": "412", "input": "lora_name", "label": "风格",
+              "options": ["a.safetensors", "b.safetensors"], "value": "a.safetensors"}]
+    slots = ct.normalize_slots(plain, branch_nodes())
+    assert "ui" not in slots[1]
+
+def test_redetect_keeps_the_authored_preset_ladder():
+    """常用档是作者挑的（0.98 这种值不会有人从 min/max/step 里猜出来）。
+
+    检测只给得出上下限和步长，档位不在契约名单里就会被冲掉——用户看到的是
+    面板上那排按钮某天一换工作流就悄悄变样，这类「没人改它却自己变了」最难查。
+    """
+    authored = [{"kind": "number", "node": "252", "input": "megapixels", "label": "分辨率",
+                 "value": 0.9, "min": 0.1, "max": 16.0, "step": 0.1,
+                 "presets": [0.6, 0.98, 2.0]}]
+    detected = [{"kind": "number", "node": "252", "input": "megapixels", "label": "Resolution",
+                 "min": 0.1, "max": 16.0, "step": 0.1}]
+    kept = ct.keep_authored_contract(authored, detected)
+    assert kept[0]["presets"] == [0.6, 0.98, 2.0]

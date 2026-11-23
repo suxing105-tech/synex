@@ -21,10 +21,17 @@ def test_indexer_writes_width_and_height(tmp_data_dir):
         p = Path(td) / "img.png"
         make_png(p, width=2048, height=1024)
         idx._process_path_sync(p)
-        row = db.get_pool().main().execute(
-            "SELECT width, height FROM images WHERE path = ?", (str(p).replace("\\", "/"),)
+        # 查询必须走 Indexer._normalize——库里存的就是它算出来的路径（内部带 resolve）。
+        # 原来这里拿裸 str(p) 去比，只有「temp 路径恰好等于它自己的最终路径」才碰得上：
+        # 本机如此，CI runner 的 TEMP 是 D:\\a\\_temp，CI 首跑这条就红成 image row missing
+        # （具体差在哪一段没取到日志，所以断言里把库里现有路径一起打出来，再红一次能自己报）。
+        conn = db.get_pool().main()
+        key = Indexer._normalize(p)
+        row = conn.execute(
+            "SELECT width, height FROM images WHERE path = ?", (key,)
         ).fetchone()
-    assert row is not None, "image row missing"
+        stored = [r["path"] for r in conn.execute("SELECT path FROM images").fetchall()]
+    assert row is not None, f"image row missing：按 {key!r} 查不到，库里现有路径={stored}"
     assert row["width"] == 2048
     assert row["height"] == 1024
 

@@ -119,6 +119,17 @@ def _normalize_path(p: Path) -> str:
     return str(p).replace("\\", "/")
 
 
+def is_directory_link(p: Path) -> bool:
+    """目录链接：符号链接或 Windows 目录联接（junction）。凡是它，都不当真实文件夹。
+
+    ``Path.is_junction`` 是 Python 3.12 才有的属性，后端声明的下限却是 3.11（CI 就按 3.11
+    跑）。裸着调它在 3.11 上是走到那一行才 AttributeError，而本机 3.14 一路绿——CI 首跑就是这么
+    红的（test_folder_drop 三条）。所以这句判断只写在这里，别处一律调本函数；钉它的是
+    tests/test_python_floor.py::test_no_api_above_floor_without_guard。
+    """
+    return p.is_symlink() or (hasattr(p, "is_junction") and p.is_junction())
+
+
 # 素材类型口径：媒体三类和文本分开算，侧栏每行只展示当前 scope 那一种
 MEDIA_KINDS = ("image", "video", "audio")
 ITEM_KINDS = MEDIA_KINDS + ("text",)

@@ -58,7 +58,7 @@ def sync_user_folders(indexer=None) -> int:
         safe_children = []
         for name in sorted(children, key=str.casefold):
             child = base / name
-            if child.is_symlink() or (hasattr(child, 'is_junction') and child.is_junction()):
+            if repository.is_directory_link(child):
                 continue
             safe_children.append(name)
             discovered.append(child)

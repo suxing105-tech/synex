@@ -14,6 +14,7 @@ import 不进来，后端直接瘫——而它在 3.14 的门禁里全绿。
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -72,4 +73,47 @@ def test_backend_sources_parse_on_declared_floor():
     assert not bad, (
         f"这些文件在 Python {FLOOR[0]}.{FLOOR[1]} 上是语法错误，声明支持它就是假的：\n"
         + "\n".join(bad)
+    )
+
+
+# ---------------------------------------------------------------------------
+# API 层下限闸（2026-11-22，CI 首跑红在这）
+#
+# 上面那条只管语法。可「本机绿、下限红」还有第二类：语法完全合法，只是这个名字在声明的
+# 下限上还不存在——Path.is_junction 是 3.12 才有的属性，CI 按 3.11 跑，test_folder_drop
+# 三条当场 AttributeError，而本机 3.14 一路绿。运行期才炸的东西，语法闸拦不住。
+# 名单只登记真实踩过或明确知道的成员，加条目要能说出它是哪个版本进来的。
+# ---------------------------------------------------------------------------
+
+ABOVE_FLOOR = [
+    (r"\.is_junction\s*\(", "Path.is_junction（3.12 才有）"),
+    (r"(?<!os)\.walk\s*\(", "Path.walk（3.12 才有，os.walk 已排除）"),
+    (r"\bbatched\s*\(", "itertools.batched（3.12 才有）"),
+]
+
+# 允许出现，但必须同一行有 hasattr 兜住——即 app/repository.py::is_directory_link 那种写法
+GUARD_MARK = "hasattr("
+
+
+def test_no_api_above_floor_without_guard():
+    """backend 的源码与测试里不许裸用下限之上才有的 API。
+
+    测试也在扫描范围里：CI 跑测试用的就是那个下限解释器，测试自己用新 API 一样把 CI 弄红。
+    """
+    offenders: list[str] = []
+    for part in ("app", "tests"):
+        for path in sorted((BACKEND / part).rglob("*.py")):
+            rel = path.relative_to(BACKEND).as_posix()
+            for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                stripped = line.strip()
+                if stripped.startswith("#"):
+                    continue
+                for pattern, label in ABOVE_FLOOR:
+                    if re.search(pattern, line) and GUARD_MARK not in line:
+                        offenders.append(f"{rel}:{lineno} {label} -> {stripped}")
+    assert not offenders, (
+        f"这些位置用了 Python {FLOOR[0]}.{FLOOR[1]} 之上才有的 API，本机绿而按声明下限跑会红：\n"
+        + "\n".join(offenders)
+        + "\n修法：走现成封装（目录链接判断用 app/repository.py::is_directory_link），"
+        "或换成下限上就有的等价写法。"
     )

@@ -28,7 +28,7 @@ def copy_directories(paths: list[str]) -> dict:
 
 def _copy_one(source: Path, indexer, warnings: list) -> dict:
     storage = (data_dir() / "folders").resolve()
-    if source.is_symlink() or source.is_junction():
+    if repository.is_directory_link(source):
         raise ValueError("请选择真实文件夹，不支持链接或目录联接")
     source = source.resolve(strict=True)
     if not source.is_dir():
@@ -44,7 +44,7 @@ def _copy_one(source: Path, indexer, warnings: list) -> dict:
     for current, children, names in os.walk(source, onerror=fail, followlinks=False):
         for name in children + names:
             entry = Path(current) / name
-            if entry.is_symlink() or entry.is_junction():
+            if repository.is_directory_link(entry):
                 raise ValueError("文件夹包含链接或目录联接，未复制任何内容")
         directories.extend(Path(current) / name for name in children)
         files.extend(Path(current) / name for name in names)

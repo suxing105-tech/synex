@@ -156,8 +156,7 @@ def delete_folder(folder_id: int):
         raw = Path(row['path'])
         try:
             directory = raw.resolve()
-            if (not raw.is_absolute() or raw.is_symlink() or
-                    (hasattr(raw, 'is_junction') and raw.is_junction()) or
+            if (not raw.is_absolute() or repository.is_directory_link(raw) or
                     directory == Path(directory.anchor) or data_dir().resolve().is_relative_to(directory) or
                     directory == (data_dir() / 'folders').resolve()):
                 raise ValueError('不能删除磁盘根目录、图库数据目录或目录链接')

@@ -1303,7 +1303,8 @@ def detect_media_kind(nodes: dict) -> str:
 # lora_group / lora_on / lora / option_writes / slider 这几样更不可能「看」出来：
 # 它们说的是「这几颗 lora 代表什么」「这一颗要画成滑块」，是作者写下的用法。
 SLOT_CONTRACT_KEYS = ("mask", "allow_empty", "empty_hint", "sync_to", "show_when",
-                      "lora_group", "lora_on", "lora", "option_writes", "slider")
+                      "lora_group", "lora_on", "lora", "option_writes", "slider",
+                      "mode_only")
 # 其中这几样连「槽位本身」都检测不出来：lora 控件的值不是某个 node.input 的字面量，
 # 而是那份清单里的条目，所以 object_info 里根本没有对应的旋钮。
 LORA_CONTRACT_KEYS = ("lora_group", "lora_on", "lora", "option_writes", "slider")
@@ -1319,6 +1320,60 @@ def _load_slots(raw: Any) -> list[dict]:
     except ValueError:
         return []
     return [x for x in data if isinstance(x, dict)] if isinstance(data, list) else []
+
+
+def _is_link_value(value: Any) -> bool:
+    """连线写法：["261", 0] 或 [261, 0]。导出两种都有，别只认一种。"""
+    return (isinstance(value, list) and len(value) == 2
+            and not isinstance(value[0], bool) and isinstance(value[0], (str, int))
+            and not isinstance(value[1], bool) and isinstance(value[1], int))
+
+
+def _clean_option_writes(item: dict, slot: dict, nodes: dict) -> dict | None:
+    """换档写入：选中某一档时还要连带改哪几颗输入。
+
+    值一般是字面量（武戏多两步采样→steps 写 12）。这里也认连线，为的是「一颗下拉
+    切换一条支路」那种开关：低显存模式要说的是「417 的 model 从 403 那头接」还是
+    「从 333 那头直接接」，那本来就不是一个字面量，而是走不走那两颗省显存节点。
+    但只许连线换成连线：把一条连线换成数字等于悄悄改了工作流的接线结构，
+    那不是换档，那是背着人改配方。
+    """
+    writes = item.get("option_writes")
+    if not isinstance(writes, dict):
+        return None
+    clean: dict[str, list[dict]] = {}
+    for opt, rows in writes.items():
+        option = str(opt or "")
+        if option not in (slot.get("options") or []) or not isinstance(rows, list):
+            continue
+        keep: list[dict] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            rnode, rkey = str(row.get("node") or ""), str(row.get("input") or "")
+            if rnode not in nodes or rkey not in node_inputs(nodes[rnode]):
+                raise ValueError(f"控件 {slot_key(slot)} 换档时要写的 {rnode}.{rkey} "
+                                 "不在这份工作流里，请重新导入。")
+            written = row.get("value")
+            if _is_link_value(written):
+                if not _is_link_value(node_inputs(nodes[rnode])[rkey]):
+                    continue    # 那颗输入当前不是连线，不认「凭空接上一根线」
+                keep.append({"node": rnode, "input": rkey,
+                             "value": [str(written[0]), int(written[1])]})
+                continue
+            if isinstance(written, bool) or not isinstance(written, (str, int, float)):
+                continue
+            keep.append({"node": rnode, "input": rkey, "value": written})
+        if keep:
+            clean[option] = keep
+    return clean or None
+
+
+def _apply_option_writes(workflow: dict, slot: dict, value: Any) -> None:
+    """按选中的那一档落写入。lora 整组开关和「只换档」开关共用这一份，别分叉成两套。"""
+    for write in ((slot.get("option_writes") or {}).get(str(value)) or []):
+        node_inputs(workflow.get(str(write["node"]))).update(
+            {str(write["input"]): write["value"]})
 
 
 def normalize_slots(raw: Any, nodes: dict) -> list[dict]:
@@ -1405,30 +1460,28 @@ def normalize_slots(raw: Any, nodes: dict) -> list[dict]:
                 raise ValueError(f"控件 {slot_key(slot)} 要说清哪一档是「开」，"
                                  f"目前选项是 {'、'.join(slot.get('options') or [])}。")
             slot["lora_on"] = on
-            writes = item.get("option_writes")
-            if isinstance(writes, dict):
-                clean: dict[str, list[dict]] = {}
-                for opt, rows in writes.items():
-                    option = str(opt or "")
-                    if option not in slot["options"] or not isinstance(rows, list):
-                        continue
-                    keep: list[dict] = []
-                    for row in rows:
-                        if not isinstance(row, dict):
-                            continue
-                        rnode, rkey = str(row.get("node") or ""), str(row.get("input") or "")
-                        if rnode not in nodes or rkey not in node_inputs(nodes[rnode]):
-                            raise ValueError(f"控件 {slot_key(slot)} 换档时要写的 {rnode}.{rkey} "
-                                             "不在这份工作流里，请重新导入。")
-                        written = row.get("value")
-                        if isinstance(written, bool) or not isinstance(
-                                written, (str, int, float)):
-                            continue
-                        keep.append({"node": rnode, "input": rkey, "value": written})
-                    if keep:
-                        clean[option] = keep
-                if clean:
-                    slot["option_writes"] = clean
+            writes = _clean_option_writes(item, slot, nodes)
+            if writes:
+                slot["option_writes"] = writes
+        if kind == "select" and not isinstance(group, list):
+            # 不挂 lora 的下拉也要能换档。H3 那条「低显存模式」切的不是参数大小，
+            # 是模型支路走不走那两颗省显存节点——同一份正文，显存大的走直连，
+            # 显存小的绕一道，两者都不必再留第二份工作流。
+            writes = _clean_option_writes(item, slot, nodes)
+            if writes:
+                slot["option_writes"] = writes
+            if item.get("mode_only") is True:
+                # mode_only：这一档的值不是任何 node.input 的取值，说的是「走哪条路」。
+                # 因此它绝不往自己绑的那颗输入上落字——把「关」当成 chunks 的值写进去，
+                # ComfyUI 当场报一句英文类型错，用户根本想不到是下拉惹的。
+                covered = slot.get("option_writes") or {}
+                missing = [o for o in (slot.get("options") or []) if o not in covered]
+                if missing:
+                    raise ValueError(
+                        f"控件 {slot_key(slot)} 是「只换档、不填值」的开关，"
+                        f"但 {'、'.join(missing)} 这一档没说要改什么，选了它等于什么都没发生。")
+                slot["mode_only"] = True
+
         single_lora = str(item.get("lora") or "").strip()
         if kind == "number" and single_lora:
             present = [str(e.get("name") or "") for e in lora_slot_entries(nodes, slot)]
@@ -1626,9 +1679,7 @@ def _apply_lora_group(workflow: dict, slot: dict, value: Any) -> None:
     for entry in lora_slot_entries(workflow, slot):
         if str(entry.get("name") or "") in named:
             entry["active"] = bool(live)
-    for write in ((slot.get("option_writes") or {}).get(str(value)) or []):
-        node_inputs(workflow.get(str(write["node"]))).update(
-            {str(write["input"]): write["value"]})
+    _apply_option_writes(workflow, slot, value)
 
 
 def _apply_lora_strength(workflow: dict, slot: dict, value: Any) -> None:
@@ -1702,7 +1753,8 @@ def build_workflow(
     # 就退化成「写给全部」，而这种错不会报错，只是出片和屏幕上选的不一样）：
     #   ①整组开关：决定哪几颗 lora 活着，顺带做换档写入（戏种连带改采样步数）；
     #   ②单颗强度：只写给第一趟之后活着的那些；
-    #   ③其余控件：照老办法直写 node.input。
+    #   ③其余控件：照老办法直写 node.input；只有「只换档」的开关（mode_only）例外，
+    #     它不落值，只按档位换自己那份写入。
     for key, value in pending.items():
         slot = by_key[key]
         if value is not None and slot.get("kind") == "select" and slot.get("lora_group"):
@@ -1718,6 +1770,11 @@ def build_workflow(
         if value is None:
             continue
         _validate_control(slot, value)
+        if slot.get("mode_only"):
+            # 这颗下拉选的是「走哪条支路」，不是某个输入的取值：只按档位落那几颗写入，
+            # 值本身一个字都不往 node.input 上写（见 normalize_slots 里 mode_only 那段）。
+            _apply_option_writes(workflow, slot, value)
+            continue
         node_inputs(workflow.get(slot["node"])).update({slot["input"]: value})
         # 这颗旋钮管的好几个人：局部重绘与移除两条分支各带一份裁剪恢复节点，
         # 只改弹窗里那一份，走另一条分支时用户拧的数就凭空消失。

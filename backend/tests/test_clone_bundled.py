@@ -1,4 +1,4 @@
-"""内置「再次创作」工作流：随包这五条（图片一条、视频一条、声音三种出声方式）能不能正确长进库里。
+"""内置「再次创作」工作流：随包这八条（图片两条、视频三条、声音三种出声方式）能不能正确长进库里。
 
 只碰本地 SQLite 与随包资源，绝不连真机 ComfyUI——槽位固化在 JSON 里，
 首启不需要 object_info，这条本身就是要守住的性质。
@@ -20,13 +20,16 @@ IMAGE_KEY = "qwen-multi-image-edit"
 MASK_KEY = "qwen-single-mask-edit"
 MASK_LABEL = "闪寻局部编辑"
 VIDEO_KEY = "h3-reference-video"
-# 视频族的第二条：带文戏／武戏开关的那版。它是新的「当前」，老那条留在库里切得回去。
+# 视频族的第二条：带文戏／武戏开关的那版。
 VIDEO_V2_KEY = "h3-reference-video-v2"
 VIDEO_V2_LABEL = "闪寻视频生成 H3"
+# 视频族的第三条：INT8 内核 + 「低显存模式」开关那版，现在的「当前」。前两条都留在库里切得回去。
+VIDEO_V3_KEY = "h3-reference-video-v3"
+VIDEO_V3_LABEL = "闪寻视频生成 H3 INT8"
 AUDIO_KEY = "qwen3-tts-voice-clone"
 DESIGN_KEY = "qwen3-tts-voice-design"
 CUSTOM_KEY = "qwen3-tts-custom-voice"
-ALL_KEYS = [IMAGE_KEY, MASK_KEY, VIDEO_KEY, VIDEO_V2_KEY,
+ALL_KEYS = [IMAGE_KEY, MASK_KEY, VIDEO_KEY, VIDEO_V2_KEY, VIDEO_V3_KEY,
             AUDIO_KEY, DESIGN_KEY, CUSTOM_KEY]
 AUDIO_LABELS = {"闪寻参考音色", "闪寻音色描述", "闪寻指定音色"}
 # 2026-11-16 苏醒：三族并列时统一带「生成」，只写「闪寻图片」读着像左边那排的类型筛选。
@@ -96,6 +99,10 @@ def test_ships_one_workflow_per_family():
     assert by_key[VIDEO_V2_KEY]["media_kind"] == "video"
     assert by_key[VIDEO_V2_KEY]["label"] == VIDEO_V2_LABEL
     assert by_key[VIDEO_V2_KEY]["prefer_active"] is True
+    # 视频族第三条：INT8 内核 + 低显存开关。它接当前，前两条留在库里。
+    assert by_key[VIDEO_V3_KEY]["media_kind"] == "video"
+    assert by_key[VIDEO_V3_KEY]["label"] == VIDEO_V3_LABEL
+    assert by_key[VIDEO_V3_KEY]["prefer_active"] is True
     assert by_key[VIDEO_KEY].get("prefer_active") is None, "老那条不抢，别每次启动都翻案"
     assert {by_key[k]["media_kind"] for k in (AUDIO_KEY, DESIGN_KEY, CUSTOM_KEY)} == {"audio"}
     assert {by_key[k]["label"] for k in (AUDIO_KEY, DESIGN_KEY, CUSTOM_KEY)} == AUDIO_LABELS
@@ -261,7 +268,8 @@ def test_shipped_slots_can_report_the_real_output_size():
 def test_fresh_install_seeds_every_family(seeded):
     rows = clone_templates.list_templates()
     assert {r["name"] for r in rows} == (
-        {IMAGE_LABEL, MASK_LABEL, VIDEO_LABEL, VIDEO_V2_LABEL} | AUDIO_LABELS)
+        {IMAGE_LABEL, MASK_LABEL, VIDEO_LABEL, VIDEO_V2_LABEL, VIDEO_V3_LABEL}
+        | AUDIO_LABELS)
     assert all(r["is_builtin"] for r in rows)
     assert {r["media_kind"] for r in rows} == {"image", "video", "audio"}
     # 每族各自一个「当前」：声音三条也只能有一条是当前，弹窗开出来才有唯一默认
@@ -283,16 +291,16 @@ def test_the_mask_template_is_seeded_but_not_the_default(seeded):
     assert [c["kind"] for c in mask["reference_cells"]] == ["image"] * len(MASK_CELLS)
 
 
-def test_the_combat_template_is_seeded_as_the_new_default(seeded):
-    """视频族换人了：随包点名新那条当当前，老那条留在库里，菜单里切得回去。
+def test_the_newest_video_template_takes_the_crown(seeded):
+    """视频族换人换过两轮，规矩是同一套：随包点名最新那条当当前，前面几条留在库里切得回去。
 
-    换的是「默认」，不是「只有一条能选」——老那条正文一字没动，
-    用它攒下来的配方还在，谁想回去在切换工作流里点一下就行。
+    换的是「默认」，不是「只有一条能选」——老那两条正文一字没动，
+    用它们攒下来的配方还在，谁想回去在切换工作流里点一下就行。
     """
     video = [r for r in clone_templates.list_templates() if r["media_kind"] == "video"]
-    assert len(video) == 2
-    assert [r["bundled_key"] for r in video if r["is_active"]] == [VIDEO_V2_KEY]
-    assert [r["bundled_key"] for r in video if not r["is_active"]] == [VIDEO_KEY]
+    assert len(video) == 3
+    assert [r["bundled_key"] for r in video if r["is_active"]] == [VIDEO_V3_KEY]
+    assert {r["bundled_key"] for r in video if not r["is_active"]} == {VIDEO_KEY, VIDEO_V2_KEY}
     # 别的族不受牵连
     assert [r["name"] for r in clone_templates.list_templates()
             if r["media_kind"] == "image" and r["is_active"]] == [IMAGE_LABEL]
@@ -658,8 +666,11 @@ def test_deleting_the_active_one_promotes_a_sibling(seeded):
     assert len(audio) == 3, "删掉视频不会牵连声音那三条"
     # 视频族整个空了才是真的没这一族：这时候族别从菜单里消失。
     # 删的是当前那条，顶上来的已经接着是 active，所以按「还剩几条」删，不按「未选中」筛。
-    assert len(video) == 1, "视频族本来就两条，删掉当前只剩这一条"
-    clone_templates.delete_template(video[0]["id"])
+    assert len(video) == 2, "视频族三条，删掉当前还剩这两条"
+    # 视频族整个空了才是真的没这一族：这时候族别从菜单里消失。
+    # 一条条删光——中途每删掉「当前」，同族又会顶一条上来，族别一直还在。
+    for row in video:
+        clone_templates.delete_template(row["id"])
     assert {r["media_kind"] for r in clone_templates.list_templates()} == {"image", "audio"}
 
 
@@ -752,7 +763,9 @@ def test_switch_off_keeps_a_fresh_db_empty(tmp_path: Path, monkeypatch):
 def test_api_reports_builtin_templates(seeded):
     with TestClient(app) as client:
         items = client.get("/api/clone/templates").json()["items"]
-    assert {i["name"] for i in items} == {IMAGE_LABEL, MASK_LABEL, VIDEO_LABEL, VIDEO_V2_LABEL} | AUDIO_LABELS
+    assert {i["name"] for i in items} == (
+        {IMAGE_LABEL, MASK_LABEL, VIDEO_LABEL, VIDEO_V2_LABEL, VIDEO_V3_LABEL}
+        | AUDIO_LABELS)
     assert all(i["is_builtin"] for i in items)
     assert {i["media_kind"] for i in items} == {"image", "video", "audio"}
 
@@ -1081,3 +1094,98 @@ def test_an_adopted_template_gets_the_fix_in_the_same_pass(tmp_path: Path, monke
     assert row["bundled_sha"] == clone_bundled.workflow_sha(entry["workflow"]), "记的还得是随包指纹"
     assert clone_bundled.workflow_sha(json.loads(row["workflow"])) != row["bundled_sha"], \
         "补完仍旧算他改过，正文不许被覆盖"
+# ---------- 视频族第三条：INT8 内核 + 「低显存模式」 ----------
+
+
+def _model_consumers(workflow: dict, node_id: str) -> list[str]:
+    """谁接了这颗节点的模型输出。空表＝它在图上没有任何下游，ComfyUI 不会执行它。"""
+    return sorted(nid for nid, node in workflow.items()
+                  if isinstance(node["inputs"].get("model"), list)
+                  and str(node["inputs"]["model"][0]) == node_id)
+
+
+def test_the_int8_template_puts_the_backend_where_it_was_proven(seeded):
+    nodes = json.loads(_row_of_key(seeded, VIDEO_V3_KEY)["workflow"])
+    assert nodes["417"]["class_type"] == "H3Int8Backend"
+    assert nodes["417"]["inputs"]["model"] == ["332", 0], "内核紧跟稀疏注意力之后"
+    assert nodes["333"]["inputs"]["model"] == ["417", 0], "SigmaShift 走克隆后的那颗（ON_CLONE 会带上内核作用域）"
+    assert nodes["332"]["inputs"]["model"] == ["331", 0]
+    assert "329" not in nodes, "tiny VAE 预览覆盖那颗已经不要了（省掉 taeh3 依赖）"
+    assert nodes["412"]["inputs"]["lora_name"].endswith("H3-Licon-VBVR-I2V-V2.safetensors"), \
+        "空间关系 lora 用 V2：上游那份 sample 配的就是它"
+
+
+def test_the_low_vram_pair_is_back_on_the_graph_at_its_old_spot(seeded):
+    """省显存那两颗搬回来了，位置与 v2 一字不差（333 → 401 → 403），只是默认不接下游。"""
+    nodes = json.loads(_row_of_key(seeded, VIDEO_V3_KEY)["workflow"])
+    assert nodes["401"]["class_type"] == "MiniMaxChunkFeedForward"
+    assert nodes["403"]["class_type"] == "MiniMaxLowVRAMAttention"
+    assert nodes["401"]["inputs"]["model"] == ["333", 0]
+    assert nodes["403"]["inputs"]["model"] == ["401", 0]
+    assert (nodes["401"]["inputs"]["chunks"], nodes["401"]["inputs"]["seq_threshold"]) == (2, 4096)
+    assert nodes["403"]["inputs"]["head_chunks"] == 4
+
+
+def test_the_int8_template_ships_the_low_vram_switch(seeded):
+    """开关的约定：默认关（当前这台机器要的就是快），两档各写一路连线。
+
+    mode_only 是关键：这一档说的不是「chunks 填几」，而是「采样器从哪头取模型」。
+    所以「关」「开」这两个字绝不落到任何 node.input 上（见 clone_templates 里那段）。
+    """
+    row = json.loads(_row_of_key(seeded, VIDEO_V3_KEY)["slots"])
+    toggle = next(s for s in row if s.get("mode_only"))
+    assert toggle["label"] == "低显存模式"
+    assert toggle["options"] == ["关", "开"] and toggle["value"] == "关"
+    assert toggle["option_writes"] == {
+        "关": [{"node": "261", "input": "model", "value": ["333", 0]},
+               {"node": "397", "input": "model", "value": ["333", 0]}],
+        "开": [{"node": "261", "input": "model", "value": ["403", 0]},
+               {"node": "397", "input": "model", "value": ["403", 0]}]}
+
+
+def test_the_low_vram_switch_really_moves_the_sample_branch(seeded):
+    """开关不是摆设：关的时候那两颗没有下游（ComfyUI 不执行＝真省掉时间），
+    开的时候调度与采样两路都绕过去（漏一路就是半新半旧的链，出片说不清按哪条跑）。
+    """
+    entry = [e for e in clone_bundled.entries() if e["key"] == VIDEO_V3_KEY][0]
+    nodes, slots = clone_bundled._prepare(entry)
+    toggle = next(s for s in slots if s.get("mode_only"))
+    refs = {clone_templates.slot_key(s): {"image": "假图.png", "audio": "假音.mp3",
+                                          "video": "假视频.mp4"}[s["kind"]]
+            for s in slots if s.get("kind") in clone_templates.REFERENCE_KINDS}
+    key = clone_templates.slot_key(toggle)
+
+    off, _ = clone_templates.build_workflow(nodes, slots, prompt="测试", references=refs,
+                                            controls={key: "关"})
+    assert off["261"]["inputs"]["model"] == ["333", 0] and off["397"]["inputs"]["model"] == ["333", 0]
+    assert _model_consumers(off, "403") == [], "关档：那两颗空挂着，没有下游就不会被执行"
+
+    on, _ = clone_templates.build_workflow(nodes, slots, prompt="测试", references=refs,
+                                           controls={key: "开"})
+    assert _model_consumers(on, "403") == ["261", "397"]
+    assert on["401"]["inputs"]["chunks"] == 2, "档位文字没写成 chunks 的值"
+
+
+def test_the_int8_template_keeps_what_v2_already_had(seeded):
+    """这一版只动模型链末尾与那颗 lora：戏种、步数、过渡步、帧率、提示词骨架都得原样在。
+
+    换正文最容易顺手改掉别的默认值（步数一挪，文戏的成本就跟着变），
+    所以对着 v2 那份口径再钉一遍。
+    """
+    nodes = json.loads(_row_of_key(seeded, VIDEO_V3_KEY)["workflow"])
+    row = json.loads(_row_of_key(seeded, VIDEO_V3_KEY)["slots"])
+    assert [nodes[n]["inputs"]["force_rate"] for n in ("25", "26", "27")] == [24, 24, 24]
+    assert nodes["261"]["inputs"]["steps"] == 10
+    assert nodes["397"]["inputs"]["transition_step"] == 6
+    assert nodes["407"]["class_type"] == "Lora Loader (LoraManager)"
+    group = next(s for s in row if s.get("lora_group"))
+    assert group["value"] == "文戏" and group["lora_on"] == "武戏"
+    assert group["option_writes"] == {
+        "文戏": [{"node": "261", "input": "steps", "value": 10}],
+        "武戏": [{"node": "261", "input": "steps", "value": 12}]}
+    text = nodes["404"]["inputs"]["value"]
+    assert "雨夜" not in text and "hooded" not in text, "作者那条片子的内容不该是新用户的默认"
+    for header in ("subject_definitions:", "summary:", "retention_analysis:",
+                   "detailed_description:", "overall_soundscape:", "non_diegetic_music:"):
+        assert header in text, header
+

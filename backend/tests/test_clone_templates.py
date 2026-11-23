@@ -928,3 +928,108 @@ def test_redetect_does_not_duplicate_a_control_detection_already_found():
     detected = ct.detect_slots(lora_nodes())["slots"]
     kept = ct.keep_authored_contract(authored, detected)
     assert [ct.slot_key(s) for s in kept].count("404.value") == 1
+
+
+
+# ---------- 「只换档、不填值」的开关：一颗下拉切换一条支路 ----------
+
+
+def branch_nodes() -> dict:
+    """H3 那条的最小同构体：SigmaShift 之后可以直连采样器，也可以绕道两颗省显存节点。
+
+    照搬真实接线方向（333 喂 261 与 397 两路），因为「只换档」要写的就是这两路的连线。
+    """
+    return {
+        "404": {"class_type": "PrimitiveStringMultiline", "inputs": {"value": "正文"}},
+        "192": {"class_type": "UNETLoader", "inputs": {"unet_name": "h3_int8.safetensors"}},
+        "412": {"class_type": "LoraLoaderModelOnly",
+                "inputs": {"model": ["192", 0], "lora_name": "a.safetensors", "strength_model": 1.0}},
+        "331": {"class_type": "ModelAttentionBackend", "inputs": {"model": ["412", 0]}},
+        "332": {"class_type": "BlockSparseAttention", "inputs": {"model": ["331", 0]}},
+        "417": {"class_type": "H3Int8Backend", "inputs": {"model": ["332", 0], "mode": "Legacy INT8"}},
+        "333": {"class_type": "MiniMaxH3SigmaShift", "inputs": {"model": ["417", 0], "shift_video": 12}},
+        "401": {"class_type": "MiniMaxChunkFeedForward",
+                "inputs": {"model": ["333", 0], "chunks": 2, "seq_threshold": 4096}},
+        "403": {"class_type": "MiniMaxLowVRAMAttention", "inputs": {"model": ["401", 0], "head_chunks": 4}},
+        "261": {"class_type": "BasicScheduler", "inputs": {"model": ["333", 0], "steps": 10}},
+        "397": {"class_type": "SelfLiftH3Sampler", "inputs": {"model": ["333", 0], "seed": 7}},
+    }
+
+
+def branch_slots() -> list:
+    return [
+        {"kind": "prompt", "node": "404", "input": "value", "label": "完整提示词"},
+        {"kind": "select", "node": "401", "input": "chunks", "label": "低显存模式",
+         "options": ["关", "开"], "value": "关", "mode_only": True,
+         "option_writes": {
+             "关": [{"node": "261", "input": "model", "value": ["333", 0]},
+                    {"node": "397", "input": "model", "value": ["333", 0]}],
+             "开": [{"node": "261", "input": "model", "value": ["403", 0]},
+                    {"node": "397", "input": "model", "value": ["403", 0]}]}},
+    ]
+
+
+def test_a_mode_only_switch_moves_the_branch_itself():
+    """选档改的是「模型链走不走那两颗节点」，两档都得真的接对。"""
+    nodes = branch_nodes()
+    slots = ct.normalize_slots(branch_slots(), nodes)
+    key = ct.slot_key(next(s for s in slots if s.get("mode_only")))
+    off, _ = ct.build_workflow(nodes, slots, prompt="x", controls={key: "关"}, randomize_seed=False)
+    on, _ = ct.build_workflow(nodes, slots, prompt="x", controls={key: "开"}, randomize_seed=False)
+    assert off["261"]["inputs"]["model"] == ["333", 0]
+    assert off["397"]["inputs"]["model"] == ["333", 0]
+    assert on["261"]["inputs"]["model"] == ["403", 0]
+    assert on["397"]["inputs"]["model"] == ["403", 0], "采样器那一路也要绕过去，漏一路就是半新半旧"
+
+
+def test_a_mode_only_switch_never_writes_its_own_label_onto_an_input():
+    """「关」「开」不是 chunks 的取值：写进去就是一句 ComfyUI 的英文类型错。"""
+    nodes = branch_nodes()
+    slots = ct.normalize_slots(branch_slots(), nodes)
+    key = ct.slot_key(next(s for s in slots if s.get("mode_only")))
+    for opt in ("关", "开"):
+        wf, _ = ct.build_workflow(nodes, slots, prompt="x", controls={key: opt},
+                                  randomize_seed=False)
+        assert wf["401"]["inputs"]["chunks"] == 2, opt
+        assert wf["401"]["inputs"]["seq_threshold"] == 4096, opt
+
+
+def test_a_mode_only_switch_must_say_what_every_option_does():
+    """有一档没写要改什么 = 选了等于没选，导入这一刻就要吵。"""
+    bad = [dict(s) for s in branch_slots()]
+    bad[1]["option_writes"].pop("开")
+    with pytest.raises(ValueError, match="开"):
+        ct.normalize_slots(bad, branch_nodes())
+
+
+def test_an_option_write_may_rewire_a_link_but_never_invent_one():
+    """连线只许换成连线；那颗输入当前不是连线就不认——那是改接线结构，不是换档。
+
+    不认之后这一档就没内容了，「只换档」的完整性检查当场拦下：与其悄悄少改一路
+    （采样器绕了、调度器没绕，出片按半新半旧的链跑），不如导入这一刻就吵。
+    """
+    bad = [dict(s) for s in branch_slots()]
+    bad[1]["option_writes"]["开"] = [{"node": "261", "input": "steps", "value": ["403", 0]}]
+    with pytest.raises(ValueError, match="开"):
+        ct.normalize_slots(bad, branch_nodes())
+
+
+def test_an_option_write_still_rejects_a_node_that_is_not_there():
+    bad = [dict(s) for s in branch_slots()]
+    bad[1]["option_writes"]["开"] = [{"node": "999", "input": "model", "value": ["403", 0]}]
+    with pytest.raises(ValueError, match="999"):
+        ct.normalize_slots(bad, branch_nodes())
+
+
+def test_redetect_keeps_the_mode_only_switch_and_its_links():
+    """重新检测只会把 chunks 认成一颗数字旋钮，开关和它的连线必须原样活着。"""
+    nodes = branch_nodes()
+    authored = ct.normalize_slots(branch_slots(), nodes)
+    detected = ct.detect_slots(nodes)["slots"]
+    assert not [s for s in detected if s.get("mode_only")]
+    kept = ct.keep_authored_contract(authored, detected)
+    toggle = next(s for s in kept if s.get("mode_only"))
+    assert toggle["kind"] == "select" and toggle["options"] == ["关", "开"]
+    assert toggle["option_writes"]["开"] == [
+        {"node": "261", "input": "model", "value": ["403", 0]},
+        {"node": "397", "input": "model", "value": ["403", 0]}]

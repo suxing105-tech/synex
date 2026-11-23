@@ -172,6 +172,33 @@ def test_feed_includes_original_url(client):
         assert "max=1024" in it["original_url"]  # 默认带 max=1024 预览
         assert "v=" in it["original_url"]      # cache-bust
 
+def test_file_endpoint_content_type_survives_a_machine_without_webp(client, monkeypatch):
+    """图片文件接口的 Content-Type 不许问 Windows 注册表（CI 首跑红在这）。
+
+    mimetypes 在 Windows 上查的是注册表：这台机器装过浏览器所以 .webp 注册着，永远猜得对；
+    干净的 runner 没有那条注册，Starlette 就落回 application/octet-stream。所以现有那两条
+    「content-type == image/webp」在本机测不到这个坑——这里把 guess_type 打死成猜不出来，
+    钉住 routes/images.py 自己那张扩展名表。
+    """
+    import mimetypes
+    from starlette import responses as starlette_responses
+    guess_failed = lambda *args, **kwargs: (None, None)
+    monkeypatch.setattr(mimetypes, "guess_type", guess_failed)
+    # Starlette 是 from mimetypes import guess_type，符号在自己模块里，只打 mimetypes 打不到它
+    monkeypatch.setattr(starlette_responses, "guess_type", guess_failed)
+    img_id = client.get("/api/images", params={"limit": 1}).json()["items"][0]["id"]
+
+    preview = client.get(f"/api/images/{img_id}/file", params={"max": 512})
+    assert preview.status_code == 200
+    assert preview.headers["content-type"] == "image/webp"
+
+    original = client.get(f"/api/images/{img_id}/file")
+    assert original.status_code == 200
+    assert original.headers["content-type"].startswith("image/"), (
+        f"原图的 Content-Type 也不许靠宿主注册表猜：{original.headers['content-type']}"
+    )
+
+
 def test_file_endpoint_with_max_returns_webp_preview(client):
     """GET /api/images/{id}/file?max=1024 返回缩放后的 WebP 预览。
 

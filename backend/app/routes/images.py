@@ -27,6 +27,20 @@ from ..models import (
 
 router = APIRouter(prefix="/api/images", tags=["images"])
 
+# 扩展名 → Content-Type。Windows 上 mimetypes 是查注册表的：机器上没注册过 .webp（干净系统、
+# CI runner）时 Starlette 只能给 application/octet-stream，本机因为装过浏览器所以永远猜得对，
+# 这一条就只在别人的机器上红。和 videos.py、audio.py 同一口径：自己带表，不问宿主。
+# 表里没有的（音频走 /api/audio、视频走 /api/videos，这条路理论上只会碰到 IMAGE_EXTS）仍回退
+# 到 mimetypes，行为与改动前一致。
+_IMAGE_MIME = {
+    ".gif": "image/gif",
+    ".jpeg": "image/jpeg",
+    ".jfif": "image/jpeg",
+    ".jpg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+}
+
 
 @router.get("")
 def list_images(
@@ -76,6 +90,7 @@ def get_original(
     不按时间新旧判断内容一致，防止导入保留旧时间的文件时错用历史预览。
     """
     import email.utils
+    import mimetypes
     from pathlib import Path
     from fastapi.responses import FileResponse, Response
     from ..db import get_pool
@@ -140,6 +155,9 @@ def get_original(
     return FileResponse(
         serve_path,
         filename=serve_filename,
+        # 预览永远是一只 WebP，原图按扩展名点名；两种都优先走 _IMAGE_MIME，不问宿主注册表
+        media_type=_IMAGE_MIME.get(Path(serve_filename).suffix.lower())
+        or mimetypes.guess_type(serve_filename)[0],
         headers={
             "ETag": etag,
             "Last-Modified": last_modified_dt,

@@ -16,6 +16,7 @@ import importlib.util
 import json
 import re
 import tomllib
+import unicodedata
 from pathlib import Path
 
 from fontTools.ttLib import TTFont
@@ -179,6 +180,26 @@ def test_shipped_faces_cover_every_character_the_source_asks_for():
         )
 
 
+# 产物是在哪一版 Unicode 上切的。manifest 的 codepoints 是「生成那一刻请求了多少码位」，
+# 而请求集里有一块来自 range_codepoints()——它按 unicodedata.category(cp) != "Cn" 过滤，
+# 「哪些码位算已分配」恰恰是 Unicode 数据版本自己会改的事。CI 首跑红在这：产物在本机
+# （Python 3.14 = Unicode 16.0.0）切的，CI 按 pyproject 声明的下限跑 3.11 = Unicode 15.1.0，
+# 同一份源码算出 9674 对 9677，差的 3 个是 Unicode 16 新分配的字，不是谁改了文案。
+# 所以「精确相等」只能跟生成时那一版讲。Unicode 只加字不减字，别的版本改按方向查：老宿主
+# 只可能算出更少、新宿主只可能算出更多，越过这个方向才是真改了文案没重跑脚本。
+# 界面上真会掉字的那一半由 test_shipped_faces_cover_every_character_the_source_asks_for
+# 逐字符钉着，那条不看宿主 Unicode 版本，在任何解释器上都是精确的。
+# 抬本机 Python 或重跑过 fetch-fonts.ps1，就把下面这个数改成当时的 unidata_version。
+GENERATED_WITH_UNICODE = "16.0.0"
+
+
+def _unicode_key(version: str) -> tuple[int, int, int]:
+    parts = [int(part) for part in version.split(".")[:3]]
+    while len(parts) < 3:
+        parts.append(0)
+    return parts[0], parts[1], parts[2]
+
+
 def test_manifest_charset_size_tracks_current_source():
     # manifest 的 codepoints 是「生成那一刻请求了多少码位」。对不上说明源码里的
     # 非 ASCII 字符变了而产物没重新生成——比上面那条更早报警，而且不需要读字体。
@@ -187,8 +208,23 @@ def test_manifest_charset_size_tracks_current_source():
         sf.range_codepoints() | sf.gb2312_hanzi() | sf.source_codepoints(_SOURCE_ROOTS)
     )
     declared = _manifest()["codepoints"]
-    assert len(requested) == declared, (
-        f"当前源码请求 {len(requested)} 个码位，fonts-manifest.json 记的是 {declared}。"
-        "非 ASCII 文案变了就必须重跑 frontend/scripts/fetch-fonts.ps1 重新生成子集与清单。"
-    )
+    assert requested, "一个码位都没算出来，八成是源码根目录传错了"
+    host = unicodedata.unidata_version
+    if _unicode_key(host) == _unicode_key(GENERATED_WITH_UNICODE):
+        assert len(requested) == declared, (
+            f"当前源码请求 {len(requested)} 个码位，fonts-manifest.json 记的是 {declared}。"
+            "非 ASCII 文案变了就必须重跑 frontend/scripts/fetch-fonts.ps1 重新生成子集与清单。"
+        )
+    elif _unicode_key(host) < _unicode_key(GENERATED_WITH_UNICODE):
+        assert len(requested) <= declared, (
+            f"宿主 Unicode 是 {host}，比切产物那版（{GENERATED_WITH_UNICODE}）老，"
+            f"请求集只可能更小，现在却算出 {len(requested)} > manifest 的 {declared}："
+            "是源码加了字而产物没重新生成，重跑 frontend/scripts/fetch-fonts.ps1"
+        )
+    else:
+        assert len(requested) >= declared, (
+            f"宿主 Unicode 是 {host}，比切产物那版（{GENERATED_WITH_UNICODE}）新，"
+            f"请求集只可能更大，现在却算出 {len(requested)} < manifest 的 {declared}："
+            "是源码删了字，重跑 frontend/scripts/fetch-fonts.ps1 把清单和产物一起刷新"
+        )
 

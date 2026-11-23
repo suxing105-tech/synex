@@ -79,8 +79,41 @@ def test_ci_file_exists_and_is_plain_yaml():
 def test_ci_runs_every_local_gate_suite():
     # verify-all 里的四套（第五套「工作区已提交」是本地闸，CI 不适用）
     cmds = _run_cmds(_ci())
-    for cmd in ("python -m pytest -q", "pnpm test", "pnpm exec svelte-check --threshold error", "cargo test"):
+    for cmd in ("python -m pytest -q", "pnpm exec svelte-check --threshold error", "cargo test"):
         assert cmd in cmds, f"CI 不再真跑 {cmd} 了：要撤就得连 AGENTS.md §4.3 一起改"
+    # vitest 那条带着 junit 参数（见下面那条用例），所以按前缀认，别把命令写法钉死成一行
+    assert any(cmd.startswith("pnpm test") for cmd in cmds), (
+        "CI 不再真跑 pnpm test 了：要撤就得连 AGENTS.md §4.3 一起改"
+    )
+
+
+def test_vitest_step_leaves_a_machine_readable_report():
+    """vitest 红了要能直接答出「哪几条用例红」，而不是让人翻被截断的日志。
+
+    0.2.51 的 CI 首跑就栽在这：红在 vitest，Actions 界面只留日志头尾，本机用四种 CI 口径
+    （干净工作区、CI=true、TZ=UTC、4 worker）都复现不出来，最后连失败名单都没拿到，那一次
+    红等于白红。出 junit 报告 + 上传产物，是不改任何测试写法就能拿到的解法。
+    """
+    text = _ci()
+    assert "--reporter=junit" in text, "vitest 不出 junit 报告，红了只能靠日志头尾猜"
+    assert "--outputFile.junit=" in text, "junit 要有固定落点，上传那步才知道拿哪个文件"
+    assert "uses: actions/upload-artifact@v4" in text, "报告留在 runner 上等于没留"
+    assert "path: frontend/test-results/vitest.xml" in text, "上传路径要和 vitest 的落点对上"
+    assert re.search(r"if:\s*\$\{\{\s*always\(\)\s*\}\}", text), (
+        "上传那步缺 if: always()——红的那一次恰恰是唯一需要这份报告的那一次"
+    )
+    assert re.search(r"^permissions:\n(?:^[ \t]+\S.*\n)*?[ \t]+actions:\s*write", text, re.M), (
+        "workflow 的 permissions 里没有 actions: write，upload-artifact 会以「Resource not "
+        "accessible by integration」失败，把「留名单」这一步变成新的红点"
+    )
+    ignored = subprocess.run(
+        ["git", "check-ignore", "-q", "frontend/test-results/vitest.xml"],
+        cwd=REPO, capture_output=True, check=False,
+    )
+    assert ignored.returncode == 0, (
+        "frontend/test-results/ 没进 .gitignore：本地产物会污染工作区，"
+        "check-worktree-committed 那道闸也会跟着红"
+    )
 
 
 def test_cargo_step_does_not_use_offline_in_ci():

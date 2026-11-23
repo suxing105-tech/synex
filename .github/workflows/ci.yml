@@ -21,8 +21,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# upload-artifact 要 actions:write。这里一直故意只给最小权限，加了 vitest 报告上传之后
+# 就得把 actions:write 一起写上——漏了它，「留下失败名单」这一步自己会变成一个新的红点。
 permissions:
   contents: read
+  actions: write
 
 jobs:
   backend:
@@ -75,9 +78,22 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: frontend
 
+      # junit 报告是给自己看的：0.2.51 那次 CI 首跑红在 vitest，Actions 的日志界面会把中段截掉，
+      # 本机按干净工作区 / CI=true / TZ=UTC / 4 worker 四种口径都复现不出红，最后连「哪几条
+      # 用例红」都没拿到。失败名单得留在产物里，不该靠翻日志。
       - name: vitest
-        run: pnpm test
+        run: pnpm test -- --reporter=default --reporter=junit --outputFile.junit=test-results/vitest.xml
         working-directory: frontend
+
+      # if: ${{ always() }} 是关键——红的那一次才是唯一需要这份报告的这一次
+      - name: 上传 vitest 报告
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-junit
+          path: frontend/test-results/vitest.xml
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: svelte-check
         run: pnpm exec svelte-check --threshold error

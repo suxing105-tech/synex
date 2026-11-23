@@ -114,6 +114,10 @@ outputs/avatar-voices-v1/contact_sheet.png
 outputs/avatar-voices-v1/new_set_roll1.png
 outputs/avatar-voices-v1/compare_roll12.png
 
+# Vitest junit reports emitted by CI (see .github/workflows/ci.yml). Locally the default
+# reporter is used, so this directory only appears on a runner told to write it.
+frontend/test-results/
+
 # Round-by-round delivery directory: preview packages, verification logs,
 # screenshots and one-off probes. Local only, never part of the published app.
 # The auto-update-v1/private/ rules above stay as a second lock on the key.

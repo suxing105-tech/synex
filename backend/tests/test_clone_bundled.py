@@ -428,6 +428,33 @@ def test_a_slot_only_update_still_reaches_an_untouched_builtin(seeded):
     assert clone_bundled.seed(conn)["updated"] == [], "刷完就稳了，别每次启动都重写一遍"
 
 
+def test_the_sampling_size_ships_as_a_slider(seeded):
+    """最大采样尺寸画成滑块：1024 到 3840，默认 2560。
+
+    2026-11-24 苏醒点名「我想做成滑块的样式，最小1024到最大3840，默认2560」。以前那颗
+    是一格档位加一个「自定义」框：默认那一个档点得到，别的地方只能自己敲数字。
+    slider 是「作者用法」那类字段（object_info 只给得出上下限，给不出这一颗该拖不该点），
+    写错一个字节就只有真机看得见，所以随包那一份和存进库的那一份都钉。
+    上下限用的是点名的这两个数，不是孤海那颗万能滑块自带的 512–4096 量程：弹窗要的是
+    「拖到哪一条都还出得动」，节点的量程是它自己的事。
+    """
+    entry = [e for e in clone_bundled.entries() if e["key"] == MASK_KEY][0]
+    authored = next(s for s in entry["slots"] if s.get("label") == "最大采样尺寸")
+    assert authored["slider"] is True
+    assert (authored["min"], authored["max"], authored["value"]) == (1024, 3840, 2560)
+    step = authored["step"]
+    assert step > 0 and all(
+        (v - authored["min"]) % step == 0
+        for v in (authored["value"], authored["max"])
+    ), "默认值和量程的右端都要落在拖动网格上，否则拖到头反而回不到 2560"
+    # 正文里那颗节点的默认值跟着槽位走：两处对不上，弹窗显示的数和实际跑的数就分叉
+    nodes = clone_bundled._prepare(entry)[0]
+    assert nodes["288"]["inputs"]["值"] == authored["value"]
+    stored = next(s for s in json.loads(_row_of_key(seeded, MASK_KEY)["slots"])
+                  if s.get("label") == "最大采样尺寸")
+    assert stored["slider"] is True, "滑块这个说法没活着过一遍 normalize_slots"
+    assert (stored["min"], stored["max"], stored["step"], stored["value"]) == (1024, 3840, 128, 2560)
+
 def test_the_extra_reference_cells_reach_the_repaint_branch():
     """图片2～图片5 是真接进重绘分支的参考位，不是弹窗里摆着好看的四张空框。
 

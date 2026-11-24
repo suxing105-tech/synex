@@ -81,9 +81,10 @@
    "input": "值",
    "kind": "number",
    "label": "最大采样尺寸",
-   "max": 4096,
-   "min": 512,
+   "max": 3840,
+   "min": 1024,
    "node": "288",
+   "slider": true,
    "step": 128,
    "value": 2560
   }

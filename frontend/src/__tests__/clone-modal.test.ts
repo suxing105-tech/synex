@@ -4817,3 +4817,55 @@ it('少带了资料，小条上说的是真原因：文戏不带武戏资料，�
   expect(said).toContain('本次是文戏，3 份武戏资料没有带上');
   expect(said).not.toContain('预算');
 });
+
+/* ── 「最大采样尺寸」那颗滑块 ────────────────────────────────────────────────────────
+   2026-11-24 苏醒：「闪寻局部编辑工作流的最大采样尺寸，我想做成滑块的样式，最小1024到
+   最大3840，默认2560。滑块样式看图二的。」——就是时长、武打速度已经在用的那一套。
+   随包槽位点名要滑块之后，这里钉的是这颗自己的三件事：量程与默认值照点名的数、
+   没单位不许补一个「秒」（那条 fallback 是给时长留的）、滑块进来就把档位按钮和
+   「自定义」那一行换掉（同一件事不给两个入口）。 */
+const SAMPLE_TPL = {
+  ...TPL,
+  name: '闪寻局部编辑',
+  slots: [
+    { kind: 'prompt', node: '582', input: 'prompt', label: '完整提示词' },
+    { kind: 'image', node: '543', input: 'image', label: '要改的那张' },
+    { kind: 'number', node: '288', input: '值', label: '最大采样尺寸',
+      min: 1024, max: 3840, step: 128, value: 2560, slider: true },
+  ],
+};
+
+it('最大采样尺寸画成滑块：1024–3840、默认 2560，拖到最右就是 3840，档位与「自定义」都退场', async () => {
+  let submitted: Record<string, unknown> | null = null;
+  routes({
+    ...baseRoutes(),
+    '/api/clone/templates': { items: [SAMPLE_TPL] },
+    '/api/clone/generate': (init?: RequestInit) => {
+      submitted = JSON.parse(String(init?.body));
+      return { ...EMPTY_CLONE_JOB, active: true, job_id: 'j1', state: 'queued', running: true };
+    },
+  });
+  const screen = await ready();
+  const pop = await openParams(screen);
+  const slider = screen.getByLabelText('最大采样尺寸滑块') as HTMLInputElement;
+  expect([slider.min, slider.max, slider.step]).toEqual(['1024', '3840', '128']);
+  expect(slider.value).toBe('2560');
+  expect(pop.querySelector('.cm-slide-unit')?.textContent).toBe('');
+  expect(pop.querySelector('[aria-label="最大采样尺寸档位"]')).toBeNull();
+  expect(within(pop).queryByText(/自定义/)).toBeNull();
+
+  slider.value = '3840';
+  await fireEvent.input(slider);
+  await tick();
+  const num = screen.getByLabelText('最大采样尺寸') as HTMLInputElement;
+  expect(num.value).toBe('3840');
+  // 数字框是精调用的：敲一个不在 128 网格上的数也认，不强行改回网格
+  await fireEvent.input(num, { target: { value: '2500' } });
+  await tick();
+
+  await fireEvent.input(screen.getByLabelText('提示词'), { target: { value: '把绿区域去掉' } });
+  await fireEvent.click(screen.getByRole('button', { name: '生成' }));
+  await tick();
+  const sent = (submitted ?? {}) as unknown as { controls?: Record<string, unknown> };
+  expect(sent.controls?.['288.值']).toBe(2500);
+});

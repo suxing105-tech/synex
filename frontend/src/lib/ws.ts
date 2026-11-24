@@ -22,6 +22,12 @@ export function connectEvents() {
         await refreshFeed();
         await Promise.all([refreshStats(), refreshFolders()]);
         markNew([payload.id]);
+      } else if (payload.type === "images_indexed") {
+        // 后端补扫回来的一批（重启前丢的事件、监听漏掉的）：一次刷新收口。
+        // 逐条 image_indexed 会让前端为每张图串行发三个请求 + 重排一次瀑布流。
+        await refreshFeed();
+        await Promise.all([refreshStats(), refreshFolders()]);
+        markNew(Array.isArray(payload.ids) ? payload.ids.slice(0, 50) : []);
       } else if (payload.type === "image_removed") {
         // 乐观更新本地 feedItems（filter 掉该 id），避免 refreshFeed 重排导致滚动条跳顶。
         removeImageFromFeed(payload.id);

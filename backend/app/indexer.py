@@ -48,6 +48,16 @@ log = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[dict], None]
 
+# 事件防抖：300ms 内的连续事件合并成一次落库，但**从最早那条事件算起最多再等 2 秒必须落一次**。
+# 后半句是 2026-11-24 补的：只有下限的防抖在持续事件流下永不触发——ComfyUI 批量出图时
+# created + 多次 modified 是连成线的，实测能让一批新图 12 秒一条都不入库。
+FLUSH_DEBOUNCE_SECONDS = 0.3
+FLUSH_MAX_WAIT_SECONDS = 2.0
+# 单次补扫最多收多少个「盘上有、库里没有」的文件：让单次耗时可预期，剩下的交给下一轮。
+SWEEP_MAX_FILES = 500
+# 刚改过不到这个秒数的文件大概率还在写，元数据读不全；留给它自己的 modify 事件或下一轮。
+SWEEP_SETTLE_SECONDS = 2.0
+
 
 # ---------- 索引器核心 ----------
 
@@ -84,6 +94,8 @@ class Indexer:
         self._pending: set[str] = set()
         self._pending_lock = threading.Lock()
         self._flush_timer: threading.Timer | None = None
+        # 队列里最早那条事件的时刻，用来算「最多再等多久必须落地」。
+        self._pending_oldest: float | None = None
         # 应用自己移动文件时，watchdog 看到的是「旧路径删除 + 新路径新建」。
         # 调用方已经在事务里把 images.path 改好了，让 watcher 再跑一遍会：
         #   1) 先处理新路径 → 插一条重复行并换 id（收藏/标签/提示词历史全丢）
@@ -489,11 +501,17 @@ class Indexer:
         if self._suppressed(normalized):
             return
         with self._pending_lock:
+            now = time.monotonic()
+            if self._pending_oldest is None:
+                self._pending_oldest = now
             self._pending.add(normalized)
+            # 防抖照旧合并 300ms 内的连续事件，但到期时刻锁死在「最早那条事件 + 上限」：
+            # 事件一直来只允许把等待压短，不许把它一路往后推。
+            deadline = self._pending_oldest + FLUSH_MAX_WAIT_SECONDS
+            delay = min(FLUSH_DEBOUNCE_SECONDS, max(0.0, deadline - now))
             if self._flush_timer is not None:
                 self._flush_timer.cancel()
-            # 防抖：300ms 内的同路径事件合并
-            self._flush_timer = threading.Timer(0.3, self._flush_pending, args=(kind,))
+            self._flush_timer = threading.Timer(delay, self._flush_pending, args=(kind,))
             self._flush_timer.daemon = True
             self._flush_timer.start()
 
@@ -507,6 +525,7 @@ class Indexer:
             paths = list(self._pending)
             self._pending.clear()
             self._flush_timer = None
+            self._pending_oldest = None
         for p in paths:
             try:
                 # 合并的是路径，不是事件类型；以每个路径最终状态处理，避免
@@ -570,6 +589,94 @@ class Indexer:
             log.warning("prune system folders failed", exc_info=True)
         return removed
 
+    # ----- 补扫「盘上有、库里没有」的新文件 -----
+
+    @staticmethod
+    def _known_hit(known: set[str], key: str) -> bool:
+        """路径键是否已在库里。Windows 上大小写不敏感（和 _enqueue_directory_removal 同一口径）。"""
+        return key.lower() in known if os.name == "nt" else key in known
+
+    def _known_path_keys(self) -> set[str]:
+        """库里已有的路径键。``images.path`` 存的就是 ``_normalize`` 的产物，不用再 resolve 一遍。"""
+        rows = get_pool().main().execute("SELECT path FROM images").fetchall()
+        keys: set[str] = set()
+        for row in rows:
+            stored = row["path"]
+            keys.add(stored.lower() if os.name == "nt" else stored)
+            # 老库里混过反斜杠写法（改名那轮修的数据）：那种行永远比不中，会被补扫
+            # 重新索引一次并落回正斜杠。认两种写法比先修数据更省事。
+            alt = stored.replace("\\", "/")
+            keys.add(alt.lower() if os.name == "nt" else alt)
+        return keys
+
+    def find_unindexed_files(self, *, limit: int = SWEEP_MAX_FILES) -> list[Path]:
+        """来源目录里「盘上有、库里没有」的媒体文件。只找，不删。
+
+        比对先用不 resolve 的键（绝大多数已入库的文件走这条就命中，省一次系统调用），
+        比不中再按 ``_normalize`` 的口径比一次——真新文件才付那一次 resolve。
+        """
+        known = self._known_path_keys()
+        found: list[Path] = []
+        for root in self._watch_roots:
+            for directory, _, files in os.walk(root, onerror=lambda e: log.warning("sweep directory unreadable: %s", e), followlinks=False):
+                for name in files:
+                    if os.path.splitext(name)[1].lower() not in SUPPORTED_EXTS:
+                        continue
+                    path = Path(directory) / name
+                    if self._known_hit(known, str(path).replace(os.sep, "/")):
+                        continue
+                    if self._known_hit(known, self._normalize(path)):
+                        continue
+                    try:
+                        if time.time() - path.stat().st_mtime < SWEEP_SETTLE_SECONDS:
+                            continue
+                    except OSError:
+                        continue
+                    found.append(path)
+                    if len(found) >= limit:
+                        return found
+        return found
+
+    def sweep_new_files(self, *, fire_event: bool = True) -> dict:
+        """补扫来源目录，把漏掉的新文件收进库，返回 ``{"indexed": n}``。
+
+        为什么非有这步：watchdog 的事件是**会丢**的——生成途中重启（pending 随进程一起没）、
+        ReadDirectoryChangesW 那 64KB 缓冲在出图洪峰里溢出、机器休眠、监听线程自己挂掉。
+        而 ``reconcile_missing`` 只管反方向（库里有、盘上没了 → 删行），新文件掉了永远没人管：
+        2026-11-24 实测一次自更新重启就这样吞了 106 张图，之后 20 分钟无人认领。
+        这里补的正是缺的那半边：**只收不删**，删除仍旧交给 reconcile_missing。
+        """
+        # _live_lock 只圈住「还要不要开工」这个判断和那次只读遍历：解析和写库放在锁外，
+        # 否则一次 500 个文件的补扫会把 reconcile 和 watchdog 的落地一起堵在后面
+        # （安装更新时 pause_for_update 也要这把锁）。
+        with self._live_lock:
+            if self._stopping:
+                return {"indexed": 0}
+            if self.get_progress()["running"]:
+                # 用户手动发起的扫描正在跑，不跟它抢写锁。
+                return {"indexed": 0}
+            missing = self.find_unindexed_files()
+        if not missing or self._stopping:
+            return {"indexed": 0}
+        ids: list[int] = []
+        futures = [self._executor.submit(self._process_path_sync, item) for item in missing]
+        for fut in futures:
+            try:
+                payload = fut.result(timeout=120)
+            except Exception as e:  # noqa: BLE001
+                log.warning("sweep item failed: %s", e)
+                continue
+            if payload and payload.get("type") == "image_indexed":
+                ids.append(payload["id"])
+        count = len(ids)
+        if count and fire_event:
+            # 一条批量事件，不是每张图一条：106 张逐条发会让前端串行刷三百多次。
+            self.emit_event_sync({"type": "images_indexed", "count": count, "ids": ids[:50]})
+            self.emit_event_sync({"type": "folders_changed"})
+        if count:
+            log.info("sweep indexed %d missed file(s)", count)
+        return {"indexed": count}
+
     async def _emit(self, payload: dict) -> None:
         try:
             # on_event 是同步回调（直接 publish 到 bus），
@@ -580,6 +687,11 @@ class Indexer:
 
 
 # ---------- watchdog handler ----------
+
+
+def _is_supported_path(path: str | Path) -> bool:
+    """这个路径是不是我们管的媒体文件（只看后缀，和 scan 的口径一致）。"""
+    return Path(path).suffix.lower() in SUPPORTED_EXTS
 
 
 class _Handler(FileSystemEventHandler):
@@ -595,10 +707,16 @@ class _Handler(FileSystemEventHandler):
             except Exception as e:  # noqa: BLE001
                 log.warning("ensure dir failed: %s (%s)", event.src_path, e)
             return
+        if not _is_supported_path(event.src_path):
+            return
         self.indexer.enqueue("create", event.src_path)
 
     def on_modified(self, event):
         if event.is_directory:
+            return
+        # 每个事件都要在这条派发线程上付一次 resolve()。不收后缀过滤时，监听树里的
+        # .tmp / 日志 / 任何无关文件都在白白排队，还把真新图挤在同一个防抖窗口里。
+        if not _is_supported_path(event.src_path):
             return
         self.indexer.enqueue("modify", event.src_path)
 

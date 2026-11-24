@@ -136,17 +136,28 @@ async def lifespan(app: FastAPI):
     await indexer.start_watching(asyncio.get_running_loop())
     log.info("watching dirs: %s", cfg.watch_dirs)
     async def reconcile_loop():
+        # 每 2 秒查一次反方向（库里有、盘上没了 → 删行）；顺带每 30 轮（约 1 分钟）
+        # 补扫一次正方向（盘上有、库里没有 → 收进来）。后半件以前全项目没人做，
+        # watchdog 事件一丢，新图就永久看不见（2026-11-24 少了 106 张）。
+        sweep_every = 30
+        tick = 0
         while True:
             try:
                 await asyncio.to_thread(indexer.reconcile_missing)
                 from . import texts
                 if await asyncio.to_thread(texts.reconcile):
                     await bus.publish({'type': 'texts_changed'})
+                tick += 1
+                if tick >= sweep_every:
+                    tick = 0
+                    await asyncio.to_thread(indexer.sweep_new_files)
             except Exception:
                 log.exception("reconcile missing images failed")
             await asyncio.sleep(2)
 
     await asyncio.to_thread(indexer.reconcile_missing)
+    # 开机先补一次：上次关软件之前生成的图，重开就该立刻看见，不用等一分钟。
+    await asyncio.to_thread(indexer.sweep_new_files)
     reconcile_task = asyncio.create_task(reconcile_loop())
     video_meta_task = asyncio.create_task(backfill_video_metadata_task())
 

@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { foldersApi, settingsApi, comfyuiApi, healthApi } from "../lib/api";
+  import { foldersApi, scanApi, settingsApi, comfyuiApi, healthApi } from "../lib/api";
 import Icon from "./Icon.svelte";
   import { describeMediaTools } from "../lib/media-tools";
-  import { comfyuiStatus } from "../lib/stores";
+  import { comfyuiStatus, refreshScanProgress, scanProgress } from "../lib/stores";
   import { updateStatus } from "../lib/updates";
   import type { ArchivedFolder, ConfigOut } from "../lib/types";
   import { refreshFeed, refreshFolders, refreshStats } from "../lib/stores";
@@ -345,6 +345,18 @@ import Icon from "./Icon.svelte";
   function removeDir(d: string) {
     cfg = { ...cfg, watch_dirs: cfg.watch_dirs.filter((x) => x !== d) };
   }
+
+  // 手动补一次：自动补扫约一分钟一轮，用户刚出完图不想等。
+  // 进度不用这里管——顶部 ScanProgressBar 本来就在轮询 /api/scan/progress。
+  async function rescanDir(d: string) {
+    try {
+      await scanApi.start(d);
+      await refreshScanProgress();
+      pushToast("正在重新扫描这个目录，找回来的图会自动出现。");
+    } catch (e) {
+      pushToast(`重新扫描没跑成：${(e as Error).message}`, { kind: "error" });
+    }
+  }
 </script>
 
 {#if open}
@@ -419,6 +431,7 @@ import Icon from "./Icon.svelte";
                           {#each cfg.watch_dirs as d}
                             <div class="settings-subrow">
                               <span class="settings-subpath" title={d}>{d}</span>
+                              <button class="setting-button setting-button-ghost" aria-label={`重新扫描监听目录 ${d}`} disabled={$scanProgress.running} onclick={() => void rescanDir(d)}>{$scanProgress.running ? "扫描中…" : "重新扫描"}</button>
                               <button class="setting-button setting-button-ghost" aria-label={`移除监听目录 ${d}`} onclick={() => removeDir(d)}>移除</button>
                             </div>
                           {/each}

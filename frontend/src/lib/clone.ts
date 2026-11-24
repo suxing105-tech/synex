@@ -826,17 +826,19 @@ export function formatElapsed(seconds: number): string {
 }
 
 /**
- * 「耗时：40S」——队列那一页右侧那句：这一批从头到尾跑了多久。
+ * 「耗时：40 S」——队列那一页右侧那句：这一批从头到尾跑了多久。
  *
  * 单位一律秒，不跳成「3分12秒」（2026-11-17 苏醒点名用秒）：这一页比的是快慢，
  * 一句「3分12秒」还得在心算一次才知道和上一条差几秒；formatElapsed 那句是给等待中的人
  * 看的进度读数，两句话不共用一个口径。
- * 拿不到时长（老封存记录、后端没给 elapsed）返回空串，那一格整个不排——写个「0S」是假话。
+ * 数字与单位之间空一格（2026-11-23 苏醒：「耗时的 35S 中间加空格显示」）：读数挤在一起时
+ * 单位像是数字的一部分，扫一眼得先认一遍才知道是多久。
+ * 拿不到时长（老封存记录、后端没给 elapsed）返回空串，那一格整个不排——写个「0 S」是假话。
  */
 export function elapsedCostLabel(seconds: number | null | undefined): string {
   const total = Number(seconds);
   if (!Number.isFinite(total) || total <= 0) return "";
-  return `耗时：${Math.round(total)}S`;
+  return `耗时：${Math.round(total)} S`;
 }
 
 export function cloneStatusLabel(job: CloneJob): string {

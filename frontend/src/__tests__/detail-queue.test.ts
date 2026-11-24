@@ -130,6 +130,32 @@ describe("跑动中的那一条", () => {
     expect(ui.container.textContent ?? "").not.toMatch(new RegExp("\\d+%"));
   });
 
+  it("那一格的秒数自己往前走：后端只在状态切换那一刻推 elapsed，照抄就是数字不动", async () => {
+    // 2026-11-23 苏醒圈着跑动卡片右上角那个「0秒」：「生成状态，我希望这个耗时也动起来。」
+    // 后端那句 elapsed 中间不推，本地得起一条秒表；但每收到一次推送要拿它重新对齐，
+    // 不然本地走表会把真实进度顶掉——云端那条更不能由前端说了算。
+    vi.useFakeTimers();
+    try {
+      const waitCard = (elapsed: number) => ({
+        active: true, job_id: "t1", state: "running", engine: "comfyui", message: "",
+        error: "", outputs: [], image_ids: [], media_kind: "image", elapsed,
+      }) as never;
+      applyCloneProgress(waitCard(41));
+      const ui = render(CloneQueuePanel, { active: false });
+      // 首帧先照后端那句，别在挂载与秒表第一步之间闪一个 0秒
+      expect(ui.container.querySelector(".queue-elapsed")?.textContent).toBe("41秒");
+      await vi.advanceTimersByTimeAsync(3_000);
+      await tick();
+      expect(ui.container.querySelector(".queue-elapsed")?.textContent).toBe("44秒");
+      // 后端又推了一次：拿它给的数重新起表，本地补的那几秒作废
+      applyCloneProgress(waitCard(90));
+      await tick();
+      expect(ui.container.querySelector(".queue-elapsed")?.textContent).toBe("1分30秒");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("「停止等待」走后端取消，回来的状态立刻换上，跑动卡片不再占位", async () => {
     applyCloneProgress(running);
     const ui = render(CloneQueuePanel, { active: false });
@@ -193,9 +219,10 @@ describe("云端那条钱已经付了、产物还没回来的", () => {
 
 describe("本次运行的那几批", () => {
 
-  it("每批右侧写着这一批跑了多久，单位秒", () => {
-    // 2026-11-17 苏醒在队列那一页圈了右侧那格：「我希望这里显示生成用的时间，用秒（S）为计量单位，
-    // 示例：耗时：40S」。左边那句「几分前」答的是什么时候跑完的，答不了快慢，两句都要在。
+  it("每批右侧写着这一批跑了多久，单位秒，数字与单位之间空一格", () => {
+    // 2026-11-17 苏醒在队列那一页圈了右侧那格：「我希望这里显示生成用的时间，用秒（S）为计量单位」。
+    // 2026-11-23 同一格再批一次「耗时的 35S 中间加空格显示」→ 写成「耗时：40 S」。
+    // 左边那句「几分前」答的是什么时候跑完的，答不了快慢，两句都要在。
     cloneHistory.set([
       {
         key: "job-a", jobId: "job-a", outputs: [out(201)], mediaKind: "image",
@@ -207,14 +234,14 @@ describe("本次运行的那几批", () => {
       },
     ]);
     const ui = render(CloneQueuePanel, { active: false });
-    const cost = ui.getByText("耗时：40S");
+    const cost = ui.getByText("耗时：40 S");
     expect(cost.classList.contains("queue-row-cost")).toBe(true);
     // 那一格的颜色按 2026-11-17 第二轮批注走品牌色，口径与对比度钉在
     // __tests__/target-size-contrast.test.ts（happy-dom 不套 scoped CSS，这里只钉落点）
     expect(cost.classList.contains("queue-row-sub")).toBe(false);
-    // 第二条没测出时长：那一格整个不排，不写「耗时：0S」骗人
-    expect(ui.getAllByText("耗时：40S")).toHaveLength(1);
-    expect(ui.queryByText(/耗时：0S/)).toBeNull();
+    // 第二条没测出时长：那一格整个不排，不写「耗时：0 S」骗人
+    expect(ui.getAllByText("耗时：40 S")).toHaveLength(1);
+    expect(ui.queryByText(/耗时：0 S/)).toBeNull();
     expect(ui.getAllByText("1 张 · 本机")).toHaveLength(2);
   });
   it("默认显示最近三批，更早批次在展开后仍能打开产出", async () => {
@@ -271,5 +298,24 @@ describe("本次运行的那几批", () => {
     await tick();
     expect(ui.queryByRole("button", { name: "看 out-31.mp3 产出" })).toBeNull();
     expect(ui.container.querySelectorAll(".queue-out-btn.is-plain")).toHaveLength(1);
+  });
+});
+
+describe("标题行那颗「正在跑」的红点", () => {
+  it("跟着「队列」那一行对齐，不落在标题和副标题中间", () => {
+    // 2026-11-23 苏醒：「生成状态时，右侧栏红点位置错位，这个红点修复一下」。
+    // .section-heading 是 align-items:center，两行标题中间被塞进一颗 7px 的点，谁都不靠。
+    // 钉法只能钉写法：happy-dom 不套 scoped CSS，量不出计算值，所以钉那条规则自己——
+    // 盒子顶到行首、按标题那一行（--fs-sm × --lh-label）撑高，点画在 ::after 里上下居中。
+    const raw = readFileSync(resolve(here, "..", "components", "DetailPanel.svelte"), "utf8");
+    const at = raw.indexOf(".queue-live-dot {");
+    expect(at, "DetailPanel 里找不到 .queue-live-dot 那条规则").toBeGreaterThan(-1);
+    const rule = raw.slice(at, raw.indexOf("}", at));
+    expect(rule, "红点又跟着两行标题一起居中了").toMatch(/align-self:\s*flex-start/);
+    expect(rule, "盒子高度要跟着标题那一行，别再写字面像素").toMatch(/height:\s*calc\(var\(--fs-sm\)\s*\*\s*var\(--lh-label\)\)/);
+    const after = raw.slice(raw.indexOf(".queue-live-dot::after"));
+    const afterRule = after.slice(0, after.indexOf("}") + 1);
+    expect(afterRule, "点本体（含朱红）得画在 ::after 上").toMatch(/background:\s*var\(--accent\)/);
+    expect(afterRule).toMatch(/border-radius:\s*var\(--r-circle\)/);
   });
 });

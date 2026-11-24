@@ -582,7 +582,20 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
   .workbench-disclosure summary span { color:var(--text-3); font-family:var(--font-mono); }
   .disclosure-content { padding-top:var(--sp-2); }
   .workflow-download-slot { margin-top:var(--sp-3); }
-  .queue-live-dot { width:7px; height:7px; border-radius:var(--r-circle); background:var(--accent); box-shadow:0 0 10px color-mix(in srgb, var(--accent) 70%, transparent); }
+  /* 那颗「正在跑」的红点跟着「队列」那一行，不跟着两行标题一起居中。
+     .section-heading 是 align-items:center，标题（13px）加副标题两行有 34 来px 高，
+     一颗 7px 的点被拉在这两行中间，谁都不靠，看着像掉出来的一格
+     （2026-11-23 苏醒：「生成状态时，右侧栏红点位置错位」）。
+     现在盒子按标题那一行的高（--fs-sm × --lh-label）撑开并顶到行首，点画在 ::after 里上下居中。 */
+  .queue-live-dot {
+    flex: none;
+    align-self: flex-start;
+    display: flex;
+    align-items: center;
+    width: 7px;
+    height: calc(var(--fs-sm) * var(--lh-label));
+  }
+  .queue-live-dot::after { content: ""; width: 7px; height: 7px; border-radius: var(--r-circle); background: var(--accent); box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 70%, transparent); }
   @media (max-width: 390px) {
     .detail-header { padding-inline:var(--sp-2); }
     .detail-body { padding-inline:var(--sp-2); }

@@ -859,13 +859,15 @@ describe("生成中那一行说人话", () => {
     expect(cloneStatusLabel(applyCloneProgress({ state: "done", running: false, image_ids: [3] }))).toBe("已生成 1 张");
   });
 
-  it("elapsedCostLabel：一律秒，拿不到时长就不说", () => {
-    // 2026-11-17 苏醒在队列那一页点名「用秒（S）为计量单位，示例：耗时：40S」——
-    // 这一页比的是快慢，跳成「3分12秒」还得心算一次才知道和上一条差几秒。
-    expect(elapsedCostLabel(40)).toBe("耗时：40S");
-    expect(elapsedCostLabel(192)).toBe("耗时：192S");
-    expect(elapsedCostLabel(40.4)).toBe("耗时：40S");
-    // null / 0 / 坏值一律空串：那一格整个不排，写个「耗时：0S」是假话
+  it("elapsedCostLabel：一律秒、数字与单位之间空一格，拿不到时长就不说", () => {
+    // 2026-11-17 苏醒在队列那一页点名「用秒（S）为计量单位」——这一页比的是快慢，
+    // 跳成「3分12秒」还得心算一次才知道和上一条差几秒。
+    // 2026-11-23 同一格再批一次「耗时的 35S 中间加空格显示」：读数与单位挤在一起时
+    // 单位像是数字的一部分，扫一眼得先认一遍。空格就是这一条，别再写回紧挨的那版。
+    expect(elapsedCostLabel(40)).toBe("耗时：40 S");
+    expect(elapsedCostLabel(192)).toBe("耗时：192 S");
+    expect(elapsedCostLabel(40.4)).toBe("耗时：40 S");
+    // null / 0 / 坏值一律空串：那一格整个不排，写个「耗时：0 S」是假话
     expect(elapsedCostLabel(null)).toBe("");
     expect(elapsedCostLabel(undefined)).toBe("");
     expect(elapsedCostLabel(0)).toBe("");

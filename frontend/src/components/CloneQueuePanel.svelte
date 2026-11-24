@@ -58,6 +58,31 @@
   ];
   const stageAt = $derived(STAGES.findIndex((s) => s.key === job.state));
 
+  /**
+   * 「跑了多久」那一格自己往前走。
+   *
+   * 后端的 elapsed 只在状态切换那一刻推一次，中间不推，照它显示就是数字挂在那儿不动
+   * （2026-11-23 苏醒圈着那格的「0秒」：「生成状态，我希望这个耗时也动起来」）。弹窗里那条
+   * 「已等」秒表早就为同一个问题存在，这里照同一做法：本地起表，起点用后端给的 elapsed 校准，
+   * 后端每推一次就以它重新对齐——本地走表只是补中间那几秒，不冒充真实进度。
+   */
+  let tickedSeconds = $state<number | null>(null);
+  /** 秒表第一步还没走出来时先照后端那句：挂载到首帧之间别闪一个 0秒出来。 */
+  const elapsedSeconds = $derived(tickedSeconds ?? job.elapsed);
+  $effect(() => {
+    if (!job.running) {
+      tickedSeconds = null;
+      return;
+    }
+    const anchorAt = Date.now() - Math.max(0, job.elapsed || 0) * 1000;
+    const stepWait = () => {
+      tickedSeconds = Math.max(0, Math.floor((Date.now() - anchorAt) / 1000));
+    };
+    stepWait();
+    const timer = window.setInterval(stepWait, 1000);
+    return () => window.clearInterval(timer);
+  });
+
   let pending = $state<CloudPendingTask[]>([]);
   let refetching = $state<number | null>(null);
 
@@ -125,7 +150,7 @@
     <section class="queue-card" aria-label="正在生成的任务">
       <div class="queue-head">
         <span class="queue-engine"><Icon name={job.engine === "cloud" ? "cloud" : "comfyui"} size={12} />{engineLabel}</span>
-        <span class="queue-elapsed" title="从提交这一刻算起">{formatElapsed(job.elapsed)}</span>
+        <span class="queue-elapsed" title="从提交这一刻算起">{formatElapsed(elapsedSeconds)}</span>
       </div>
       <p class="queue-state">{stateLabel(job)}</p>
       <div class="queue-stages" role="list">

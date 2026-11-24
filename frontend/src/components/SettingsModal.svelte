@@ -346,6 +346,11 @@ import Icon from "./Icon.svelte";
     cfg = { ...cfg, watch_dirs: cfg.watch_dirs.filter((x) => x !== d) };
   }
 
+  // 一次只允许一条扫描在跑（后端 409 兜着），所以禁用和文案都跟着那颗全局进度。
+  function rescanLabel(running: boolean) {
+    return running ? "扫描中…" : "重新扫描";
+  }
+
   // 手动补一次：自动补扫约一分钟一轮，用户刚出完图不想等。
   // 进度不用这里管——顶部 ScanProgressBar 本来就在轮询 /api/scan/progress。
   async function rescanDir(d: string) {
@@ -431,7 +436,7 @@ import Icon from "./Icon.svelte";
                           {#each cfg.watch_dirs as d}
                             <div class="settings-subrow">
                               <span class="settings-subpath" title={d}>{d}</span>
-                              <button class="setting-button setting-button-ghost" aria-label={`重新扫描监听目录 ${d}`} disabled={$scanProgress.running} onclick={() => void rescanDir(d)}>{$scanProgress.running ? "扫描中…" : "重新扫描"}</button>
+                              <button class="setting-button setting-button-ghost" disabled={$scanProgress.running} aria-label={`重新扫描监听目录 ${d}`} onclick={() => void rescanDir(d)}>{rescanLabel($scanProgress.running)}</button>
                               <button class="setting-button setting-button-ghost" aria-label={`移除监听目录 ${d}`} onclick={() => removeDir(d)}>移除</button>
                             </div>
                           {/each}

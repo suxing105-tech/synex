@@ -19,6 +19,7 @@
   import {
     applyCloneProgress,
     cloneApi,
+    cloneGoneOutputs,
     cloneHistory,
     cloneJob,
     cloneOutputsOf,
@@ -27,9 +28,10 @@
     coinsLabel,
     elapsedCostLabel,
     formatElapsed,
+    probeCloneOutputGone,
     stateLabel,
   } from "../lib/clone";
-  import type { CloneOutput, CloudPendingTask } from "../lib/clone";
+  import type { CloneHistoryEntry, CloneOutput, CloudPendingTask } from "../lib/clone";
   import Icon from "./Icon.svelte";
 
   interface Props {
@@ -89,6 +91,27 @@
   const counterFor = (kind: string) => (kind === "video" || kind === "audio" ? "条" : "张");
   const thumbOf = (o: CloneOutput) => (o.thumbnail_url ? backendUrl(o.thumbnail_url) : "");
   const costOf = (coins: number | null) => (coins === null ? "" : " · 花 " + coinsLabel(coins));
+
+  /**
+   * 这一批现在还看得见的那几张。
+   *
+   * 2026-11-23 苏醒：「生成之后我再删掉图，显示这个不太美观」→ 定的是那一格直接不显示。
+   * 但收格子的条件不是「缩略图读不到」（那可能是海报还没生成、或后端刚重启那一下），
+   * 是 /presence 说过这一张真不在了——口径写在 clone.ts 的 probeCloneOutputGone 里。
+   * 张数那句不动：那一批确实出过一张，只是产物后来删了，这一行还在替它记耗时。
+   */
+  const goneIds = $derived($cloneGoneOutputs);
+  const shownOf = (entry: CloneHistoryEntry) => entry.outputs.filter((o) => !goneIds.has(o.id));
+
+  /**
+   * 缩略图读不到：先换成站里那颗空位（浏览器那颗裂图是它自己画的，全站就这一处会冒出来），
+   * 同时去问一次还在不在。真不在 → 整格跟着 goneIds 收掉；还在 → 留着这颗空位，仍然可点。
+   */
+  let thumbFailed = $state<Set<number>>(new Set());
+  async function onThumbError(o: CloneOutput) {
+    thumbFailed = new Set([...thumbFailed, o.id]);
+    await probeCloneOutputGone(o.id);
+  }
 
   // 每次这一页被翻开取一次：effect 只读 active，切走再切回来正好一趟，不轮询。
   $effect(() => {
@@ -208,9 +231,11 @@
     {#if $cloneHistory.length}
       {#each $cloneHistory.slice(0, 3) as entry}
         {@const cost = elapsedCostLabel(entry.elapsedSec)}
+        {@const shown = shownOf(entry)}
         <div class="queue-row">
+          {#if shown.length}
           <div class="queue-thumbs">
-            {#each entry.outputs.slice(0, 4) as o}
+            {#each shown.slice(0, 4) as o}
               {#if o.kind === "image" || o.kind === "video"}
                 <button
                   type="button"
@@ -219,8 +244,8 @@
                   aria-label={"看 " + (o.filename || "这一张") + " 产出"}
                   onclick={() => openOutput(o)}
                 >
-                  {#if thumbOf(o)}
-                    <img src={thumbOf(o)} alt="" loading="lazy" class="queue-out" />
+                  {#if thumbOf(o) && !thumbFailed.has(o.id)}
+                    <img src={thumbOf(o)} alt="" loading="lazy" class="queue-out" onerror={() => void onThumbError(o)} />
                   {:else}
                     <Icon name={o.kind === "video" ? "video" : "image"} size={14} />
                   {/if}
@@ -230,6 +255,7 @@
               {/if}
             {/each}
           </div>
+          {/if}
           <div class="queue-row-main">
             <span class="queue-row-title">{entry.outputs.length} {counterFor(entry.mediaKind)} · {entry.engine === "cloud" ? "云端" : "本机"}</span>
             <span class="queue-row-sub">{footerTimeLabel(entry.at / 1000)}{costOf(entry.costCoins)}</span>
@@ -242,9 +268,11 @@
           <summary>更早的产出（{$cloneHistory.length - 3} 批）</summary>
           {#each $cloneHistory.slice(3) as entry}
             {@const cost = elapsedCostLabel(entry.elapsedSec)}
+            {@const shown = shownOf(entry)}
             <div class="queue-row">
+              {#if shown.length}
               <div class="queue-thumbs">
-                {#each entry.outputs.slice(0, 4) as o}
+                {#each shown.slice(0, 4) as o}
                   {#if o.kind === "image" || o.kind === "video"}
                     <button
                       type="button"
@@ -253,7 +281,7 @@
                       aria-label={"看 " + (o.filename || "这一张") + " 产出"}
                       onclick={() => openOutput(o)}
                     >
-                      {#if thumbOf(o)}<img src={thumbOf(o)} alt="" loading="lazy" class="queue-out" />
+                      {#if thumbOf(o) && !thumbFailed.has(o.id)}<img src={thumbOf(o)} alt="" loading="lazy" class="queue-out" onerror={() => void onThumbError(o)} />
                       {:else}<Icon name={o.kind === "video" ? "video" : "image"} size={14} />{/if}
                     </button>
                   {:else}
@@ -261,6 +289,7 @@
                   {/if}
                 {/each}
               </div>
+              {/if}
               <div class="queue-row-main">
                 <span class="queue-row-title">{entry.outputs.length} {counterFor(entry.mediaKind)} · {entry.engine === "cloud" ? "云端" : "本机"}</span>
                 <span class="queue-row-sub">{footerTimeLabel(entry.at / 1000)}{costOf(entry.costCoins)}</span>

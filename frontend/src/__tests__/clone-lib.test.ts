@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { get } from "svelte/store";
+import { imagesApi } from "../lib/api";
 import {
   EMPTY_CLONE_JOB, applyCloneProgress, buildGenerateRequest, cloneError, cloneStatusLabel,
   allowsTextMode, controlContextLine, controlSlots, controlSummary, CONTEXT_LINE_LIMIT, defaultControlValues, defaultReferences, formatControlValue, modesFor, sceneTypeOf,
@@ -15,7 +17,7 @@ import {
   workflowMenuRows, workflowDisplayName, AUDIO_MODE_GROUP_LABEL, voiceAvatar, voiceSample, switchPair,
   CREATION_KIND_ORDER, CREATION_KIND_WORDS, rowsForKind, rowForKindSwitch, tallyByKind,
   voiceNativeLanguage, isLanguageSlot, languageSlotAmong, languageOptionFor, nativeLanguageOverride,
-  firstFreeRefKey, mergedRefCells, openRefKinds, REF_DISPLAY_ORDER, sortByDisplayFamily,
+  firstFreeRefKey, mergedRefCells, openRefKinds, REF_DISPLAY_ORDER, sortByDisplayFamily, cloneGoneOutputs, probeCloneOutputGone,
   type CloneMode, type CloneSlot, type CloneTemplate,
 } from "../lib/clone";
 
@@ -1782,5 +1784,35 @@ describe("档位按钮上那个数怎么写", () => {
     expect(formatControlValue(ladder, 1)).toBe("1.0MP");
     expect(formatControlValue(ladder, 0.98)).toBe("0.98MP");
     expect(formatControlValue(seconds, 8)).toBe("8秒");
+  });
+});
+
+describe("队列产出「已经不在了」的登记", () => {
+  afterEach(() => {
+    cloneGoneOutputs.set(new Set());
+    vi.restoreAllMocks();
+  });
+
+  it("presence 说还在就不登记：缩略图取不到不等于删了", async () => {
+    // 视频海报、音频波形都可能「还没生成」，后端刚重启那一下也会读不到——
+    // 拿这些当「删了」，会把还在的东西从队列里抹掉。
+    vi.spyOn(imagesApi, "presence").mockResolvedValue({ exists: true });
+    expect(await probeCloneOutputGone(11)).toBe(false);
+    expect(get(cloneGoneOutputs).has(11)).toBe(false);
+  });
+
+  it("presence 说不在了才登记；同一颗再问一遍不该换一份 Set 出来", async () => {
+    vi.spyOn(imagesApi, "presence").mockResolvedValue({ exists: false });
+    expect(await probeCloneOutputGone(12)).toBe(true);
+    expect(get(cloneGoneOutputs).has(12)).toBe(true);
+    const snapshot = get(cloneGoneOutputs);
+    expect(await probeCloneOutputGone(12)).toBe(true);
+    expect(get(cloneGoneOutputs), "重复查证在换 Set，订阅方会白白重渲染一次").toBe(snapshot);
+  });
+
+  it("后端问不动就不登记——宁可留着那一格，也不猜「删了」", async () => {
+    vi.spyOn(imagesApi, "presence").mockRejectedValue(new Error("后端没答"));
+    expect(await probeCloneOutputGone(13)).toBe(false);
+    expect(get(cloneGoneOutputs).has(13)).toBe(false);
   });
 });

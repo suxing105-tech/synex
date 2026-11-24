@@ -666,6 +666,33 @@ export function clearCloneHistory(): void {
   cloneHistory.set([]);
 }
 
+/**
+ * 队列历史里「这一张已经不在了」的那些产出。
+ *
+ * 为什么不能拿「缩略图 404」直接当「删了」：音频波形、视频海报都可能是「还没生成」，
+ * 后端刚重启那一下也会读不到——照 404 收格子，会把还在的东西从界面上抹掉。
+ * 所以沿用 Feed 那把尺子（Feed 的 checkMissing 走的就是它）：问一次 /presence，
+ * 它既查库里那行、也 stat 磁盘上的文件（文件真没了还顺手把索引清掉）。
+ * 它说不在了才登记；问不动（后端没答）就不登记——宁可留着那颗，不猜「删了」。
+ *
+ * 状态放模块级而不是组件里：详情栏一换选中就把队列面板重建一次，状态跟着组件走的话，
+ * 每次重建都要重新裂一次图再收掉，看着像界面在闪。
+ */
+export const cloneGoneOutputs = writable<Set<number>>(new Set());
+
+/** 查证 + 登记：确认不在了才登记，返回这一张是不是真的没了。 */
+export async function probeCloneOutputGone(id: number): Promise<boolean> {
+  let exists = true;
+  try {
+    exists = (await api.imagesApi.presence(id)).exists;
+  } catch {
+    return false;
+  }
+  if (exists) return false;
+  cloneGoneOutputs.update((set) => (set.has(id) ? set : new Set([...set, id])));
+  return true;
+}
+
 function sealCloneHistory(job: CloneJob): void {
   const outputs = cloneOutputsOf(job);
   if (!outputs.length) return;

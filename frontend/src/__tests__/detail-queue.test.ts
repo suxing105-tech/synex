@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
 import { tick } from "svelte";
+import { get } from "svelte/store";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import CloneQueuePanel from "../components/CloneQueuePanel.svelte";
-import { itemsApi } from "../lib/api";
+import { imagesApi, itemsApi } from "../lib/api";
 import { pushToast } from "../lib/toast";
 import {
   EMPTY_CLONE_JOB,
@@ -13,6 +14,7 @@ import {
   clearCloneHistory,
   cloneApi,
   cloneHistory,
+  cloneGoneOutputs,
   cloneJob,
   cloudApi,
 } from "../lib/clone";
@@ -73,6 +75,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   clearCloneHistory();
   cloneJob.set(EMPTY_CLONE_JOB);
+  cloneGoneOutputs.set(new Set());
 });
 
 describe("队列页的空态", () => {
@@ -317,5 +320,50 @@ describe("标题行那颗「正在跑」的红点", () => {
     const afterRule = after.slice(0, after.indexOf("}") + 1);
     expect(afterRule, "点本体（含朱红）得画在 ::after 上").toMatch(/background:\s*var\(--accent\)/);
     expect(afterRule).toMatch(/border-radius:\s*var\(--r-circle\)/);
+  });
+});
+
+describe("产出后来被删掉的那一格", () => {
+  // 2026-11-23 苏醒：「生成之后我再删掉图，显示这个不太美观」→ 定的是那一格直接不显示。
+  // 但「读不到」和「没了」是两件事，三条用例各钉一头：真没了才收格子，问不动就不动。
+  const batch = (id: number, elapsedSec: number) => ({
+    key: "job-" + id, jobId: "job-" + id, outputs: [out(id)], mediaKind: "image",
+    engine: "comfyui", provider: "", costCoins: null, at: Date.now(), elapsedSec,
+  });
+
+  it("缩略图 404 且 presence 说没了：那一格整格收掉，行、张数、耗时都不动", async () => {
+    vi.spyOn(imagesApi, "presence").mockResolvedValue({ exists: false });
+    cloneHistory.set([batch(201, 5)]);
+    const ui = render(CloneQueuePanel, { active: false });
+    expect(ui.container.querySelector("img.queue-out")).toBeTruthy();
+    fireEvent.error(ui.container.querySelector("img.queue-out") as HTMLImageElement);
+    await waitFor(() => expect(ui.container.querySelector(".queue-thumbs")).toBeNull());
+    expect(imagesApi.presence).toHaveBeenCalledWith(201);
+    // 收的是那一格，不是这一行：那一批确实跑过，耗时还得留着跟别批比快慢
+    expect(ui.getByText("1 张 · 本机")).toBeTruthy();
+    expect(ui.getByText("耗时：5 S")).toBeTruthy();
+  });
+
+  it("只是缩略图取不到（东西还在）不许收格：换站里那颗空位，仍可点", async () => {
+    vi.spyOn(imagesApi, "presence").mockResolvedValue({ exists: true });
+    cloneHistory.set([batch(202, 8)]);
+    const ui = render(CloneQueuePanel, { active: false });
+    fireEvent.error(ui.container.querySelector("img.queue-out") as HTMLImageElement);
+    await waitFor(() => expect(ui.container.querySelector("img.queue-out")).toBeNull());
+    expect(ui.container.querySelector(".queue-thumbs")).toBeTruthy();
+    // 换的是画面不是入口：东西在，点了就该能开
+    expect(ui.getByRole("button", { name: "看 out-202.png 产出" })).toBeTruthy();
+    expect(get(cloneGoneOutputs).has(202)).toBe(false);
+  });
+
+  it("后端问不动时也不收格：宁可留着一颗空位，不猜「删了」", async () => {
+    vi.spyOn(imagesApi, "presence").mockRejectedValue(new Error("后端没答"));
+    cloneHistory.set([batch(203, 6)]);
+    const ui = render(CloneQueuePanel, { active: false });
+    fireEvent.error(ui.container.querySelector("img.queue-out") as HTMLImageElement);
+    await tick();
+    await tick();
+    expect(ui.container.querySelector(".queue-thumbs")).toBeTruthy();
+    expect(get(cloneGoneOutputs).has(203)).toBe(false);
   });
 });

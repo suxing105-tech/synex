@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import CloneQueuePanel from "../components/CloneQueuePanel.svelte";
+import DetailPanel from "../components/DetailPanel.svelte";
 import { imagesApi, itemsApi } from "../lib/api";
 import { pushToast } from "../lib/toast";
 import {
@@ -365,5 +366,95 @@ describe("产出后来被删掉的那一格", () => {
     await tick();
     expect(ui.container.querySelector(".queue-thumbs")).toBeTruthy();
     expect(get(cloneGoneOutputs).has(203)).toBe(false);
+  });
+});
+
+describe("跑完那一批后来被删掉的几张：小字「已删除」", () => {
+  // 2026-11-23 苏醒第二轮：「我不想删除之后直接跳成[空态]，而是希望直接这里显示小字已删除」。
+  // 上一轮收掉的是那一格，这一轮补的是「这一行还欠一句话」——不补它就只读得出「跑过一批」，
+  // 读不出「那批东西已经不在了」。钉三头：没了要有这句、还在不许有、删一半也得有。
+  const batch = (id: number, elapsedSec: number, count = 1) => ({
+    key: "job-" + id, jobId: "job-" + id,
+    outputs: Array.from({ length: count }, (_, i) => out(id + i)),
+    mediaKind: "image", engine: "comfyui", provider: "", costCoins: null, at: Date.now(), elapsedSec,
+  });
+
+  it("产物确认真没了：第二行那句时间后面缀上「已删除」", () => {
+    cloneHistory.set([batch(301, 5)]);
+    cloneGoneOutputs.set(new Set([301]));
+    const ui = render(CloneQueuePanel, { active: false });
+    const sub = ui.container.querySelector(".queue-row-sub") as HTMLElement;
+    expect(sub.textContent ?? "").toMatch(/·\s*已删除$/);
+    // 那句走的是第二行的小字灰，不跟着右侧「耗时」上品牌红：全站品牌红文字只登记了那一处
+    const cost = ui.container.querySelector(".queue-row-cost") as HTMLElement;
+    expect(cost.textContent ?? "").not.toContain("已删除");
+    expect(cost.textContent).toBe("耗时：5 S");
+    // 格仍旧是收掉的，没有拿文字去顶替画面
+    expect(ui.container.querySelector(".queue-thumbs")).toBeNull();
+  });
+
+  it("东西还在的批次不许冒出「已删除」：只有 /presence 说过没了才算", async () => {
+    vi.spyOn(imagesApi, "presence").mockResolvedValue({ exists: true });
+    cloneHistory.set([batch(302, 6)]);
+    const ui = render(CloneQueuePanel, { active: false });
+    fireEvent.error(ui.container.querySelector("img.queue-out") as HTMLImageElement);
+    await tick();
+    await tick();
+    expect(ui.container.textContent ?? "").not.toContain("已删除");
+  });
+
+  it("一批里只删了其中一张：剩下那张照排，那句小字也要在", () => {
+    cloneHistory.set([batch(310, 7, 2)]);
+    cloneGoneOutputs.set(new Set([310]));
+    const ui = render(CloneQueuePanel, { active: false });
+    expect(ui.container.querySelectorAll("img.queue-out")).toHaveLength(1);
+    const sub = ui.container.querySelector(".queue-row-sub") as HTMLElement;
+    expect(sub.textContent ?? "").toMatch(/已删除/);
+    // 张数那句仍旧是当初跑出来的总数，不因删过而改写历史
+    expect(ui.getByText("2 张 · 本机")).toBeTruthy();
+  });
+});
+
+describe("没选中任何东西时队列也得留着", () => {
+  // 2026-11-23 苏醒：「我不想删除之后直接跳成[空态]」。删掉刚生成的那一张会把选中一起清空，
+  // 而队列以前只长在「选中了某一张」那条分支里，于是整块跟着消失——刚跑完的那批就此看不见。
+  // 这一处不跟着「只钉源码」的老口径：snippet 写在用它的分支之后，光看源码看不出 Svelte 认不认，
+  // 所以真挂一次 DetailPanel（selectedDetail / selectedText 默认 null，挂出来就是空态那一支）。
+  const panelRawSource = readFileSync(resolve(here, "..", "components", "DetailPanel.svelte"), "utf8");
+
+  it("提示和队列同时在场：删掉刚生成的那一张之后，刚跑完的那批还看得见", () => {
+    cloneHistory.set([{
+      key: "job-401", jobId: "job-401", outputs: [out(401)], mediaKind: "image",
+      engine: "comfyui", provider: "", costCoins: null, at: Date.now(), elapsedSec: 9,
+    }]);
+    // selectedDetail / selectedText 默认都是 null，appBooting 默认 false → 挂载的就是空态那一支
+    const ui = render(DetailPanel, { active: false });
+    expect(ui.container.textContent ?? "").toContain("在中间选一张图片或文本");
+    expect(ui.getByText("队列")).toBeTruthy();
+    expect(ui.getByText("本次运行")).toBeTruthy();
+    expect(ui.container.querySelectorAll(".queue-row")).toHaveLength(1);
+    expect(ui.getByText("耗时：9 S")).toBeTruthy();
+  });
+
+  it("跑完的产物被删掉时，空态里那一行也带着「已删除」", () => {
+    cloneHistory.set([{
+      key: "job-402", jobId: "job-402", outputs: [out(402)], mediaKind: "image",
+      engine: "comfyui", provider: "", costCoins: null, at: Date.now(), elapsedSec: 4,
+    }]);
+    cloneGoneOutputs.set(new Set([402]));
+    const ui = render(DetailPanel, { active: false });
+    const sub = ui.container.querySelector(".queue-row-sub") as HTMLElement;
+    expect(sub.textContent ?? "").toMatch(/·\s*已删除$/);
+  });
+
+  it("两种状态共用同一份队列区块，不是各写一份", () => {
+    const renders = panelRawSource.match(/\{@render queueSection\(\)\}/g) || [];
+    expect(renders).toHaveLength(2);
+    const snip = panelRawSource.slice(
+      panelRawSource.indexOf("{#snippet queueSection()}"),
+      panelRawSource.indexOf("{/snippet}"),
+    );
+    expect(snip).toContain('data-workbench-section="queue"');
+    expect(snip).toContain("<CloneQueuePanel active={active} />");
   });
 });

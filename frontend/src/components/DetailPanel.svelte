@@ -353,10 +353,17 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
     <span class="ds-block" style="--i: 2;"></span>
   </div>
 {:else if !$selectedDetail}
-  <div class="h-full flex items-center justify-center text-center text-muted p-8">
-    <div>
-      <div class="mb-3 opacity-50"><Icon name="arrow-left" size={36} /></div>
-      <div class="text-sm">在中间选一张图片或文本<br />查看详情和操作</div>
+  <!-- 没选中东西时队列也留着：它答的是「这一轮跑到哪、跑完的批次在哪」，不属于某一张图。
+       以前整块一起换成空态，删掉刚生成的那一张（选中跟着清空）之后，刚跑完的那批
+       在界面上就此消失（2026-11-23 苏醒：「我不想删除之后直接跳成空态」）。
+       提示那句还在，只是从整块居中收成一条，把位置让给下面的队列。 -->
+  <div class="h-full flex flex-col overflow-hidden">
+    <div class="flex-1 min-h-0 overflow-y-auto p-3 space-y-3 detail-body">
+      <div class="detail-idle-hint text-muted">
+        <div class="opacity-50"><Icon name="arrow-left" size={24} /></div>
+        <div class="text-sm">在中间选一张图片或文本<br />查看详情和操作</div>
+      </div>
+      {@render queueSection()}
     </div>
   </div>
 {:else}
@@ -511,19 +518,26 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
         </section>
       {/if}
 
-      <section class="workbench-section queue-workspace" data-workbench-section="queue" aria-labelledby="queue-title">
-        <div class="section-heading">
-          <div><h3 id="queue-title" class="section-title">队列</h3><p class="section-subtitle">当前任务与最近产出</p></div>
-          {#if $cloneJob.running}<span class="queue-live-dot" aria-label="有任务正在运行"></span>{/if}
-        </div>
-        <CloneQueuePanel active={active} />
-      </section>
+      {@render queueSection()}
 
     </div>
 
     <VideoCoverModal bind:open={coverModalOpen} video={d} onCoverChange={refreshAfterCoverChange} />
   </div>
 {/if}
+
+{#snippet queueSection()}
+  <!-- 队列那一块在「选中一张图」和「什么都没选中」两种状态下是同一份内容，抽出来共用，
+       免得两处各自长歪。声明写在主 if 之后：__tests__/detail-tabs.test.ts 钉的是源码里
+       提示词→参数→队列的纵向顺序，声明放前面会把那条顺序读反。 -->
+  <section class="workbench-section queue-workspace" data-workbench-section="queue" aria-labelledby="queue-title">
+    <div class="section-heading">
+      <div><h3 id="queue-title" class="section-title">队列</h3><p class="section-subtitle">当前任务与最近产出</p></div>
+      {#if $cloneJob.running}<span class="queue-live-dot" aria-label="有任务正在运行"></span>{/if}
+    </div>
+    <CloneQueuePanel active={active} />
+  </section>
+{/snippet}
 
 <!-- 文件夹选择弹层 -->
 <FolderPickerModal
@@ -558,6 +572,16 @@ import VideoPromptPanel from "./VideoPromptPanel.svelte";
   .menu-item:focus-visible { background:var(--raise-1); color:var(--text-1); outline:none; }
 
   .detail-body { scrollbar-gutter:stable; }
+  /* 空态那句提示：以前靠整块居中的 flex 撑出来，现在上面不再独占整栏，自己管排布。
+     字号、颜色仍旧用 class 侧的 text-sm / text-muted，这里只排位置。 */
+  .detail-idle-hint {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-5) var(--sp-3);
+    text-align: center;
+  }
   .workbench-section {
     padding:var(--sp-3) var(--sp-05);
     border:0;

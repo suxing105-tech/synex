@@ -104,6 +104,17 @@
   const shownOf = (entry: CloneHistoryEntry) => entry.outputs.filter((o) => !goneIds.has(o.id));
 
   /**
+   * 这一批里有几张确实没了 → 在第二行时间后面缀一句小字「已删除」。
+   *
+   * 2026-11-23 苏醒第二轮：「我不想删除之后直接跳成[空态]，而是希望直接这里显示小字已删除」。
+   * 就借这一行本来就有的小字档（--fs-2xs / --text-3），不新挑字号也不新挑颜色：
+   * 品牌红文字全站只登记了右边「耗时」那一处，这里跟着它走会把那格唯一的强调冲淡。
+   * 算的还是 shownOf 那把尺子——只有 /presence 说过真没了才算，画面读不到不算。
+   */
+  const goneMarkOf = (entry: CloneHistoryEntry) =>
+    entry.outputs.length > shownOf(entry).length ? " · 已删除" : "";
+
+  /**
    * 缩略图读不到：先换成站里那颗空位（浏览器那颗裂图是它自己画的，全站就这一处会冒出来），
    * 同时去问一次还在不在。真不在 → 整格跟着 goneIds 收掉；还在 → 留着这颗空位，仍然可点。
    */
@@ -258,7 +269,7 @@
           {/if}
           <div class="queue-row-main">
             <span class="queue-row-title">{entry.outputs.length} {counterFor(entry.mediaKind)} · {entry.engine === "cloud" ? "云端" : "本机"}</span>
-            <span class="queue-row-sub">{footerTimeLabel(entry.at / 1000)}{costOf(entry.costCoins)}</span>
+            <span class="queue-row-sub">{footerTimeLabel(entry.at / 1000)}{costOf(entry.costCoins)}{goneMarkOf(entry)}</span>
           </div>
           {#if cost}<span class="queue-row-cost">{cost}</span>{/if}
         </div>
@@ -292,7 +303,7 @@
               {/if}
               <div class="queue-row-main">
                 <span class="queue-row-title">{entry.outputs.length} {counterFor(entry.mediaKind)} · {entry.engine === "cloud" ? "云端" : "本机"}</span>
-                <span class="queue-row-sub">{footerTimeLabel(entry.at / 1000)}{costOf(entry.costCoins)}</span>
+                <span class="queue-row-sub">{footerTimeLabel(entry.at / 1000)}{costOf(entry.costCoins)}{goneMarkOf(entry)}</span>
               </div>
               {#if cost}<span class="queue-row-cost">{cost}</span>{/if}
             </div>

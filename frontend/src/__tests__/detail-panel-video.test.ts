@@ -67,8 +67,9 @@ describe("详情面板视频分支", () => {
     const fpsLine = raw.indexOf('<span>{d.fps} fps</span>');
     expect(durationLine).toBeGreaterThan(0);
     expect(fpsLine).toBeGreaterThan(durationLine);
-    // 帧率那行必须仍在头部信息行内（位于 Body 之前）
-    expect(fpsLine).toBeLessThan(raw.indexOf("detail-body"));
+    // 帧率那行必须仍在头部信息行内：钉的是头部那道界，不拿 detail-body 当代理
+    //（2026-11-23 空态那一支也要滚，同一个 class 现在有两处，代理会读错位置）
+    expect(fpsLine).toBeLessThan(raw.indexOf("</header>"));
     // 视频分支里不该再有任何信息卡字段（音频信息卡仍在自己的分支，不受影响）
     const videoBranch = videoBranchOnly();
     // 信息卡整块删除：不该再有 dl / label 行，也不该再有视频专属字段名

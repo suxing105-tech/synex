@@ -147,9 +147,16 @@ export interface ImportResponse {
   inbox_dir: string;
 }
 
+/**
+ * 素材流的排序档位，只有这两个取值，后端两条路（/api/images 与 /api/items）共用同一套。
+ * 口径在后端钉着（name_asc = filename COLLATE NOCASE），前端不自己排。
+ */
+export type FeedSort = "mtime_desc" | "name_asc";
+
 export type FeedQuery = {
   folder_id?: number | null;
   kind?: MediaKind;
+  sort?: FeedSort;
   q?: string;
   tag?: string;
   model?: string;
@@ -196,7 +203,7 @@ export type ItemFeedQuery = {
   q?: string;
   tag?: string;
   kinds?: string;
-  sort?: "mtime_desc" | "name_asc";
+  sort?: FeedSort;
   limit?: number;
   offset?: number;
 };

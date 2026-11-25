@@ -2,6 +2,7 @@ import { writable, derived, get } from "svelte/store";
 import { tick } from "svelte";
 import type {
   ComfyuiStatus,
+  FeedSort,
   FolderCounts,
   FolderNode,
   ImageDetail,
@@ -15,6 +16,7 @@ import type {
 } from "./types";
 import { foldersApi, imagesApi, itemsApi, scanApi, statsApi } from "./api";
 import { isMediaItem, itemUid, mediaOnly } from "./items";
+import { feedSort } from "./feed-sort";
 import { nextSelection, type Modifier, type SelectionState } from "./selection";
 
 // ---------- 当前选中图片详情 ----------
@@ -407,6 +409,7 @@ type FeedParams = {
   q: string;
   tag: string | null;
   kinds: ItemKind[];
+  sort: FeedSort;
 };
 
 function currentFeedParams(): FeedParams {
@@ -416,6 +419,8 @@ function currentFeedParams(): FeedParams {
     q: get(query),
     tag: get(tag),
     kinds: kindsOfFilter(get(kindFilter)),
+    // 排序是全站一个开关（卡片右键菜单里的「排序」子菜单），四种口径共用
+    sort: get(feedSort),
   };
 }
 
@@ -442,8 +447,7 @@ async function fetchFeedPage(params: FeedParams, offset: number, removed: Set<nu
       q: params.q || undefined,
       tag: params.tag || undefined,
       kinds: params.kinds.join(","),
-      // 统一流固定「新的在前」：0.2.22 验收时撤掉了名称排序按钮，后端仍保留 sort 参数
-      sort: "mtime_desc",
+      sort: params.sort,
       limit: FEED_PAGE,
       offset,
     });
@@ -458,6 +462,8 @@ async function fetchFeedPage(params: FeedParams, offset: number, removed: Set<nu
     kind: params.scope as Exclude<Scope, "all" | "text">,
     q: params.q || undefined,
     tag: params.tag || undefined,
+    // 单一口径走这条，sort 必须一起送：不然四种口径里三种点了排序没反应
+    sort: params.sort,
     limit: FEED_PAGE,
     offset,
   });
@@ -538,6 +544,7 @@ async function feedAutoRefresh() {
     params.q,
     params.scope === "all" ? [...params.kinds].sort().join(",") : "",
     params.tag ?? "",
+    params.sort,
   ].join("|");
   if (key === lastKey) return;
   lastKey = key;
@@ -561,6 +568,8 @@ scope.subscribe(debouncedRefresh);
 query.subscribe(debouncedRefresh);
 tag.subscribe(debouncedRefresh);
 kindFilter.subscribe(debouncedRefresh);
+// 排序换档也走同一条防抖重拉：换顺序要看开头，所以不保滚动位置（refreshFeed 默认行为）
+feedSort.subscribe(debouncedRefresh);
 
 // ---------- 选中图片详情加载 ----------
 
@@ -583,6 +592,7 @@ folderId.subscribe(() => clearSelection());
 scope.subscribe(() => clearSelection());
 query.subscribe(() => clearSelection());
 tag.subscribe(() => clearSelection());
+// 排序故意不在此列：它不改变「哪些项在这张网格里」，只改变顺序，没道理把用户选的清空
 
 // feedItems 变化（删除某张图 / 新入库）→ 把不存在的 id 从选区里剔除。
 // 只看媒体子序列：文本项的 id 与媒体 id 会撞号，不能拿来验真。

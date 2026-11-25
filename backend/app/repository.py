@@ -1218,11 +1218,17 @@ def feed(
     tag: str | None = None,
     model: str | None = None,
     kind: str | None = None,
+    sort: str = "mtime_desc",
     limit: int = 500,
     offset: int = 0,
     new_ids: set[int] | None = None,
 ) -> tuple[list[dict], int]:
-    """返回 (items, total)。``new_ids`` 用于标记 NEW 徽标。"""
+    """返回 (items, total)。``new_ids`` 用于标记 NEW 徽标。
+
+    ``sort`` 只有两档，口径与 :func:`unified_feed` 逐字一致：``name_asc`` 按文件名
+    （NOCASE，``a.png`` 与 ``A.PNG`` 相邻）、``mtime_desc`` 按修改时间新的在前（默认，
+    即 0.2.22 撤掉工具栏排序按钮之后的一贯行为）。第二排序键定死，同值才不会翻页来回换序。
+    """
     conn = get_pool().main()
     where: list[str] = [unarchived_media_sql()]
     params: list[object] = []
@@ -1279,9 +1285,14 @@ def feed(
     total = conn.execute(
         f"SELECT COUNT(*) AS c FROM images {where_clause}", params
     ).fetchone()["c"]
+    order = (
+        "images.filename COLLATE NOCASE ASC, images.id ASC"
+        if sort == "name_asc"
+        else "images.mtime DESC, images.id DESC"
+    )
     rows = conn.execute(
         f"SELECT {_SUMMARY_SELECT} FROM images {where_clause} "
-        f"ORDER BY images.mtime DESC LIMIT ? OFFSET ?",
+        f"ORDER BY {order} LIMIT ? OFFSET ?",
         (*params, limit, offset),
     ).fetchall()
     items = []

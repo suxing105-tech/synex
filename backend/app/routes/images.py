@@ -49,6 +49,8 @@ def list_images(
     tag: str | None = None,
     model: str | None = None,
     kind: str | None = None,
+    # 取值集合与 /api/items 的 sort 逐字符一致：前端一个 store 同时喂两条路
+    sort: str = Query(default="mtime_desc", pattern="^(mtime_desc|name_asc)$"),
     limit: int = Query(default=500, ge=1, le=2000),
     offset: int = Query(default=0, ge=0),
 ):
@@ -58,6 +60,7 @@ def list_images(
         tag=tag,
         model=model,
         kind=kind,
+        sort=sort,
         limit=limit,
         offset=offset,
     )

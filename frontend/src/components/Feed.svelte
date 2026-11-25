@@ -43,6 +43,7 @@
 import { cloneOpen, comparePair } from "../lib/clone";
 import { hoverPlay } from "../lib/hover-play";
   import { textsApi } from "../lib/texts";
+  import { FEED_SORT_OPTIONS, feedSort, setFeedSort } from "../lib/feed-sort";
   import { isTextFilePath, textFeedItemOf, textFormatLabel } from "../lib/text-reading";
   import { folderId } from "../lib/stores";
 
@@ -244,6 +245,18 @@ import { hoverPlay } from "../lib/hover-play";
   let textDialogBusy = $state(false);
   let textDialogError = $state("");
 
+  /**
+   * 「排序」子菜单：媒体卡与文本卡两处菜单共用 FEED_SORT_OPTIONS，当前生效那档点亮。
+   * 选了只改 store，重拉由 stores.ts 里 feedSort 的订阅负责（和图片/视频/音频/文本四种口径同一条路）。
+   */
+  const sortMenu = $derived<ContextMenuItem[]>(
+    FEED_SORT_OPTIONS.map((option) => ({
+      label: option.label,
+      active: $feedSort === option.value,
+      onClick: () => setFeedSort(option.value),
+    })),
+  );
+
   function openTextCardMenu(e: MouseEvent, it: TextFeedItem) {
     e.preventDefault();
     e.stopPropagation();
@@ -264,6 +277,7 @@ import { hoverPlay } from "../lib/hover-play";
       { label: "复制文件所在位置", onClick: () => void copyTextLocation(it.path) },
       { label: "文件位置", onClick: () => void revealTextFile(it) },
       { label: "重命名", onClick: () => startTextRename(it) },
+      { label: "排序", children: sortMenu },
       { kind: "sep" },
       { label: "移入回收站", danger: true, onClick: () => void trashText(it) },
     ];
@@ -728,6 +742,7 @@ import { hoverPlay } from "../lib/hover-play";
         { label: "复制文件所在位置", onClick: () => copyMediaLocation(t.path) },
         { label: `${noun}所在位置`, onClick: () => revealImage(t) },
         { label: "移动到…", children: moveMenu(items) },
+        { label: "排序", children: sortMenu },
         { kind: "sep" },
         { label: "移入回收站", danger: true, onClick: () => void trashMedia(items) },
       ];
@@ -737,6 +752,7 @@ import { hoverPlay } from "../lib/hover-play";
       { label: `复制 ${items.length} 个${noun}地址`, onClick: () => copyImageUrls(items) },
       { label: "复制文件所在位置", onClick: () => copyMediaLocation(items.map((it) => it.path).join("\n")) },
       { label: "移动到…", children: moveMenu(items) },
+      { label: "排序", children: sortMenu },
       { kind: "sep" },
       { label: `移入回收站 ${items.length} 个${noun}`, danger: true, onClick: () => void trashMedia(items) },
     ];

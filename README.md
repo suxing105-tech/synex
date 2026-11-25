@@ -154,7 +154,7 @@ pnpm dev        # http://localhost:5173（代理到 8765）
 ## 🧪 测试
 
 - 后端：`1325 passed + 2 skipped`（parser / indexer / repository / api / video / audio / folders / text / psd / 迁移 / 发布脚本；需在 `backend\.venv` 里跑，那里才有 `psd_tools`，用系统 Python 会跳过 1 条 PSD 用例）
-- 前端：`2038 passed`（169 个测试文件）
+- 前端：`2039 passed`（169 个测试文件）
 - Rust：`50 passed`（含 1 条集成测试；另 2 条要真机环境的用例默认 `#[ignore]`）
 - `svelte-check`：`0 errors`
 

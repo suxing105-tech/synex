@@ -176,15 +176,15 @@ describe("卡片右键菜单的「排序」子菜单", () => {
     expect(get(feedSort)).toBe("mtime_desc");
     expect(vi.mocked(itemsApi.list).mock.calls.length).toBe(before);
   });
-it("多选后的批量菜单里也有「排序」，位置同样是移动到… 之后、移入回收站之前", async () => {
-    multiSelectedIds.set(new Set([1, 2]));
-    const ui = renderFeed();
-    await tick();
-    await openMenuOn(ui, "media:1");
-    const picked = labels(ui);
-    expect(picked).toContain("排序");
-    expect(picked.indexOf("排序")).toBe(picked.indexOf("移动到…") + 1);
-    expect(picked[picked.length - 1]).toBe("移入回收站 2 个图片");
+it("多选后的批量菜单里也有「排序」，位置同样是移动到… 之后、移入回收站之前", async () => {
+    multiSelectedIds.set(new Set([1, 2]));
+    const ui = renderFeed();
+    await tick();
+    await openMenuOn(ui, "media:1");
+    const picked = labels(ui);
+    expect(picked).toContain("排序");
+    expect(picked.indexOf("排序")).toBe(picked.indexOf("移动到…") + 1);
+    expect(picked[picked.length - 1]).toBe("移入回收站 2 个图片");
   });
 
 });

@@ -325,6 +325,22 @@ export function boardPads(state: OutpaintBoardState, size: OutpaintSize): Outpai
 }
 
 /**
+ * 屏幕上该显示的那四边单位值：先按服务端算成像素，再换回单位值。
+ *
+ * 画板上那四个输入框、底部那行读数、弹窗脚注都必须走它，不许直接显示 controls 里那四颗：
+ * 选了比例之后那四颗是「拖之前填的数」，凑完比例真会补的是另一份（只增不减、对侧还会跟着给）。
+ * 于是数字会跟着跳——跳完那个数才是成图真会用的数。宁可跳，不要骗眼睛（口径见文件顶）。
+ *
+ * 它只管「这一档单位下该显示多少」，不负责换单位：换单位要拿**旧**那份状态换算成像素、
+ * 再按新单位记一次，也就是 sideValues(新单位, boardPads(旧状态, size), size)。别写成
+ * boardShown({...旧状态, unit: 新单位})——那等于拿新单位去读旧单位那四颗，25% 会被当成
+ * 25 像素，画板边界当场缩回去。这一条在 outpaint-contract.test.ts 里有用例钉着。
+ */
+export function boardShown(state: OutpaintBoardState, size: OutpaintSize): OutpaintSides {
+  return sideValues(state.unit, boardPads(state, size), size);
+}
+
+/**
  * 拖某一条边（像素进、像素出）：dx/dy 是「源图像素」口径的位移（右为正、下为正）。
  * 先按这一次拖动改被拖的那几边，再按选中的比例配平。量程那一步不在这里——sideValues 卡，
  * 因为能写进 controls 的只有单位值。要改 controls 用 dragBoard，别直接拿这个返回值。

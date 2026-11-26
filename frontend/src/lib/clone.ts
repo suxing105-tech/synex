@@ -1125,6 +1125,18 @@ export function controlSlots(template: CloneTemplate | null | undefined): CloneS
 }
 
 /**
+ * 后端点名「画进画板」的那六颗：四边 + 按什么单位记 + 凑哪个比例（ui="board"）。
+ *
+ * 它们不是参数弹层上的旋钮。往四边各补多少画面，要在画面上把边框拖出来才说得清楚，
+ * 所以面板、底部胶囊、送进提示词优化那一行都不报它们，改由外补画板（lib/outpaint.ts）自己管。
+ * 槽位本身照旧留在 template.slots 里跟着提交——提交要的正是那六颗；比例那颗还要留给排卡认
+ * （pickedRatioOption 从 controlSlots 里找），所以这里只挡「显示」，不挡「存在」。
+ */
+export function isBoardSlot(slot: CloneSlot): boolean {
+  return slot.ui === "board";
+}
+
+/**
  * 这颗控件现在该不该出现。没写 show_when 的（绝大多数）永远出现。
  *
  * 条件挂在「同一台节点的另一个下拉框」上，所以判定只吃弹窗里那份 controls。
@@ -1152,12 +1164,17 @@ export function slotVisible(
   return true;
 }
 
-/** 面板上真该画出来的那几颗控件（隐藏的既不进面板，也不进胶囊汇总、不参与算尺寸）。 */
+/**
+ * 面板上真该画出来的那几颗控件（隐藏的既不进面板，也不进胶囊汇总、不参与算尺寸）。
+ * 画板那六颗也一并挡在这儿：它们由画板自己管，混进来会变成同一件事有两个入口。
+ */
 export function visibleControlSlots(
   template: CloneTemplate | null | undefined,
   controls: Record<string, string | number>,
 ): CloneSlot[] {
-  return controlSlots(template).filter((slot) => slotVisible(template, slot, controls));
+  return controlSlots(template).filter(
+    (slot) => !isBoardSlot(slot) && slotVisible(template, slot, controls),
+  );
 }
 
 /**
@@ -1915,7 +1932,9 @@ export function controlSummary(
   return slots
     // 开关那一颗不上胶囊：它改的是「这台机器跑得快还是省显存」，不出片的参数报在
     // 摘要里只会多一个读不懂的「关」字（和「云端没有 megapixels 就别冒出来」同一条尺）。
-    .filter((slot) => slotVisible(template, slot, controls) && !switchPair(slot))
+    // 画板那六颗不上胶囊：胶囊那一行是「这一趟的出图参数」，四边填 0 时报四个 0 既读不出方向
+    // 也说明不了什么，真要看得去画板（那边有「向左 10% · 向右 10% … 成图 1280×720」那句完整读数）。
+    .filter((slot) => slotVisible(template, slot, controls) && !switchPair(slot) && !isBoardSlot(slot))
     .map((slot) => {
       if (pair && slotKey(slot) === slotKey(pair.w)) {
         return sizeText ? `${sizeText.w}×${sizeText.h}` : "";

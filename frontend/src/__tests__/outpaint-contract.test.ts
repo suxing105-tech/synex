@@ -7,7 +7,7 @@ import { slotKey, type CloneSlot, type CloneTemplate } from "../lib/clone";
 import {
   OUTPAINT_EMPTY_REASON, OUTPAINT_FACTORY, OUTPAINT_MAX_EDGE,
   OUTPAINT_MAX_PAD, OUTPAINT_RATIOS, OUTPAINT_TINT, OUTPAINT_UNITS,
-  boardIssue, boardPads, boardReadout, dragBoard, isBoardEmpty,
+  boardIssue, boardPads, boardReadout, boardShown, dragBoard, isBoardEmpty,
   outpaintImageKey, outpaintSlots, outputGeometry, ratioPads, readBoard, sidePads,
   sideValues, slideBoard, writeBoard, type OutpaintBoardState, type OutpaintSides, type OutpaintSize,
 } from "../lib/outpaint";
@@ -234,4 +234,28 @@ it("底部那行读数跟着单位走，百分比模式不许报像素", () => {
   expect(boardReadout("像素", { ...zeros, right: 220 })).toBe(
     "向左 0px · 向右 220px · 向上 0px · 向下 0px",
   );
+});
+
+it("屏幕上那四个框显示的是配平后的数，不是刚填进去的那颗", () => {
+  // 同一条 800×600、左 10%、选 1:1：真会补的是 左80/上140/下140（上面那条已按源码算过）。
+  // controls 里上下那两颗还是 0，框里必须写 23——写 0 就是让人按一个不会发生的构图点生成。
+  const board = state({ ratio: "1:1", raw: { ...zeros, left: 10 } });
+  expect(board.raw.top).toBe(0);
+  expect(boardShown(board, { w: 800, h: 600 })).toEqual({ left: 10, right: 0, top: 23, bottom: 23 });
+  // 23 是 trunc 之后又 round 回来的：round(140×100/600) = 23，成图真按 140 补，读数按 23% 说
+  expect(boardReadout("百分比", boardShown(board, { w: 800, h: 600 }))).toBe(
+    "向左 10% · 向右 0% · 向上 23% · 向下 23%",
+  );
+});
+
+it("换单位保画面：25% 与 200px 在 800 宽的图上是同一条边界", () => {
+  const percent = state({ raw: { ...zeros, right: 25 } });
+  expect(boardPads(percent, { w: 800, h: 600 }).right).toBe(200);
+  // 切到像素那一档要写的值：拿旧那份算成像素、再按新单位记。写成
+  // boardShown({...percent, unit:"像素"}) 就是拿新单位去读 25 这个百分数，边界当场缩回 25px
+  expect(sideValues("像素", boardPads(percent, { w: 800, h: 600 }), { w: 800, h: 600 }).right).toBe(200);
+  // 切回百分比也是同一条边界：round(200×100/800) = 25（同一个方向，先算像素再记新单位）
+  const pixel = state({ unit: "像素", raw: { ...zeros, right: 200 } });
+  expect(boardPads(pixel, { w: 800, h: 600 }).right).toBe(200);
+  expect(sideValues("百分比", boardPads(pixel, { w: 800, h: 600 }), { w: 800, h: 600 }).right).toBe(25);
 });

@@ -24,12 +24,13 @@
   import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
   import PromptSkillModal from "./PromptSkillModal.svelte";
   import MaskEditor from "./MaskEditor.svelte";
+  import OutpaintBoard from "./OutpaintBoard.svelte";
   import type { CanvasEscape } from "../lib/clone-canvas";
   import {
     applyCloneProgress, buildGenerateRequest, cloneApi, cloneError, cloneJob, cloneStatusLabel,
     allowsTextMode, cleanNodeTitle, controlContextLine, controlSlots, controlSummary, defaultControlValues, defaultReferences, formatTargetSize, latestReversePrompt, sceneTypeOf,
     pickedRatioOption,
-    promptGroupValues, modeFromRefCount, modeLabel, numberPresets, numberUnit, presetLabel, switchPair,
+    promptGroupValues, modeFromRefCount, modeLabel, numberPresets, numberUnit, presetLabel, switchPair, isBoardSlot,
     primaryPromptGroup, promptGroupHint, promptPlaceholder, promptSlots, promptSourceLabel, secondaryPromptGroups,
     ratioShape, referenceCells, referenceIssues, resolvePromptSource, shouldOfferWorkflowPrompt, slotKey, slotVisible, visibleRefCells, voiceAvatar, voiceSample, nativeLanguageOverride,
     firstFreeRefKey, mergedRefCells, openRefKinds, REF_DISPLAY_ORDER,
@@ -51,6 +52,10 @@
     maskRequestPayload, maskableCellKeys, paintedMaskCount, promptEmptyHint, promptMayBeEmpty,
     templateAcceptsMask, type MaskEdit,
   } from "../lib/mask";
+  import {
+    OUTPAINT_MAX_EDGE, boardIssue, boardPads, boardReadout, boardShown, outpaintImageKey, outpaintSlots,
+    outputGeometry, readBoard, writeBoard, type OutpaintBoardState,
+  } from "../lib/outpaint";
   import type { ImageSummary, ImportResponse, MediaFeedItem } from "../lib/types";
   import { errorMessage } from "../lib/reverse-prompts";
   import {
@@ -117,6 +122,8 @@
   let maskAt = $state("");
   /** 跑完之后这一格默认让给新产出；人想看遮罩圈在原图哪儿，就临时切回参考图 */
   let maskBack = $state(false);
+  /** 外补画板开着没：它是又一层全屏编辑面，交代和画遮罩一样（第一下 Esc 按「取消」算） */
+  let boardOpen = $state(false);
   let pickerSlot = $state<string | null>(null);
   let error = $state("");
   let submitting = $state(false);
@@ -261,6 +268,46 @@
   const maskHint = $derived(promptEmptyHint(template));
   const maskModeNow = $derived(maskModeLabel(prompt));
   const maskPromptEcho = $derived(maskPromptSummary(prompt));
+  /* ── 外补画板：这份工作流是不是「往四边补画面」那一类 ──────────────────────
+     后端在槽位上点名 ui="board" 才算，六颗不齐它自己就拒装（clone_templates.BOARD_INPUTS 同一道闸），
+     所以前端这儿不用再防「半条画板」——认不出来就老老实实当普通数字框用。
+     画板补的是这份工作流第一颗图片槽位里的图，大图那一格也必须摆这一份，否则拖的是这张、补的是那张。 */
+  const boardSlots = $derived(outpaintSlots(template));
+  const boardKey = $derived(boardSlots ? outpaintImageKey(template) : "");
+  const boardCell = $derived(cells.find((cell) => cell.key === boardKey) ?? null);
+  const boardRef = $derived(boardKey ? refs[boardKey] ?? null : null);
+  /* 底图按源图分辨率取（借 maskBaseImageUrl 那颗，它管的就是「把 max 档位抬回原图」这一件事）：
+     列表给的 original_url 是 feed 用的 ?max=1024 预览，在预览图上量边界，看着差几像素其实差几十。 */
+  const boardSrc = $derived(
+    boardRef
+      ? backendUrl(maskBaseImageUrl(
+          boardRef.original_url || boardRef.thumbnail_url || "", boardRef.width || 0, boardRef.height || 0))
+      : "",
+  );
+  /** 四边的百分比按哪张图算：源图真实宽高，不是地址里那个 max 档位压出来的尺寸 */
+  const boardSize = $derived({ w: boardRef?.width ?? 0, h: boardRef?.height ?? 0 });
+  /** 六颗现在的值从 controls 现读：画板保存、参数弹层、回出厂因此共用同一份事实，没有第二份状态 */
+  const boardState = $derived(boardSlots ? readBoard(boardSlots, controls) : null);
+  /** 拦生成那句话（四边全空）。null = 能生成。画板底部说的就是这一句，两处不会各讲一套。 */
+  const boardBlock = $derived(boardState ? boardIssue(boardState, boardSize) : null);
+  const boardNote = $derived.by(() => {
+    const state = boardState;
+    if (!state) return "";
+    if (!(boardSize.w > 0) || !(boardSize.h > 0)) return "打开画板，在画面上把要补的方向拖开";
+    const out = outputGeometry(boardPads(state, boardSize), boardSize);
+    // 读数走 boardShown：controls 里那四颗是「填之前的数」，凑完比例真会补的是另一份
+    return boardReadout(state.unit, boardShown(state, boardSize)) + " · 成图 " + out.w + "×" + out.h
+      + (out.scaled ? "（最长边超 " + OUTPAINT_MAX_EDGE + "，整张等比压回）" : "");
+  });
+  /** 保存画板：换一整个新对象回去，$state 才认这次改动；写的仍是单位值，像素只活在画板上 */
+  function commitBoard(next: OutpaintBoardState) {
+    const slots = boardSlots;
+    if (!slots) return;
+    const nextControls = { ...controls };
+    writeBoard(slots, nextControls, next);
+    controls = nextControls;
+  }
+
   /** 撤掉大图这一格的遮罩。连键一起删——留一个空键会让下面那条清理误判成「图换了」 */
   function clearMaskHere() {
     if (!maskCellKey) return;
@@ -272,6 +319,8 @@
   $effect(() => {
     // 生成中不许还盖着编辑层：那整块地方要让给等待台
     if (busy && maskOpen) maskOpen = false;
+    // 画板同一件事：那一整块地方要让给等待台
+    if (busy && boardOpen) boardOpen = false;
     // 「回看参考图」只是这批产出的临时对照，产出没了（下一批开跑）就自动还回去
     if (!done) maskBack = false;
   });
@@ -521,14 +570,16 @@
   // 参数面板：combo 走带方框的比例网格，数值走档位 + 自定义输入。
   // 面板只画「现在活着」的那几颗：比例选到自定义宽高时宽高两个框进来、百万像素出去（那条分支里
   // 节点不看它），换回任何一个比例就反过来。藏起来的控件不进面板、不进胶囊、也不参与算尺寸。
+  // 画板那六颗不进面板：四边要在画面上拖着看，六个数字框既说不出方向、又会和画板各说一套
+  // （同一件事在 controlSummary 和 visibleControlSlots 那儿也挡了，别只挡这一处）。
   const selectSlots = $derived(
     controlSlots(template).filter(
-      (slot) => slot.kind === "select" && slotVisible(template, slot, controls),
+      (slot) => slot.kind === "select" && slotVisible(template, slot, controls) && !isBoardSlot(slot),
     ),
   );
   const numberSlots = $derived(
     controlSlots(template).filter(
-      (slot) => slot.kind !== "select" && slotVisible(template, slot, controls),
+      (slot) => slot.kind !== "select" && slotVisible(template, slot, controls) && !isBoardSlot(slot),
     ),
   );
   const hasParams = $derived(selectSlots.length + numberSlots.length > 0);
@@ -812,9 +863,12 @@
 
   // 提示词不再是硬性条件：工作流自己声明了「留空是一个模式」（局部重绘那条＝留空走移除）时，
   // 空着照样能生成。别的工作流留空只会出一张没人要的图，所以那条开关由模板说了算。
+  // 四边全空这一道是扩图独有的：那时候这一趟没有要补的画面，ComfyUI 会当场报错，
+  // 而报错压在生成之后才响是最没用的一次失败。判的是换算完的像素（1% 落在小图上就是 0），
+  // 那句话和画板底部、底部脚注完全同一句，见 boardBlock。
   const canGenerate = $derived(
     Boolean(template) && (promptMayBeEmpty(template) || prompt.trim().length > 0)
-    && issues.length === 0 && !busy && !submitting,
+    && issues.length === 0 && !busy && !submitting && !boardBlock,
   );
 
   /**
@@ -2155,6 +2209,12 @@
   function onKey(e: KeyboardEvent) {
     if (!open || pickerSlot !== null) return;
     if (e.key === "Escape") {
+      // 画板盖在整块弹窗上面，第一下 Esc 只退它，按「取消」算：这次拖的不落进 controls。
+      if (boardOpen) {
+        e.preventDefault();
+        boardOpen = false;
+        return;
+      }
       // 遮罩编辑层盖在整块弹窗上面，第一下 Esc 只退它，而且按「取消」算：这次画的不要。
       if (maskOpen) {
         e.preventDefault();
@@ -2277,12 +2337,29 @@
                 <button class="cm-hero-nav" aria-label="看下一份产出" onclick={() => stepHeroOut(1)}><Icon name="chevron-right" size={14} /></button>
               </div>
             {/if}
-            {#if maskTemplate}
-              <!-- 这一格刚让给新产出。想确认遮罩圈在原图的哪儿，切回去看一眼，再点回来 -->
+            {#if maskTemplate || boardSlots}
+              <!-- 这一格刚让给新产出。想确认遮罩圈在原图的哪儿、上一次画板补的是哪几条边，
+                   切回去看一眼，再点回来 -->
               <button class="cm-mask-corner is-top-right" onclick={() => (maskBack = true)} aria-label="回看参考图">
                 <Icon name="mask" size={12} />回看参考图
               </button>
             {/if}
+          {:else if boardSlots}
+            <!-- 扩图这条：这一格摆的就是画板要补的那张底图，左上角那颗直接开画板。
+                 这一族不给「画遮罩」入口——随包那条正文里没有一处接 MASK 输出（后端认的就是这件事），
+                 而它的主指令是整张图一个字不改、只在四边补：涂了范围也不会有任何区别，摆在那儿只是让人白涂。 -->
+            <div class="cm-mask-hero">
+              {#if boardSrc}
+                <img class="cm-hero" src={boardSrc} alt={boardRef?.filename ?? ""} draggable="false" />
+              {:else}
+                <div class="cm-hero cm-hero-empty">{boardCell?.label ?? "参考图"} 还空着，先放一张图才能开画板</div>
+              {/if}
+              <button class="cm-mask-corner is-enter" disabled={!boardSrc}
+                title={boardSrc ? "在画面上把四边拖开：灰的地方就是这一趟要补的画面" : "先在这一格放一张图"}
+                onclick={() => (boardOpen = true)}>
+                <Icon name="outpaint" size={12} />扩图画板
+              </button>
+            </div>
           {:else if maskTemplate}
             <!-- 这份工作流有能画遮罩的参考位：这一格摆那一格里的图，并把画出来的范围叠在旁边。
                  摆的不是被点的那张卡——两者常常不是同一份，画遮罩必须看见自己涂在哪儿。 -->
@@ -2976,6 +3053,11 @@
                   <!-- 提示词写没写就是两个模式（写了＝按这句话改涂出来的地方，空着＝把涂出来的地方去掉）。
                        这一行钉在操作行下面常驻，跟着提示词现变。 -->
                   <p class="cm-foot-note cm-status" role="status">{prompt.trim() ? maskModeNow : maskHint || maskModeNow}</p>
+                {:else if boardSlots}
+                  <!-- 扩图这一行钉在生成钮下面常驻：补了多少、成图多大，点生成之前就得看得见，
+                       不用为了确认开一次画板。拦人的那句和画板底部完全同一句（都来自 boardBlock）。 -->
+                  <p class="cm-foot-note" class:cm-error={Boolean(boardBlock)} class:cm-status={!boardBlock}
+                    role="status">{boardBlock || boardNote}</p>
                 {/if}
                 {#if error}
                   <p class="cm-foot-note cm-error" role="status">{error}</p>
@@ -3050,6 +3132,22 @@
           maskOpen = false;
           // 全擦完等于这格没画：说清楚，别让「完成」按钮看起来像保存了个东西
           if (!edit) pushToast("这一格的遮罩全擦掉了：这一次等于没画范围。");
+        }}
+      />
+    {/if}
+    {#if boardOpen && boardState && boardSrc}
+      <!-- 和画遮罩同一层交代：它是 .cm-backdrop 的孩子、.cm-panel 的兄弟，要吃掉整块地方。
+           尺寸读不到（boardSrc 为空）就别开：四边的百分比没地方换算，画出来是一块算错数的白板。 -->
+      <OutpaintBoard
+        src={boardSrc}
+        label={boardCell?.label ?? "参考图"}
+        sourceWidth={boardRef?.width ?? 0}
+        sourceHeight={boardRef?.height ?? 0}
+        board={boardState}
+        onCancel={() => (boardOpen = false)}
+        onSave={(next) => {
+          commitBoard(next);
+          boardOpen = false;
         }}
       />
     {/if}

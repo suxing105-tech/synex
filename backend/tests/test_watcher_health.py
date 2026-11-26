@@ -28,6 +28,11 @@ def indexer(init_db):
     idx.shutdown()
 
 
+def row_count(db) -> int:
+    """库里现有的图片行数：轮询等事件进库时用，比每次重写一遍 SQL 清楚。"""
+    return db.main().execute("SELECT count(*) AS n FROM images").fetchone()["n"]
+
+
 # ---------- 假观察器：只用真 watchdog 公开的那几样 ----------
 
 
@@ -223,7 +228,58 @@ def test_a_subdirectory_delete_is_never_treated_as_the_root(indexer, init_db, tm
     assert indexer._is_false_root_delete(root) is True
 
 
-# ---------- ③ 接线与第三方 API 形状 ----------
+# ---------- ③ 对着真 watchdog 跑一遍 ----------
+
+
+def test_repair_really_restores_the_event_flow(indexer, init_db, tmp_path):
+    """假观察器证明不了「重挂之后事件真的又来了」，这条用真 Observer 证明。
+
+    模拟的就是缓冲溢出那条路：watchdog 自己调 `emitter.stop()` 让线程退出，Observer
+    毫无察觉。重挂之后丢一张新图，必须靠监听（不是靠补扫）进库。
+    """
+    import time
+
+    from watchdog.observers import Observer
+
+    from app.indexer import _Handler
+
+    root = tmp_path / "output"
+    root.mkdir()
+    indexer._watch_roots = [root]
+    observer = Observer()
+    observer.schedule(_Handler(indexer), str(root), recursive=True)
+    observer.daemon = True
+    observer.start()
+    indexer._observer = observer
+    indexer._watched_dirs = {str(root)}
+    try:
+        emitters = list(observer.emitters)
+        if not emitters:
+            pytest.skip("这个平台的 watchdog 没交出 emitter，测不了")
+        assert indexer.watcher_health()["dead"] == []
+
+        emitter = emitters[0]
+        emitter.stop()
+        emitter.join(timeout=5)
+        assert not emitter.is_alive()
+        assert indexer.watcher_health()["dead"] == [str(root)]
+        assert indexer.repair_watcher() == [str(root)]
+
+        time.sleep(0.5)  # 给新 emitter 一次打开目录句柄的时间
+        make_png(root / "after_repair.png")
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline:
+            if row_count(init_db) >= 1:
+                break
+            time.sleep(0.05)
+        names = [r["filename"] for r in init_db.main().execute("SELECT filename FROM images")]
+        assert names == ["after_repair.png"], "重挂之后事件流没恢复：这条正是这轮要修的那个洞"
+    finally:
+        observer.stop()
+        observer.join(timeout=5)
+
+
+# ---------- ④ 接线与第三方 API 形状 ----------
 
 
 def test_the_reconcile_loop_actually_runs_the_health_probe():

@@ -475,3 +475,51 @@ export function boardReadout(unit: OutpaintUnit, raw: OutpaintSides): string {
     .map((side) => OUTPAINT_SIDE_WORDS[side] + " " + whole(raw[side]) + suffix)
     .join(" · ");
 }
+
+/* ---------- 画板的「看」：滚轮缩放与挪视图 ----------
+ * 下面这几颗只改屏幕上那一份，不改四边、不改成图、不改提交体。之所以还是写进算术层：
+ * 组件里不许长算术（见文件顶），而这几颗一旦被手抄进组件，就成了没人测过的那一份。
+ */
+
+/** 最多放大到适应窗口的 8 倍。再大就是在数像素点，对「这一趟补多少」没有任何判断价值。 */
+export const OUTPAINT_ZOOM_MAX = 8;
+
+/**
+ * 一次滚轮事件放缩多少倍。三种 deltaMode 都认（0 像素、1 行、2 页）：只认像素的话，
+ * Firefox 那档每格只给 3，同样的手势在那里慢十倍；单次幅度也要封顶，触摸板一次能甩出上千。
+ * 缩不过 1（= 适应窗口）：比适应还小只会剩一圈灰。
+ */
+export function zoomStep(zoom: number, deltaY: number, deltaMode = 0): number {
+  const px = deltaMode === 1 ? deltaY * 33 : deltaMode === 2 ? deltaY * 400 : deltaY;
+  const step = clamp(Number.isFinite(px) ? px : 0, -240, 240);
+  return clamp(zoom * Math.exp(-step * 0.0022), 1, OUTPAINT_ZOOM_MAX);
+}
+
+/** 屏幕上真正在用的比例 = 适应窗口 x 放大倍数。拖动时冻住的那一份也是它。 */
+export function viewScale(fit: number, zoom: number): number {
+  return (fit > 0 ? fit : 1) * clamp(zoom, 1, OUTPAINT_ZOOM_MAX);
+}
+
+/**
+ * 挪视图的范围：画面比窗口小就钉死居中（range 是 0），比窗口大才许挪到两头齐平，不许推出边去。
+ *
+ * 两个数只要有一个量不到（还没挂载、测试环境里 clientWidth 是 undefined），就当没有范围：
+ * 让它穿过 NaN 是会出人命的——transform 里出现 NaN，整条声明静默作废，画板直接跳回没定位的样子，
+ * 比「挪不动」难查十倍。value 自己不是数就干脆回 0。
+ */
+export function clampPan(value: number, stageSize: number, viewSize: number): number {
+  if (!Number.isFinite(value)) return 0;
+  if (!Number.isFinite(stageSize) || !Number.isFinite(viewSize)) return value;
+  const range = Math.max(0, (stageSize - viewSize) / 2);
+  return clamp(value, -range, range);
+}
+
+/**
+ * 缩放要留在光标底下那一点。画板靠 flex 居中，所以 transform 的原点是视图中心：
+ * 光标相对中心 c、当前平移 t、当前比例 s，那点在画面上的坐标 p = (c - t) / s，
+ * 换到新比例 s 之后平移取 t' = c - p * s，它就还在光标底下。省掉这一步，一滚画面就整体跑掉。
+ */
+export function panAfterZoom(cursor: number, pan: number, scale: number, nextScale: number): number {
+  if (!(scale > 0)) return pan;
+  return cursor - ((cursor - pan) / scale) * nextScale;
+}

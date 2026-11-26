@@ -5,7 +5,9 @@ import { EMPTY_CLONE_JOB, cloneJob, controlSummary, defaultControlValues } from 
 import { comfyuiStatus } from '../lib/stores';
 import { clearToasts } from '../lib/toast';
 import { resetPromptSkills } from '../lib/prompt-skills';
-import { OUTPAINT_EMPTY_REASON, boardPads, outpaintSlots, readBoard } from '../lib/outpaint';
+import {
+  OUTPAINT_EMPTY_REASON, OUTPAINT_ZOOM_MAX, boardPads, clampPan, outpaintSlots, panAfterZoom, readBoard, zoomStep,
+} from '../lib/outpaint';
 
 /**
  * 「闪寻扩图」挂进再次创作之后，画板那套和弹窗的接缝。
@@ -262,4 +264,145 @@ it('画板画的是这份工作流第一颗图片槽位那份：outpaintImageKey
   expect(state.ratio).toBe('自由比例');
   // 出厂四边 0 → 换算成像素还是全 0，这就是拦生成认的那份
   expect(boardPads(state, { w: 800, h: 600 })).toEqual({ left: 0, right: 0, top: 0, bottom: 0 });
+});
+
+/* ==================== 滚轮缩放与拖灰底挪视图 ====================
+ * 缩放改的是「屏幕上看着多大」，改不了「这一趟补多少」。所以每条用例都同时盯两头：
+ * 画面确实按倍数长大了，而四个方向框里的数、成图读数一个字都不动。
+ * 只盯前一头的测试，护不住后面有人把缩放接去动 controls。
+ */
+
+const boardView = () => document.querySelector('.ob-view') as HTMLElement;
+const stage = () => document.querySelector('.ob-stage') as HTMLElement;
+const stageWidth = () => Number(String(stage().style.width).replace('px', ''));
+const zoomChip = () => (document.querySelector('.ob-zoom') as HTMLElement).textContent;
+const edgeRight = () => document.querySelector('.ob-edge.is-right') as HTMLElement;
+/** 拖一条边的完整一趟：按下、移到目标屏幕坐标、松手 */
+async function dragTo(node: HTMLElement, toX: number) {
+  await fireEvent.pointerDown(node, { clientX: 0, clientY: 0, button: 0 });
+  await fireEvent.pointerMove(window, { clientX: toX, clientY: 0 });
+  await fireEvent.pointerUp(window, {});
+}
+
+it('缩放那几颗纯函数：认三种 deltaMode、缩不过适应、放大封顶、光标底下那一点不动', () => {
+  expect(zoomStep(1, -100)).toBeCloseTo(1.246, 3);
+  // 行模式（Firefox 的滚轮每格只给 3）按 33px/行折算，否则同样的手势在两个浏览器上快慢差十倍
+  expect(zoomStep(1, -3, 1)).toBeCloseTo(1.243, 3);
+  // 页模式一次能甩出 400，单次幅度不封顶就是一跳到底
+  expect(zoomStep(1, -1, 2)).toBeCloseTo(1.696, 3);
+  expect(zoomStep(2, 100)).toBeLessThan(2);
+  expect(zoomStep(1, 100)).toBe(1); // 缩不过适应那一档：比它再小只会剩一圈灰
+  expect(zoomStep(8, -2400)).toBe(OUTPAINT_ZOOM_MAX);
+  expect(clampPan(50, 400, 800)).toBe(0); // 画面比窗口小：钉死居中，压根挪不动
+  expect(clampPan(9999, 1200, 800)).toBe(200);
+  expect(clampPan(-9999, 1200, 800)).toBe(-200);
+  // 视图还没量到（测试环境里 clientWidth 就是 undefined）时不许吐 NaN：
+  // transform 里出现 NaN 会让整条声明静默作废，画板跳回没定位的样子
+  expect(clampPan(NaN, 800, 400)).toBe(0);
+  expect(clampPan(50, 800, undefined as never)).toBe(50);
+  // 光标在中心右 100px、比例从 1 翻到 2：平移得走 -100，那点才还在光标底下
+  expect(panAfterZoom(100, 0, 1, 2)).toBe(-100);
+});
+
+it('滚轮往上滚是放大：画面按倍数长大，方向框和成图读数一个字都不动', async () => {
+  const screen = await ready();
+  await openBoard(screen);
+  await fireEvent.change(sideInputs()[1], { target: { value: '25' } });
+  const before = stageWidth(); // 视图在 happy-dom 里量出来是 0，所以适应比例就是 1：800 + 200 = 1000
+  await fireEvent.wheel(boardView(), { deltaY: -100, clientX: 0, clientY: 0 });
+  expect(stageWidth()).toBe(Math.round(before * Math.exp(0.22)));
+  expect(sideInputs()[1].value).toBe('25');
+  expect(document.querySelector('.ob-size')?.textContent).toContain('成图 1000×600');
+  expect(zoomChip()).toBe('125%');
+});
+
+it('往下滚到底就是适应窗口，往上滚到 8 倍封顶：两头都不许越过', async () => {
+  const screen = await ready();
+  await openBoard(screen);
+  const fit = stageWidth();
+  expect(zoomChip()).toBe('适应');
+  for (let i = 0; i < 10; i += 1) await fireEvent.wheel(boardView(), { deltaY: 240 });
+  expect(stageWidth()).toBe(fit);
+  expect(zoomChip()).toBe('适应');
+  for (let i = 0; i < 40; i += 1) await fireEvent.wheel(boardView(), { deltaY: -240 });
+  expect(stageWidth()).toBe(fit * OUTPAINT_ZOOM_MAX);
+  expect(zoomChip()).toBe('800%');
+});
+
+it('双击画面回到适应窗口，平移也一起归零', async () => {
+  const screen = await ready();
+  await openBoard(screen);
+  await fireEvent.wheel(boardView(), { deltaY: -240 });
+  await fireEvent.pointerDown(boardView(), { clientX: 300, clientY: 200, button: 0 });
+  await fireEvent.pointerMove(window, { clientX: 380, clientY: 200 });
+  await fireEvent.pointerUp(window, {});
+  expect(stage().style.transform).not.toBe('translate(0px,0px)');
+  await fireEvent.dblClick(boardView());
+  expect(stage().style.transform).toBe('translate(0px,0px)');
+  expect(zoomChip()).toBe('适应');
+});
+
+it('放大之后拖灰底只挪视图：位移进 transform，四个方向框一个都不动，松手就不再跟', async () => {
+  const screen = await ready();
+  await openBoard(screen);
+  await fireEvent.change(sideInputs()[1], { target: { value: '25' } });
+  await fireEvent.wheel(boardView(), { deltaY: -100 });
+  await fireEvent.pointerDown(boardView(), { clientX: 300, clientY: 200, button: 0 });
+  await fireEvent.pointerMove(window, { clientX: 350, clientY: 240 });
+  expect(stage().style.transform).toBe('translate(50px,40px)');
+  expect(sideInputs()[1].value).toBe('25');
+  await fireEvent.pointerUp(window, {});
+  await fireEvent.pointerMove(window, { clientX: 900, clientY: 900 });
+  expect(stage().style.transform).toBe('translate(50px,40px)');
+});
+
+it('拖源图还是挪源图位置，不会被当成挪视图：transform 不动、左右此消彼长', async () => {
+  const screen = await ready();
+  await openBoard(screen);
+  await fireEvent.change(sideInputs()[0], { target: { value: '25' } });
+  await fireEvent.change(sideInputs()[1], { target: { value: '25' } });
+  await fireEvent.wheel(boardView(), { deltaY: -100 });
+  await dragTo(document.querySelector('.ob-src') as HTMLElement, 100);
+  // 屏幕拖了 100，源图口径只有 100 / 倍数：向右挪 → 左边的量变大、右边的量变小，左右总量不变
+  expect(Number(sideInputs()[0].value)).toBeGreaterThan(25);
+  expect(Number(sideInputs()[1].value)).toBeLessThan(25);
+  expect(stage().style.transform).toBe('translate(0px,0px)');
+});
+
+it('放大之后拖边吃的还是源图口径的位移：按倍数补偿屏幕距离，结果和没放大时同一档', async () => {
+  const screen = await ready();
+  await openBoard(screen);
+  // 每一段都得从「四边 25% + 适应窗口」起跑：回出厂只管四边不管缩放，
+  // 不复位的话第二段就是 1.246^2 倍，屏幕位移摊回源图的量也跟着变，那条 37% 就成了假期望
+  const fill = async () => {
+    await fireEvent.click(within(document.querySelector('.ob') as HTMLElement).getByRole('button', { name: '回出厂' }));
+    await fireEvent.dblClick(boardView());
+    await fireEvent.change(sideInputs()[1], { target: { value: '25' } });
+  };
+  await fill();
+  await dragTo(edgeRight(), 120);
+  expect(sideInputs()[1].value).toBe('40'); // 200 + 120 = 320 → 40%
+  await fill();
+  await fireEvent.wheel(boardView(), { deltaY: -100 });
+  const scale = stageWidth() / 1000; // 画布自己量出来的倍数，不写死，免得用例跟着实现抖
+  await dragTo(edgeRight(), 120 * scale);
+  expect(sideInputs()[1].value).toBe('40');
+  // 不补偿的话只会拖出 120 / 1.246 ≈ 96 像素那一档，成图差 24 像素就是这么来的
+  await fill();
+  await fireEvent.wheel(boardView(), { deltaY: -100 });
+  await dragTo(edgeRight(), 120);
+  expect(sideInputs()[1].value).toBe('37');
+});
+
+it('拖灰底拖到一半画板被收掉：window 上那三个监听得跟着收掉（和拖边同一笔账）', async () => {
+  const screen = await ready();
+  const board = await openBoard(screen);
+  await fireEvent.wheel(boardView(), { deltaY: -240 });
+  await fireEvent.pointerDown(boardView(), { clientX: 300, clientY: 200, button: 0 });
+  await fireEvent.pointerMove(window, { clientX: 340, clientY: 200 });
+  const spy = vi.spyOn(window, 'removeEventListener');
+  const dragging = () => spy.mock.calls.filter((c) => ['pointermove', 'pointerup', 'pointercancel'].includes(String(c[0]))).length;
+  expect(dragging()).toBe(0); // 还没松手，一个都不该收
+  await fireEvent.click(within(board).getByRole('button', { name: '取消' }));
+  expect(dragging()).toBe(3); // 整层被拆掉：挪视图那三颗一起摘，少一颗就是漏着的那笔账
 });

@@ -17,14 +17,17 @@
    *    「我到底补了多少」——那正是这块可视化存在的唯一理由。
    * 4. 键盘用户走底部那四个数字框，边框命中区对读屏是隐藏的：八个拖拽点在无障碍树里只会是
    *    八个读不出方向的空按钮，而数字框本来就在，还带方向名。
+   * 5. 滚轮缩放与拖灰底只改「屏幕上看着多大」：四边、成图、提交体一个数都不动。基准是适应窗口，
+   *    所以滚到底就是全画板一屏看全，放大封顶 8 倍（那几颗算术在 lib/outpaint.ts，这儿只接线）。
    */
   import { onDestroy } from "svelte";
   import Icon from "./Icon.svelte";
   import { modalFocus } from "../lib/modal-focus";
   import {
     OUTPAINT_COMPARE_HINT, OUTPAINT_EMPTY_REASON, OUTPAINT_FACTORY, OUTPAINT_MAX_EDGE, OUTPAINT_MAX_PAD,
-    OUTPAINT_RATIOS, OUTPAINT_SIDE_KEYS, OUTPAINT_SIDE_WORDS, OUTPAINT_TINT, OUTPAINT_UNITS,
-    boardPads, boardReadout, boardShown, dragBoard, isBoardEmpty, outputGeometry, sideSuffix, sideValues, slideBoard,
+    OUTPAINT_RATIOS, OUTPAINT_SIDE_KEYS, OUTPAINT_SIDE_WORDS, OUTPAINT_TINT, OUTPAINT_UNITS, OUTPAINT_ZOOM_MAX,
+    boardPads, boardReadout, boardShown, clampPan, dragBoard, isBoardEmpty, outputGeometry, panAfterZoom,
+    sideSuffix, sideValues, slideBoard, viewScale, zoomStep,
     type OutpaintBoardState, type OutpaintEdges, type OutpaintSides, type OutpaintSide,
     type OutpaintSize, type OutpaintUnit,
   } from "../lib/outpaint";
@@ -59,6 +62,11 @@
   // 每次开都从 controls 现读一份当草稿，取消就该把这一整层丢掉，不该跟着外面继续变。
   let draft = $state<OutpaintBoardState>({ ...board, raw: { ...board.raw } });
   let peek = $state(false);
+  /** 滚轮缩放：1 = 适应窗口。只管看着多大，改不了补多少。 */
+  let zoom = $state(1);
+  /** 放大后画面比窗口大才挪得动；存的是屏幕像素，出手前一律过一遍 clampPan */
+  let pan = $state({ x: 0, y: 0 });
+  let panning = $state(false);
 
   /** 一次拖动：edges 是哪几条边在动，origin 是按下那一刻的状态，baseW/H 用来把对侧钉回原地 */
   interface Drag {
@@ -95,8 +103,20 @@
     // 只往下压、不放大：一屏放得下时一个屏幕像素就是一个源图像素，不拿插值糊人
     return Math.min(1, availW / total.w, availH / total.h);
   });
-  const scale = $derived(drag ? Math.min(drag.scale, fitScale) : fitScale);
+  /** 适应窗口 x 滚轮倍数：屏幕上真正在用的比例，拖动时也按它冻住 */
+  const viewZoom = $derived(viewScale(fitScale, zoom));
+  const scale = $derived(drag ? Math.min(drag.scale, viewZoom) : viewZoom);
   const box = $derived(peek ? { w: size.w, h: size.h } : total);
+  /** 画板在屏幕上占多大：width/height 和 clampPan 用同一份，别两处各 round 一遍 */
+  const stageW = $derived(Math.max(1, Math.round(box.w * scale)));
+  const stageH = $derived(Math.max(1, Math.round(box.h * scale)));
+  const panX = $derived(clampPan(pan.x, stageW, view.w));
+  const panY = $derived(clampPan(pan.y, stageH, view.h));
+  const pannable = $derived(stageW > view.w || stageH > view.h);
+  const zoomLabel = $derived(zoom <= 1.001 ? "适应" : Math.round(zoom * 100) + "%");
+  const zoomNote = $derived("屏幕上这一份是适应窗口的 " + zoomLabel
+    + "：滚轮缩放，双击画面或点这里回到适应窗口（最多 " + OUTPAINT_ZOOM_MAX + " 倍）。"
+    + "这只管看着多大，补多少看下面那四个框。");
 
   /** 画板居中，往外拖会两头一起长。平移半个增量把对侧钉回原地，手感才是在拖一条边而不是拉整块 */
   const nudge = $derived.by(() => {
@@ -112,9 +132,9 @@
   });
 
   const stageStyle = $derived(
-    "width:" + Math.max(1, Math.round(box.w * scale)) + "px;"
-    + "height:" + Math.max(1, Math.round(box.h * scale)) + "px;"
-    + "transform:translate(" + Math.round(nudge.x) + "px," + Math.round(nudge.y) + "px);"
+    "width:" + stageW + "px;"
+    + "height:" + stageH + "px;"
+    + "transform:translate(" + Math.round(panX + nudge.x) + "px," + Math.round(panY + nudge.y) + "px);"
     + "background:" + (peek ? "transparent" : OUTPAINT_TINT),
   );
   const srcStyle = $derived(peek
@@ -136,6 +156,7 @@
   }
 
   function stop() {
+    if (!drag) return; // 没在拖就白摘三颗：onDestroy 会和挪视图那套一起收，数不出谁摘的
     drag = null;
     window.removeEventListener("pointermove", move);
     window.removeEventListener("pointerup", stop);
@@ -148,7 +169,7 @@
     drag = {
       edges,
       origin: { ...draft, raw: { ...draft.raw } },
-      scale: fitScale,
+      scale: viewZoom,
       startX: e.clientX,
       startY: e.clientY,
       baseW: total.w,
@@ -177,9 +198,70 @@
     draft = { ...OUTPAINT_FACTORY, raw: { ...OUTPAINT_FACTORY.raw } };
   }
 
-  // 拖到一半这层被收掉（跑图会把画板关掉）：不收尾的话 window 上那三个监听会一直挂着，
-  // 而 drag 指着的早就是另一层实例了。
-  onDestroy(stop);
+  /**
+   * 滚轮缩放。三件事得同时成立：光标底下那一点不许跑、缩到底就是适应窗口、
+   * 四边那些数一个都不重算（缩放改的是看着多大，不是补多少）。
+   */
+  function wheel(e: WheelEvent) {
+    if (!ready) return;
+    e.preventDefault();
+    const next = zoomStep(zoom, e.deltaY, e.deltaMode);
+    if (next === zoom) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const after = viewScale(fitScale, next);
+    // 中心才是 transform 的原点（画板靠 flex 居中），所以光标要先折成相对中心的偏移
+    pan = {
+      x: panAfterZoom(e.clientX - rect.left - rect.width / 2, panX, scale, after),
+      y: panAfterZoom(e.clientY - rect.top - rect.height / 2, panY, scale, after),
+    };
+    zoom = next;
+  }
+
+  function backToFit() {
+    zoom = 1;
+    pan = { x: 0, y: 0 };
+  }
+
+  /**
+   * 拖灰底挪视图。源图上是挪源图位置、八个命中区是拖边，两样都得让开：
+   * 一次按下改两处，就成了「想挪视图结果把四边拖没了」。
+   */
+  let panDrag: { startX: number; startY: number; baseX: number; baseY: number } | null = null;
+
+  function panMove(e: PointerEvent) {
+    if (!panDrag) return;
+    pan = {
+      x: clampPan(panDrag.baseX + e.clientX - panDrag.startX, stageW, view.w),
+      y: clampPan(panDrag.baseY + e.clientY - panDrag.startY, stageH, view.h),
+    };
+  }
+
+  function panStop() {
+    if (!panDrag) return;
+    panDrag = null;
+    panning = false;
+    window.removeEventListener("pointermove", panMove);
+    window.removeEventListener("pointerup", panStop);
+    window.removeEventListener("pointercancel", panStop);
+  }
+
+  function panStart(e: PointerEvent) {
+    if (!ready || (e.pointerType === "mouse" && e.button !== 0)) return;
+    const target = e.target as HTMLElement | null;
+    if (target && target.closest(".ob-src, .ob-edge, .ob-corner")) return;
+    panDrag = { startX: e.clientX, startY: e.clientY, baseX: panX, baseY: panY };
+    panning = true;
+    window.addEventListener("pointermove", panMove);
+    window.addEventListener("pointerup", panStop);
+    window.addEventListener("pointercancel", panStop);
+  }
+
+  // 拖到一半这层被收掉（跑图会把画板关掉）：不收尾的话 window 上那几个监听会一直挂着，
+  // 而 drag、panDrag 指着的早就是另一层实例了。拖边和挪视图两套都得收。
+  onDestroy(() => {
+    stop();
+    panStop();
+  });
 
   function readNatural(e: Event) {
     if (sourceWidth > 0 && sourceHeight > 0) return;
@@ -192,7 +274,7 @@
   <div class="ob-top">
     <div class="ob-line">
       <span class="ob-what"><Icon name="outpaint" size={14} />扩图画板 · {label}</span>
-      <span class="ob-note">灰底就是这一趟要补的画面 · 拖边框或四角 · 按住原图挪位置 · 按住 Shift 同轴对称</span>
+      <span class="ob-note">灰底就是这一趟要补的画面 · 拖边框或四角 · 按住原图挪位置 · 按住 Shift 同轴对称 · 滚轮缩放，拖灰底挪视图</span>
       <span class="ob-size" title={out && out.scaled
         ? "最长边超过 " + OUTPAINT_MAX_EDGE + "，这一趟会整张等比压回来"
         : "按现在这四边，这一趟会出这么大一张图"}>
@@ -206,7 +288,12 @@
     </div>
   </div>
 
-  <div class="ob-view" bind:clientWidth={view.w} bind:clientHeight={view.h}>
+  <!-- 这一格自己不带语义（话都在里面那张图和下面那四个框上），所以滚轮/拖动挂在这儿只报 a11y 噪声：
+       显式忽略，不假挂一个 role。和 MaskEditor 那一格是同一件事。 -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="ob-view" class:is-pannable={pannable} class:is-panning={panning}
+    bind:clientWidth={view.w} bind:clientHeight={view.h}
+    onwheel={wheel} onpointerdown={panStart} ondblclick={backToFit}>
     <div class="ob-stage" style={stageStyle} class:is-peek={peek}>
       <img class="ob-src" src={src} style={srcStyle} alt={label} draggable="false"
         onload={readNatural} onpointerdown={(e) => start(e, [], true)} />
@@ -262,6 +349,8 @@
     <button class="ob-btn" title={OUTPAINT_COMPARE_HINT}
       onpointerdown={() => (peek = true)} onpointerup={() => (peek = false)}
       onpointerleave={() => (peek = false)} onpointercancel={() => (peek = false)}>按住看原图</button>
+    <!-- 这颗只报「屏幕上看着多大」：它改不了补多少，四个方向框里的数才是这一趟送出去的。 -->
+    <button class="ob-btn ob-zoom" title={zoomNote} onclick={backToFit}>{zoomLabel}</button>
   </div>
 
   <p class="ob-foot" class:is-warn={empty} role="status">
@@ -299,6 +388,8 @@
     background: var(--ink-1); border: 1px solid var(--line); border-radius: var(--r-2);
     touch-action: none;
   }
+  .ob-view.is-pannable { cursor: grab; }
+  .ob-view.is-pannable.is-panning { cursor: grabbing; }
   .ob-stage { position: relative; flex: none; user-select: none; will-change: transform; }
   .ob-src { position: absolute; display: block; box-shadow: 0 0 0 1px var(--line); cursor: move; }
   .ob-stage.is-peek .ob-src { box-shadow: none; cursor: default; }
@@ -338,6 +429,7 @@
   }
   .ob-side b { min-width: 16px; color: var(--text-3); font-weight: 500; }
   .ob-ratios { gap: var(--sp-1); }
+  .ob-zoom { margin-left: auto; }
 
   .ob-chip {
     height: var(--ctl-sm); padding: 0 var(--sp-2); border: 0; border-radius: var(--r-pill);

@@ -3924,6 +3924,19 @@ it('竖排那一档不靠挑一个 vh：整列锁进面板可视区，展示图�
   // 图是替换元素、等待台带 fixed height：不写 min-height:0 就顶着内容高不让缩，压不动等于白写
   expect(css).toMatch(/\.cm-body\.is-stacked \.cm-left \{ min-height: 0; \}/);
   expect(css).toMatch(/\.cm-body\.is-stacked \.cm-hero, \.cm-body\.is-stacked \.cm-stage \{ min-height: 0; \}/);
+  // 图外面套了一层壳的那两格反过来——不参与让高。2026-11-26 苏醒报的坏：窗口一小，那格的大图就压在输入卡上
+  // （输入卡那层不带底，图透在字后面，看着像两屏叠在一起）。压扁对这两格不是让个位置、是砍功能：
+  // 四个角上的入口和那层红色范围都 absolute 挂在壳上，而壳的宽度是收缩到 fit 算的，永远等于整行宽，不跟着画缩放。
+  // 试过把壳做成 flex 列让画跟着缩（探针：画压到 219×94、压字确实没了，可壳还是 822 宽——
+  // 左上那颗跑到画面外 294px、红范围横向拉伸对不上画面）；min-content 直接塌 0，fit-content、grid 饱和在行宽，
+  // CSS 里没有一种宽度写法能让装着大图的自动宽度盒等于画缩放后的宽。所以这两格不动画的大小，改让第一行按内容排：
+  // 行轨道拿住画的高，溢出交给面板滚动，让位顺序交给 promptFitH 与 sticky 那两层现成的。
+  // 探针（面板 822 行宽）：画 822×352 保持尺寸、角标与红范围紧贴画面（hug 8）、压字 -50（不重叠）；
+  // 裸图那一格一字未动，仍跟着压扁到 219×94。:has() 那条比上面两条更具体，赢在特异性、与书写顺序无关。
+  expect(css).toMatch(/\.cm-body\.is-stacked:has\(\.cm-mask-hero, \.cm-hero-out\) \{ grid-template-rows: auto auto; \}/);
+  expect(css).toMatch(/\.cm-body\.is-stacked:has\(\.cm-mask-hero, \.cm-hero-out\) \.cm-left \{ min-height: auto; \}/);
+  // 让高名单就这两格：以后 .cm-left 里再长出第三种壳，把它的 class 一起加进 :has() 里那一串
+  expect(css.match(/:has\(\.cm-mask-hero, \.cm-hero-out\)/g)?.length).toBe(2);
   // 两栏那一档的天花板没动（本轮没改任何 --cm-hero-h 的数）
   expect(css).toMatch(/\.cm-body:not\(\.is-stacked\) \{ --cm-hero-h: min\(74vh, 1080px\); \}/);
   // 第二层让位：图让到地板还不够，才从「没拖过」那一档里扣

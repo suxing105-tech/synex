@@ -18,8 +18,7 @@
    * 4. 键盘用户走底部那四个数字框，边框命中区对读屏是隐藏的：八个拖拽点在无障碍树里只会是
    *    八个读不出方向的空按钮，而数字框本来就在，还带方向名。
    * 5. 滚轮缩放与拖灰底只改「屏幕上看着多大」：四边、成图、提交体一个数都不动。基准是适应窗口，
-   *    往上一路到 8 倍，往下一路到适应窗口的 50%（比一屏更小，为的是连画板外一圈一起看全局）。
-   *    缩放的原点是画面中心：向外滚就是画从中心向外扩，不跟光标跑。
+   *    往上一路到 8 倍，往下一路到适应窗口的 25%（比一屏更小，为的是连画板外一圈一起看全局）。
    *    那几颗算术都在 lib/outpaint.ts，这儿只接线。
    */
   import { onDestroy } from "svelte";
@@ -29,7 +28,7 @@
     OUTPAINT_COMPARE_HINT, OUTPAINT_EMPTY_REASON, OUTPAINT_FACTORY, OUTPAINT_MAX_EDGE, OUTPAINT_MAX_PAD,
     OUTPAINT_RATIOS, OUTPAINT_SIDE_KEYS, OUTPAINT_SIDE_WORDS, OUTPAINT_TINT, OUTPAINT_UNITS,
     OUTPAINT_ZOOM_MAX, OUTPAINT_ZOOM_MIN,
-    boardPads, boardReadout, boardShown, clampPan, dragBoard, isBoardEmpty, outputGeometry,
+    boardPads, boardReadout, boardShown, clampPan, dragBoard, isBoardEmpty, outputGeometry, panAfterZoom,
     sideSuffix, sideValues, slideBoard, viewScale, zoomStep,
     type OutpaintBoardState, type OutpaintEdges, type OutpaintSides, type OutpaintSide,
     type OutpaintSize, type OutpaintUnit,
@@ -119,7 +118,7 @@
   // 「适应」只在真的贴着那一档时报，往下缩就不许再冒充适应
   const zoomLabel = $derived(Math.abs(zoom - 1) < 0.005 ? "适应" : Math.round(zoom * 100) + "%");
   const zoomNote = $derived("屏幕上这一份是适应窗口的 " + zoomLabel
-    + "：以画面中心为原点滚轮缩放，范围从 " + Math.round(OUTPAINT_ZOOM_MIN * 100) + "% 到 "
+    + "：滚轮缩放，范围从 " + Math.round(OUTPAINT_ZOOM_MIN * 100) + "% 到 "
     + Math.round(OUTPAINT_ZOOM_MAX * 100) + "%，双击画面或点这里回到适应窗口。"
     + "这只管看着多大，补多少看下面那四个框。");
 
@@ -204,19 +203,21 @@
   }
 
   /**
-   * 滚轮缩放。三件事得同时成立：原点永远是画面中心、缩到底就是那两档之一、
+   * 滚轮缩放。三件事得同时成立：光标底下那一点不许跑、缩到底就是适应窗口、
    * 四边那些数一个都不重算（缩放改的是看着多大，不是补多少）。
-   *
-   * 原点是画面中心而不是光标底下那一点（2026-11-26 苏醒定的，取代 11-25 那版光标锚定）：
-   * 向外滚就是画从中心向外扩，向内滚就朝中心收，画面不会随鼠标停在哪儿而整体滑走。
-   * 所以整趟不碰 pan。代价照实记着：先拖灰底把视图挪开、再缩放的话，刚才看的那一块会朝画面
-   * 中心靠——原点回到了画面中心，这是这条规矩本身，不是漏了补偿。
    */
   function wheel(e: WheelEvent) {
     if (!ready) return;
     e.preventDefault();
     const next = zoomStep(zoom, e.deltaY, e.deltaMode);
     if (next === zoom) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const after = viewScale(fitScale, next);
+    // 中心才是 transform 的原点（画板靠 flex 居中），所以光标要先折成相对中心的偏移
+    pan = {
+      x: panAfterZoom(e.clientX - rect.left - rect.width / 2, panX, scale, after),
+      y: panAfterZoom(e.clientY - rect.top - rect.height / 2, panY, scale, after),
+    };
     zoom = next;
   }
 
@@ -273,10 +274,10 @@
   }
 </script>
 
-<div class="ob" role="dialog" aria-label={"扩展画板（" + label + "）"} tabindex="-1" use:modalFocus>
+<div class="ob" role="dialog" aria-label={"扩图画板（" + label + "）"} tabindex="-1" use:modalFocus>
   <div class="ob-top">
     <div class="ob-line">
-      <span class="ob-what"><Icon name="outpaint" size={14} />扩展画板 · {label}</span>
+      <span class="ob-what"><Icon name="outpaint" size={14} />扩图画板 · {label}</span>
       <span class="ob-note">灰底就是这一趟要补的画面 · 拖边框或四角 · 按住原图挪位置 · 按住 Shift 同轴对称 · 滚轮缩放，拖灰底挪视图</span>
       <span class="ob-size" title={out && out.scaled
         ? "最长边超过 " + OUTPAINT_MAX_EDGE + "，这一趟会整张等比压回来"

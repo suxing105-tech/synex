@@ -38,7 +38,7 @@ function boardTemplate(drop?: string): CloneTemplate {
   const kept = drop ? board.filter((slot) => slot.input !== drop) : board;
   return {
     id: 1,
-    name: "闪寻扩图",
+    name: "闪寻扩展图片",
     slots: [...kept, entry.slots.find((slot) => slot.kind === "image")!],
     default_prompt: "",
     is_active: true,

@@ -484,16 +484,15 @@ export function boardReadout(unit: OutpaintUnit, raw: OutpaintSides): string {
 /** 最多放大到适应窗口的 8 倍。再大就是在数像素点，对「这一趟补多少」没有任何判断价值。 */
 export const OUTPAINT_ZOOM_MAX = 8;
 /**
- * 最少缩到适应窗口的 50%（2026-11-26 苏醒把 25% 收到 50%）。底是相对适应窗口而不是相对 1:1：
- * 缩到比「一屏放得下」还小，要的是「画板之外再留一圈、看整块构图」，那件事跟图有多大无关、
- * 只跟这一屏有关——一半就够看整块构图了，再往下就是个指甲盖，量什么都量不出来。
+ * 最少缩到适应窗口的 25%。底是相对适应窗口而不是相对 1:1：缩到比「一屏放得下」还小，
+ * 要的是「画板之外再留一圈、看整块构图」，那件事跟图有多大无关，只跟这一屏有关。
  */
-export const OUTPAINT_ZOOM_MIN = 0.5;
+export const OUTPAINT_ZOOM_MIN = 0.25;
 
 /**
  * 一次滚轮事件放缩多少倍。三种 deltaMode 都认（0 像素、1 行、2 页）：只认像素的话，
  * Firefox 那档每格只给 3，同样的手势在那里慢十倍；单次幅度也要封顶，触摸板一次能甩出上千。
- * 上下两头都封在 [50%, 800%]：往下留出比适应窗口更小的一档，是为了看整块构图（苏醒要的），
+ * 上下两头都封在 [25%, 800%]：往下留出比适应窗口更小的一档，是为了看整块构图（苏醒要的），
  * 再往下就是个指甲盖，量什么都量不出来。
  */
 export function zoomStep(zoom: number, deltaY: number, deltaMode = 0): number {
@@ -521,6 +520,12 @@ export function clampPan(value: number, stageSize: number, viewSize: number): nu
   return clamp(value, -range, range);
 }
 
-/* 缩放这一趟不碰平移——原点就是画面中心，向外滚画从中心向外扩（判据在 OutpaintBoard 的 wheel）。
- * 这里原本有一颗 panAfterZoom：把光标底下那一点钉住，画面跟着鼠标停的位置整体滑。2026-11-26 苏醒
- * 改回「以画面中心为原点向外扩」，那颗就成了没人接的算术，删掉；要看它的算式在 git，commit ad5ca4c。 */
+/**
+ * 缩放要留在光标底下那一点。画板靠 flex 居中，所以 transform 的原点是视图中心：
+ * 光标相对中心 c、当前平移 t、当前比例 s，那点在画面上的坐标 p = (c - t) / s，
+ * 换到新比例 s 之后平移取 t' = c - p * s，它就还在光标底下。省掉这一步，一滚画面就整体跑掉。
+ */
+export function panAfterZoom(cursor: number, pan: number, scale: number, nextScale: number): number {
+  if (!(scale > 0)) return pan;
+  return cursor - ((cursor - pan) / scale) * nextScale;
+}

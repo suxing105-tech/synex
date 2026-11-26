@@ -2359,6 +2359,12 @@
                 onclick={() => (boardOpen = true)}>
                 <Icon name="outpaint" size={12} />扩图画板
               </button>
+              {#if heroOutput}
+                <!-- 刚点过「回看参考图」就得有路回新产出：那颗按钮长在产出那一格里，切过来就看不见了 -->
+                <button class="cm-mask-corner is-top-right" onclick={() => (maskBack = false)} aria-label="回到新产出">
+                  <Icon name="external-link" size={12} />回到新产出
+                </button>
+              {/if}
             </div>
           {:else if maskTemplate}
             <!-- 这份工作流有能画遮罩的参考位：这一格摆那一格里的图，并把画出来的范围叠在旁边。

@@ -18,6 +18,7 @@
    * 4. 键盘用户走底部那四个数字框，边框命中区对读屏是隐藏的：八个拖拽点在无障碍树里只会是
    *    八个读不出方向的空按钮，而数字框本来就在，还带方向名。
    */
+  import { onDestroy } from "svelte";
   import Icon from "./Icon.svelte";
   import { modalFocus } from "../lib/modal-focus";
   import {
@@ -175,6 +176,10 @@
   function reset() {
     draft = { ...OUTPAINT_FACTORY, raw: { ...OUTPAINT_FACTORY.raw } };
   }
+
+  // 拖到一半这层被收掉（跑图会把画板关掉）：不收尾的话 window 上那三个监听会一直挂着，
+  // 而 drag 指着的早就是另一层实例了。
+  onDestroy(stop);
 
   function readNatural(e: Event) {
     if (sourceWidth > 0 && sourceHeight > 0) return;

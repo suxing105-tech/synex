@@ -2211,7 +2211,10 @@
         <button class="cm-close" aria-label="关闭再次创作" onclick={onClose}><Icon name="x" size={16} /></button>
       </header>
 
-      {#if !$comfyuiStatus.enabled || !$comfyuiStatus.running}
+      <!-- 选了云端 API 就不再挂这条横幅：出图走服务商的 HTTP 接口，本机 ComfyUI 在不在
+            跟这一趟没有任何关系。以前不分族，选了 MiniMax 出图，顶上照样拍一句「连不上
+            ComfyUI」，等于让人先去开一台根本用不上的机器。本机工作流那侧原样保留。 -->
+      {#if !isCloud && (!$comfyuiStatus.enabled || !$comfyuiStatus.running)}
         <div class="cm-banner" role="status">
           <span>{$comfyuiStatus.enabled ? ($comfyuiStatus.reason ? `连不上 ComfyUI：${$comfyuiStatus.reason}` : `连不上 ComfyUI（${$comfyuiStatus.url}），先把它启动起来才能出图。`) : "ComfyUI 集成没打开，去设置 → ComfyUI 里启用。"}</span>
           <button class="cm-btn" disabled={probing} onclick={() => void refreshComfyui()}>{probing ? "探测中…" : "重新探测"}</button>

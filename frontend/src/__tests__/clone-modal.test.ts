@@ -3095,6 +3095,36 @@ it('用户在设置页把云端那条设成「当前」之后，弹窗就开在�
   expect(screen.getByRole('button', { name: '工作流' }).textContent).toContain('Seedream v5');
 });
 
+it('挂在云端 API 时顶上不再报「连不上 ComfyUI」；换回本机工作流那句必须回来', async () => {
+  // 2026-11-25 苏醒圈着顶上那条横幅提的：选的是 MiniMax 图片API，出图根本不经过本机 ComfyUI，
+  // 顶上却照样拍一句「连不上 ComfyUI」加一颗「重新探测」，等于让人先去开一台用不上的机器。
+  // 本机那侧的横幅由上面「重新探测」那条看着，所以这里两头都要钉：云端不报 ≠ 从此不报。
+  const cloudActive = { ...CLOUD_IMG, is_active: true };
+  routes({
+    ...baseRoutes(), '/api/clone/cloud/status': cloudOn(),
+    '/api/clone/templates': { items: [cloudActive, TPL] },
+    '/api/clone/cloud/estimate': { coins: 3, mode: 'image' },
+  });
+  // 开弹窗自己会补测一次，所以得让「本机真没在跑」一直是真的，横幅不是闪一下就没了
+  let alive = false;
+  const status = comfyuiApi.status as ReturnType<typeof vi.fn>;
+  status.mockImplementation(async () => ({ running: alive, enabled: true, url: 'http://127.0.0.1:8188' }));
+  comfyuiStatus.set({ running: false, enabled: true, url: 'http://127.0.0.1:8188', checked_at: 0 });
+  const screen = await ready();
+  // 前置条件先钉住：真的挂在云端那一条上，且 ComfyUI 真的报的是没在跑
+  expect(screen.getByRole('button', { name: '工作流' }).textContent).toContain('Seedream v5');
+  expect(get(comfyuiStatus).running).toBe(false);
+  expect(screen.queryByText(/连不上 ComfyUI/)).toBeNull();
+  expect(screen.queryByRole('button', { name: '重新探测' })).toBeNull();
+  // 换回本机那条，横幅必须回来
+  await fireEvent.click(screen.getByRole('button', { name: '工作流' }));
+  await fireEvent.click(await screen.findByRole('button', { name: '本地工作流' }));
+  await fireEvent.click(await screen.findByRole('menuitemradio', { name: /Qwen 多图/ }));
+  await vi.waitFor(() => expect(screen.getByText(/连不上 ComfyUI/)).toBeTruthy());
+  // 还原默认预演，别把这个 mock 漏给后面的用例
+  status.mockImplementation(async () => ({ running: true, enabled: true, url: 'http://127.0.0.1:8188' }));
+});
+
 it('API 那一屏两列级联：左列一家服务商一行，右列摆它报的模型；差 Key 时灰掉并说出差哪一步', async () => {
   routes({
     ...baseRoutes(),

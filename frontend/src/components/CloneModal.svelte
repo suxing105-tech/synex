@@ -3259,19 +3259,6 @@
   .cm-body.is-stacked .cm-left { min-height: 0; }
   .cm-body.is-stacked .cm-hero, .cm-body.is-stacked .cm-stage { min-height: 0; }
   .cm-body.is-stacked .cm-hero-meta { flex: none; }
-  /* 图外面套了一层壳的那两格——画板/遮罩那一格（.cm-mask-hero）与刚生成完那一格
-     （button.cm-hero-out）——不参与让高（2026-11-26 苏醒报的坏：窗口一小，大图就压在输入卡上；
-     输入卡那层本来不带底，图透在字后面，看着像两屏叠在一起）。
-     这两格反着上面那条走，是因为压扁对它们不是让个位置、是砍功能：四个角上的入口和那层红色范围
-     都 absolute 挂在那层壳上，而壳的宽度是「收缩到 fit」算的，永远等于整行宽，不跟着画缩放。
-     先试过把壳做成 flex 列让画跟着缩（探针：3024×1296 在可视 800 那一档压到 219×94，压字没了），
-     可壳还是 822 宽，左上那颗跑到画面外 294px、红范围横向拉伸对不上画面；min-content、fit-content、
-     grid 都试过，CSS 里没有一种宽度写法能让装着大图的自动宽度盒等于画缩放后的宽（min-content 直接塌 0）。
-     所以这两格不动画的大小，改让第一行按内容排（auto + 回到自动最小尺寸）：行轨道拿住画的高，
-     溢出的是网格自己 → 面板滚动，让位顺序交给下面两层现成的——提示词框先跟着窗口矮（promptFitH），
-     真让不动才滚动，sticky 那条照旧兜住卡底那排。裸图那一格维持原样（它只是看一眼素材，压扁不伤功能）。 */
-  .cm-body.is-stacked:has(.cm-mask-hero, .cm-hero-out) { grid-template-rows: auto auto; }
-  .cm-body.is-stacked:has(.cm-mask-hero, .cm-hero-out) .cm-left { min-height: auto; }
   /* 这一格的高度只有 --cm-hero-h 一个来源（展示图、等待台、画布都只读它：同一格轮流占，各自写一个数
      就会在换状态时把输入卡顶一下、坠一下，1478x562 踩过）。
      两栏那一档整列高度归它，取旧版那条 74vh：图是等比的，真正的上限其实是左列宽度（上一条定），74vh 只在

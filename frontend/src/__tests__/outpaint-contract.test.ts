@@ -5,9 +5,9 @@ import { fileURLToPath } from "node:url";
 
 import { slotKey, type CloneSlot, type CloneTemplate } from "../lib/clone";
 import {
-  OUTPAINT_EMPTY_REASON, OUTPAINT_EDGE_HIT_PX, OUTPAINT_FACTORY, OUTPAINT_MAX_EDGE,
+  OUTPAINT_EMPTY_REASON, OUTPAINT_FACTORY, OUTPAINT_MAX_EDGE,
   OUTPAINT_MAX_PAD, OUTPAINT_RATIOS, OUTPAINT_TINT, OUTPAINT_UNITS,
-  boardIssue, boardPads, boardReadout, dragBoard, edgeHitTolerance, isBoardEmpty,
+  boardIssue, boardPads, boardReadout, dragBoard, isBoardEmpty,
   outpaintImageKey, outpaintSlots, outputGeometry, ratioPads, readBoard, sidePads,
   sideValues, slideBoard, writeBoard, type OutpaintBoardState, type OutpaintSides, type OutpaintSize,
 } from "../lib/outpaint";
@@ -211,11 +211,6 @@ it("拖一边时对侧钉死、按住 Shift 才同轴对称（这条照的是节
   });
 });
 
-it("边界命中那个容差按画面缩放换算，画板上量的是屏幕 5 个像素", () => {
-  expect(OUTPAINT_EDGE_HIT_PX).toBe(5);
-  expect(edgeHitTolerance(1)).toBe(5);
-  expect(edgeHitTolerance(0.5)).toBe(10);
-});
 
 it("画板那六颗读写都走 controls 那份键，值取整并卡进量程", () => {
   const slots = outpaintSlots(boardTemplate())!;

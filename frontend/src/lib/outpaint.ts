@@ -50,9 +50,6 @@ export const OUTPAINT_RATIOS = [
   OUTPAINT_FREE_RATIO, "1:1", "2:3", "3:2", "3:4", "4:3", "5:7",
   "9:16", "16:9", "21:9", "1:2", "2:1",
 ];
-/** 边的命中容差：上游按「屏幕上 5 个像素」判定，换算回源图边长看 edgeHitTolerance */
-export const OUTPAINT_EDGE_HIT_PX = 5;
-
 export const OUTPAINT_SIDE_KEYS = ["left", "right", "top", "bottom"] as const;
 export type OutpaintSide = (typeof OUTPAINT_SIDE_KEYS)[number];
 /** 四边在节点上的输入名，也就是槽位的 input */
@@ -126,10 +123,6 @@ export function sideEdge(side: OutpaintSide, size: OutpaintSize): number {
   return side === "left" || side === "right" ? size.w : size.h;
 }
 
-/** 屏幕上 5 个像素换算回源图边长：画板判定「拖到的是哪条边」的容差，scale 是画面缩放比。 */
-export function edgeHitTolerance(scale: number): number {
-  return OUTPAINT_EDGE_HIT_PX / Math.max(0.01, scale);
-}
 
 /**
  * 这份工作流能不能开画板，以及画板要写哪六颗槽位。

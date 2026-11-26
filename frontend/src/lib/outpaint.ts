@@ -483,21 +483,27 @@ export function boardReadout(unit: OutpaintUnit, raw: OutpaintSides): string {
 
 /** 最多放大到适应窗口的 8 倍。再大就是在数像素点，对「这一趟补多少」没有任何判断价值。 */
 export const OUTPAINT_ZOOM_MAX = 8;
+/**
+ * 最少缩到适应窗口的 25%。底是相对适应窗口而不是相对 1:1：缩到比「一屏放得下」还小，
+ * 要的是「画板之外再留一圈、看整块构图」，那件事跟图有多大无关，只跟这一屏有关。
+ */
+export const OUTPAINT_ZOOM_MIN = 0.25;
 
 /**
  * 一次滚轮事件放缩多少倍。三种 deltaMode 都认（0 像素、1 行、2 页）：只认像素的话，
  * Firefox 那档每格只给 3，同样的手势在那里慢十倍；单次幅度也要封顶，触摸板一次能甩出上千。
- * 缩不过 1（= 适应窗口）：比适应还小只会剩一圈灰。
+ * 上下两头都封在 [25%, 800%]：往下留出比适应窗口更小的一档，是为了看整块构图（苏醒要的），
+ * 再往下就是个指甲盖，量什么都量不出来。
  */
 export function zoomStep(zoom: number, deltaY: number, deltaMode = 0): number {
   const px = deltaMode === 1 ? deltaY * 33 : deltaMode === 2 ? deltaY * 400 : deltaY;
   const step = clamp(Number.isFinite(px) ? px : 0, -240, 240);
-  return clamp(zoom * Math.exp(-step * 0.0022), 1, OUTPAINT_ZOOM_MAX);
+  return clamp(zoom * Math.exp(-step * 0.0022), OUTPAINT_ZOOM_MIN, OUTPAINT_ZOOM_MAX);
 }
 
 /** 屏幕上真正在用的比例 = 适应窗口 x 放大倍数。拖动时冻住的那一份也是它。 */
 export function viewScale(fit: number, zoom: number): number {
-  return (fit > 0 ? fit : 1) * clamp(zoom, 1, OUTPAINT_ZOOM_MAX);
+  return (fit > 0 ? fit : 1) * clamp(zoom, OUTPAINT_ZOOM_MIN, OUTPAINT_ZOOM_MAX);
 }
 
 /**

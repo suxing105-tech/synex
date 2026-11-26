@@ -6,7 +6,8 @@ import { comfyuiStatus } from '../lib/stores';
 import { clearToasts } from '../lib/toast';
 import { resetPromptSkills } from '../lib/prompt-skills';
 import {
-  OUTPAINT_EMPTY_REASON, OUTPAINT_ZOOM_MAX, boardPads, clampPan, outpaintSlots, panAfterZoom, readBoard, zoomStep,
+  OUTPAINT_EMPTY_REASON, OUTPAINT_ZOOM_MAX, OUTPAINT_ZOOM_MIN, boardPads, clampPan, outpaintSlots,
+  panAfterZoom, readBoard, zoomStep,
 } from '../lib/outpaint';
 
 /**
@@ -291,9 +292,11 @@ it('缩放那几颗纯函数：认三种 deltaMode、缩不过适应、放大封
   // 页模式一次能甩出 400，单次幅度不封顶就是一跳到底
   expect(zoomStep(1, -1, 2)).toBeCloseTo(1.696, 3);
   expect(zoomStep(2, 100)).toBeLessThan(2);
-  expect(zoomStep(1, 100)).toBe(1); // 缩不过适应那一档：比它再小只会剩一圈灰
+  expect(zoomStep(1, 100)).toBeCloseTo(0.8025, 3); // 往下要真能缩过适应窗口，不然就是苏醒报的那个数
+  // 底是每一格算完再卡的，所以拿「已经贴着底附近」那一格验：再滚也只是顶在 25%
+  expect(zoomStep(0.3, 240)).toBe(OUTPAINT_ZOOM_MIN);
   expect(zoomStep(8, -2400)).toBe(OUTPAINT_ZOOM_MAX);
-  expect(clampPan(50, 400, 800)).toBe(0); // 画面比窗口小：钉死居中，压根挪不动
+  expect(clampPan(50, 400, 800)).toBe(0); // 缩到比窗口还小（或没放大）：钉死居中，压根挪不动
   expect(clampPan(9999, 1200, 800)).toBe(200);
   expect(clampPan(-9999, 1200, 800)).toBe(-200);
   // 视图还没量到（测试环境里 clientWidth 就是 undefined）时不许吐 NaN：
@@ -316,12 +319,19 @@ it('滚轮往上滚是放大：画面按倍数长大，方向框和成图读数�
   expect(zoomChip()).toBe('125%');
 });
 
-it('往下滚到底就是适应窗口，往上滚到 8 倍封顶：两头都不许越过', async () => {
+it('缩放两头都封住：往下能一路缩到适应窗口的 25%（缩不过去就是苏醒报的那个坏），往上一路到 8 倍', async () => {
   const screen = await ready();
   await openBoard(screen);
   const fit = stageWidth();
   expect(zoomChip()).toBe('适应');
+  await fireEvent.wheel(boardView(), { deltaY: 100 });
+  expect(stageWidth()).toBe(Math.round(fit * 0.8025)); // 一格就把画面缩到适应窗口以下
+  expect(zoomChip()).toBe('80%'); // 缩下去就不许再报「适应」，那是骗读数
   for (let i = 0; i < 10; i += 1) await fireEvent.wheel(boardView(), { deltaY: 240 });
+  expect(stageWidth()).toBe(Math.round(fit * OUTPAINT_ZOOM_MIN));
+  expect(zoomChip()).toBe('25%');
+  // 缩到底画板比窗口还小，这时候没有可挪的范围，双击必须能回适应窗口
+  await fireEvent.dblClick(boardView());
   expect(stageWidth()).toBe(fit);
   expect(zoomChip()).toBe('适应');
   for (let i = 0; i < 40; i += 1) await fireEvent.wheel(boardView(), { deltaY: -240 });

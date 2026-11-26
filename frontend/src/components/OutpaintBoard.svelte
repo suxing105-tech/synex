@@ -18,14 +18,16 @@
    * 4. 键盘用户走底部那四个数字框，边框命中区对读屏是隐藏的：八个拖拽点在无障碍树里只会是
    *    八个读不出方向的空按钮，而数字框本来就在，还带方向名。
    * 5. 滚轮缩放与拖灰底只改「屏幕上看着多大」：四边、成图、提交体一个数都不动。基准是适应窗口，
-   *    所以滚到底就是全画板一屏看全，放大封顶 8 倍（那几颗算术在 lib/outpaint.ts，这儿只接线）。
+   *    往上一路到 8 倍，往下一路到适应窗口的 25%（比一屏更小，为的是连画板外一圈一起看全局）。
+   *    那几颗算术都在 lib/outpaint.ts，这儿只接线。
    */
   import { onDestroy } from "svelte";
   import Icon from "./Icon.svelte";
   import { modalFocus } from "../lib/modal-focus";
   import {
     OUTPAINT_COMPARE_HINT, OUTPAINT_EMPTY_REASON, OUTPAINT_FACTORY, OUTPAINT_MAX_EDGE, OUTPAINT_MAX_PAD,
-    OUTPAINT_RATIOS, OUTPAINT_SIDE_KEYS, OUTPAINT_SIDE_WORDS, OUTPAINT_TINT, OUTPAINT_UNITS, OUTPAINT_ZOOM_MAX,
+    OUTPAINT_RATIOS, OUTPAINT_SIDE_KEYS, OUTPAINT_SIDE_WORDS, OUTPAINT_TINT, OUTPAINT_UNITS,
+    OUTPAINT_ZOOM_MAX, OUTPAINT_ZOOM_MIN,
     boardPads, boardReadout, boardShown, clampPan, dragBoard, isBoardEmpty, outputGeometry, panAfterZoom,
     sideSuffix, sideValues, slideBoard, viewScale, zoomStep,
     type OutpaintBoardState, type OutpaintEdges, type OutpaintSides, type OutpaintSide,
@@ -113,9 +115,11 @@
   const panX = $derived(clampPan(pan.x, stageW, view.w));
   const panY = $derived(clampPan(pan.y, stageH, view.h));
   const pannable = $derived(stageW > view.w || stageH > view.h);
-  const zoomLabel = $derived(zoom <= 1.001 ? "适应" : Math.round(zoom * 100) + "%");
+  // 「适应」只在真的贴着那一档时报，往下缩就不许再冒充适应
+  const zoomLabel = $derived(Math.abs(zoom - 1) < 0.005 ? "适应" : Math.round(zoom * 100) + "%");
   const zoomNote = $derived("屏幕上这一份是适应窗口的 " + zoomLabel
-    + "：滚轮缩放，双击画面或点这里回到适应窗口（最多 " + OUTPAINT_ZOOM_MAX + " 倍）。"
+    + "：滚轮缩放，范围从 " + Math.round(OUTPAINT_ZOOM_MIN * 100) + "% 到 "
+    + Math.round(OUTPAINT_ZOOM_MAX * 100) + "%，双击画面或点这里回到适应窗口。"
     + "这只管看着多大，补多少看下面那四个框。");
 
   /** 画板居中，往外拖会两头一起长。平移半个增量把对侧钉回原地，手感才是在拖一条边而不是拉整块 */

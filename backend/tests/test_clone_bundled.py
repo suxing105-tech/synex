@@ -820,7 +820,7 @@ def test_switch_off_keeps_a_fresh_db_empty(tmp_path: Path, monkeypatch):
 def test_api_reports_builtin_templates(seeded):
     """清单接口把九条都报出来，并把「这六颗画进画板」原样送到前端。
 
-    后面那半句是接口层面的接缝：扩图画板只认接口给的 ui 键，库里存着、接口却把它过滤掉，
+    后面那半句是接口层面的接缝：扩展画板只认接口给的 ui 键，库里存着、接口却把它过滤掉，
     前端就永远摆不出画板（和「槽位约定字段不许在往返里丢掉」是同一条尺）。
     """
     with TestClient(app) as client:

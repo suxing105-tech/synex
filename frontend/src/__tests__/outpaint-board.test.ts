@@ -7,7 +7,7 @@ import { clearToasts } from '../lib/toast';
 import { resetPromptSkills } from '../lib/prompt-skills';
 import {
   OUTPAINT_EMPTY_REASON, OUTPAINT_ZOOM_MAX, OUTPAINT_ZOOM_MIN, boardPads, clampPan, outpaintSlots,
-  panAfterZoom, readBoard, zoomStep,
+  readBoard, zoomStep,
 } from '../lib/outpaint';
 
 /**
@@ -101,8 +101,8 @@ async function ready() {
 
 /** 开画板：左上角那颗按钮点下去 */
 async function openBoard(screen: Awaited<ReturnType<typeof ready>>) {
-  await fireEvent.click(screen.getByRole('button', { name: /扩图画板/ }));
-  return screen.findByRole('dialog', { name: /扩图画板/ });
+  await fireEvent.click(screen.getByRole('button', { name: /扩展画板/ }));
+  return screen.findByRole('dialog', { name: /扩展画板/ });
 }
 
 const goDisabled = (screen: Awaited<ReturnType<typeof ready>>) =>
@@ -145,9 +145,9 @@ it('同一件事在 controlSummary 那儿也只挡一次不算完：整份槽位
   expect(summary).toContain('2048');
 });
 
-it('大图左上角那颗是「扩图画板」，这一族不给画遮罩入口', async () => {
+it('大图左上角那颗是「扩展画板」，这一族不给画遮罩入口', async () => {
   const screen = await ready();
-  expect(screen.getByRole('button', { name: /扩图画板/ })).toBeTruthy();
+  expect(screen.getByRole('button', { name: /扩展画板/ })).toBeTruthy();
   expect(screen.queryByRole('button', { name: /画遮罩/ })).toBeNull();
 });
 
@@ -250,7 +250,7 @@ it('认不出画板键的工作流不受牵连：那几颗还是普通数字框�
   const screen = render(CloneModal, { open: true, image: SOURCE, onClose: () => {} });
   await screen.findByLabelText('提示词');
   expect(outpaintSlots(plain as never)).toBeNull();
-  expect(screen.queryByRole('button', { name: /扩图画板/ })).toBeNull();
+  expect(screen.queryByRole('button', { name: /扩展画板/ })).toBeNull();
   await fireEvent.click(screen.getByRole('button', { name: /^(画面参数|音频参数)$/ }));
   expect(screen.getByText('向左扩')).toBeTruthy();
   // 四边全空也不再拦生成：那道闸是画板特有的，普通数字框的工作流照旧能直接跑
@@ -285,7 +285,7 @@ async function dragTo(node: HTMLElement, toX: number) {
   await fireEvent.pointerUp(window, {});
 }
 
-it('缩放那几颗纯函数：认三种 deltaMode、缩不过适应、放大封顶、光标底下那一点不动', () => {
+it('缩放那几颗纯函数：认三种 deltaMode、两头封在适应窗口的 50% 与 8 倍、挪视图的范围不吐 NaN', () => {
   expect(zoomStep(1, -100)).toBeCloseTo(1.246, 3);
   // 行模式（Firefox 的滚轮每格只给 3）按 33px/行折算，否则同样的手势在两个浏览器上快慢差十倍
   expect(zoomStep(1, -3, 1)).toBeCloseTo(1.243, 3);
@@ -293,8 +293,8 @@ it('缩放那几颗纯函数：认三种 deltaMode、缩不过适应、放大封
   expect(zoomStep(1, -1, 2)).toBeCloseTo(1.696, 3);
   expect(zoomStep(2, 100)).toBeLessThan(2);
   expect(zoomStep(1, 100)).toBeCloseTo(0.8025, 3); // 往下要真能缩过适应窗口，不然就是苏醒报的那个数
-  // 底是每一格算完再卡的，所以拿「已经贴着底附近」那一格验：再滚也只是顶在 25%
-  expect(zoomStep(0.3, 240)).toBe(OUTPAINT_ZOOM_MIN);
+  // 底是每一格算完再卡的，所以拿「已经贴着底附近」那一格验：再滚也只是顶在 50%
+  expect(zoomStep(0.6, 240)).toBe(OUTPAINT_ZOOM_MIN);
   expect(zoomStep(8, -2400)).toBe(OUTPAINT_ZOOM_MAX);
   expect(clampPan(50, 400, 800)).toBe(0); // 缩到比窗口还小（或没放大）：钉死居中，压根挪不动
   expect(clampPan(9999, 1200, 800)).toBe(200);
@@ -303,8 +303,8 @@ it('缩放那几颗纯函数：认三种 deltaMode、缩不过适应、放大封
   // transform 里出现 NaN 会让整条声明静默作废，画板跳回没定位的样子
   expect(clampPan(NaN, 800, 400)).toBe(0);
   expect(clampPan(50, 800, undefined as never)).toBe(50);
-  // 光标在中心右 100px、比例从 1 翻到 2：平移得走 -100，那点才还在光标底下
-  expect(panAfterZoom(100, 0, 1, 2)).toBe(-100);
+  // 这一趟没有「光标锚点」那颗：缩放的原点是画面中心，压根不改平移，所以算术层没东西可算
+  // （原先那颗 panAfterZoom 在 git commit ad5ca4c，2026-11-26 苏醒改回中心为原点时删的）
 });
 
 it('滚轮往上滚是放大：画面按倍数长大，方向框和成图读数一个字都不动', async () => {
@@ -319,7 +319,7 @@ it('滚轮往上滚是放大：画面按倍数长大，方向框和成图读数�
   expect(zoomChip()).toBe('125%');
 });
 
-it('缩放两头都封住：往下能一路缩到适应窗口的 25%（缩不过去就是苏醒报的那个坏），往上一路到 8 倍', async () => {
+it('缩放两头都封住：往下能一路缩到适应窗口的 50%（缩不过去就是苏醒报的那个坏），往上一路到 8 倍', async () => {
   const screen = await ready();
   await openBoard(screen);
   const fit = stageWidth();
@@ -329,7 +329,7 @@ it('缩放两头都封住：往下能一路缩到适应窗口的 25%（缩不过
   expect(zoomChip()).toBe('80%'); // 缩下去就不许再报「适应」，那是骗读数
   for (let i = 0; i < 10; i += 1) await fireEvent.wheel(boardView(), { deltaY: 240 });
   expect(stageWidth()).toBe(Math.round(fit * OUTPAINT_ZOOM_MIN));
-  expect(zoomChip()).toBe('25%');
+  expect(zoomChip()).toBe('50%');
   // 缩到底画板比窗口还小，这时候没有可挪的范围，双击必须能回适应窗口
   await fireEvent.dblClick(boardView());
   expect(stageWidth()).toBe(fit);
@@ -352,7 +352,7 @@ it('双击画面回到适应窗口，平移也一起归零', async () => {
   expect(zoomChip()).toBe('适应');
 });
 
-it('放大之后拖灰底只挪视图：位移进 transform，四个方向框一个都不动，松手就不再跟', async () => {
+it('放大之后拖灰底只挪视图：位移进 transform，四个方向框一个都不动，松手就不再跟，缩放也不碰它', async () => {
   const screen = await ready();
   await openBoard(screen);
   await fireEvent.change(sideInputs()[1], { target: { value: '25' } });
@@ -363,6 +363,9 @@ it('放大之后拖灰底只挪视图：位移进 transform，四个方向框一
   expect(sideInputs()[1].value).toBe('25');
   await fireEvent.pointerUp(window, {});
   await fireEvent.pointerMove(window, { clientX: 900, clientY: 900 });
+  expect(stage().style.transform).toBe('translate(50px,40px)');
+  // 缩放以画面中心为原点 = 整趟不碰平移：向外滚只让画从中心向外扩，刚挪出来的 50,40 一个字不动
+  await fireEvent.wheel(boardView(), { deltaY: -240 });
   expect(stage().style.transform).toBe('translate(50px,40px)');
 });
 

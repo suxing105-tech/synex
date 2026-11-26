@@ -2357,7 +2357,7 @@
               <button class="cm-mask-corner is-enter" disabled={!boardSrc}
                 title={boardSrc ? "在画面上把四边拖开：灰的地方就是这一趟要补的画面" : "先在这一格放一张图"}
                 onclick={() => (boardOpen = true)}>
-                <Icon name="outpaint" size={12} />扩图画板
+                <Icon name="outpaint" size={12} />扩展画板
               </button>
               {#if heroOutput}
                 <!-- 刚点过「回看参考图」就得有路回新产出：那颗按钮长在产出那一格里，切过来就看不见了 -->

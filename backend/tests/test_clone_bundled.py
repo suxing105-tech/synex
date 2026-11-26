@@ -23,7 +23,8 @@ MASK_LABEL = "闪寻局部编辑"
 # qwen-multi-image-edit 与 qwen-single-mask-edit 中间，这个位置是故意的，见
 # test_the_outpaint_template_is_seeded_but_never_the_default
 OUTPAINT_KEY = "qwen-single-image-outpaint"
-OUTPAINT_LABEL = "闪寻扩图"
+OUTPAINT_LABEL = "闪寻扩展图片"   # 从「闪寻扩图」改的口，旧名留在 legacy_labels 里认领老库那条
+OLD_OUTPAINT_LABEL = "闪寻扩图"   # 上一版随安装包叫这个，下次启动顺势改口
 VIDEO_KEY = "h3-reference-video"
 # 视频族的第二条：带文戏／武戏开关的那版。
 VIDEO_V2_KEY = "h3-reference-video-v2"
@@ -174,6 +175,8 @@ def test_builtins_know_their_old_names():
     # 这一版改口成「闪寻××生成」：旧名同样得留在包里，否则老库里装成两条一模一样的
     assert OLD_IMAGE_LABEL in by_key[IMAGE_KEY]["legacy_labels"]
     assert OLD_VIDEO_LABEL in by_key[VIDEO_KEY]["legacy_labels"]
+    # 画板那条也一样：老库里躺着的是「闪寻扩图」，认不出旧名就会多装一条同工作流的新名字
+    assert OLD_OUTPAINT_LABEL in by_key[OUTPAINT_KEY]["legacy_labels"]
 
 
 def test_shipped_workflows_carry_the_two_real_machine_fixes():
@@ -671,6 +674,24 @@ def test_this_versions_rename_follows_the_same_rule(seeded):
         assert after["name"] == label
         assert int(after["id"]) == int(before[key]["id"]), "改名不该换一条记录"
         assert int(after["is_active"]) == int(before[key]["is_active"]), "改名不该动「当前」"
+
+
+def test_the_board_workflow_gets_renamed_this_version_too(seeded):
+    """这一版把画板那条改口成「闪寻扩展图片」：上一版装出去的库，下次启动跟着改。
+
+    苏醒 2026-11-26 点名的改名。机制与前两轮同一个——旧名留在 legacy_labels 里，
+    seed 才认得出库里那条就是自己；换的只有名字，记录、素材、「当前」都不动。
+    """
+    conn = seeded.main()
+    before = _row_of_key(seeded, OUTPAINT_KEY)
+    conn.execute("UPDATE clone_templates SET name=? WHERE id=?",
+                 (OLD_OUTPAINT_LABEL, int(before["id"])))
+    result = clone_bundled.seed(conn)
+    assert result["renamed"] == [OUTPAINT_KEY]
+    after = _row_of_key(seeded, OUTPAINT_KEY)
+    assert after["name"] == OUTPAINT_LABEL
+    assert int(after["id"]) == int(before["id"]), "改名不该换一条记录"
+    assert int(after["is_active"]) == int(before["is_active"]), "改名不该动「当前」"
 
 
 def test_deleted_builtin_does_not_come_back(seeded):

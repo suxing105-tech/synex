@@ -11,7 +11,7 @@ import {
 } from '../lib/outpaint';
 
 /**
- * 「闪寻扩图」挂进再次创作之后，画板那套和弹窗的接缝。
+ * 「闪寻扩展图片」挂进再次创作之后，画板那套和弹窗的接缝。
  *
  * 算术本身不在这里测（那是 outpaint-contract.test.ts 的活，逐条对着节点源码手算）。
  * 这儿只测接线：那六颗该藏的地方藏住了没有、入口摆对没有、四边全空拦不拦、
@@ -22,7 +22,7 @@ import {
  */
 const OUTPAINT = {
   id: 9,
-  name: '闪寻扩图',
+  name: '闪寻扩展图片',
   is_active: true,
   default_prompt: '',
   created_at: '',

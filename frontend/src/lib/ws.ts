@@ -2,9 +2,12 @@ import { removeImageFromFeed, markNew, refreshFolders, refreshFeed, refreshScanP
 
 import { eventsUrl } from "./backend-url";
 import { applyCloneProgress } from "./clone";
+import { pushToast } from "./toast";
 
 let socket: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+/** 恢复提示复用同一条：监听反复掉线时不该把角落堆满同一句话 */
+let watcherToastId = 0;
 
 export function connectEvents() {
   if (socket && socket.readyState <= 1) return;
@@ -42,6 +45,15 @@ export function connectEvents() {
       } else if (payload.type === "scan_progress") {
         // 后端会发 scan 进度；用单独轮询补上
         await refreshScanProgress();
+      } else if (payload.type === "watcher_restarted") {
+        // 监听掉线又被后台修好。不吭声的话，用户只会以为「这软件不收图了」；
+        // 漏掉的文件反正由补扫收回，这里只负责让人知道发生过什么。
+        watcherToastId = pushToast("文件监听中断过，已自动恢复。这期间漏掉的文件由后台补扫收回", {
+          kind: "info",
+          ttl: 5000,
+          placement: "center",
+          id: watcherToastId || undefined,
+        });
       }
     } catch (e) {
       console.warn("ws message parse failed", e);

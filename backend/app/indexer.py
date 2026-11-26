@@ -76,6 +76,9 @@ class Indexer:
         )
         self._observer: Observer | None = None
         self._watched_dirs: set[str] = set()
+        # 监听健康闸：自动重建过多少次（进日志，也进 watcher_restarted 事件）。
+        self._watcher_repairs = 0
+        self._watcher_repair_lock = threading.Lock()
         self._progress_lock = threading.Lock()
         # WAL 模式下 SQLite 只允许单写者；扫描用 threadpool 跑元数据解析，
         # 但写库（UPSERT / FTS sync）必须串行化。
@@ -87,6 +90,12 @@ class Indexer:
             "total": 0,
             "current_path": "",
             "error": None,
+            # 补扫单独一套计数，不占 running。占了的后果不在进度条上，而在 maintenance
+            # 的 prepare-update：running=true 会 409「正在导入」挡住装更新，而补扫是
+            # 每分钟自己跑的后台活，不该有这个权力。
+            "sweeping": False,
+            "sweep_indexed": 0,
+            "sweep_total": 0,
         }
         self._loop: asyncio.AbstractEventLoop | None = None
         self._stopping = False
@@ -440,6 +449,129 @@ class Indexer:
             self._observer = None
         self._watched_dirs.clear()
 
+    # ----- 监听健康闸 -----
+
+    def _live_watch_paths(self) -> set[str] | None:
+        """现在还活着的事件发射器覆盖哪些目录（normcase 口径，和 schedule 传的串对齐）。
+
+        只认 watchdog 的公开面：``Observer.emitters`` → ``emitter.watch.path`` +
+        ``emitter.is_alive()``。返回 ``None`` 表示探测不了（这条属性链在新版本里变了），
+        调用方据此**跳过**重建：读不到信息不等于全都死了，据此重挂会把监听拆了重建个没完。
+        """
+        observer = self._observer
+        if observer is None:
+            return set()
+        emitters = getattr(observer, "emitters", None)
+        if emitters is None:
+            log.warning("watchdog 没有 emitters 属性，监听健康探测跳过")
+            return None
+        live: set[str] = set()
+        for emitter in list(emitters):
+            watch = getattr(emitter, "watch", None)
+            path = getattr(watch, "path", None)
+            alive = getattr(emitter, "is_alive", None)
+            if path is None or not callable(alive):
+                log.warning("watchdog 的 emitter 结构不认识，监听健康探测跳过")
+                return None
+            if alive():
+                live.add(os.path.normcase(str(path)))
+        return live
+
+    def watcher_health(self) -> dict:
+        """只读探测：配了、盘上还在、却已经没有活的事件发射器的来源目录。"""
+        observer = self._observer
+        live = self._live_watch_paths()
+        dead: list[str] = []
+        if live is not None:
+            for directory in sorted(self._watched_dirs):
+                try:
+                    # 目录真被删了不归这里管（那是 reconcile_missing 那一半），而且往
+                    # 一个不存在的目录上 schedule 会直接抛 FileNotFoundError。
+                    if not Path(directory).is_dir():
+                        continue
+                except OSError:  # 路径读不动（网络盘掉线等）同样留给下一轮
+                    continue
+                if os.path.normcase(str(directory)) not in live:
+                    dead.append(directory)
+        return {
+            "observer_alive": bool(observer is not None and observer.is_alive()),
+            "watched": sorted(self._watched_dirs),
+            "dead": dead,
+            "unknown": live is None,
+            "repairs": self._watcher_repairs,
+        }
+
+    def repair_watcher(self) -> list[str]:
+        """把掉线的 emitter 重新挂上，返回修好的目录；没事可做返回 `[]`。
+
+        为什么非有这一闸：watchdog 6.0.0 的 Windows emitter 会**自己退出线程**，而
+        Observer 不会发现，于是那条来源目录整个会话再也收不到事件，界面上不留痕迹。
+        触发它的常见原因就是下面那条假「目录被删除」。根因在第三方库里，我们能修的只有
+        「掉了要有人发现并重建」；漏掉的文件反正有 ``sweep_new_files`` 兜底。
+        """
+        observer = self._observer
+        if self._stopping or observer is None:
+            return []
+        health = self.watcher_health()
+        if health["unknown"] or not health["dead"]:
+            return []
+        with self._watcher_repair_lock:
+            # 锁内重判一遍：这一会儿可能已经被 stop_watching 停了（装更新走的就是那条路）。
+            # 就算真抢在它后面 schedule 成功，watchdog 也只在 observer 线程还活着时才启动
+            # emitter，不会留下一条没人派发事件的通道。
+            if self._stopping or self._observer is not observer:
+                return []
+            repaired: list[str] = []
+            for directory in health["dead"]:
+                try:
+                    self._reschedule_watch(observer, directory)
+                except Exception as e:  # noqa: BLE001 - 修不好也不许拖垮巡检循环
+                    log.warning("重建来源目录监听失败：%s（%s）", directory, e)
+                    continue
+                repaired.append(directory)
+            if not repaired:
+                return []
+            self._watcher_repairs += len(repaired)
+            log.warning(
+                "来源目录的事件通道掉了（watchdog 的 emitter 自己退出了），已自动重建：%s",
+                "、".join(repaired),
+            )
+            self.emit_event_sync({"type": "watcher_restarted", "dirs": repaired, "total": self._watcher_repairs})
+        return repaired
+
+    def _reschedule_watch(self, observer, directory: str) -> None:
+        """给这条目录换一个新 emitter。
+
+        必须先 unschedule 再 schedule：watchdog 在同一个 watch 还在册的时候不会另起
+        emitter（``BaseObserver.schedule`` 里那句 `if watch not in self._emitter_for_watch`），
+        直接 schedule 只会拿到那条已经死透的旧 emitter。
+        """
+        target = os.path.normcase(str(directory))
+        for emitter in list(getattr(observer, "emitters", ()) or ()):
+            watch = getattr(emitter, "watch", None)
+            if watch is not None and os.path.normcase(str(watch.path)) == target:
+                observer.unschedule(watch)
+                break
+        observer.schedule(_Handler(self), str(directory), recursive=True)
+
+    def _is_false_root_delete(self, path: Path | str) -> bool:
+        """这条「目录被删除」是不是假的：路径正是我们监听的根，而它在盘上还好好的。
+
+        watchdog 6.0.0 的 ``winapi.read_directory_changes`` 抓到任何不是
+        ERROR_OPERATION_ABORTED 的 OSError——**包括 64KB 事件缓冲溢出的
+        ERROR_NOTIFY_ENUM_DIR**——都交给 ``_is_observed_path_deleted`` 判断，而它拿
+        GetFinalPathNameByHandleW(VOLUME_NAME_NT) 返回的 \\Device\\HarddiskVolumeN\\...
+        去等值比较 D:\\...，永不相等，于是目录完好时也照样合成一条
+        ``DirDeletedEvent(root)`` 再 ``emitter.stop()``。出图洪峰正是最容易撞上的时候。
+        """
+        target = os.path.normcase(str(path))
+        if not any(os.path.normcase(str(d)) == target for d in self._watched_dirs):
+            return False
+        try:
+            return Path(path).is_dir()
+        except OSError:
+            return False
+
     def shutdown(self) -> None:
         self._stopping = True
         try:
@@ -658,16 +790,28 @@ class Indexer:
             missing = self.find_unindexed_files()
         if not missing or self._stopping:
             return {"indexed": 0}
+        # 补扫也得在顶部进度条上看得见：一次收 500 个要跑几十秒，只留一句
+        # "sweep indexed N missed file(s)" 的话，用户看到的就是「图悄悄回来了」。
+        # 用 sweeping 这一套计数而不是 running，原因写在 _progress 初始化处。
+        self._set_progress(sweeping=True, sweep_total=len(missing), sweep_indexed=0)
         ids: list[int] = []
+        done = 0
         futures = [self._executor.submit(self._process_path_sync, item) for item in missing]
-        for fut in futures:
-            try:
-                payload = fut.result(timeout=120)
-            except Exception as e:  # noqa: BLE001
-                log.warning("sweep item failed: %s", e)
-                continue
-            if payload and payload.get("type") == "image_indexed":
-                ids.append(payload["id"])
+        try:
+            for fut in futures:
+                try:
+                    payload = fut.result(timeout=120)
+                    if payload and payload.get("type") == "image_indexed":
+                        ids.append(payload["id"])
+                except Exception as e:  # noqa: BLE001
+                    log.warning("sweep item failed: %s", e)
+                finally:
+                    # 计数走 finally：某条解析炸了也要往前走，否则进度条永远停在失败那条。
+                    done += 1
+                    self._set_progress(sweep_indexed=done)
+        finally:
+            # 任何一路出口都得把 sweeping 落回 False，不然进度条会一直挂着。
+            self._set_progress(sweeping=False, sweep_total=0, sweep_indexed=0)
         count = len(ids)
         if count and fire_event:
             # 一条批量事件，不是每张图一条：106 张逐条发会让前端串行刷三百多次。
@@ -745,6 +889,13 @@ class _Handler(FileSystemEventHandler):
     def on_deleted(self, event):
         # Windows watchdog 把 FILE_ACTION_REMOVED 一律包装成 FileDeletedEvent，
         # 因而不能仅凭 is_directory 判断是否需要清理目录后代。
+        if event.is_directory and self.indexer._is_false_root_delete(event.src_path):
+            # 假删除（判据见 Indexer._is_false_root_delete）。照下面走完的后果很实在：
+            # 前缀匹配会把整条来源目录的文件全排进删除队列，每条又因为「盘上还在」退回
+            # 重新解析（实测一次 700 个文件），顺带 prune 掉左侧那棵目录树。
+            # emitter 这会儿已经停了，重建交给 repair_watcher。
+            log.warning("忽略一条虚假的目录删除事件（监听事件缓冲溢出被 watchdog 误判）：%s", event.src_path)
+            return
         self._enqueue_directory_removal(event.src_path)
         if event.is_directory:
             # 目录删除属于"被文件系统同步"事件。旧实现"不动 system folder 表"

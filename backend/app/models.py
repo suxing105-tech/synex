@@ -161,6 +161,11 @@ class ScanProgress(BaseModel):
     total: int = 0
     current_path: str = ""
     error: str | None = None
+    # 后台补扫单独一套计数：它不是用户点出来的全量扫描，所以不占 running
+    # （running=true 会挡住 prepare-update）。前端进度条两套都显示，文案不同。
+    sweeping: bool = False
+    sweep_indexed: int = 0
+    sweep_total: int = 0
 
 # ---------- ComfyUI 集成 ----------
 

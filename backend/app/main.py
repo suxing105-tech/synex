@@ -151,6 +151,9 @@ async def lifespan(app: FastAPI):
                 if tick >= sweep_every:
                     tick = 0
                     await asyncio.to_thread(indexer.sweep_new_files)
+                # 监听健康闸：watchdog 的 emitter 会自己退出线程而 Observer 不报错，
+                # 那条来源目录就此静默失联。每轮探一次，掉了就重建（Indexer.repair_watcher）。
+                await asyncio.to_thread(indexer.repair_watcher)
             except Exception:
                 log.exception("reconcile missing images failed")
             await asyncio.sleep(2)

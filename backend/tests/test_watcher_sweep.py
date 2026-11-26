@@ -207,6 +207,49 @@ def test_sweep_stands_aside_while_a_scan_is_running(indexer, init_db, tmp_path):
     assert row_count(init_db) == 0
 
 
+def test_sweep_shows_its_own_progress_without_stealing_running(indexer, init_db, tmp_path):
+    """补扫一次收几百个文件要跑几十秒，顶部进度条得跟着动。
+
+    关键是它**不占** running：running=true 会让 maintenance 的 prepare-update 回 409
+    「正在导入」，而补扫是每分钟自己跑的后台活——用它挡装更新等于让图库永远装不上更新。
+    """
+    watch_root(indexer, tmp_path)
+    for i in range(3):
+        settle(make_png(tmp_path / ("q%d.png" % i)))
+    seen: list[dict] = []
+    original = indexer._process_path_sync
+
+    def spy(path, *, remove=False):
+        seen.append(indexer.get_progress())
+        return original(path, remove=remove)
+
+    indexer._process_path_sync = spy  # type: ignore[assignment]
+    assert indexer.sweep_new_files() == {"indexed": 3}
+
+    assert len(seen) == 3
+    assert all(p["sweeping"] and p["sweep_total"] == 3 for p in seen)
+    assert not any(p["running"] for p in seen), "补扫不许占 running，那会挡住装更新"
+    assert [p["sweep_indexed"] for p in seen] == sorted(p["sweep_indexed"] for p in seen)
+    after = indexer.get_progress()
+    assert (after["sweeping"], after["sweep_total"], after["sweep_indexed"]) == (False, 0, 0)
+    assert row_count(init_db) == 3
+
+
+def test_sweep_clears_its_progress_when_an_item_explodes(indexer, init_db, tmp_path):
+    """某条解析炸了不许把进度条永久挂在「补录中」：计数在 finally 里落回原样。"""
+    watch_root(indexer, tmp_path)
+    settle(make_png(tmp_path / "a.png"))
+    settle(make_png(tmp_path / "b.png"))
+
+    def boom(path, *, remove=False):
+        raise RuntimeError("解析炸了")
+
+    indexer._process_path_sync = boom  # type: ignore[assignment]
+    assert indexer.sweep_new_files() == {"indexed": 0}
+    after = indexer.get_progress()
+    assert (after["sweeping"], after["sweep_total"], after["sweep_indexed"]) == (False, 0, 0)
+
+
 def test_startup_and_reconcile_loop_are_wired_to_the_sweep():
     """补扫得真的有人调：开机一次 + 循环里每 30 轮（约 1 分钟）一次。
 

@@ -14,7 +14,7 @@ scanApi: { importDirectory: vi.fn(), validateDirectory: vi.fn(), progress: vi.fn
 vi.mock("../lib/tauri", () => ({ isTauri: vi.fn(), selectImportDirectory: vi.fn(), getSidecarStatus: vi.fn() }));
 vi.mock("../lib/stores", async () => {
   const { writable } = await import("svelte/store");
-  return { appBooting: writable(false), scanProgress: writable({ running: false, total: 0, indexed: 0, scanned: 0, current_path: "", error: null }),
+  return { appBooting: writable(false), scanProgress: writable({ running: false, total: 0, indexed: 0, scanned: 0, current_path: "", error: null, sweeping: false, sweep_indexed: 0, sweep_total: 0 }),
     refreshFolders: vi.fn(), refreshStats: vi.fn(), refreshFeed: vi.fn() };
 });
 
@@ -22,7 +22,7 @@ beforeEach(() => {
   vi.resetAllMocks(); localStorage.clear();
   vi.mocked(isTauri).mockReturnValue(true);
   vi.mocked(settingsApi.get).mockResolvedValue({ watch_dirs: ["D:\\old"] } as any);
-  scanProgress.set({ running: false, total: 0, indexed: 0, scanned: 0, current_path: "", error: null });
+  scanProgress.set({ running: false, total: 0, indexed: 0, scanned: 0, current_path: "", error: null, sweeping: false, sweep_indexed: 0, sweep_total: 0 });
 });
 afterEach(cleanup);
 
@@ -59,7 +59,7 @@ describe("目录选择与导入窗口", () => {
   });
   it("closes after successfully importing an empty directory", async () => {
     vi.mocked(scanApi.importDirectory).mockResolvedValue({ ok: true, path: "D:\\empty" });
-    vi.mocked(scanApi.progress).mockResolvedValue({ running: false, total: 0, indexed: 0, scanned: 0, current_path: "", error: null });
+    vi.mocked(scanApi.progress).mockResolvedValue({ running: false, total: 0, indexed: 0, scanned: 0, current_path: "", error: null, sweeping: false, sweep_indexed: 0, sweep_total: 0 });
     const ui = render(Modal, { open: true });
     await fireEvent.input(ui.getByLabelText("目录路径"), { target: { value: "D:\\empty" } });
     await fireEvent.click(ui.getByRole("button", { name: "开始导入" }));
@@ -68,7 +68,7 @@ describe("目录选择与导入窗口", () => {
   });
   it("keeps the dialog busy until the imported gallery has refreshed", async () => {
     vi.mocked(scanApi.importDirectory).mockResolvedValue({ ok: true, path: "D:/images" });
-    vi.mocked(scanApi.progress).mockResolvedValue({ running: false, total: 3, indexed: 3, scanned: 3, current_path: "", error: null });
+    vi.mocked(scanApi.progress).mockResolvedValue({ running: false, total: 3, indexed: 3, scanned: 3, current_path: "", error: null, sweeping: false, sweep_indexed: 0, sweep_total: 0 });
     let finish!: () => void;
     vi.mocked(refreshFeed).mockReturnValue(new Promise<void>(resolve => { finish = resolve; }));
     const ui = render(Modal, { open: true });
@@ -82,7 +82,7 @@ describe("目录选择与导入窗口", () => {
   });
   it.each(["scan", "refresh"])("keeps the dialog open after a %s failure", async (failure) => {
     vi.mocked(scanApi.importDirectory).mockResolvedValue({ ok: true, path: "D:/images" });
-    vi.mocked(scanApi.progress).mockResolvedValue({ running: false, total: 3, indexed: 2, scanned: 3, current_path: "", error: failure === "scan" ? "扫描失败" : null });
+    vi.mocked(scanApi.progress).mockResolvedValue({ running: false, total: 3, indexed: 2, scanned: 3, current_path: "", error: failure === "scan" ? "扫描失败" : null, sweeping: false, sweep_indexed: 0, sweep_total: 0 });
     if (failure === "refresh") vi.mocked(refreshFeed).mockRejectedValue(new Error("offline"));
     const ui = render(Modal, { open: true });
     await fireEvent.input(ui.getByLabelText("目录路径"), { target: { value: "D:/images" } });

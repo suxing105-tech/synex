@@ -100,6 +100,10 @@ export interface ScanProgress {
   total: number;
   current_path: string;
   error: string | null;
+  /** 后台补扫（漏收的新文件）单独一套计数，不占 running，但同样要看得见 */
+  sweeping: boolean;
+  sweep_indexed: number;
+  sweep_total: number;
 }
 
 /** 后端 media_tools.status()：ffmpeg / ffprobe 的来源与版本。 */

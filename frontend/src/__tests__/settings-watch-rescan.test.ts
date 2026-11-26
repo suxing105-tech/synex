@@ -15,7 +15,7 @@ vi.mock("../lib/toast", () => ({ pushToast: vi.fn() }));
 vi.mock("../lib/api", () => ({
   itemsApi: { list: vi.fn(async () => ({ items: [], total: 0, counts: { image: 0, video: 0, audio: 0, text: 0 } })) },
   settingsApi: { get: vi.fn(async () => ({ watch_dirs: [DIR], live_enabled: true })), update: vi.fn(async (cfg: any) => cfg) },
-  scanApi: { start: vi.fn(async () => ({ ok: true, targets: [] })), progress: vi.fn(async () => ({ running: false, scanned: 0, indexed: 0, total: 0, current_path: "", error: null })) },
+  scanApi: { start: vi.fn(async () => ({ ok: true, targets: [] })), progress: vi.fn(async () => ({ running: false, scanned: 0, indexed: 0, total: 0, current_path: "", error: null, sweeping: false, sweep_indexed: 0, sweep_total: 0 })) },
   comfyuiApi: { status: vi.fn(async () => ({ running: false, enabled: true, url: "", reason: "", reason_code: "" })), scan: vi.fn(async () => ({ current: "", running: false, reason: "", reason_code: "", candidates: [] })), updateConfig: vi.fn(async (patch: any) => patch) },
   imagesApi: { list: vi.fn(async () => ({ items: [], total: 0 })) },
   foldersApi: { tree: vi.fn(async () => []), archived: vi.fn(async () => []), restore: vi.fn(async () => ({ ok: true })) },
@@ -26,7 +26,7 @@ vi.mock("../lib/api", () => ({
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
-  scanProgress.set({ running: false, scanned: 0, indexed: 0, total: 0, current_path: "", error: null });
+  scanProgress.set({ running: false, scanned: 0, indexed: 0, total: 0, current_path: "", error: null, sweeping: false, sweep_indexed: 0, sweep_total: 0 });
 });
 
 const rescanButton = (screen: any) => screen.getByRole("button", { name: `重新扫描监听目录 ${DIR}` });

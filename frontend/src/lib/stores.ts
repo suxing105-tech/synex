@@ -270,6 +270,9 @@ export const scanProgress = writable<ScanProgress>({
   total: 0,
   current_path: "",
   error: null,
+  sweeping: false,
+  sweep_indexed: 0,
+  sweep_total: 0,
 });
 
 // ---------- 新图 NEW 徽标 ----------

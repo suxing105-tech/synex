@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { get } from "svelte/store";
 import { foldersApi, imagesApi, itemsApi, statsApi } from "../lib/api";
 import { feedItems, newIds } from "../lib/stores";
+import { clearToasts, toasts } from "../lib/toast";
 import { connectEvents, disconnectEvents } from "../lib/ws";
 
 // 后端补扫一次能捞回上百张图。逐条 image_indexed 会让前端为每张图串行发三个请求、
@@ -19,6 +20,7 @@ afterEach(() => {
   disconnectEvents();
   feedItems.set([]);
   newIds.set(new Set());
+  clearToasts();
   vi.clearAllMocks();
 });
 
@@ -48,4 +50,17 @@ it("ids 缺省也不会炸，仍然刷一遍", async () => {
   await emit({ type: "images_indexed", count: 3 });
   expect(itemsApi.list).toHaveBeenCalledTimes(1);
   expect(get(newIds).size).toBe(0);
+});
+
+// 监听的 emitter 掉了又被后台修好（Indexer.repair_watcher）。不吭声的话，用户只会以为
+// 「这软件不收图了」；但反复掉线也不该把角落堆满同一句话，所以恢复提示复用同一条。
+it("监听自动恢复要说一声，反复恢复也只占一条", async () => {
+  for (const total of [1, 2, 3]) {
+    // 每轮断一条新连接：connectEvents 见着现成的 socket 会直接复用，那样 onmessage 拿不到手
+    disconnectEvents();
+    await emit({ type: "watcher_restarted", dirs: ["D:/AI/ComfyUI/output"], total });
+  }
+  const list = get(toasts);
+  expect(list).toHaveLength(1);
+  expect(list[0].message).toContain("已自动恢复");
 });

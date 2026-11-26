@@ -1310,6 +1310,10 @@ SLOT_CONTRACT_KEYS = ("mask", "allow_empty", "empty_hint", "sync_to", "show_when
 # 而是那份清单里的条目，所以 object_info 里根本没有对应的旋钮。
 LORA_CONTRACT_KEYS = ("lora_group", "lora_on", "lora", "option_writes", "slider")
 
+# 「画板」那六颗是一套：扩图那条的四边 + 单位 + 比例。它们说的是同一件事——往哪个方向补多少画面，
+# 拆开摆成四颗数字框谁也看不出补在哪儿，所以要么六颗齐、要么一颗都不认（见 normalize_slots）。
+BOARD_INPUTS = ("左", "右", "上", "下", "单位", "gh_visual_ratio")
+
 
 def _load_slots(raw: Any) -> list[dict]:
     if isinstance(raw, list):
@@ -1494,6 +1498,20 @@ def normalize_slots(raw: Any, nodes: dict) -> list[dict]:
                 raise ValueError(f"控件 {slot_key(slot)} 要画成开关就得正好两档"
                                  f"（第一档是关、第二档是开），现在是：{listed}。")
             slot["ui"] = "toggle"
+
+        if str(item.get("ui") or "").strip() == "board":
+            # 「画进画板」和「画成开关」「画成滑块」一样，是作者写下的用法，图里看不出来。
+            # 扩图那条的四边/单位/比例不在右下角那颗参数弹层里，而在画面上那层画板里拖：
+            # 四边是四颗数字框谁也看不出补在哪儿，摆成能拖的边框才读得懂。
+            # 六颗必须齐——缺单位就算不出该按百分比还是像素，缺比例就凑不出目标画幅，
+            # 缺任意一边则那条边界拖不动。少一颗的画板是块画不动的板子，所以当场吵，
+            # 不能留到用户点开画板才发现这份工作流根本画不出扩图。
+            missing = [one for one in BOARD_INPUTS
+                       if one not in inputs or not is_literal(inputs[one])]
+            if missing:
+                raise ValueError(f"控件 {slot_key(slot)} 要画进画板，但节点 {node} 没有 "
+                                 f"{'、'.join(missing)} 这几颗输入，这份工作流拖不出扩图板。")
+            slot["ui"] = "board"
 
         single_lora = str(item.get("lora") or "").strip()
         if kind == "number" and single_lora:

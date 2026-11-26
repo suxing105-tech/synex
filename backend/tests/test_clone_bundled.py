@@ -1,4 +1,4 @@
-"""内置「再次创作」工作流：随包这八条（图片两条、视频三条、声音三种出声方式）能不能正确长进库里。
+"""内置「再次创作」工作流：随包这九条（图片三条、视频三条、声音三种出声方式）能不能正确长进库里。
 
 只碰本地 SQLite 与随包资源，绝不连真机 ComfyUI——槽位固化在 JSON 里，
 首启不需要 object_info，这条本身就是要守住的性质。
@@ -19,6 +19,11 @@ from app.main import app
 IMAGE_KEY = "qwen-multi-image-edit"
 MASK_KEY = "qwen-single-mask-edit"
 MASK_LABEL = "闪寻局部编辑"
+# 图片族第三条：只在四边补画面的扩图（画面上的画板拖四边）。key 排在
+# qwen-multi-image-edit 与 qwen-single-mask-edit 中间，这个位置是故意的，见
+# test_the_outpaint_template_is_seeded_but_never_the_default
+OUTPAINT_KEY = "qwen-single-image-outpaint"
+OUTPAINT_LABEL = "闪寻扩图"
 VIDEO_KEY = "h3-reference-video"
 # 视频族的第二条：带文戏／武戏开关的那版。
 VIDEO_V2_KEY = "h3-reference-video-v2"
@@ -29,7 +34,7 @@ VIDEO_V3_LABEL = "闪寻视频生成 H3 INT8"
 AUDIO_KEY = "qwen3-tts-voice-clone"
 DESIGN_KEY = "qwen3-tts-voice-design"
 CUSTOM_KEY = "qwen3-tts-custom-voice"
-ALL_KEYS = [IMAGE_KEY, MASK_KEY, VIDEO_KEY, VIDEO_V2_KEY, VIDEO_V3_KEY,
+ALL_KEYS = [IMAGE_KEY, MASK_KEY, OUTPAINT_KEY, VIDEO_KEY, VIDEO_V2_KEY, VIDEO_V3_KEY,
             AUDIO_KEY, DESIGN_KEY, CUSTOM_KEY]
 AUDIO_LABELS = {"闪寻参考音色", "闪寻音色描述", "闪寻指定音色"}
 # 2026-11-16 苏醒：三族并列时统一带「生成」，只写「闪寻图片」读着像左边那排的类型筛选。
@@ -92,6 +97,10 @@ def test_ships_one_workflow_per_family():
     # test_the_mask_template_is_seeded_but_not_the_default
     assert by_key[MASK_KEY]["media_kind"] == "image"
     assert by_key[MASK_KEY]["label"] == MASK_LABEL
+    # 图片族第三条：扩图。它同样不是新的「当前」，见
+    # test_the_outpaint_template_is_seeded_but_never_the_default
+    assert by_key[OUTPAINT_KEY]["media_kind"] == "image"
+    assert by_key[OUTPAINT_KEY]["label"] == OUTPAINT_LABEL
     assert by_key[VIDEO_KEY]["media_kind"] == "video"
     assert by_key[VIDEO_KEY]["label"] == VIDEO_LABEL
     # 视频族第二条：文戏／武戏那版。它要当新的当前，见
@@ -268,7 +277,7 @@ def test_shipped_slots_can_report_the_real_output_size():
 def test_fresh_install_seeds_every_family(seeded):
     rows = clone_templates.list_templates()
     assert {r["name"] for r in rows} == (
-        {IMAGE_LABEL, MASK_LABEL, VIDEO_LABEL, VIDEO_V2_LABEL, VIDEO_V3_LABEL}
+        {IMAGE_LABEL, MASK_LABEL, OUTPAINT_LABEL, VIDEO_LABEL, VIDEO_V2_LABEL, VIDEO_V3_LABEL}
         | AUDIO_LABELS)
     assert all(r["is_builtin"] for r in rows)
     assert {r["media_kind"] for r in rows} == {"image", "video", "audio"}
@@ -283,7 +292,7 @@ def test_the_mask_template_is_seeded_but_not_the_default(seeded):
     """多一条图片工作流可以，但默认那条不能换：老用户点开「再次创作」认的是闪寻图片生成。"""
     rows = {r["name"]: r for r in clone_templates.list_templates()}
     image = [r for r in rows.values() if r["media_kind"] == "image"]
-    assert len(image) == 2
+    assert len(image) == 3
     assert [r["name"] for r in image if r["is_active"]] == [IMAGE_LABEL]
     mask = rows[MASK_LABEL]
     assert [c["key"] for c in mask["reference_cells"]] == MASK_CELLS
@@ -788,13 +797,21 @@ def test_switch_off_keeps_a_fresh_db_empty(tmp_path: Path, monkeypatch):
 
 
 def test_api_reports_builtin_templates(seeded):
+    """清单接口把九条都报出来，并把「这六颗画进画板」原样送到前端。
+
+    后面那半句是接口层面的接缝：扩图画板只认接口给的 ui 键，库里存着、接口却把它过滤掉，
+    前端就永远摆不出画板（和「槽位约定字段不许在往返里丢掉」是同一条尺）。
+    """
     with TestClient(app) as client:
         items = client.get("/api/clone/templates").json()["items"]
     assert {i["name"] for i in items} == (
-        {IMAGE_LABEL, MASK_LABEL, VIDEO_LABEL, VIDEO_V2_LABEL, VIDEO_V3_LABEL}
+        {IMAGE_LABEL, MASK_LABEL, OUTPAINT_LABEL, VIDEO_LABEL, VIDEO_V2_LABEL, VIDEO_V3_LABEL}
         | AUDIO_LABELS)
     assert all(i["is_builtin"] for i in items)
     assert {i["media_kind"] for i in items} == {"image", "video", "audio"}
+    board = [i for i in items if i["name"] == OUTPAINT_LABEL][0]
+    assert [s["input"] for s in board["slots"] if s.get("ui") == "board"] == [
+        "左", "右", "上", "下", "单位", "gh_visual_ratio"]
 
 
 def test_a_builtin_refuses_redetect(seeded, monkeypatch):

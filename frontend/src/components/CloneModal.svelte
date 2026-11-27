@@ -27,6 +27,9 @@
   import OutpaintBoard from "./OutpaintBoard.svelte";
   import type { CanvasEscape } from "../lib/clone-canvas";
   import {
+    apiPopFitsTwoCols, leftOnlyRoom, popAnchor,
+  } from "../lib/clone-pop-anchor";
+  import {
     applyCloneProgress, buildGenerateRequest, cloneApi, cloneError, cloneJob, cloneStatusLabel,
     allowsTextMode, cleanNodeTitle, controlContextLine, controlSlots, controlSummary, defaultControlValues, defaultReferences, formatTargetSize, latestReversePrompt, sceneTypeOf,
     pickedRatioOption,
@@ -449,6 +452,9 @@
    * 读不到不等于云端坏了，真点下去再报错。
    */
   function toggleWorkflowPop() {
+    // 展开之前照当下的盒子再量一次锚点：RO 只看得到面板自己的宽高，旁边那颗胶囊的名字变长
+    // 把这一颗推左右时它不响，量到的还是旧余量。
+    measurePops();
     wfOpen = !wfOpen;
     if (!wfOpen) return;
     popOpen = false;
@@ -785,48 +791,54 @@
   }
 
   /* 这一层现在被中间那一列的宽度框住，最宽那颗弹层（云端两栏 452px）不能再用 100vw 封顶——
-     量错了对象：列一窄它就从面板右边顶出去，把整块面板顶出横向滚动条。真实上限要实测：
-     云端那一屏贴「工作流」那颗胶囊往左长，所以量的是「那一格的右沿 − 面板左内沿」，写进
-     --cm-pop-wf-left；用户折展侧栏与详情栏会改变这一列的宽度，ResizeObserver 让它跟着走。
+     量错了对象：列一窄它就从面板右边顶出去，把整块面板顶出横向滚动条。真实上限要实测。
      别改成 container query：container-type 会给 .cm-panel 加 contain:layout，
      面板里那两条 position:fixed（参考图悬停放大预览、弹层那张整屏兜底遮罩）会跟着错位。 */
   // 中间那一列窄到放不下两栏时收回上下结构（CSS 见 .cm-body.is-stacked）。
   let stacked = $state(false);
+  /** 云端那一屏这一轮贴胶囊左沿往右长（余量在右边）；false = 贴右沿往左长。见 .cm-pop-wf.is-api。 */
+  let wfRoomRight = $state(false);
+  /** 两栏真放不下：上下叠，服务商在上、模型清单在下。见 .cm-pop-wf.is-api.is-one-col。 */
+  let wfOneCol = $state(false);
+  /**
+   * 一次量完三件事：云端那一屏往哪边长、最长多长、要不要上下叠；顺手量画面参数那层的左余量
+   * 和「这一列放不放得下两栏」。尺子在 lib/clone-pop-anchor.ts，这里只负责量与写。
+   * 锚点为什么不能再只认左边：这颗胶囊在底部那一排的第几颗、名字多长都随窗口变。
+   * 2026-11-11 定成一律贴左长时量的是「胶囊那一格右沿 − 面板左内沿」，1881px 那一档是对的；
+   * 2026-11-26 苏醒照的图是另一档——1304 宽的窗口里侧栏与详情栏都开着，面板只有 657，
+   * 这颗落到行首，左边只剩 267、右边有 465，还照左边封顶就把两栏压成 267：右列整列模型名
+   * 没了、「已实测」剩「已实」。两侧各量一份，哪边宽往哪边长。
+   */
+  function measurePops() {
+    const host = panelEl;
+    if (!host) return;
+    const box = host.getBoundingClientRect();
+    // 弹层的外裹那一格就是胶囊自己的盒子，量同一只盒子的矩形；量不到（这颗还没画出来）拿面板那一份兜底。
+    const wfPill = host.querySelector<HTMLElement>('[aria-label="工作流"]');
+    const wfWrap = wfPill?.closest<HTMLElement>('.cm-pop-wrap') ?? wfPill;
+    const anchor = popAnchor(box, wfWrap ? wfWrap.getBoundingClientRect() : box);
+    host.style.setProperty("--cm-pop-wf-room", anchor.room + "px");
+    wfRoomRight = anchor.side === "right";
+    wfOneCol = !apiPopFitsTwoCols(anchor.room);
+    // 画面参数那层固定在行的最右边，只会贴右往左长，封顶就只认左边那一份余量。
+    const paramsPill = host.querySelector<HTMLElement>('.cm-params-pill');
+    const paramsWrap = paramsPill?.closest<HTMLElement>('.cm-pop-wrap') ?? paramsPill;
+    host.style.setProperty("--cm-pop-left", leftOnlyRoom(box, paramsWrap ? paramsWrap.getBoundingClientRect() : box) + "px");
+    // 同一把尺顺手量「这一列放不放得下两栏」。1006 是量出来的下限，不是凑的整数：
+    // 底部那一排要单行放得下：实测右列 524（净宽 498）时三颗胶囊 109+109+108 + 两颗间距 20 = 346，
+    // 右边那颗 99 + 间隙 8 → 494 ≤ 498，三颗名字都不截。右列 524 + 缝 22 + 展示图那列至少 390 → 面板 980。
+    // 2026-11-16 三族改口成「闪寻××生成」，工作流那颗胶囊多了两个字：13px 的汉字一格就是 13px，+26 → 1006。
+    // 1440x900 实测过踩这以下的样子：面板 792、输入卡 399，那颗名字被压成「闪寻图片生…」。
+    // happy-dom 里 rect 全是 0：量不到就别写，没有布局可判，写一次就把整份单测摁成竖列。
+    if (box.width) stacked = box.width < 1006;
+  }
   $effect(() => {
     if (!open) return;
     const host = panelEl;
     if (!host) return;
-    const writePopMax = () => {
-      const box = host.getBoundingClientRect();
-      const wfPill = host.querySelector<HTMLElement>('[aria-label="工作流"]');
-      // 云端那一屏那一层贴这颗胶囊的右边缘往左长（见 .cm-pop-wf.is-api）：余量在左边，量的是
-      // 「那一格的右沿 − 面板左内沿（22 内边距 + 1 描边）」，和下面那颗「画面参数」同一把尺。
-      // 外裹那一格就是胶囊自己的盒子，量同一只盒子；量不到（单测不排版）从 240 起。
-      const wfBox = wfPill?.closest<HTMLElement>(".cm-pop-wrap") ?? wfPill;
-      host.style.setProperty(
-        "--cm-pop-wf-left",
-        `${Math.max(240, Math.round((wfBox ? wfBox.getBoundingClientRect().right : box.right) - box.left - 23))}px`,
-      );
-      // 同一把尺再量一份「往左长还剩多少」：画面参数那层贴胶囊右边缘往左长（见 .cm-pop-params），
-      // 余量在左边——那颗右边缘到面板左内沿（22 内边距 + 1 描边）。窗口一窄胶囊被压扁，这一档
-      // 跟着缩，不至于从左边被面板切第二次。弹层的外裹那一格就是胶囊自己的盒子，量同一只盒子。
-      const paramsPill = host.querySelector<HTMLElement>(".cm-params-pill");
-      const paramsBox = paramsPill?.closest<HTMLElement>(".cm-pop-wrap") ?? paramsPill;
-      host.style.setProperty(
-        "--cm-pop-left",
-        `${Math.max(240, Math.round((paramsBox ? paramsBox.getBoundingClientRect().right : box.right) - box.left - 23))}px`,
-      );
-      // 同一把尺顺手量「这一列放不放得下两栏」。1006 是量出来的下限，不是凑的整数：
-      // 底部那一排要单行放得下：实测右列 524（净宽 498）时三颗胶囊 109+109+108 + 两颗间距 20 = 346，
-      // 右边那颗 99 + 间隙 8 → 494 ≤ 498，三颗名字都不截。右列 524 + 缝 22 + 展示图那列至少 390 → 面板 980。
-      // 2026-11-16 三族改口成「闪寻××生成」，工作流那颗胶囊多了两个字：13px 的汉字一格就是 13px，+26 → 1006。
-      // 1440x900 实测过踩这以下的样子：面板 792、输入卡 399，那颗名字被压成「闪寻图片生…」。
-      // happy-dom 里 rect 全是 0：量不到就别写，没有布局可判，写一次就把整份单测摁成竖列。
-      if (box.width) stacked = box.width < 1006;
-    };
-    writePopMax();
+    measurePops();
     if (typeof ResizeObserver !== "function") return; // 单测环境（happy-dom）没有 RO：写一次就够
-    const ro = new ResizeObserver(writePopMax);
+    const ro = new ResizeObserver(measurePops);
     ro.observe(host);
     return () => ro.disconnect();
   });
@@ -2759,7 +2771,8 @@
                   </button>
                   {#if wfOpen}
                     <div class="cm-pop-scrim" role="presentation" onclick={closeWorkflowPop}></div>
-                    <div class="cm-pop cm-pop-wf" class:is-api={wfTab === "cloud" && Boolean(apiActive)} role="menu" aria-label="工作流">
+                    <div class="cm-pop cm-pop-wf" class:is-api={wfTab === "cloud" && Boolean(apiActive)}
+                        class:is-room-right={wfRoomRight} class:is-one-col={wfOneCol} role="menu" aria-label="工作流">
                       <!-- 两屏各摆各的（苏醒要的）：本机的配方在「本地工作流」，云端的收费模型在「云端API服务」。
                            用 aria-pressed 的按钮而不是 tablist：这层容器是 role="menu"，塞 tablist 是错的 ARIA。 -->
                       <div class="cm-pop-tabs">
@@ -3725,11 +3738,22 @@
   .cm-pill-kind.is-on { color: #fff; background: rgb(255 255 255 / 9%); }
   /* API 那一屏要装两列（左列服务商 + 右列模型清单），宽度只在这一屏放开。
      别写 100%：这块弹层的包含块是那颗胶囊外面那一格（position:relative），100% = 胶囊那么宽。
-     锚点从「贴左往右长」翻成「贴右往左长」（2026-11-11 苏醒照图：右边那列的模型名被截成
-     「即梦 Seedr…」）：这颗胶囊在底部那一排的中间，贴左往右长只剩 389px 可用（1881px 宽的
-     实拍量出来的），两列谁都吃不饱；往左长量到的是「胶囊那一格右沿 − 面板左内沿」，
-     452px 这个设计宽度才真放得下。与「画面参数」那一层同一个法子，封顶只认实测值。 */
-  .cm-pop-wf.is-api { left: auto; right: 0; width: min(452px, var(--cm-pop-wf-left, 452px)); max-height: min(58vh, 430px); }
+     封顶只认实测值（--cm-pop-wf-room），锚点两侧各量一份、哪边宽往哪边长：
+     2026-11-11 那次把它定成一律贴右往左长，量的是「胶囊那一格右沿 − 面板左内沿」——1881px
+     那一档是对的（那颗在排的中间，贴左只有 389px，两列谁都吃不饱）。可这颗在底部那一排的第几颗、
+     名字多长都随窗口变：1304 宽的窗口里侧栏与详情栏都开着，面板只有 657，这颗落到行首，
+     左边只剩 267、右边有 465，还照左边封顶就等于把 452 的两栏压成 267——右列整列模型名没了、
+     行末那枚「已实测」被自己的盒子切成「已实」（2026-11-26 苏醒照图）。 */
+  .cm-pop-wf.is-api { left: auto; right: 0; width: min(452px, var(--cm-pop-wf-room, 452px)); max-height: min(58vh, 430px); }
+  /* 余量在右边：贴胶囊左沿往右长，和本机那一屏同一个锚点（上面 .cm-pop-wf 那条就是 left:0）。 */
+  .cm-pop-wf.is-api.is-room-right { left: 0; right: auto; }
+  /* 选中的那一侧连两栏下限都给不出时，两列改成上下叠：服务商在上、模型清单在下，一样能挑。
+     判据跟着那份实测余量走（见 lib/clone-pop-anchor.ts 的 apiPopFitsTwoCols），不照视口宽度猜：
+     侧栏与详情栏都开着时窗口 1304 而面板只有 657，照视口判会以为放得下，实际把右列切成半截字。 */
+  .cm-pop-wf.is-api.is-one-col .cm-api { grid-template-columns: minmax(0, 1fr); gap: var(--sp-2); }
+  .cm-pop-wf.is-api.is-one-col .cm-api-side { padding-right: 0; padding-bottom: var(--sp-1); border-right: 0; border-bottom: 1px solid rgb(255 255 255 / 8%); }
+  /* 叠成一列就没有右列要对齐了，那格空的留着是在标签和服务商之间凭空多一行。 */
+  .cm-pop-wf.is-api.is-one-col .cm-api-cap-void { display: none; }
   /* 本机那一屏那一列行。包一层是为了让 else 挂在外层 if 上（见模板那三条注释），所以行距自己守。 */
   .cm-pop-list { display: flex; flex-direction: column; gap: 3px; }
   /* 左列 140：装「图标 + 服务商名 + 箭头」够了（名字过长自己截断，全名在悬浮提示里）。
@@ -3932,15 +3956,9 @@
     .cm-pop { width: min(328px, 78vw); }
     .cm-pop-wf { width: min(268px, 78vw); }
   .cm-pop-kind { width: max-content; }
-    /* 窄窗口这一屏不放两列。这一档的面板内容宽只有 vw-84，而弹层现在贴着胶囊左边缘往右长，
-       452px 撑出去就是顶穿右边界（538px 实测过）。所以窄窗口沿用量过的 268px 那一档，
-       两列改成上下叠：服务商在上、模型清单在下，一样能挑，只是不再左右两栏。 */
-    /* 窄窗口这一档锚点退回贴左：竖排之后这颗在底部那一排的最左边，往左长会顶穿面板左边界。 */
-    .cm-pop-wf.is-api { left: 0; right: auto; width: min(268px, 78vw); }
-    .cm-api { grid-template-columns: minmax(0, 1fr); gap: var(--sp-2); }
-    .cm-api-side { padding-right: 0; padding-bottom: var(--sp-1); border-right: 0; border-bottom: 1px solid rgb(255 255 255 / 8%); }
-    /* 叠成一列就没有右列要对齐了，那格空的留着是在标签和服务商之间凭空多一行。 */
-    .cm-api-cap-void { display: none; }
+    /* 云端那一屏的宽度与锚点不在这里换：只认面板实测余量（--cm-pop-wf-room），
+       两栏放不下就上下叠（is-one-col）。538px 那一档以前在这里写死 268px + 贴左，
+       量的却是视口——窗口 1304、面板只有 657 的时候它以为很宽，反而把右列切了半截字。 */
   }
 
   /* 窗口一矮（笔记本、半屏）就给预览图砍一档：素材在 composer 里还有小图可认，顶部那张大图只是参照。

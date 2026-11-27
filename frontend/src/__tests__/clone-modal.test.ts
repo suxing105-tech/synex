@@ -573,17 +573,57 @@ it('这一层开着才把键盘交给它：cloneOpen 与 open 同进同出，卸
   expect(get(cloneOpen)).toBe(false);
 });
 
-it('弹层余量实测写进 --cm-pop-wf-left：封顶量的是这一列，不是视口', async () => {
+it('弹层余量实测写进 --cm-pop-wf-room：封顶量的是这一列，不是视口', async () => {
   // happy-dom 不排版，rect 全是 0，正好验到兜底那一档：结果必须还是 240px 起，不能是负数
   routes(baseRoutes());
   const screen = await ready();
   const panel = screen.container.querySelector('.cm-panel') as HTMLElement;
-  const wfLeft = panel.style.getPropertyValue('--cm-pop-wf-left');
-  expect(/^-?\d+px$/.test(wfLeft), wfLeft).toBe(true);
-  expect(Number.parseInt(wfLeft, 10)).toBeGreaterThanOrEqual(240);
-  // --cm-pop-max 那把尺撤了：云端那一层从「贴左往右长」翻成「贴右往左长」，余量在左边，
-  // 与下面那颗「画面参数」用的是同一条尺（见 --cm-pop-left 那条用例）
+  const room = panel.style.getPropertyValue('--cm-pop-wf-room');
+  expect(/^-?\d+px$/.test(room), room).toBe(true);
+  expect(Number.parseInt(room, 10)).toBeGreaterThanOrEqual(240);
+  // --cm-pop-max 那把尺撤了：那份余量两侧各量一份、哪边宽算哪边（口径见 lib/clone-pop-anchor
+  // 与下面那条用例），与「画面参数」那颗用的是同一条尺（见 --cm-pop-left 那条用例）
   expect(panel.style.getPropertyValue('--cm-pop-max')).toBe('');
+  cleanup();
+});
+
+it('那颗胶囊落到行首时，云端那一屏改往右边长：452 的两栏回来，不再切右列的字', async () => {
+  // 2026-11-26 苏醒照图：窗口一小，云端那一屏右列整列模型名没了、「已实测」剩「已实」。
+  // 量出来的一档：面板 291..948（657 宽，已收回上下结构），那颗胶囊落在行首 460..581，
+  // 左边只剩 265、右边有 463。旧算式只认左边 ⇒ 452 被压成 265。
+  routes({
+    ...baseRoutes(),
+    '/api/clone/cloud/status': cloudOn(),
+    '/api/clone/templates': { items: [TPL, CLOUD_IMG] },
+  });
+  const screen = await ready();
+  const panel = screen.container.querySelector('.cm-panel') as HTMLElement;
+  const pill = screen.getByRole('button', { name: '工作流' });
+  const wrap = pill.closest('.cm-pop-wrap') as HTMLElement;
+  putRect(panel, 291, 948);
+  putRect(wrap, 460, 581);
+  await fireEvent.click(pill);
+  await tick();
+  expect(panel.style.getPropertyValue('--cm-pop-wf-room'), '右边那份余量 463').toBe('463px');
+  await fireEvent.click(screen.getByRole('button', { name: /^云端API服务/ }));
+  const pop = screen.container.querySelector('.cm-pop-wf') as HTMLElement;
+  expect(pop.classList.contains('is-api')).toBe(true);
+  // 贴胶囊左沿往右长（CSS 见 .cm-pop-wf.is-api.is-room-right）
+  expect(pop.classList.contains('is-room-right')).toBe(true);
+  // 452 的设计宽放得下，两栏照旧，不上下叠
+  expect(pop.classList.contains('is-one-col')).toBe(false);
+  // 再窄一档（538 的窗口：面板 42..496，那颗仍在行首）：右边只剩 341，两栏放不下 → 上下叠。
+  // 关掉再开：这一层是 {#if} 画的，重开之后手上那个节点已经换过一颗，得重新取。
+  await fireEvent.click(pill);
+  putRect(panel, 42, 496);
+  putRect(wrap, 130, 250);
+  await fireEvent.click(pill);
+  await tick();
+  expect(panel.style.getPropertyValue('--cm-pop-wf-room')).toBe('341px');
+  const again = screen.container.querySelector('.cm-pop-wf') as HTMLElement;
+  expect(again === pop, '重开之后是另一颗节点').toBe(false);
+  expect(again.classList.contains('is-room-right')).toBe(true);
+  expect(again.classList.contains('is-one-col'), '341 给不出两栏下限 360').toBe(true);
   cleanup();
 });
 
@@ -608,7 +648,7 @@ it("「画面参数」那层贴右往左长：两栏那一档它是最右那颗�
   expect(narrow).toMatch(/\.cm-pop\s*\{[^}]*width:\s*min\(328px,\s*78vw/);
   expect(narrow).not.toMatch(/\.cm-pop-params[^{]*\{[^}]*78vw/);
 
-  // 左余量由 JS 与 --cm-pop-wf-left 同一把尺量：happy-dom 量不到（rect 全是 0）也得从 240 起，不能是负数
+  // 左余量由 JS 与 --cm-pop-wf-room 同一把尺量：happy-dom 量不到（rect 全是 0）也得从 240 起，不能是负数
   routes(baseRoutes());
   const screen = await ready();
   const panel = screen.container.querySelector(".cm-panel") as HTMLElement;
@@ -655,7 +695,7 @@ it('这一层收进缩略图那一列：纯色底 + 一整块模块底，不再�
   expect(panelTag).toContain('aria-label="再次创作"');
   // 最宽那颗弹层（云端两栏）的封顶从视口改成量这一列
   const api = blk('.cm-pop-wf.is-api {');
-  expect(api).toMatch(/width:\s*min\(452px,\s*var\(--cm-pop-wf-left/);
+  expect(api).toMatch(/width:\s*min\(452px,\s*var\(--cm-pop-wf-room/);
   // 锚点翻成贴右往左长（2026-11-11 苏醒照图：右列模型名被截成「即梦 Seedr…」）：这颗胶囊在底部
   // 那一排的中间，贴左往右长只有 389px 可用，两列谁都吃不饱
   expect(api).toMatch(/left:\s*auto/);
@@ -1125,20 +1165,24 @@ it('钉住那条坞不许透字；窗口一矮先给预览图砍一档', () => {
   expect(css.slice(shortAt)).not.toMatch(/\.cm-hero\s*\{[^}]*max-height/);
 });
 
-it("窄窗口那一屏不许再撑 452px：面板放不下，两列上下叠、宽度回到 268 那一档", () => {
-  // 538px 实测：452px 的弹层贴在胶囊边上，往左长顶穿左边界（左列标题只剩残字），
-  // 换成贴右长又顶穿右边界（197..639 > 面板右 518）。这一档的面板内容宽只有 vw-84，
-  // 两列怎么放都出屏，所以窄窗口只留一列：宽度沿用量过的 268px 那一档，服务商在上、模型在下。
+it('窄窗口那一屏不再照视口写死 268：宽度、锚点、叠不叠都只认面板实测余量', () => {
+  // 538px 实测过「照视口写死」的两种坏：452 顶穿面板边界（197..639 > 面板右 518），
+  // 退回 268 那一档又给不出两栏开销、右列照样切字。窗口宽不等于面板宽——侧栏与详情栏
+  // 都开着时窗口 1304 而面板只有 657，判对象就错在这一格。三条都搬进实测余量那一档。
   const css = readFileSync('src/components/CloneModal.svelte', 'utf8');
   const at = css.indexOf('@media (max-width: 900px)');
+  const narrow = css.slice(at, css.indexOf('@media (max-height: 720px)'));
   expect(at).toBeGreaterThan(0);
-  const narrow = css.slice(at);
-  expect(narrow).toMatch(/\.cm-pop-wf\.is-api\s*\{[^}]*width:\s*min\(268px/);
-  expect(narrow).toMatch(/\.cm-api\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
-  // 叠成一列后那道竖分隔得撤了，不然横线头上还挂着一截竖线
-  expect(narrow).toMatch(/\.cm-api-side\s*\{[^}]*border-right:\s*0/);
-  // 宽屏那两列不受影响：452px 那条还在，只是被 media query 覆盖
-  expect(css).toMatch(/\.cm-pop-wf\.is-api\s*\{[^}]*width:\s*min\(452px/);
+  // 窄窗口那一档不再碰云端这一屏：它连面板有多宽都不知道
+  expect(narrow).not.toMatch(/\.cm-pop-wf\.is-api|\.cm-api/);
+  // 设计宽还是 452，只是改由实测余量封顶；锚点两侧各量一份（见上面那条用例）
+  const api = css.slice(css.indexOf('.cm-pop-wf.is-api {'), css.indexOf('.cm-pop-wf.is-api.is-room-right'));
+  expect(api).toMatch(/width:\s*min\(452px,\s*var\(--cm-pop-wf-room/);
+  expect(api).not.toMatch(/268px|78vw/);
+  expect(css).toMatch(/\.cm-pop-wf\.is-api\.is-room-right\s*\{[^}]*left:\s*0;\s*right:\s*auto/);
+  // 上下叠挂在实测那一档上：叠了就撤竖分隔、撤那格空标签，不然横线头上挂一截竖线
+  expect(css).toMatch(/\.cm-pop-wf\.is-api\.is-one-col \.cm-api\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  expect(css).toMatch(/\.cm-pop-wf\.is-api\.is-one-col \.cm-api-side\s*\{[^}]*border-right:\s*0/);
 });
 it('云端那一屏两列同一行：标签行左右各一格，服务商那颗与第一行模型同一条中线', () => {
   // 1920x1080 实测过没对齐的样子：那句「服务商」只把左列顶下去 18.75（15.75 字高 + 2 上边距 + 3 行距），
@@ -1156,9 +1200,8 @@ it('云端那一屏两列同一行：标签行左右各一格，服务商那颗�
   expect(css).toMatch(/\.cm-wf\.cm-api-model\s*\{[^}]*align-items: flex-start[^}]*padding-top: var\(--sp-2\)[^}]*padding-bottom: var\(--sp-2\)/);
   // 裸 .cm-api-model 那条会被后面的 .cm-wf 整个盖掉（同特异性、它在后），别再写回去
   expect(css).not.toMatch(/^\s*\.cm-api-model\s*\{/m);
-  // 叠成一列时没有右列要对齐，空的那一格必须撤掉
-  const at = css.indexOf('@media (max-width: 900px)');
-  expect(css.slice(at)).toMatch(/\.cm-api-cap-void\s*\{\s*display: none;?\s*\}/);
+  // 叠成一列时没有右列要对齐，空的那一格必须撤掉（判据跟着实测余量，不跟着视口）
+  expect(css).toMatch(/\.cm-pop-wf\.is-api\.is-one-col \.cm-api-cap-void\s*\{\s*display:\s*none/);
 });
 
 it('静止时先占好「取消」那一格：按下生成，左边那一排不重排', async () => {

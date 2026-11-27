@@ -606,6 +606,17 @@ def import_images(
         if folder_id is not None:
             repository.assign_folder(image_id, folder_id)
 
+        # 回给前端的这一条必须是 feed 口径（thumbnail_url / original_url 都在里面）：
+        # 「再次创作」拿它直接画参考位，只给 id / filename / path 就是一张坏图。
+        summary = repository.image_summary(image_id)
+        if summary is None:
+            # 刚写进去的行读不到 = 库里根本没有这一条，回一份画不出图的空壳
+            # 不如照实说没入库（前端那句是「索引失败」）。
+            skipped.append(
+                ImportSkippedItem(filename=target.name, reason="indexed_failed")
+            )
+            continue
+
         # 拖入的图入库后必须像 watchdog 一样广播 image_indexed，
         # 否则前端 WS 不会刷新 feed，缩略图要等手动刷新才出现。
         # 走 indexer 自带的 emit 路径：与 watchdog `_flush_pending` 同源，
@@ -617,13 +628,7 @@ def import_images(
             except RuntimeError:
                 pass
 
-        saved.append(
-            ImportResultItem(
-                id=image_id,
-                filename=target.name,
-                path=str(target),
-            )
-        )
+        saved.append(ImportResultItem(**summary))
 
     return ImportResponse(
         saved=saved,

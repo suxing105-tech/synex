@@ -1,4 +1,5 @@
-"""POST /api/images/import 端到端测试。"""
+"""入库两条路端到端测试：POST /api/images/import（浏览器上传）与
+/api/images/copy-files（真机从资源管理器/桌面拖进来的磁盘路径）。"""
 from __future__ import annotations
 
 import io
@@ -9,7 +10,6 @@ from fastapi.testclient import TestClient
 
 from app import repository
 from app.db import init_pool
-from app.indexer import Indexer
 from app.main import app
 
 from .conftest import make_comfy_prompt, make_png
@@ -197,5 +197,46 @@ def test_import_returns_inbox_dir(client, tmp_path):
     assert body["inbox_dir"].endswith("inbox") or body["inbox_dir"].endswith("inbox\\")
 
 
+# ── 入库回包要能直接画出缩略图（2026-11-26 苏醒报的坏）─────────────────────────
+# 「再次创作」把入库回来的那一条当 feed 的一条用：参考格、悬停放大的预览、遮罩画板
+# 读的都是 thumbnail_url / original_url。这两条接口以前只回 id / filename / path，
+# 于是从桌面或别的文件夹拖进参考位的那一份直接是一张坏图（src 空 → WebView 画破图标
+# 加文件名）。闸因此钉在「回包里那两条 URL 与 feed 一字不差，而且真能 GET 出图」。
 
 
+def test_import_saved_item_carries_feed_shape(client, tmp_path):
+    r = client.post(
+        "/api/images/import",
+        files=[("files", ("ref.png", io.BytesIO(_png_bytes(tmp_path)), "image/png"))],
+    )
+    assert r.status_code == 200, r.text
+    saved = r.json()["saved"][0]
+    summary = repository.image_summary(saved["id"])
+    assert saved["kind"] == "image"
+    assert saved["thumbnail_url"] == summary["thumbnail_url"]
+    assert saved["original_url"] == summary["original_url"]
+    # URL 字符串对上还不算，那条 URL 必须真出图：坏图有两种画法，
+    # 一种是 src 是空的，一种是 200 之外的任何一个状态码。
+    got = client.get(saved["thumbnail_url"])
+    assert got.status_code == 200, got.status_code
+    assert got.content
+
+
+def test_copy_files_saved_item_carries_feed_shape(client, tmp_path):
+    """真机从资源管理器/桌面拖进来的是磁盘路径，入库走 copy-files 这一条。"""
+    source = make_png(tmp_path / "desktop.png")
+    r = client.post(
+        "/api/images/copy-files",
+        json={"paths": [str(source)], "folder_id": None},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["skipped"] == []
+    saved = body["saved"][0]
+    summary = repository.image_summary(saved["id"])
+    assert saved["kind"] == "image"
+    assert saved["thumbnail_url"] == summary["thumbnail_url"]
+    assert saved["original_url"] == summary["original_url"]
+    got = client.get(saved["thumbnail_url"])
+    assert got.status_code == 200, got.status_code
+    assert got.content

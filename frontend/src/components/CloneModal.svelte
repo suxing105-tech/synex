@@ -1822,11 +1822,12 @@
     const next = { ...refs };
     let used = 0;
     for (const item of res.saved) {
-      // 入库接口不回 kind（它只回 id / filename / path），认族只能看扩展名
-      const kind: RefKind = kindFromName(item.filename) || wantKind || "image";
+      // 入库回包就是 feed 的那一条，族也带着（kind）；以前只有 id / filename / path，
+      // 认族只能看扩展名，而且下面那格画不出缩略图（见 types.ts 的 ImportResultItem）
+      const kind: RefKind = item.kind;
       const key = kind === wantKind && queue.length ? queue.shift() : free[kind].shift();
       if (!key) continue;
-      next[key] = { ...item, kind } as ImageSummary;
+      next[key] = { ...item, kind };
       used += 1;
     }
     refs = next;

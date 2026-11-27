@@ -67,8 +67,13 @@ def copy_files(paths: list[str], folder_id: int | None) -> dict:
                         conn.execute('INSERT OR IGNORE INTO image_folders(image_id,folder_id) VALUES(?,?)', (image_id, folder_id))
                     if created and row:
                         conn.execute('INSERT OR IGNORE INTO image_tags(image_id,tag_id) SELECT ?,tag_id FROM image_tags WHERE image_id=?', (image_id, row['id']))
+                # 和 /api/images/import 同一口径：回的是 feed 那一条，前端拿到就能画
+                # （只回 id / filename / path 时，「再次创作」的参考位是一张坏图）。
+                summary = repository.image_summary(image_id)
+                if summary is None:
+                    raise ValueError('indexed_failed')
                 indexer.emit_event_sync(payload)
-                saved.append({'id': image_id, 'filename': target.name, 'path': str(target)})
+                saved.append(summary)
         except (OSError, ValueError) as error:
             if created and target is not None:
                 with indexer._live_lock:

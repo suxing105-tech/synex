@@ -1964,7 +1964,9 @@ it('放不出来的容器（playable=false）退回海报帧，不给一个点�
 
 it('拖文件到「+ 参考」上：不指定格子也按文件自己的族落位', async () => {
   (imagesApi.import as ReturnType<typeof vi.fn>).mockResolvedValue({
-    saved: [{ id: 22, filename: 'bgm.mp3', path: 'D:/bgm.mp3' }], skipped: [],
+    // 入库回包 = feed 的那一条（波形图就是音频的 thumbnail_url），照真机口径预演
+    saved: [{ ...IMPORTED(22, 'bgm.mp3'), kind: 'audio', thumbnail_url: '/api/audio/22/waveform?w=840&h=360' }],
+    skipped: [],
   });
   routes({ ...videoRoutes(), '/api/clone/templates': { items: [H3] } });
   const screen = await ready({ image: VIDEO_CARD });
@@ -1972,6 +1974,10 @@ it('拖文件到「+ 参考」上：不指定格子也按文件自己的族落�
     dataTransfer: { files: [new File(['x'], 'bgm.mp3', { type: 'audio/mpeg' })] },
   });
   await vi.waitFor(() => expect(screen.getByTitle(/^参考音频｜bgm\.mp3$/)).toBeTruthy());
+  // 那一格得有画面：入库回包只给 id / filename / path 时这里是张坏图（2026-11-26 报的坏）
+  const tile = screen.getByTitle(/^参考音频｜bgm\.mp3$/) as HTMLElement;
+  expect((tile.querySelector('.cm-tile-img') as HTMLImageElement).getAttribute('src'))
+    .toBe('/api/audio/22/waveform?w=840&h=360');
 });
 
 it('往已经放满的那一族再拖一份：说清是哪一族满了，不默默吞掉', async () => {
@@ -2026,11 +2032,25 @@ function putRect(el: HTMLElement, left: number, right: number) {
 
 const NATIVE_PNG = 'D:/素材/dragged.png';
 
+/**
+ * 入库回来的那一条长什么样：后端回的是 feed 口径（repository.image_summary 那份），
+ * thumbnail_url / original_url 都在里面。用例照这份预演，别只写三个字段——
+ * 只写三个字段的话，「参考格画不出缩略图」这类坏就测不出来。
+ */
+const IMPORTED = (id: number, filename: string) => ({
+  id, filename, path: 'SeekX-Data/inbox/' + filename, kind: 'image',
+  original_url: '/api/images/' + id + '/file?v=1',
+  thumbnail_url: '/api/images/' + id + '/file?max=1024&v=1',
+  play_url: null, playable: null, width: 8, height: 8, duration_seconds: null,
+  video_codec: null, audio_codec: null, fps: null, mtime: 1, size_bytes: 120,
+  folder_ids: [], tags: [], model: null, seed: null, new: false, has_workflow: false,
+});
+
 it('真机拖放：扔到已经填上的参考缩略图上 = 换掉它（走 copyFiles，原文件不动）', async () => {
   const drop = tauriDrop();
   // afterEach 不清 imagesApi 的调用记录，不清零会拿到上一条用例留下的那次调用
   (imagesApi.copyFiles as ReturnType<typeof vi.fn>).mockClear().mockResolvedValue({
-    saved: [{ id: 88, filename: 'dragged.png', path: NATIVE_PNG }], skipped: [],
+    saved: [IMPORTED(88, 'dragged.png')], skipped: [],
   });
   routes(baseRoutes());
   const screen = await ready();
@@ -2045,6 +2065,10 @@ it('真机拖放：扔到已经填上的参考缩略图上 = 换掉它（走 cop
   drop.emit('tauri://drag-drop', { paths: [NATIVE_PNG], position: { x: 40, y: 50 } });
   await vi.waitFor(() => expect(imagesApi.copyFiles).toHaveBeenCalledWith([NATIVE_PNG], null));
   await vi.waitFor(() => expect(screen.getByTitle(/^人物参考｜dragged\.png$/)).toBeTruthy());
+  // 这一格得有画面，而且要带 sidecar 那个端口：真机上 /api/... 这种相对地址在
+  // Tauri 的页面里出不了图（2026-11-26 苏醒报的坏就是这一格是张坏图）
+  expect((cell.querySelector('.cm-tile-img') as HTMLImageElement).getAttribute('src'))
+    .toBe('http://127.0.0.1:8765/api/images/88/file?max=1024&v=1');
   expect(cell.className).not.toContain('is-drop-target');
   // 落点是在 drop 那一刻用的（见 native-drop 的顺序）：改成「先清记录再回调」就点不出这一格，
   // 图片族那一格又是满的，结果会退化成报错而不是换掉它
@@ -2069,7 +2093,7 @@ it('真机拖放：扔的族和那一格要的不是一族，说清是哪一格�
 it('真机拖放：扔在参考区但没指着具体格子，按文件自己的族找第一个空位', async () => {
   const drop = tauriDrop();
   (imagesApi.copyFiles as ReturnType<typeof vi.fn>).mockClear().mockResolvedValue({
-    saved: [{ id: 89, filename: 'loose.png', path: 'D:/loose.png' }], skipped: [],
+    saved: [IMPORTED(89, 'loose.png')], skipped: [],
   });
   routes(baseRoutes());
   const screen = await ready();

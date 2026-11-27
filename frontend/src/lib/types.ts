@@ -133,11 +133,15 @@ export interface Stats {
   folders: number;
 }
 
-export interface ImportResultItem {
-  id: number;
-  filename: string;
-  path: string;
-}
+/**
+ * 入库回来的那一条 = feed 的一条口径（后端回的就是 repository.image_summary 那一份）。
+ *
+ * 以前这里只有 id / filename / path，而「再次创作」拿它直接当 ImageSummary 用：
+ * 参考格、悬停放大的预览、遮罩画板读的都是 thumbnail_url / original_url，于是从桌面
+ * 或别的文件夹拖进参考位的那一份直接是一张坏图（2026-11-26 苏醒报的坏）。
+ * 两条入库路（import 上传、copy-files 本地路径）现在回同一份口径。
+ */
+export type ImportResultItem = ImageSummary;
 
 export interface ImportSkippedItem {
   filename: string;

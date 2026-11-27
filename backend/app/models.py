@@ -136,10 +136,14 @@ class FeedResponse(BaseModel):
 
 
 # ---------- 拖拽导入 ----------
-class ImportResultItem(BaseModel):
-    id: int
-    filename: str
-    path: str
+class ImportResultItem(ImageSummary):
+    """入库回来的那一条 = feed 的一条口径，前端拿到就能直接画。
+
+    以前这里只有 id / filename / path。而「再次创作」是把这一条当 ImageSummary 用的
+    （参考格、悬停放大的预览、遮罩画板读的都是 thumbnail_url / original_url），
+    少那几个字段的后果就是：从桌面或别的文件夹拖进参考位的那一份直接长成一张坏图
+    （2026-11-26 苏醒报的坏）。口径与 repository.image_summary 同一份，不在这里另立。
+    """
 
 
 class ImportSkippedItem(BaseModel):

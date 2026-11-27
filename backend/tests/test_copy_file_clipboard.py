@@ -45,12 +45,14 @@ def copied(monkeypatch):
 @pytest.fixture
 def audio_row(client, tmp_path: Path):
     source = make_audio(tmp_path / "音频素材_00001.mp3", duration=0.4)
-    saved = client.post(
+    client.post(
         "/api/images/import",
         files=[("files", ("音频素材_00001.mp3", source.read_bytes(), "audio/mpeg"))],
-    ).json()["saved"][0]
+    )
     row = client.get("/api/images", params={"kind": "audio"}).json()["items"][0]
-    return {"id": row["id"], "path": saved["path"]}
+    # 期望值取库里那一条的 path，不借入库回包那一份：回包现在就是 feed 口径，path 是
+    # 归一化写法（正斜杠）；剪贴板要的是同一条记录的原生磁盘路径，所以过一遍 Path()。
+    return {"id": row["id"], "path": str(Path(row["path"]))}
 
 
 @pytest.fixture
